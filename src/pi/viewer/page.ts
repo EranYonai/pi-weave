@@ -92,6 +92,8 @@ const PAGE = `<!DOCTYPE html>
   /* ---------- surfaces ---------- */
   .surface { position: fixed; top: 48px; bottom: 0; overflow-y: auto; background: var(--bg); }
   #list { left: 0; width: 340px; border-right: 1px solid var(--line); display: none; padding: 12px; }
+  body.list-open #list { display: block; }
+  #list-toggle[aria-pressed="true"] { background: var(--accent); color: #0b1020; }
   #health { left: 0; right: 0; display: none; padding: 20px 24px; max-width: 760px; }
   #health h2 { font-size: 18px; line-height: 1.3; font-weight: 650; margin: 0 0 4px; }
   #health h3 { font-size: 13px; text-transform: uppercase; letter-spacing: .08em; color: var(--muted);
@@ -195,13 +197,13 @@ const PAGE = `<!DOCTYPE html>
   }
 </style>
 </head>
-<body>
+<body class="list-open">
 <header>
   <h1>pi-weave <span>knowledge view</span></h1>
   <nav class="tabs" aria-label="surface">
-    <button data-surface="graph" class="tab active">Graph</button>
-    <button data-surface="list" class="tab">List</button>
+    <button data-surface="graph" class="tab active">Explore</button>
     <button data-surface="health" class="tab">Health</button>
+    <button id="list-toggle" title="Toggle list sidebar" aria-pressed="true">▤</button>
   </nav>
   <input id="search" placeholder="search…" aria-label="search">
   <span class="zoomgrp">
@@ -263,7 +265,8 @@ const PAGE = `<!DOCTYPE html>
   <div class="card">
     <h2>Shortcuts</h2>
     <table>
-      <tr><td>1 / 2 / 3</td><td>Graph / List / Health</td></tr>
+      <tr><td>1 / 3</td><td>Graph / Health</td></tr>
+      <tr><td>2</td><td>Toggle list sidebar</td></tr>
       <tr><td>f</td><td>Focus selected node</td></tr>
       <tr><td>g</td><td>Exit focus</td></tr>
       <tr><td>▸ / ▾</td><td>Expand / collapse in List</td></tr>
@@ -728,20 +731,31 @@ const PAGE = `<!DOCTYPE html>
   }
 
   // ---------- surfaces ----------
+  // Graph and List are merged into one "Explore" surface: the graph canvas is
+  // the main view with the index tree as a collapsible left sidebar (there is
+  // no separate List tab). Health stays a distinct full surface.
+  var listOpen = true;
   function showSurface(s) {
     surface = s;
     document.querySelectorAll(".tab").forEach(function (b) {
       b.classList.toggle("active", b.getAttribute("data-surface") === s);
     });
     svg.style.display = s === "graph" ? "block" : "none";
-    document.getElementById("list").style.display = s === "list" ? "block" : "none";
+    document.body.classList.toggle("list-open", s === "graph" && listOpen);
     document.getElementById("health").style.display = s === "health" ? "block" : "none";
-    if (s === "list") renderList();
+    if (s === "graph") renderList();
     if (s === "health") renderHealth();
+  }
+  function toggleListPanel() {
+    listOpen = !listOpen;
+    document.body.classList.toggle("list-open", surface === "graph" && listOpen);
+    var t = document.getElementById("list-toggle");
+    t.setAttribute("aria-pressed", listOpen ? "true" : "false");
   }
   document.querySelectorAll(".tab").forEach(function (b) {
     b.addEventListener("click", function () { showSurface(b.getAttribute("data-surface")); });
   });
+  document.getElementById("list-toggle").addEventListener("click", toggleListPanel);
 
   function provBar(c) {
     var total = Math.max(1, c.human + c.agent + c.generated);
@@ -969,7 +983,7 @@ const PAGE = `<!DOCTYPE html>
       b.classList.toggle("active", b.getAttribute("data-ptab") === "overview");
     });
     renderPtab(node, "overview");
-    if (surface === "list") renderList();
+    if (surface === "graph" && listOpen) renderList();
     paint();
   }
   document.querySelectorAll(".ptabs button").forEach(function (b) {
@@ -1128,7 +1142,7 @@ const PAGE = `<!DOCTYPE html>
       model = JSON.parse(text);
       renderStatus();
       buildScene(first);
-      if (surface === "list") renderList();
+      if (surface === "graph" && listOpen) renderList();
       if (surface === "health") renderHealth();
       overlay.className = "hidden";
       if (!model.nodes.length) {
@@ -1146,7 +1160,7 @@ const PAGE = `<!DOCTYPE html>
   // ---------- search ----------
   searchEl.addEventListener("input", function () {
     query = searchEl.value.trim().toLowerCase();
-    if (surface === "list") renderList();
+    if (surface === "graph" && listOpen) renderList();
     paint();
   });
 
@@ -1185,7 +1199,7 @@ const PAGE = `<!DOCTYPE html>
   document.addEventListener("keydown", function (ev) {
     var k = ev.key;
     if (k === "1") showSurface("graph");
-    else if (k === "2") showSurface("list");
+    else if (k === "2") toggleListPanel();
     else if (k === "3") showSurface("health");
     else if (k === "f") { if (selectedId) focusOn(selectedId); }
     else if (k === "g") exitFocus();
@@ -1198,7 +1212,7 @@ const PAGE = `<!DOCTYPE html>
       if (t && t.getAttribute && t.getAttribute("data-id")) { ev.preventDefault(); selectById(t.getAttribute("data-id")); }
     }
     else if (k === "ArrowDown" || k === "ArrowUp") {
-      if (surface === "list") {
+      if (surface === "graph" && listOpen) {
         ev.preventDefault();
         var rows = document.querySelectorAll("#list-rows .row");
         var idx = Array.prototype.indexOf.call(rows, document.activeElement);

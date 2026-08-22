@@ -539,12 +539,15 @@ describe("page script (real browser JS, executed through node)", () => {
     expect(() => new Function(js)).not.toThrow();
   });
 
-  it("exposes the three v2 surfaces, status strip, and detail tabs", () => {
+  it("exposes the merged Explore (graph+list) and Health surfaces, status strip, and detail tabs", () => {
     const page = renderPage();
-    // three surfaces over one model
+    // Graph and List are merged into one Explore surface (list is a sidebar)
     expect(page).toContain('data-surface="graph"');
-    expect(page).toContain('data-surface="list"');
+    expect(page).toContain('id="list-toggle"');
     expect(page).toContain('data-surface="health"');
+    expect(page).not.toContain('data-surface="list"');
+    // list sidebar is open by default on the Explore surface
+    expect(page).toContain('class="list-open"');
     // overview-first status strip
     expect(page).toContain('id="status"');
     expect(page).toContain('id="stamp"');
