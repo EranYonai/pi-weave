@@ -6,6 +6,7 @@ import {
   defaultBranch,
   excludeOkfLocally,
   findGitRoot,
+  hashWorktreeFiles,
   headSha,
   listFiles,
   remotes,
@@ -13,8 +14,10 @@ import {
 } from "./git";
 import { languageForExtension } from "./languages";
 import { OKF_DIR, OKF_MANIFEST, REPOSITORY_DIR } from "./paths";
+import { NOTE_SOURCES } from "./types";
 import type {
   GitState,
+  NoteSource,
   RepoIdentity,
   RepoIndex,
   RepoModule,
@@ -200,6 +203,8 @@ export async function buildRepoIndex(root: string, options: ScanOptions = {}): P
     okfVersion: 1,
     scope: "repository",
     generator: GENERATOR,
+    // Machine-derived knowledge carries its provenance (AGENTS.md rule 4).
+    source: "generated",
     created: timestamp,
     updated: timestamp,
     identity,
@@ -223,6 +228,7 @@ export async function writeRepoIndex(root: string, index: RepoIndex): Promise<st
     okfVersion: index.okfVersion,
     scope: index.scope,
     generator: index.generator,
+    source: index.source,
     created: index.created,
     updated: index.updated,
   };
@@ -253,6 +259,8 @@ export async function readRepoIndex(root: string): Promise<RepoIndex | null> {
       okfVersion: 1,
       scope: "repository",
       generator: typeof manifestJson.generator === "string" ? manifestJson.generator : GENERATOR,
+      // Pre-provenance indexes were still machine-written: default generated.
+      source: readProvenance(manifestJson.source),
       created: typeof manifestJson.created === "string" ? manifestJson.created : "",
       updated: typeof manifestJson.updated === "string" ? manifestJson.updated : "",
       identity: JSON.parse(identity) as RepoIdentity,
@@ -302,7 +310,34 @@ export async function assessStaleness(repoRoot: string): Promise<StalenessReport
     reasons.push(`${resolved.length} previously-changed file(s) resolved`);
   }
 
+  // Path membership alone misses re-edits of files that were already dirty
+  // at capture time — compare worktree content hashes for paths dirty in
+  // both snapshots. (Indexes captured before content anchoring carry no
+  // hashes → degrade to path-only comparison.)
+  const previousHashes: Record<string, string | null> = index.git.changedHashes ?? {};
+  const currentHashes = await hashWorktreeFiles(gitRoot, changed);
+  const contentChanged = changed.filter((f) => {
+    const before = previousHashes[f];
+    return before !== undefined && before !== currentHashes[f];
+  });
+  if (contentChanged.length > 0) {
+    reasons.push(
+      `${contentChanged.length} uncommitted file(s) edited since capture: ${contentChanged.slice(0, 5).join(", ")}${contentChanged.length > 5 ? ", …" : ""}`,
+    );
+  }
+
   return { state: reasons.length === 0 ? "fresh" : "stale", reasons };
+}
+
+/**
+ * Read a manifest provenance field, defaulting unknown/missing values to
+ * "generated": every repository index written before the field existed was
+ * still machine-written.
+ */
+function readProvenance(value: unknown): NoteSource {
+  return (NOTE_SOURCES as readonly string[]).includes(value as string)
+    ? (value as NoteSource)
+    : "generated";
 }
 
 /** Compact human/agent-readable summary of an index. */

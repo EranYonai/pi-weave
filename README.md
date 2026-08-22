@@ -39,8 +39,17 @@ Or for development: `pi -e ./src/pi/index.ts`.
 | Tool | `weave_repo` | status / scan / overview of the `.okf` repo index |
 | Command | `/weave` | workspace dashboard (vault + repository) |
 | Command | `/weave-scan` | build/refresh the repository index |
+| Command | `/weave-view` | open the local graph viewer in your browser |
 | Skill | `weave-notepad` | how the agent should take good notes |
 | Skill | `weave-explore` | how the agent should explore repositories |
+
+**`/weave-view`** starts a loopback-only server (`127.0.0.1`, random port)
+and opens an interactive graph of your knowledge space: vault notes with
+trust provenance (solid = human, dashed = agent, dimmed = generated),
+wiki-link edges between notes, and the repository's structure anchored to
+git state. It reads disk live on every refresh — never a stale cache.
+Zoom/scroll, drag to pan, click nodes to expand; notes open in a rendered
+markdown side panel.
 
 On session start, pi-weave detects the repository you're in, checks whether
 `.okf` exists and is fresh, and says so in the status line.
@@ -65,10 +74,10 @@ Repository index (`<repo>/.okf/`):
 
 ```text
 .okf/
-├── okf.json            # format version + generator
+├── okf.json            # format version + generator + source: generated
 └── repository/
     ├── identity.json   # name, remotes, default branch
-    ├── git.json        # HEAD sha + branch + changes (staleness anchor)
+    ├── git.json        # HEAD sha + branch + changed-file content hashes (staleness anchor)
     └── structure.json  # languages, packages, modules, entry points
 ```
 

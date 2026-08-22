@@ -74,13 +74,13 @@ export interface MockCtx {
   ui: MockUi;
 }
 
-export function createMockCtx(cwd: string, hasUI = true): MockCtx {
+export function createMockCtx(cwd: string, hasUI = true, mode = "tui"): MockCtx {
   const notifications: { message: string; level: string }[] = [];
   const statuses: Record<string, string | undefined> = {};
   return {
     cwd,
     hasUI,
-    mode: "tui",
+    mode,
     ui: {
       notifications,
       statuses,
@@ -116,6 +116,12 @@ export function createMockPi() {
       const list = handlers.get(event) ?? [];
       list.push(handler);
       handlers.set(event, list);
+    },
+    /** Recorded browser/exec calls (ExtensionAPI.exec). */
+    execCalls: [] as MockCall[],
+    async exec(command: string, args: string[]): Promise<{ code: number; stdout: string; stderr: string }> {
+      pi.execCalls.push({ name: command, args });
+      return { code: 0, stdout: "", stderr: "" };
     },
   };
 

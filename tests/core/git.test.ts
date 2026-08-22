@@ -1,4 +1,5 @@
-import { promises as fs } from "node:fs";
+import { createHash } from "node:crypto";
+import { existsSync, promises as fs } from "node:fs";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import {
@@ -7,6 +8,7 @@ import {
   defaultBranch,
   excludeOkfLocally,
   findGitRoot,
+  hashWorktreeFiles,
   headSha,
   listFiles,
   remotes,
@@ -141,5 +143,56 @@ describe("excludeOkfLocally", () => {
     await fs.writeFile(excludePath, ".okf\n", "utf8");
     await excludeOkfLocally(dir);
     expect(await fs.readFile(excludePath, "utf8")).toBe(".okf\n");
+  });
+
+  it("resolves the real git dir in linked worktrees (.git is a file)", async () => {
+    const dir = await makeTempDir();
+    gitInit(dir);
+    await writeFixture(dir, "a.ts", "x");
+    commitAll(dir, "initial");
+    const wt = join(await makeTempDir(), "wt");
+    gitExec(dir, ["worktree", "add", wt, "-b", "wt-branch"]);
+    expect((await fs.lstat(join(wt, ".git"))).isFile()).toBe(true);
+
+    await excludeOkfLocally(wt);
+    // The exclusion lands in the shared git dir of the main worktree —
+    // writing under wt/.git (a file) would have failed with ENOTDIR.
+    expect(await fs.readFile(join(dir, ".git", "info", "exclude"), "utf8")).toContain(".okf/");
+    expect((await fs.lstat(join(wt, ".git"))).isFile()).toBe(true);
+  });
+
+  it("is a no-op outside a git repository", async () => {
+    const dir = await makeTempDir();
+    await excludeOkfLocally(dir);
+    expect(existsSync(join(dir, ".git"))).toBe(false);
+  });
+});
+
+describe("hashWorktreeFiles", () => {
+  it("sha1-hashes file content; null for missing paths and directories", async () => {
+    const dir = await makeTempDir();
+    gitInit(dir);
+    await writeFixture(dir, "src/index.ts", "export {};\n");
+    commitAll(dir, "initial");
+
+    const hashes = await hashWorktreeFiles(dir, ["src/index.ts", "gone.ts", "src"]);
+    const expected = createHash("sha1")
+      .update(await fs.readFile(join(dir, "src", "index.ts")))
+      .digest("hex");
+    expect(hashes["src/index.ts"]).toBe(expected);
+    expect(hashes["gone.ts"]).toBeNull();
+    expect(hashes["src"]).toBeNull();
+  });
+
+  it("anchors dirty-file content in the git snapshot", async () => {
+    const dir = await makeTempDir();
+    gitInit(dir);
+    await writeFixture(dir, "src/index.ts", "export {};\n");
+    commitAll(dir, "initial");
+    await writeFixture(dir, "dirty.ts", "v1");
+
+    const state = await snapshotGitState(dir);
+    expect(state?.changedFiles).toEqual(["dirty.ts"]);
+    expect(state?.changedHashes["dirty.ts"]).toBe(createHash("sha1").update("v1").digest("hex"));
   });
 });

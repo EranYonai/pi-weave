@@ -49,6 +49,14 @@ export interface GitState {
   branch: string;
   /** Tracked-or-untracked files differing from HEAD (porcelain paths). */
   changedFiles: string[];
+  /**
+   * sha1 of each changed path's worktree content at capture time; null for
+   * paths without file content (deletions, untracked directories). Anchors
+   * content, not just paths: re-editing an already-dirty file still moves
+   * the anchor. Indexes written before this field existed omit it — readers
+   * must tolerate its absence.
+   */
+  changedHashes: Record<string, string | null>;
   capturedAt: string;
 }
 
@@ -94,6 +102,13 @@ export interface RepoIndex {
   okfVersion: 1;
   scope: "repository";
   generator: string;
+  /**
+   * Provenance of the whole index (AGENTS.md rule 4). Repository indexes
+   * are machine-derived, so this is always "generated" when pi-weave writes
+   * them; the reader preserves it so consumers can tell generated knowledge
+   * apart from human-authored OKF content.
+   */
+  source: NoteSource;
   created: string;
   updated: string;
   identity: RepoIdentity;

@@ -10,6 +10,8 @@ import {
 } from "../core";
 import { registerNoteTool } from "./tools/noteTool";
 import { registerRepoTool } from "./tools/repoTool";
+import { openInBrowser } from "./viewer/browser";
+import { startViewer, type ViewerServer } from "./viewer/server";
 
 /**
  * pi-weave — an agent-native knowledge workspace (docs/design.md):
@@ -23,6 +25,16 @@ import { registerRepoTool } from "./tools/repoTool";
 export default function piWeave(pi: ExtensionAPI): void {
   registerNoteTool(pi);
   registerRepoTool(pi);
+
+  // Session-scoped viewer: lazy start on first /weave-view, never from the
+  // factory (extension rules); idempotent stop on session_shutdown.
+  let viewer: ViewerServer | null = null;
+
+  pi.on("session_shutdown", async () => {
+    const server = viewer;
+    viewer = null;
+    await server?.stop();
+  });
 
   pi.on("session_start", async (_event, ctx) => {
     const status = await getWorkspaceStatus(ctx.cwd);
@@ -46,6 +58,15 @@ export default function piWeave(pi: ExtensionAPI): void {
     handler: async (_args, ctx) => {
       const status = await getWorkspaceStatus(ctx.cwd);
       ctx.ui.notify(formatDashboard(status), "info");
+    },
+  });
+
+  pi.registerCommand("weave-view", {
+    description: "Open the local knowledge-graph viewer in your browser (vault + repository)",
+    handler: async (_args, ctx) => {
+      viewer ??= await startViewer({ cwd: ctx.cwd });
+      ctx.ui.notify(`pi-weave viewer: ${viewer.url} (reads from disk live; refresh the page any time)`, "info");
+      await openInBrowser(pi, ctx, viewer.url);
     },
   });
 

@@ -1,6 +1,7 @@
 import { execFile } from "node:child_process";
+import { createHash } from "node:crypto";
 import { promises as fs } from "node:fs";
-import { join } from "node:path";
+import { dirname, isAbsolute, join } from "node:path";
 import type { GitState } from "./types";
 
 /**
@@ -111,13 +112,29 @@ export async function defaultBranch(cwd: string, options: GitExecOptions = {}): 
 }
 
 /**
- * Add `.okf/` to the repo's local exclude file (.git/info/exclude) so the
- * derived index stays a local cache by default (design §15, Model A) without
- * touching tracked files. Idempotent; no-op when the git dir is missing.
+ * Resolve a path inside the repo's *real* git dir via `git rev-parse
+ * --git-path`. In linked worktrees and submodules `.git` is a file pointing
+ * at the real git dir, so naive `<root>/.git/...` joins fail with ENOTDIR.
+ * Returns null when no git metadata is available.
+ */
+async function resolveGitPath(repoRoot: string, relPath: string, timeoutMs = DEFAULT_TIMEOUT_MS): Promise<string | null> {
+  const out = await git(["rev-parse", "--git-path", relPath], repoRoot, timeoutMs);
+  const resolved = out?.trim();
+  if (!resolved || resolved.length === 0) return null;
+  // Normal repos print a root-relative path (".git/info/exclude"); linked
+  // worktrees and submodules print the real, absolute location.
+  return isAbsolute(resolved) ? resolved : join(repoRoot, resolved);
+}
+
+/**
+ * Add `.okf/` to the repo's local exclude file (info/exclude in the real
+ * git dir) so the derived index stays a local cache by default (design §15,
+ * Model A) without touching tracked files. Idempotent; no-op when the repo
+ * has no git metadata (not a repo, no git binary).
  */
 export async function excludeOkfLocally(repoRoot: string): Promise<void> {
-  const infoDir = join(repoRoot, ".git", "info");
-  const excludePath = join(infoDir, "exclude");
+  const excludePath = await resolveGitPath(repoRoot, "info/exclude");
+  if (!excludePath) return;
   let current = "";
   try {
     current = await fs.readFile(excludePath, "utf8");
@@ -129,19 +146,49 @@ export async function excludeOkfLocally(repoRoot: string): Promise<void> {
     .map((line) => line.trim())
     .some((line) => line === ".okf/" || line === ".okf");
   if (already) return;
-  await fs.mkdir(infoDir, { recursive: true });
+  await fs.mkdir(dirname(excludePath), { recursive: true });
   const prefix = current.length > 0 && !current.endsWith("\n") ? "\n" : "";
   await fs.writeFile(excludePath, `${current}${prefix}.okf/\n`, "utf8");
+}
+
+/**
+ * sha1 the worktree content of each repo-relative path. Paths without file
+ * content (deletions, untracked directories, unreadable entries) map to
+ * null — their porcelain membership still anchors them.
+ */
+export async function hashWorktreeFiles(
+  repoRoot: string,
+  paths: string[],
+): Promise<Record<string, string | null>> {
+  const entries = await Promise.all(
+    paths.map(async (path): Promise<[string, string | null]> => {
+      try {
+        const full = join(repoRoot, path);
+        if (!(await fs.stat(full)).isFile()) return [path, null];
+        return [path, createHash("sha1").update(await fs.readFile(full)).digest("hex")];
+      } catch {
+        return [path, null];
+      }
+    }),
+  );
+  return Object.fromEntries(entries);
 }
 
 /** Snapshot the current git state. Returns null when HEAD does not exist. */
 export async function snapshotGitState(cwd: string, options: GitExecOptions = {}): Promise<GitState | null> {
   const sha = await headSha(cwd, options);
   if (!sha) return null;
+  const [branch, changed, root] = await Promise.all([
+    currentBranch(cwd, options),
+    changedFiles(cwd, options),
+    findGitRoot(cwd, options),
+  ]);
   return {
     headSha: sha,
-    branch: (await currentBranch(cwd, options)) ?? "(detached)",
-    changedFiles: await changedFiles(cwd, options),
+    branch: branch ?? "(detached)",
+    changedFiles: changed,
+    // Hash against the repo root: `cwd` may be a subdirectory.
+    changedHashes: await hashWorktreeFiles(root ?? cwd, changed),
     capturedAt: new Date().toISOString(),
   };
 }

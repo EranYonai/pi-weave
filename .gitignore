@@ -6,3 +6,6 @@ dist/
 
 # pi-weave: local derived knowledge index (see docs/design.md §15)
 .okf/
+
+# local pi harness config (see AGENTS.md smoke instructions)
+.pi/
