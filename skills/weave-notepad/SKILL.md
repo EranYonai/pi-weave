@@ -1,6 +1,6 @@
 ---
 name: weave-notepad
-description: Take and retrieve durable notes in the pi-weave vault. Use when the user asks to remember something, when a decision or preference worth keeping surfaces, or when answering questions about past decisions, people, or projects.
+description: Take and retrieve durable notes in the pi-weave vault. Use when the user asks to remember something or to start/add to a note, or when answering questions about past decisions, people, or projects.
 ---
 
 # Weave Notepad
@@ -20,10 +20,10 @@ available), operate on the files directly:
 
 ## When to take a note
 
-- The user says "remember this", "note that", "jot this down".
-- A durable fact surfaces: an architecture decision, a person's role, a
-  project constraint, a stated preference.
-- You discover something non-obvious that took real effort to learn.
+Create a note **only when the user explicitly asks** for one to exist:
+"start a note on X", "add to the X note", "remember this", "jot that down".
+Never promote conversation into a note on your own initiative — capture is
+explicit by design.
 
 ## When NOT to take a note
 
@@ -37,11 +37,18 @@ available), operate on the files directly:
 1. **Search first** (`weave_note` action=search): if a note exists, `append`
    to it rather than creating a duplicate.
 2. Title: short noun phrase ("Auth boundary decision", not "Notes").
-3. Body: Markdown, front-loaded — the first line should answer "what is this".
-4. Tags: 1–4 lowercase tags; reuse existing tags when possible.
-5. Provenance: notes you write are `source: agent`. Never overwrite a
-   `source: human` note's meaning; append with a dated "Agent addendum"
-   section instead.
+3. **Scribble in, verbatim.** When the user is dictating, append their words
+   to the note as rough, verbatim scribbles — no silent rewording. Keep them
+   under a `## Raw notes` tail at the end of the note.
+4. **Finalize on request.** When the user says "finalize this" / "clean this
+   up", restructure the body *above* the raw tail: front-loaded summary,
+   sections, entities, links. Move nothing out of `## Raw notes` — it is
+   append-only and never rewritten.
+5. Tags: 1–4 lowercase tags; reuse existing tags when possible.
+6. Provenance: notes the user scribbled stay `source: human` (finalization is
+   editorial, not authorship). Notes you draft from scratch are `source:
+   agent`. Never overwrite a `source: human` note's meaning; append with a
+   dated "Agent addendum" section instead.
 
 ## Retrieving knowledge
 
