@@ -127,6 +127,25 @@ describe("deepScanRepository", () => {
       await fs.rm(root, { recursive: true, force: true });
     }
   });
+
+  it("forwards all tuning deps to the deep scan", async () => {
+    const root = await makeTempDir();
+    try {
+      gitInit(root);
+      await writeFixture(root, "a.ts", "export {};\n");
+      await commitAll(root);
+      const ctx = ctxWithModel(root, async () => fauxAssistantMessage("s"));
+      const outcome = await deepScanRepository(root, asExtensionCtx(ctx), {
+        at: () => new Date("2026-08-23T12:00:00Z"),
+        maxFiles: 1,
+        maxFileBytes: 100,
+        concurrency: 1,
+      });
+      expect(outcome.kind).toBe("ok");
+    } finally {
+      await fs.rm(root, { recursive: true, force: true });
+    }
+  });
 });
 
 describe("formatDeepScanResult", () => {

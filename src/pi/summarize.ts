@@ -121,8 +121,10 @@ export function formatDeepScanResult(result: DeepScanResult): string {
   if (result.pruned > 0) parts.push(`${result.pruned} pruned`);
   let text = `${parts.join(", ")} — ${result.considered} files considered`;
   if (result.failed.length > 0) {
-    const first = result.failed[0];
-    text += `; ${result.failed.length} failed, first: ${first?.path ?? "?"}: ${first?.error ?? "?"}`;
+    const [failed0] = result.failed;
+    if (failed0) {
+      text += `; ${result.failed.length} failed, first: ${failed0.path}: ${failed0.error}`;
+    }
   }
   return text;
 }

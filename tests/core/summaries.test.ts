@@ -84,6 +84,17 @@ describe("read/write summaries on disk", () => {
     expect(all.find((r) => r.target === "x.ts")).toBeUndefined();
   });
 
+  it("skips a sidecar whose read throws (e.g. a directory in its place)", async () => {
+    const dir = join(root, ".okf", "repository", "summaries");
+    await fs.mkdir(join(dir, "dir.summary.md"), { recursive: true }); // readFile on a dir throws EISDIR
+    try {
+      const all = await readSummaries(root);
+      expect(all.find((r) => r.target === "dir")).toBeUndefined();
+    } finally {
+      await fs.rm(join(dir, "dir.summary.md"), { recursive: true, force: true });
+    }
+  });
+
   it("readSummaries returns [] when the directory doesn't exist", async () => {
     const empty = await makeTempDir();
     try {
@@ -180,6 +191,27 @@ describe("runDeepScan", () => {
     calls.length = 0;
   });
 
+  it("records a file as failed when it cannot be read", async () => {
+    if (typeof process.getuid === "function" && process.getuid() === 0) {
+      return; // root ignores file permissions — nothing to assert
+    }
+    const repo = await makeTempDir();
+    gitInit(repo);
+    try {
+      await writeFixture(repo, "src/locked.ts", "export const locked = 1;\n");
+      await commitAll(repo);
+      await fs.chmod(join(repo, "src", "locked.ts"), 0o000);
+      try {
+        const result = await runDeepScan(repo, { summarize: async () => "s" });
+        expect(result!.failed).toEqual([{ path: "src/locked.ts", error: "unreadable" }]);
+      } finally {
+        await fs.chmod(join(repo, "src", "locked.ts"), 0o644);
+      }
+    } finally {
+      await fs.rm(repo, { recursive: true, force: true });
+    }
+  });
+
   it("collects per-file failures without aborting the whole scan", async () => {
     await writeFixture(root, "src/gamma.ts", "export const gamma = 3;\n");
     await commitAll(root);
@@ -191,6 +223,26 @@ describe("runDeepScan", () => {
     });
     expect(result!.failed).toEqual([{ path: "src/gamma.ts", error: "model exploded" }]);
     expect(result!.skippedFresh).toBeGreaterThanOrEqual(2); // others unchanged
+  });
+
+  it("pruneSummaries tolerates a sidecar that disappears mid-prune", async () => {
+    if (typeof process.getuid === "function" && process.getuid() === 0) {
+      return; // root ignores file permissions — nothing to assert
+    }
+    const repo = await makeTempDir();
+    try {
+      await writeSummary(repo, rec({ target: "src/gone.ts" }));
+      const dir = join(repo, ".okf", "repository", "summaries");
+      await fs.chmod(dir, 0o555); // read-only dir → unlink throws EPERM
+      try {
+        const removed = await pruneSummaries(repo, () => false);
+        expect(removed).toBe(0); // the unlink threw, so nothing counted
+      } finally {
+        await fs.chmod(dir, 0o755);
+      }
+    } finally {
+      await fs.rm(repo, { recursive: true, force: true });
+    }
   });
 
   it("prunes sidecars for files that left the repository", async () => {
