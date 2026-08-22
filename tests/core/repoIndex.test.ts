@@ -118,6 +118,25 @@ describe("buildRepoIndex (against a real git repo)", () => {
     expect(index?.created).toBe(NOW.toISOString());
   });
 
+  it("surfaces the derived .okf index as a module when it exists", async () => {
+    const dir = await makeRepo();
+    // .okf is gitignored/excluded, so it never appears in the git file list;
+    // buildRepoIndex should still walk it and add it as a folder.
+    await writeFixture(dir, ".gitignore", ".okf/");
+    await writeFixture(dir, ".okf/repository/git.json", "{}");
+    await writeFixture(dir, ".okf/repository/summaries/a.md", "# a");
+    const index = await buildRepoIndex(dir, { now: NOW });
+    const okf = index?.structure.modules.find((m) => m.path === ".okf");
+    expect(okf?.fileCount).toBe(2);
+    expect(index?.structure.modules.filter((m) => m.path === ".okf")).toHaveLength(1);
+  });
+
+  it("does not add an .okf module when the folder is absent", async () => {
+    const dir = await makeRepo();
+    const index = await buildRepoIndex(dir, { now: NOW });
+    expect(index?.structure.modules.find((m) => m.path === ".okf")).toBeUndefined();
+  });
+
   it("falls back to dir name for unreadable/invalid manifests", async () => {
     const dir = await makeTempDir();
     gitInit(dir);
