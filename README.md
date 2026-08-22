@@ -6,7 +6,7 @@
 
 **An agent-native knowledge workspace for your life and your code.**
 
-pi-weave is a [pi](https://github.com/earendil-works/pi-coding-agent)
+pi-weave is a [pi](https://github.com/earendil-works/pi)
 extension with two faces that are secretly one:
 
 1. **A smart notepad with AI skills.** A persistent vault of knowledge —
