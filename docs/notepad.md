@@ -2,7 +2,11 @@
 
 > Status: **product & design spec**. The skill skeleton exists at
 > [`skills/weave-notepad/SKILL.md`](../skills/weave-notepad/SKILL.md); the
-> experience described here is largely roadmap.
+> experience described here is largely roadmap. **Implemented so far:**
+> explicit capture, verbatim scribbles under a `## Raw notes` tail, and
+> on-request finalization that restructures the body above the tail while
+> preserving it verbatim (`weave_note` action=finalize, `finalizeNote` in
+> `src/core/vault.ts`). The graph/visualization layers remain roadmap.
 >
 > Related: [design.md](design.md) (overall architecture, provenance §13,
 > scopes §17), [weave-view.md](weave-view.md) (the viewer this spec drives),
@@ -1078,7 +1082,7 @@ Grounding the spec in what exists today:
 
 | Spec concept | Current primitive | Gap |
 | --- | --- | --- |
-| Capture (§4, §7) | `weave_note` add/append via the skill | Explicit by design (redesign 2026-08): capture only on request; finalization is editorial, raw tail preserved |
+| Capture (§4, §7) | `weave_note` add/append via the skill | Explicit by design (redesign 2026-08): capture only on request; finalization is editorial, raw tail preserved. **Implemented:** `finalizeNote` in `src/core/vault.ts` + `weave_note` action=finalize restructure the body above the `## Raw notes` tail and preserve it verbatim. |
 | Retrieval (§17, §18) | `weave_note` search/get with snippets; exact + body search | Semantic/graph/temporal/provenance retrieval variants are future work |
 | Repository scope (§11, §12) | `weave_repo` status/scan/overview; auto-detect on session start | Repo *entity* references inside notes (clickable) need the viewer + richer index levels (design §9) |
 | Visualization (§9, §10, §20) | none | [weave-view.md](weave-view.md) is the planned layer |

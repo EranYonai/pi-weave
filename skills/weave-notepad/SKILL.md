@@ -17,6 +17,9 @@ available), operate on the files directly:
 - **Notes** live at `~/.okf/notes/<slug>.md` (vault root overridable via `PI_WEAVE_VAULT`).
 - Each note has YAML front matter: `title`, `created`, `updated` (ISO-8601),
   `tags: [..]`, and `source: human | agent | generated`.
+- `weave_note` actions: `list`, `get`, `add`, `append`, `finalize`, `search`.
+  `finalize` restructures the body *above* the `## Raw notes` tail and preserves
+  the tail verbatim.
 
 ## When to take a note
 
@@ -42,13 +45,15 @@ explicit by design.
    under a `## Raw notes` tail at the end of the note.
 4. **Finalize on request.** When the user says "finalize this" / "clean this
    up", restructure the body *above* the raw tail: front-loaded summary,
-   sections, entities, links. Move nothing out of `## Raw notes` — it is
-   append-only and never rewritten.
+   sections, entities, links. Use `weave_note` action=finalize (or edit the
+   file directly in other harnesses). Move nothing out of `## Raw notes` — it
+   is append-only and never rewritten.
 5. Tags: 1–4 lowercase tags; reuse existing tags when possible.
 6. Provenance: notes the user scribbled stay `source: human` (finalization is
-   editorial, not authorship). Notes you draft from scratch are `source:
-   agent`. Never overwrite a `source: human` note's meaning; append with a
-   dated "Agent addendum" section instead.
+   editorial, not authorship) — pass `source: "human"` to `add` for
+   user-scribbled notes. Notes you draft from scratch are `source: agent`
+   (the default). Never overwrite a `source: human` note's meaning; append
+   with a dated "Agent addendum" section instead.
 
 ## Retrieving knowledge
 

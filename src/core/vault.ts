@@ -124,6 +124,51 @@ export async function appendToNote(
   return { slug, ...meta, body };
 }
 
+/** The append-only tail where verbatim user scribbles live (docs/notepad.md §4). */
+export const RAW_NOTES_HEADING = "## Raw notes";
+
+/**
+ * Extract the `## Raw notes` tail (heading + everything after) verbatim, or
+ * "" when the note has no raw tail. Used by finalization so the literal
+ * record of the user's words is never rewritten.
+ */
+export function extractRawTail(body: string): string {
+  const idx = body.indexOf(RAW_NOTES_HEADING);
+  if (idx === -1) return "";
+  return body.slice(idx).trimEnd();
+}
+
+export interface FinalizeNoteInput {
+  /**
+   * The restructured body ABOVE the raw tail (front-loaded summary, sections,
+   * entities, links). The `## Raw notes` tail is preserved verbatim beneath it.
+   */
+  body: string;
+  /** Injectable clock for tests. */
+  now?: Date;
+}
+
+/**
+ * Finalize a note: replace the body above the `## Raw notes` tail with a
+ * restructured version, preserving the raw tail verbatim (append-only).
+ * Returns null when the note is missing or the slug is unsafe.
+ */
+export async function finalizeNote(
+  root: string,
+  slug: string,
+  input: FinalizeNoteInput,
+): Promise<Note | null> {
+  const path = resolveNotePath(root, slug);
+  if (!path) return null;
+  const note = await getNote(root, slug);
+  if (!note) return null;
+  const rawTail = extractRawTail(note.body);
+  const body = input.body.trim() + (rawTail ? `\n\n${rawTail}` : "");
+  const meta: NoteMeta = { ...note, updated: (input.now ?? new Date()).toISOString() };
+  await fs.writeFile(path, serializeNote(meta, body), "utf8");
+  return { slug, ...meta, body };
+}
+
 async function listNoteFiles(root: string): Promise<string[]> {
   const dir = join(root, NOTES_DIR);
   let entries: string[];

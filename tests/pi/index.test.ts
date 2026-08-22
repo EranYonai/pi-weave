@@ -404,6 +404,43 @@ describe("weave_note tool", () => {
     });
   });
 
+  it("finalize restructures the body above the raw tail and preserves it", async () => {
+    const mock = buildExtension();
+    const ctx = createMockCtx(await makeTempDir());
+    await withVaultEnv(await makeTempDir(), async () => {
+      await mock.runTool("weave_note", { action: "add", title: "Auth migration", text: "## Raw notes\n\n\"We should move to OIDC.\"", source: "human" }, ctx);
+      const res = await mock.runTool("weave_note", { action: "finalize", slug: "auth-migration", text: "**Decision:** move toward OIDC." }, ctx);
+      expect(res.content[0]?.text).toContain("Finalized auth-migration");
+      expect(res.content[0]?.text).toContain("Raw notes tail preserved");
+      const got = await mock.runTool("weave_note", { action: "get", slug: "auth-migration" }, ctx);
+      expect(got.content[0]?.text).toContain("**Decision:** move toward OIDC.");
+      expect(got.content[0]?.text).toContain("## Raw notes");
+      expect(got.content[0]?.text).toContain("\"We should move to OIDC.\"");
+    });
+  });
+
+  it("finalize reports unknown and unsafe slugs", async () => {
+    const mock = buildExtension();
+    const ctx = createMockCtx(await makeTempDir());
+    await withVaultEnv(await makeTempDir(), async () => {
+      const missing = await mock.runTool("weave_note", { action: "finalize", slug: "ghost", text: "x" }, ctx);
+      expect(missing.content[0]?.text).toContain("No note found");
+      const bad = await mock.runTool("weave_note", { action: "finalize", slug: "../escape", text: "x" }, ctx);
+      expect(bad.content[0]?.text).toContain("Invalid note slug");
+    });
+  });
+
+  it("add accepts an explicit source for user-scribbled notes", async () => {
+    const mock = buildExtension();
+    const ctx = createMockCtx(await makeTempDir());
+    await withVaultEnv(await makeTempDir(), async () => {
+      const res = await mock.runTool("weave_note", { action: "add", title: "Scribble", text: "user's words", source: "human" }, ctx);
+      expect(res.details).toMatchObject({ action: "add", note: { source: "human" } });
+      const got = await mock.runTool("weave_note", { action: "get", slug: "scribble" }, ctx);
+      expect(got.content[0]?.text).toContain("source: human");
+    });
+  });
+
   it("throws on missing required params", async () => {
     const mock = buildExtension();
     const ctx = createMockCtx(await makeTempDir());
@@ -413,6 +450,8 @@ describe("weave_note tool", () => {
       await expect(mock.runTool("weave_note", { action: "get" }, ctx)).rejects.toThrow(/slug/);
       await expect(mock.runTool("weave_note", { action: "append", text: "x" }, ctx)).rejects.toThrow(/slug/);
       await expect(mock.runTool("weave_note", { action: "append", slug: "s" }, ctx)).rejects.toThrow(/text/);
+      await expect(mock.runTool("weave_note", { action: "finalize", text: "x" }, ctx)).rejects.toThrow(/slug/);
+      await expect(mock.runTool("weave_note", { action: "finalize", slug: "s" }, ctx)).rejects.toThrow(/text/);
       await expect(mock.runTool("weave_note", { action: "search" }, ctx)).rejects.toThrow(/query/);
     });
   });
