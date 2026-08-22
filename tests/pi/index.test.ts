@@ -1,6 +1,7 @@
 import { promises as fs } from "node:fs";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
+import { fauxAssistantMessage } from "@earendil-works/pi-ai";
 import piWeave from "../../src/pi/index";
 import { commitAll, createMockCtx, createMockPi, gitExec, gitInit, makeTempDir, withVaultEnv, writeFixture } from "../helpers";
 
@@ -141,6 +142,65 @@ describe("/weave-scan command", () => {
       expect(ctx.ui.statuses.weave).toContain(":ok");
       expect(JSON.parse(await fs.readFile(join(repo, ".okf", "okf.json"), "utf8")).scope).toBe("repository");
       expect(await fs.readFile(join(repo, ".git", "info", "exclude"), "utf8")).toContain(".okf/");
+    });
+  });
+});
+
+describe("/weave-scan deep", () => {
+  it("warns and stays light-only when no session model is active", async () => {
+    const mock = buildExtension();
+    const repo = await makeRepo();
+    await withVaultEnv(await makeTempDir(), async () => {
+      const ctx = createMockCtx(repo); // no model configured
+      await mock.commands.get("weave-scan")!.handler("deep", ctx);
+      expect(ctx.ui.notifications.some((n) => n.level === "warning" && n.message.includes("deep scan needs an active session model"))).toBe(true);
+      expect(ctx.ui.statuses.weave).toContain(":ok");
+      // light index is still written
+      expect(JSON.parse(await fs.readFile(join(repo, ".okf", "okf.json"), "utf8")).scope).toBe("repository");
+    });
+  });
+
+  it("runs a deep scan with the session model and writes summary sidecars", async () => {
+    const mock = buildExtension();
+    const repo = await makeRepo();
+    await withVaultEnv(await makeTempDir(), async () => {
+      const ctx = createMockCtx(repo, true, {
+        model: { provider: "testprovider", id: "test-model-1" },
+        complete: async () => fauxAssistantMessage("Summarizes the entry point."),
+      });
+      await mock.commands.get("weave-scan")!.handler("deep", ctx);
+      expect(ctx.ui.notifications.some((n) => n.level === "info" && n.message.includes("deep scan complete"))).toBe(true);
+      const summariesDir = join(repo, ".okf", "repository", "summaries");
+      const files = await fs.readdir(summariesDir);
+      expect(files.some((f) => f.endsWith(".summary.md"))).toBe(true);
+      expect(ctx.ui.statuses.weave).toContain(":ok");
+    });
+  });
+
+  it("treats any non-deep arg as light-only (exact-match contract)", async () => {
+    const mock = buildExtension();
+    const repo = await makeRepo();
+    await withVaultEnv(await makeTempDir(), async () => {
+      const ctx = createMockCtx(repo, true, {
+        model: { provider: "p", id: "m" },
+        complete: async () => { throw new Error("should not be called"); },
+      });
+      await mock.commands.get("weave-scan")!.handler("nonsense", ctx);
+      expect(ctx.ui.notifications.some((n) => n.message.includes("deep scan"))).toBe(false);
+      expect(ctx.ui.statuses.weave).toContain(":ok");
+    });
+  });
+
+  it("matches 'DEEP' case-insensitively", async () => {
+    const mock = buildExtension();
+    const repo = await makeRepo();
+    await withVaultEnv(await makeTempDir(), async () => {
+      const ctx = createMockCtx(repo, true, {
+        model: { provider: "p", id: "m" },
+        complete: async () => fauxAssistantMessage("s"),
+      });
+      await mock.commands.get("weave-scan")!.handler("DEEP", ctx);
+      expect(ctx.ui.notifications.some((n) => n.message.includes("deep scan complete"))).toBe(true);
     });
   });
 });
