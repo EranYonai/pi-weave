@@ -23,7 +23,7 @@ describe("extension registration", () => {
   it("registers both tools and both commands", () => {
     const mock = buildExtension();
     expect([...mock.tools.keys()].sort()).toEqual(["weave_note", "weave_repo"]);
-    expect([...mock.commands.keys()].sort()).toEqual(["weave", "weave-scan"]);
+    expect([...mock.commands.keys()].sort()).toEqual(["weave", "weave-scan", "weave-view"]);
     for (const name of ["weave_note", "weave_repo"]) {
       const tool = mock.tools.get(name)!;
       expect(tool.description.length).toBeGreaterThan(20);
@@ -343,5 +343,21 @@ describe("weave_repo tool", () => {
     const res = await mock.runTool("weave_repo", { action: "status" }, ctx);
     expect(res.content[0]?.text).toContain("Index state: stale");
     expect(res.content[0]?.text).toContain("uncommitted");
+  });
+});
+
+describe("weave_note slug hardening", () => {
+  it("append refuses traversal slugs with a friendly message", async () => {
+    const mock = buildExtension();
+    const ctx = createMockCtx(await makeTempDir());
+    await withVaultEnv(await makeTempDir(), async () => {
+      const res = await mock.runTool(
+        "weave_note",
+        { action: "append", slug: "../escape", text: "nope" },
+        ctx,
+      );
+      expect(res.content[0]?.text).toContain("Invalid note slug");
+      expect(res.details).toMatchObject({ found: false });
+    });
   });
 });

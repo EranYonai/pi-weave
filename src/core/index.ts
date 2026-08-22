@@ -12,3 +12,6 @@ export * from "./git";
 export * from "./vault";
 export * from "./repoIndex";
 export * from "./workspace";
+export * from "./graph/model";
+export * from "./graph/wikilinks";
+export { buildGraph, dataTimestamp, DEFAULT_MAX_NOTES, type BuildGraphInput } from "./graph/build";
