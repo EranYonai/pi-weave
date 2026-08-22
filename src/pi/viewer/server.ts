@@ -10,6 +10,8 @@ import { execFile } from "node:child_process";
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from "node:http";
 import { promisify } from "node:util";
 import { platform } from "node:os";
+import { join, resolve, sep } from "node:path";
+import { readFile } from "node:fs/promises";
 
 const execFileAsync = promisify(execFile);
 import {
@@ -120,6 +122,26 @@ export async function readNoteForView(
 }
 
 /** Assemble the fresh graph from disk — called on EVERY /graph.json request (no caching, docs/weave-view.md §2). */
+/**
+ * Read one derived index file under <cwd>/.okf for the viewer (traversal-safe).
+ * The `rel` path is anchored to <cwd>/.okf, so summary/identity/structure bodies
+ * can be shown in the Focus panel instead of "(no body)".
+ */
+export async function readOkfFileForView(
+  cwd: string,
+  rel: string,
+): Promise<{ path: string; body: string } | null> {
+  const okfRoot = join(cwd, ".okf");
+  const resolved = resolve(okfRoot, rel);
+  if (resolved !== okfRoot && !resolved.startsWith(okfRoot + sep)) return null; // traversal-safe
+  try {
+    const body = await readFile(resolved, "utf8");
+    return { path: rel, body };
+  } catch {
+    return null;
+  }
+}
+
 export async function buildCurrentGraph(cwd: string, vaultRoot: string = resolveVaultRoot()): Promise<GraphModel> {
   const noteSummaries = (await listNotes(vaultRoot)).slice(0, DEFAULT_MAX_NOTES);
   const loaded = await Promise.all(noteSummaries.map((s) => getNote(vaultRoot, s.slug)));
@@ -146,6 +168,7 @@ function route(
   page: string,
   graph: () => Promise<GraphModel>,
   noteBySlug: (slug: string) => Promise<Record<string, unknown> | null>,
+  okfBody: (rel: string) => Promise<{ path: string; body: string } | null>,
   openNote: (slug: string) => Promise<boolean>,
   res: ServerResponse,
   req: IncomingMessage,
@@ -202,6 +225,23 @@ function route(
       });
     return;
   }
+  if (req.method === "GET" && path.startsWith("/okffile/")) {
+    okfBody(path.slice("/okffile/".length))
+      .then((file) => {
+        if (file === null) {
+          res.writeHead(404, { "content-type": "text/plain; charset=utf-8" });
+          res.end("no such okf file\n");
+          return;
+        }
+        res.writeHead(200, { "content-type": "application/json; charset=utf-8", "content-security-policy": CSP });
+        res.end(JSON.stringify(file));
+      })
+      .catch(() => {
+        res.writeHead(500, { "content-type": "text/plain; charset=utf-8" });
+        res.end("pi-weave viewer: failed to read okf file\n");
+      });
+    return;
+  }
   res.writeHead(404, { "content-type": "text/plain; charset=utf-8" });
   res.end("not found\n");
 }
@@ -216,6 +256,7 @@ export async function startViewer(options: StartViewerOptions): Promise<ViewerSe
       page,
       () => buildCurrentGraph(cwd, vaultRoot),
       (slug) => readNoteForView(vaultRoot, slug),
+      (rel) => readOkfFileForView(cwd, rel),
       (slug) => openNoteInEditor(vaultRoot, slug, openCommand),
       res,
       req,

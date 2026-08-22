@@ -944,6 +944,18 @@ const PAGE = `<!DOCTYPE html>
       }).catch(function () {
         container.innerHTML = "<p class='muted'>(could not load note body — it may have moved)</p>";
       });
+    } else if (node.kind === "file" && node.detail.path) {
+      // A derived index file (.okf/…) — fetch its real body from the viewer server.
+      container.innerHTML = "<p class='muted'>loading file…</p>";
+      fetch("okffile/" + encodeURIComponent(node.detail.path)).then(function (r) {
+        if (!r.ok) throw new Error(String(r.status));
+        return r.json();
+      }).then(function (fileData) {
+        container.innerHTML = renderMd(fileData.body || "(empty file)");
+        wireWikilinks(container);
+      }).catch(function () {
+        container.innerHTML = "<p class='muted'>(could not load file body)</p>";
+      });
     } else {
       var body = node.detail.summary ? renderMd(node.detail.summary)
         : node.detail.preview ? renderMd(node.detail.preview) : "<p class='muted'>(no body)</p>";
