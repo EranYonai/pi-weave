@@ -7,6 +7,7 @@ export * from "./types";
 export * from "./slug";
 export * from "./frontmatter";
 export * from "./languages";
+export * from "./mutex";
 export * from "./paths";
 export * from "./git";
 export * from "./vault";

@@ -1,5 +1,5 @@
 import { StringEnum } from "@earendil-works/pi-ai";
-import { withFileMutationQueue, type ExtensionAPI } from "@earendil-works/pi-coding-agent";
+import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { join } from "node:path";
 import { Type } from "typebox";
 import {
@@ -10,6 +10,7 @@ import {
   listNotes,
   NOTES_DIR,
   resolveNotePath,
+  withMutationQueue,
   resolveVaultRoot,
   searchNotes,
 } from "../../core";
@@ -79,7 +80,7 @@ export function registerNoteTool(pi: ExtensionAPI): void {
           const text = params.text;
           // Serialized per vault: parallel adds of the same title must not
           // race the unique-slug check and overwrite each other.
-          const note = await withFileMutationQueue(join(vault, NOTES_DIR), () =>
+          const note = await withMutationQueue(join(vault, NOTES_DIR), () =>
             addNote(vault, {
               title,
               body: text,
@@ -113,7 +114,7 @@ export function registerNoteTool(pi: ExtensionAPI): void {
           // Serialized read-modify-write: parallel weave_note appends (and
           // pi's own file tools) targeting the same note would otherwise
           // lose each other's additions.
-          const note = await withFileMutationQueue(path, () => appendToNote(vault, slug, text));
+          const note = await withMutationQueue(path, () => appendToNote(vault, slug, text));
           if (!note) {
             return { content: [{ type: "text", text: `No note found with slug '${params.slug}'.` }], details: { action: "append", found: false } };
           }
