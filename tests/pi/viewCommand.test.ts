@@ -115,7 +115,7 @@ describe("/weave-view command", () => {
 
       const ok = await fetch(`${url}/okffile/${encodeURIComponent("repository/summaries/a.md")}`);
       expect(ok.status).toBe(200);
-      expect((await ok.json()).body).toContain("hello");
+      expect(((await ok.json()) as { body: string }).body).toContain("hello");
 
       const missing = await fetch(`${url}/okffile/${encodeURIComponent("nope.md")}`);
       expect(missing.status).toBe(404);
