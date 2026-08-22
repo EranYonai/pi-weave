@@ -378,9 +378,10 @@ const PAGE = `<!DOCTYPE html>
         bodyEl.innerHTML = "<p style='color:var(--muted)'>(could not load note body — it may have moved)</p>";
       });
     } else {
-      var skip = { tags: 1, preview: 1 };
+      var skip = { tags: 1, preview: 1, summary: 1 };
       setMeta(Object.keys(node.detail).filter(function (k) { return !skip[k]; }).map(function (k) { return [k, node.detail[k]]; }));
-      bodyEl.innerHTML = node.detail.preview ? renderMd(node.detail.preview) : "";
+      bodyEl.innerHTML = node.detail.summary ? renderMd(node.detail.summary)
+        : node.detail.preview ? renderMd(node.detail.preview) : "";
     }
   }
 

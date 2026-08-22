@@ -10,6 +10,7 @@ import {
 } from "../core";
 import { registerNoteTool } from "./tools/noteTool";
 import { registerRepoTool } from "./tools/repoTool";
+import { deepScanRepository, formatDeepScanResult } from "./summarize";
 import { openInBrowser } from "./viewer/browser";
 import { startViewer, type ViewerServer } from "./viewer/server";
 
@@ -71,8 +72,8 @@ export default function piWeave(pi: ExtensionAPI): void {
   });
 
   pi.registerCommand("weave-scan", {
-    description: "Build or refresh the repository knowledge index (.okf)",
-    handler: async (_args, ctx) => {
+    description: "Build or refresh the repository knowledge index (.okf); 'deep' also summarizes files with the session model",
+    handler: async (args, ctx) => {
       const root = await findGitRoot(ctx.cwd);
       if (!root) {
         ctx.ui.notify("pi-weave: not inside a git repository.", "warning");
@@ -85,6 +86,19 @@ export default function piWeave(pi: ExtensionAPI): void {
       }
       await writeRepoIndex(root, index);
       ctx.ui.notify(`pi-weave: index refreshed\n${summarizeIndex(index).join("\n")}`, "info");
+
+      if (args.trim().toLowerCase() === "deep") {
+        ctx.ui.setStatus("weave", "🧵 deep scan: summarizing files with the session model…");
+        const outcome = await deepScanRepository(root, ctx);
+        if (outcome.kind === "no-model") {
+          ctx.ui.notify(
+            "pi-weave: deep scan needs an active session model — none configured. Light index only.",
+            "warning",
+          );
+        } else if (outcome.kind === "ok") {
+          ctx.ui.notify(`pi-weave: deep scan complete — ${formatDeepScanResult(outcome.result)}`, "info");
+        }
+      }
 
       const status = await getWorkspaceStatus(ctx.cwd);
       ctx.ui.setStatus("weave", formatStatusLine(status));

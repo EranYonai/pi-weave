@@ -12,6 +12,7 @@ export * from "./paths";
 export * from "./git";
 export * from "./vault";
 export * from "./repoIndex";
+export * from "./summaries";
 export * from "./workspace";
 export * from "./graph/model";
 export * from "./graph/wikilinks";

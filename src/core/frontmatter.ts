@@ -14,9 +14,15 @@ export interface ParsedNoteFile {
   body: string;
 }
 
+/** Generic, tolerant front-matter parse (any fields) — for non-note OKF files. */
+export interface ParsedFrontMatter {
+  fields: Map<string, string>;
+  body: string;
+}
+
 const FRONTMATTER_RE = /^---\n([\s\S]*?)\n---\n?/;
 
-function quote(value: string): string {
+export function quoteField(value: string): string {
   // Only quote when the value could confuse our subset parser.
   if (/[:#[\]]|^\s|\s$|^$/.test(value)) {
     return `"${value.replace(/\\/g, "\\\\").replace(/"/g, '\\"')}"`;
@@ -24,7 +30,7 @@ function quote(value: string): string {
   return value;
 }
 
-function unquote(value: string): string {
+export function unquoteField(value: string): string {
   const trimmed = value.trim();
   if (trimmed.length >= 2 && trimmed.startsWith('"') && trimmed.endsWith('"')) {
     return trimmed.slice(1, -1).replace(/\\"/g, '"').replace(/\\\\/g, "\\");
@@ -35,13 +41,13 @@ function unquote(value: string): string {
 function parseTags(value: string): string[] {
   const trimmed = value.trim();
   if (!trimmed.startsWith("[") || !trimmed.endsWith("]")) {
-    return trimmed.length > 0 ? [unquote(trimmed)] : [];
+    return trimmed.length > 0 ? [unquoteField(trimmed)] : [];
   }
   const inner = trimmed.slice(1, -1).trim();
   if (inner.length === 0) return [];
   return inner
     .split(",")
-    .map((t) => unquote(t))
+    .map((t) => unquoteField(t))
     .filter((t) => t.length > 0);
 }
 
@@ -56,10 +62,10 @@ function parseSource(value: string): NoteSource {
 export function serializeNote(meta: NoteMeta, body: string): string {
   const lines = [
     "---",
-    `title: ${quote(meta.title)}`,
+    `title: ${quoteField(meta.title)}`,
     `created: ${meta.created}`,
     `updated: ${meta.updated}`,
-    `tags: [${meta.tags.map(quote).join(", ")}]`,
+    `tags: [${meta.tags.map(quoteField).join(", ")}]`,
     `source: ${meta.source}`,
     "---",
     "",
@@ -70,38 +76,44 @@ export function serializeNote(meta: NoteMeta, body: string): string {
 }
 
 /**
- * Parse a note file. Throws on missing/invalid front matter so callers can
- * treat the file as malformed rather than guessing.
+ * Parse any OKF front-matter block generically. Returns null when there is
+ * no leading `---` block; field parsing is best-effort (junk lines skipped).
+ * The body is stripped of the serializer's blank separator and trailing
+ * whitespace so round-trips are stable.
  */
-export function parseNoteFile(text: string): ParsedNoteFile {
+export function parseFrontMatter(text: string): ParsedFrontMatter | null {
   const match = FRONTMATTER_RE.exec(text);
-  if (!match || match[1] === undefined) {
-    throw new Error("Missing front matter block (expected leading --- block)");
-  }
-  const raw = match[1];
-  // Strip the serializer's blank separator line and any trailing whitespace,
-  // so a round-tripped body equals the original input.
+  if (!match || match[1] === undefined) return null;
   const body = text.slice(match[0].length).replace(/^\n/, "").replace(/\s+$/, "");
-
   const fields = new Map<string, string>();
-  for (const line of raw.split("\n")) {
+  for (const line of match[1].split("\n")) {
     if (line.trim().length === 0) continue;
     const idx = line.indexOf(":");
     if (idx <= 0) continue; // tolerate blank/junk lines, front matter is best-effort
     fields.set(line.slice(0, idx).trim(), line.slice(idx + 1).trim());
   }
+  return { fields, body };
+}
 
-  const title = fields.get("title");
+/**
+ * Parse a note file. Throws on missing/invalid front matter so callers can
+ * treat the file as malformed rather than guessing.
+ */
+export function parseNoteFile(text: string): ParsedNoteFile {
+  const parsed = parseFrontMatter(text);
+  if (!parsed) {
+    throw new Error("Missing front matter block (expected leading --- block)");
+  }
+  const title = parsed.fields.get("title");
   if (!title) {
     throw new Error("Front matter is missing required field: title");
   }
-
   const meta: NoteMeta = {
-    title: unquote(title),
-    created: fields.get("created") ?? "",
-    updated: fields.get("updated") ?? "",
-    tags: parseTags(fields.get("tags") ?? "[]"),
-    source: parseSource(fields.get("source") ?? "human"),
+    title: unquoteField(title),
+    created: parsed.fields.get("created") ?? "",
+    updated: parsed.fields.get("updated") ?? "",
+    tags: parseTags(parsed.fields.get("tags") ?? "[]"),
+    source: parseSource(parsed.fields.get("source") ?? "human"),
   };
-  return { meta, body };
+  return { meta, body: parsed.body };
 }

@@ -16,6 +16,7 @@ import {
   listNotes,
   noteCount,
   readRepoIndex,
+  readSummaryMap,
   resolveNotePath,
   resolveVaultRoot,
   type BuildGraphInput,
@@ -69,8 +70,8 @@ export async function readNoteForView(
 
 /** Assemble the fresh graph from disk — called on EVERY /graph.json request (no caching, docs/weave-view.md §2). */
 export async function buildCurrentGraph(cwd: string, vaultRoot: string = resolveVaultRoot()): Promise<GraphModel> {
-  const summaries = (await listNotes(vaultRoot)).slice(0, DEFAULT_MAX_NOTES);
-  const loaded = await Promise.all(summaries.map((s) => getNote(vaultRoot, s.slug)));
+  const noteSummaries = (await listNotes(vaultRoot)).slice(0, DEFAULT_MAX_NOTES);
+  const loaded = await Promise.all(noteSummaries.map((s) => getNote(vaultRoot, s.slug)));
   const notes = loaded.filter((n): n is Note => n !== null);
 
   const input: BuildGraphInput = {
@@ -84,6 +85,7 @@ export async function buildCurrentGraph(cwd: string, vaultRoot: string = resolve
     const index = await readRepoIndex(repoRoot);
     if (index !== null) {
       input.repository = { index, staleness: await assessStaleness(repoRoot) };
+      input.summaries = await readSummaryMap(repoRoot); // deep-scan sidecars, read live
     }
   }
   return buildGraph(input);
