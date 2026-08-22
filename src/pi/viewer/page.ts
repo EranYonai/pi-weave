@@ -5,6 +5,9 @@
  * v2 pillars: provenance is the hero (ring style + glyph + filter, never
  * color alone); three surfaces over one model (Graph / List / Detail);
  * overview-first status strip; explicit focus mode (1-hop, visibility-only).
+ * The List surface is an expandable index tree over the `contains`
+ * hierarchy (repository → modules → files), so you can drill into the index
+ * and navigate to any file.
  *
  * NOTE for contributors: the rendered page must contain NO backtick and NO
  * `${` — the page is a TS template literal, and a CI guard asserts the
@@ -103,6 +106,9 @@ const PAGE = `<!DOCTYPE html>
   .row.selected { background: var(--raised); border-color: var(--accent); }
   .row-label { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .row-meta { color: var(--faint); font-size: 11px; white-space: nowrap; }
+  .chev { display: inline-block; width: 14px; flex: none; text-align: center; color: var(--muted);
+          font-size: 10px; user-select: none; }
+  .chev.empty { visibility: hidden; }
   .row-kind { font-size: 10px; text-transform: uppercase; letter-spacing: .04em; color: var(--muted);
               border: 1px solid var(--line); border-radius: 4px; padding: 0 4px; }
   #show-more { width: 100%; margin-top: 8px; }
@@ -260,6 +266,7 @@ const PAGE = `<!DOCTYPE html>
       <tr><td>1 / 2 / 3</td><td>Graph / List / Health</td></tr>
       <tr><td>f</td><td>Focus selected node</td></tr>
       <tr><td>g</td><td>Exit focus</td></tr>
+      <tr><td>▸ / ▾</td><td>Expand / collapse in List</td></tr>
       <tr><td>/</td><td>Focus search</td></tr>
       <tr><td>?</td><td>This help</td></tr>
       <tr><td>+ / −</td><td>Zoom in / out</td></tr>
@@ -335,6 +342,97 @@ const PAGE = `<!DOCTYPE html>
     if (mo < 12) return mo + "mo ago";
     return Math.floor(mo / 12) + "y ago";
   }
+  function linksOf(id, edges) {
+    var d = 0;
+    edges.forEach(function (e) { if (e.source === id || e.target === id) d++; });
+    return d;
+  }
+  // Build the List surface as an expandable index tree over the contains
+  // hierarchy. Entry points (files) are nested under the module whose path is
+  // their directory prefix, so the repository reads as a real file tree.
+  // Returns rows [{id, depth, hasKids, expanded}] in display order.
+  function listTree(model, state) {
+    var byId = {};
+    model.nodes.forEach(function (n) { byId[n.id] = n; });
+    var contains = {};
+    model.edges.forEach(function (e) {
+      if (e.kind !== "contains") return;
+      (contains[e.source] = contains[e.source] || []).push(e.target);
+    });
+    var incoming = {};
+    model.edges.forEach(function (e) {
+      if (e.kind === "contains") incoming[e.target] = 1;
+    });
+    function moduleFor(entryId) {
+      var entry = byId[entryId];
+      if (!entry || entry.kind !== "entryPoint" || !entry.detail.path) return null;
+      var p = entry.detail.path, best = null, bestLen = 0;
+      (contains["repository"] || []).forEach(function (cid) {
+        var c = byId[cid];
+        if (c && c.kind === "module" && c.detail.path) {
+          var mp = c.detail.path;
+          if (p.indexOf(mp + "/") === 0 && mp.length > bestLen) { best = cid; bestLen = mp.length; }
+        }
+      });
+      return best;
+    }
+    var moduleEntries = {};
+    model.nodes.forEach(function (n) {
+      if (n.kind !== "entryPoint") return;
+      var m = moduleFor(n.id);
+      if (m) (moduleEntries[m] = moduleEntries[m] || []).push(n.id);
+    });
+    function children(id) {
+      var kids = (contains[id] || []).filter(function (kid) {
+        return !(byId[kid] && byId[kid].kind === "entryPoint" && moduleFor(kid));
+      });
+      return kids.concat(moduleEntries[id] || []);
+    }
+    var roots = model.nodes.filter(function (n) { return !incoming[n.id]; }).map(function (n) { return n.id; });
+    var filtering = state.kindFilter || state.provFilter || state.recentDays || state.query;
+    var rows = [];
+    function sortKids(kids) {
+      var arr = kids.map(function (k) {
+        var n = byId[k];
+        return { id: k, label: n.label, kind: n.kind, provenance: n.provenance || "",
+          updated: n.detail.updated || "", links: linksOf(k, model.edges) };
+      });
+      return sortRows(arr, state.listSort).map(function (r) { return r.id; });
+    }
+    function matches(node) {
+      if (state.recentDays) {
+        var u = node.detail.updated;
+        if (!u || new Date(u).getTime() < Date.now() - state.recentDays * 86400000) return false;
+      }
+      if (state.query && node.label.toLowerCase().indexOf(state.query) < 0) return false;
+      return applyFilter([node], state.kindFilter || null, state.provFilter || null).length > 0;
+    }
+    // Pass 1: mark which nodes are visible (self-match or a visible descendant).
+    var visibleSet = {};
+    function mark(id) {
+      var node = byId[id];
+      if (!node) return false;
+      var kids = sortKids(children(id));
+      var any = false;
+      kids.forEach(function (k) { if (mark(k)) any = true; });
+      var show = matches(node) || any;
+      if (show) visibleSet[id] = 1;
+      return show;
+    }
+    roots.forEach(function (r) { mark(r); });
+    // Pass 2: pre-order walk so parents precede their children.
+    function walk(id, depth) {
+      if (!visibleSet[id]) return;
+      var node = byId[id];
+      var kids = sortKids(children(id));
+      var visibleKids = kids.filter(function (k) { return visibleSet[k]; });
+      var expanded = filtering ? visibleKids.length > 0 : !!state.listExpanded[id];
+      rows.push({ id: id, depth: depth, hasKids: kids.length > 0, expanded: expanded });
+      if (expanded) visibleKids.forEach(function (k) { walk(k, depth + 1); });
+    }
+    roots.forEach(function (r) { walk(r, 0); });
+    return rows;
+  }
   // ===== end pure =====
 
   var COLORS = { vault: "#8b5cf6", note: "#c4b5fd", repository: "#3b82f6",
@@ -353,6 +451,7 @@ const PAGE = `<!DOCTYPE html>
   var surface = "graph", selectedId = null, focusId = null, focusSet = null;
   var query = "", kindFilter = "", provFilter = "", recentDays = 0, listSort = "name";
   var listLimit = 100;
+  var listExpanded = { vault: 1, repository: 1 };
   var sim = {}, collapsed = {}, alpha = 0;
   var W = window.innerWidth, H = window.innerHeight, world = null;
   var cam = { x: 0, y: 0, k: 1 };
@@ -649,39 +748,48 @@ const PAGE = `<!DOCTYPE html>
       model.generatedAt ? "indexed " + relTime(model.generatedAt, Date.now()) : "";
   }
 
-  // ---------- list ----------
-  function listRows() {
-    var rows = model.nodes.map(function (n) {
-      return { id: n.id, label: n.label, kind: n.kind, provenance: n.provenance || "",
-        updated: n.detail.updated || "", links: degreeOf(n.id, model.edges) };
-    });
-    var filtered = applyFilter(rows, kindFilter || null, provFilter || null);
-    if (recentDays) {
-      var cutoff = Date.now() - recentDays * 86400000;
-      filtered = filtered.filter(function (r) { return r.updated && new Date(r.updated).getTime() >= cutoff; });
-    }
-    if (query) {
-      filtered = filtered.filter(function (r) { return r.label.toLowerCase().indexOf(query) >= 0; });
-    }
-    return sortRows(filtered, listSort);
+  // ---------- list (tree) ----------
+  function listById() {
+    var byId = {};
+    model.nodes.forEach(function (n) { byId[n.id] = n; });
+    return byId;
+  }
+  function toggleList(id) {
+    if (listExpanded[id]) delete listExpanded[id]; else listExpanded[id] = 1;
+    renderList();
   }
   function renderList() {
+    if (!model) return;
     var container = document.getElementById("list-rows");
-    var rows = listRows();
+    var byId = listById();
+    var rows = listTree(model, {
+      kindFilter: kindFilter, provFilter: provFilter, recentDays: recentDays,
+      query: query, listSort: listSort, listExpanded: listExpanded,
+    });
     var shown = rows.slice(0, listLimit);
     var html = "";
     shown.forEach(function (r) {
-      html += "<div class='row" + (selectedId === r.id ? " selected" : "") + "' data-id='" + esc(r.id) + "' tabindex='0' role='button'>" +
-        "<span class='row-label'>" + esc(r.label) + "</span>" +
-        "<span class='row-kind'>" + esc(r.kind) + "</span>" +
-        (r.provenance ? "<span class='prov " + esc(r.provenance) + "'>" + esc(r.provenance) + "</span>" : "") +
-        "<span class='row-meta'>" + (r.updated ? relTime(r.updated, Date.now()) : "") + " · " + r.links + "</span>" +
+      var n = byId[r.id];
+      var chev = r.hasKids ? (r.expanded ? "▾" : "▸") : "";
+      html += "<div class='row" + (selectedId === r.id ? " selected" : "") + "' data-id='" + esc(r.id) + "' tabindex='0' role='button' style='padding-left:" + (8 + r.depth * 16) + "px'>" +
+        "<span class='chev" + (r.hasKids ? "" : " empty") + "' data-toggle='" + esc(r.id) + "'>" + chev + "</span>" +
+        "<span class='row-label'>" + esc(n.label) + "</span>" +
+        "<span class='row-kind'>" + esc(n.kind) + "</span>" +
+        (n.provenance ? "<span class='prov " + esc(n.provenance) + "'>" + esc(n.provenance) + "</span>" : "") +
+        "<span class='row-meta'>" + (n.detail.updated ? relTime(n.detail.updated, Date.now()) : "") + " · " + linksOf(n.id, model.edges) + "</span>" +
         "</div>";
     });
     container.innerHTML = html;
     document.getElementById("show-more").style.display = rows.length > listLimit ? "" : "none";
     container.querySelectorAll(".row").forEach(function (row) {
-      row.addEventListener("click", function () { selectById(row.getAttribute("data-id")); });
+      row.addEventListener("click", function (ev) {
+        var t = ev.target;
+        if (t && t.getAttribute && t.getAttribute("data-toggle")) {
+          toggleList(t.getAttribute("data-toggle"));
+          return;
+        }
+        selectById(row.getAttribute("data-id"));
+      });
     });
   }
   document.getElementById("show-more").addEventListener("click", function () {
