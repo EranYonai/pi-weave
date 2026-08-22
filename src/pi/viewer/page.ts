@@ -470,6 +470,23 @@ const PAGE = `<!DOCTYPE html>
     }
     return n.label;
   }
+  // Split YAML front matter (--- … ---) from a markdown body, returning the
+  // stripped body plus the fields (and tags, when present). Pure/derivable.
+  function parseFrontMatter(text) {
+    if (typeof text !== "string" || text.slice(0, 3) !== "---") return { body: text || "", meta: [], tags: [] };
+    var m = /^---\\r?\\n([\\s\\S]*?)\\r?\\n---\\r?\\n?/.exec(text);
+    if (!m) return { body: text, meta: [], tags: [] };
+    var meta = [], tags = [];
+    m[1].split(/\\r?\\n/).forEach(function (line) {
+      var i = line.indexOf(":");
+      if (i <= 0) return;
+      var k = line.slice(0, i).trim();
+      var v = line.slice(i + 1).trim().replace(/^["']|["']$/g, "");
+      if (k === "tags") { tags = v.split(",").map(function (t) { return t.trim(); }).filter(Boolean); return; }
+      meta.push([k, v]);
+    });
+    return { body: text.slice(m[0].length), meta: meta, tags: tags };
+  }
   // ===== end pure =====
 
   var COLORS = { vault: "#8b5cf6", note: "#c4b5fd", repository: "#3b82f6",
@@ -951,7 +968,9 @@ const PAGE = `<!DOCTYPE html>
         if (!r.ok) throw new Error(String(r.status));
         return r.json();
       }).then(function (fileData) {
-        container.innerHTML = renderMd(fileData.body || "(empty file)");
+        var pf = parseFrontMatter(fileData.body || "");
+        renderOverviewMeta(pf.meta, pf.tags);
+        container.innerHTML = renderMd(pf.body || "(empty file)");
         wireWikilinks(container);
       }).catch(function () {
         container.innerHTML = "<p class='muted'>(could not load file body)</p>";
@@ -963,6 +982,16 @@ const PAGE = `<!DOCTYPE html>
       wireWikilinks(container);
     }
   }
+  // Fill the Overview meta table (#pmeta) and tag chips (#ptags) from a
+  // front-matter parse (used for both notes and derived .okf files).
+  function renderOverviewMeta(meta, tags) {
+    var pt = document.getElementById("ptags");
+    var pm = document.getElementById("pmeta");
+    if (pt) pt.innerHTML = tags.map(function (t) { return "<span class='chip'>" + esc(t) + "</span>"; }).join("");
+    if (pm) pm.innerHTML = meta.map(function (p) {
+      return "<div><span class='k'>" + esc(p[0]) + "</span>" + esc(p[1]) + "</div>";
+    }).join("");
+  }
   function renderPtab(node, tab) {
     var content = document.getElementById("pcontent");
     if (tab === "overview") {
@@ -970,13 +999,9 @@ const PAGE = `<!DOCTYPE html>
       if (node.detail.slug) meta.push(["slug", node.detail.slug]);
       if (node.detail.updated) meta.push(["updated", node.detail.updated]);
       if (node.detail["dangling links"]) meta.push(["dangling links", node.detail["dangling links"]]);
-      var tags = node.detail.tags || "";
-      var tagHtml = tags.split(",").map(function (t) { return t.trim(); }).filter(Boolean)
-        .map(function (t) { return "<span class='chip'>" + esc(t) + "</span>"; }).join("");
-      var metaHtml = meta.map(function (p) {
-        return "<div><span class='k'>" + esc(p[0]) + "</span>" + esc(p[1]) + "</div>";
-      }).join("");
-      content.innerHTML = "<div id='ptags'>" + tagHtml + "</div><div id='pmeta'>" + metaHtml + "</div><div id='pbody'></div>";
+      var tags = (node.detail.tags || "").split(",").map(function (t) { return t.trim(); }).filter(Boolean);
+      content.innerHTML = "<div id='ptags'></div><div id='pmeta'></div><div id='pbody'></div>";
+      renderOverviewMeta(meta, tags);
       renderBodyInto(node, document.getElementById("pbody"));
     } else if (tab === "links") {
       var out = [];

@@ -247,6 +247,7 @@ describe("page pure functions (extract-and-run)", () => {
     linksOf: (id: string, edges: { source: string; target: string; kind: string }[]) => number;
     listLabel: (node: { kind: string; label: string; detail: Record<string, string> }) => string;
     listTree: (model: { nodes: { id: string; kind: string; label: string; provenance: string | null; detail: Record<string, string> }[]; edges: { source: string; target: string; kind: string }[] }, state: { kindFilter: string; provFilter: string; recentDays: number; query: string; listSort: string; listExpanded: Record<string, number>; showInternals?: boolean }) => { id: string; depth: number; hasKids: boolean; expanded: boolean }[];
+    parseFrontMatter: (text: string) => { body: string; meta: [string, string][]; tags: string[] };
   }
   function extractScript(html: string): string {
     const m = /<script>([\s\S]*)<\/script>/.exec(html);
@@ -260,7 +261,7 @@ describe("page pure functions (extract-and-run)", () => {
       m[1] +
         "; return { focusNeighborhood: focusNeighborhood, deriveBacklinks: deriveBacklinks, " +
         "applyFilter: applyFilter, sortRows: sortRows, counts: counts, relTime: relTime, " +
-        "linksOf: linksOf, listLabel: listLabel, listTree: listTree };",
+        "linksOf: linksOf, listLabel: listLabel, listTree: listTree, parseFrontMatter: parseFrontMatter };",
     );
     return make() as PureFns;
   }
@@ -406,6 +407,31 @@ describe("page pure functions (extract-and-run)", () => {
     // gitState sits under repository (depth 1), not as a third root
     expect(rows.find((r) => r.id === "gitState")?.depth).toBe(1);
     expect(rows.find((r) => r.id === "repository")?.expanded).toBe(true);
+  });
+
+  it("parseFrontMatter strips the YAML block, exposing fields and tags", () => {
+    const src = "---\ntarget: docs/scan-modes.md\nsource: generated\ncontent_hash: abc123\nmodel: \"ollama/x\"\n---\n\nBody line";
+    const pf = fns.parseFrontMatter(src);
+    expect(pf.body).toContain("Body line");
+    expect(pf.body.startsWith("---")).toBe(false);
+    const kv = Object.fromEntries(pf.meta);
+    expect(kv.target).toBe("docs/scan-modes.md");
+    expect(kv.source).toBe("generated");
+    expect(kv.model).toBe("ollama/x");
+    expect(pf.tags).toEqual([]);
+  });
+
+  it("parseFrontMatter extracts comma-separated tags and quotes", () => {
+    const pf = fns.parseFrontMatter("---\ntags: pi-weave, milestone, self-index\nupdated: \"2026-08-22\"\n---\nbody\n");
+    expect(pf.tags).toEqual(["pi-weave", "milestone", "self-index"]);
+    expect(Object.fromEntries(pf.meta).updated).toBe("2026-08-22");
+    expect(pf.body.trim()).toBe("body");
+  });
+
+  it("parseFrontMatter passes through plain text with no front matter", () => {
+    expect(fns.parseFrontMatter("just body").body).toBe("just body");
+    expect(fns.parseFrontMatter("just body").meta).toEqual([]);
+    expect(fns.parseFrontMatter(undefined as unknown as string).body).toBe("");
   });
 
   it("listLabel disambiguates external remotes and packages that collide with the repo name", () => {
