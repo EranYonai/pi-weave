@@ -6,7 +6,12 @@
  * (commands, browser exec) live in `src/pi/index.ts`.
  */
 
+import { execFile } from "node:child_process";
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from "node:http";
+import { promisify } from "node:util";
+import { platform } from "node:os";
+
+const execFileAsync = promisify(execFile);
 import {
   assessStaleness,
   buildGraph,
@@ -16,6 +21,7 @@ import {
   listNotes,
   noteCount,
   readRepoIndex,
+  readSummaryMap,
   resolveNotePath,
   resolveVaultRoot,
   type BuildGraphInput,
@@ -38,6 +44,52 @@ export interface StartViewerOptions {
   vaultRoot?: string;
   /** Explicit port; defaults to PI_WEAVE_VIEW_PORT or 0 (OS-assigned). */
   port?: number;
+  /**
+   * Override the OS command used to open a note in the editor (test seam).
+   * Defaults to openNoteCommand().
+   */
+  openCommand?: (notePath: string) => { command: string; args: string[] };
+}
+
+/**
+ * The OS command used to open a note file in the user's editor. Respects
+ * $EDITOR / $VISUAL (which may carry args, e.g. "code --wait"); falls back
+ * to the platform default opener. Kept separate from the route so the
+ * mapping is unit-testable without stubbing globals (mirrors browserCommand).
+ */
+export function openNoteCommand(
+  notePath: string,
+  env: NodeJS.ProcessEnv = process.env,
+): { command: string; args: string[] } {
+  const editor = (env.EDITOR || env.VISUAL || "").trim();
+  if (editor) {
+    const parts = editor.split(/\s+/).filter(Boolean);
+    const command = parts[0] ?? "";
+    return { command, args: [...parts.slice(1), notePath] };
+  }
+  if (platform() === "darwin") return { command: "open", args: [notePath] };
+  if (platform() === "win32") return { command: "cmd", args: ["/c", "start", "", notePath] };
+  return { command: "xdg-open", args: [notePath] };
+}
+
+/**
+ * Open a note in the OS editor. The slug is validated against the vault
+ * (traversal-safe) before any shell-out; returns false when the note does
+ * not exist or the slug is unsafe.
+ */
+export async function openNoteInEditor(
+  vaultRoot: string,
+  slug: string,
+  openCommand: (notePath: string) => { command: string; args: string[] } = openNoteCommand,
+): Promise<boolean> {
+  const path = resolveNotePath(vaultRoot, slug);
+  if (path === null) return false; // traversal-safe
+  const note = await getNote(vaultRoot, slug);
+  if (note === null) return false;
+  const { command, args } = openCommand(path);
+  if (!command) return false;
+  await execFileAsync(command, args);
+  return true;
 }
 
 /**
@@ -69,8 +121,8 @@ export async function readNoteForView(
 
 /** Assemble the fresh graph from disk — called on EVERY /graph.json request (no caching, docs/weave-view.md §2). */
 export async function buildCurrentGraph(cwd: string, vaultRoot: string = resolveVaultRoot()): Promise<GraphModel> {
-  const summaries = (await listNotes(vaultRoot)).slice(0, DEFAULT_MAX_NOTES);
-  const loaded = await Promise.all(summaries.map((s) => getNote(vaultRoot, s.slug)));
+  const noteSummaries = (await listNotes(vaultRoot)).slice(0, DEFAULT_MAX_NOTES);
+  const loaded = await Promise.all(noteSummaries.map((s) => getNote(vaultRoot, s.slug)));
   const notes = loaded.filter((n): n is Note => n !== null);
 
   const input: BuildGraphInput = {
@@ -84,6 +136,7 @@ export async function buildCurrentGraph(cwd: string, vaultRoot: string = resolve
     const index = await readRepoIndex(repoRoot);
     if (index !== null) {
       input.repository = { index, staleness: await assessStaleness(repoRoot) };
+      input.summaries = await readSummaryMap(repoRoot); // deep-scan sidecars, read live
     }
   }
   return buildGraph(input);
@@ -93,6 +146,7 @@ function route(
   page: string,
   graph: () => Promise<GraphModel>,
   noteBySlug: (slug: string) => Promise<Record<string, unknown> | null>,
+  openNote: (slug: string) => Promise<boolean>,
   res: ServerResponse,
   req: IncomingMessage,
 ): void {
@@ -111,6 +165,23 @@ function route(
       .catch((err: unknown) => {
         res.writeHead(500, { "content-type": "text/plain; charset=utf-8" });
         res.end(`pi-weave viewer: failed to build graph: ${err instanceof Error ? err.message : String(err)}`);
+      });
+    return;
+  }
+  if (req.method === "POST" && path.startsWith("/open/")) {
+    openNote(path.slice("/open/".length))
+      .then((ok) => {
+        if (!ok) {
+          res.writeHead(404, { "content-type": "text/plain; charset=utf-8" });
+          res.end("no such note\n");
+          return;
+        }
+        res.writeHead(200, { "content-type": "text/plain; charset=utf-8" });
+        res.end("opened\n");
+      })
+      .catch(() => {
+        res.writeHead(500, { "content-type": "text/plain; charset=utf-8" });
+        res.end("pi-weave viewer: failed to open note\n");
       });
     return;
   }
@@ -139,8 +210,16 @@ export async function startViewer(options: StartViewerOptions): Promise<ViewerSe
   const page = renderPage();
   const cwd = options.cwd;
   const vaultRoot = options.vaultRoot ?? resolveVaultRoot();
+  const openCommand = options.openCommand ?? openNoteCommand;
   const server: Server = createServer((req, res) => {
-    route(page, () => buildCurrentGraph(cwd, vaultRoot), (slug) => readNoteForView(vaultRoot, slug), res, req);
+    route(
+      page,
+      () => buildCurrentGraph(cwd, vaultRoot),
+      (slug) => readNoteForView(vaultRoot, slug),
+      (slug) => openNoteInEditor(vaultRoot, slug, openCommand),
+      res,
+      req,
+    );
   });
 
   const parsed = Number.parseInt(process.env.PI_WEAVE_VIEW_PORT ?? "", 10);

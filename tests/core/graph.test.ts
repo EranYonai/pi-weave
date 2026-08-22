@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import { buildGraph, dataTimestamp, DEFAULT_MAX_NOTES, type BuildGraphInput } from "../../src/core/graph/build";
 import { extractWikilinks } from "../../src/core/graph/wikilinks";
 import type { Note, NoteSource, RepoIndex, StalenessReport } from "../../src/core/types";
+import type { SummaryRecord } from "../../src/core/summaries";
 import { NODE_KINDS } from "../../src/core/graph/model";
 
 // ---------------------------------------------------------------------------
@@ -77,6 +78,10 @@ describe("extractWikilinks", () => {
   });
   it("ignores empties, non-link brackets, and unclosed links", () => {
     expect(extractWikilinks("[[]] [x] [[  ]] [[unclosed")).toEqual([]);
+  });
+
+  it("skips whitespace-only targets (empty after trim)", () => {
+    expect(extractWikilinks("[[   ]] [[\t]]")).toEqual([]);
   });
   it("handles no links at all", () => {
     expect(extractWikilinks("plain markdown [text](url)")).toEqual([]);
@@ -251,10 +256,85 @@ describe("buildGraph — edge branches", () => {
     const labels = model.nodes.filter((n) => n.kind === "external").map((n) => n.label);
     expect(labels).toEqual(["a b", "repo"]);
   });
+
+  it("labels a detached HEAD as (detached)", () => {
+    const index = makeIndex();
+    index.git.branch = "";
+    const model = buildGraph(input({ repository: { index, staleness: FRESH } }));
+    const gitState = model.nodes.find((n) => n.id === "gitState")!;
+    expect(gitState.label).toContain("(detached)");
+    expect(gitState.detail.branch).toBe("(detached)");
+  });
+
+  it("sorts equal-count languages alphabetically (localeCompare tiebreak)", () => {
+    const index = makeIndex();
+    index.structure.languages = { Zig: 5, Go: 5 };
+    const model = buildGraph(input({ repository: { index, staleness: FRESH } }));
+    const repo = model.nodes.find((n) => n.id === "repository")!;
+    expect(repo.detail.languages).toBe("Go (5), Zig (5)");
+  });
 });
 
 describe("wikilinks — degenerate targets", () => {
   it("punctuation-only targets fall back to the generic 'note' slug", () => {
     expect(extractWikilinks("[[!!!]] [[ok]]")).toEqual(["note", "ok"]);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// buildGraph — deep-scan summaries
+// ---------------------------------------------------------------------------
+
+function summaryRec(over: Partial<SummaryRecord> = {}): SummaryRecord {
+  return {
+    target: "src/a.ts",
+    contentHash: "abc",
+    summary: "Does a thing.",
+    model: "test/model",
+    at: T2,
+    source: "generated",
+    ...over,
+  };
+}
+
+describe("buildGraph — summaries", () => {
+  it("counts summarized files inside a module and omits the key when none", () => {
+    const summaries = new Map<string, SummaryRecord>([
+      ["src/a.ts", summaryRec({ target: "src/a.ts" })],
+      ["src/b.ts", summaryRec({ target: "src/b.ts" })],
+    ]);
+    const model = buildGraph(input({ repository: { index: makeIndex(), staleness: FRESH }, summaries }));
+    const src = model.nodes.find((n) => n.id === "module:src");
+    expect(src?.detail["summarized files"]).toBe("2");
+    // a module with no summaries keeps only path/files
+    const root = model.nodes.find((n) => n.id === "module:(root)");
+    expect(root?.detail["summarized files"]).toBeUndefined();
+  });
+
+  it("derives generatedAt from the newest summary timestamp", () => {
+    const newer = "2026-04-01T00:00:00.000Z"; // newer than index.updated (T2)
+    const model = buildGraph(input({
+      repository: { index: makeIndex(), staleness: FRESH },
+      summaries: new Map([["src/a.ts", summaryRec({ at: newer })]]),
+    }));
+    expect(model.generatedAt).toBe(newer);
+  });
+
+  it("attaches summary detail to entry points, with and without a model label", () => {
+    const withModel = buildGraph(input({
+      repository: { index: makeIndex(), staleness: FRESH },
+      summaries: new Map([["src/index.ts", summaryRec({ target: "src/index.ts", model: "ollama/kimi" })]]),
+    }));
+    const ep = withModel.nodes.find((n) => n.id === "entryPoint:src/index.ts");
+    expect(ep?.detail.summary).toBe("Does a thing.");
+    expect(ep?.detail["summarized by"]).toBe("ollama/kimi");
+
+    const noModel = buildGraph(input({
+      repository: { index: makeIndex(), staleness: FRESH },
+      summaries: new Map([["src/index.ts", summaryRec({ target: "src/index.ts", model: null })]]),
+    }));
+    const ep2 = noModel.nodes.find((n) => n.id === "entryPoint:src/index.ts");
+    expect(ep2?.detail.summary).toBe("Does a thing.");
+    expect(ep2?.detail["summarized by"]).toBeUndefined();
   });
 });

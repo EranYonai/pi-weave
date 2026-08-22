@@ -5,6 +5,8 @@ import {
   addNote,
   appendToNote,
   ensureVault,
+  extractRawTail,
+  finalizeNote,
   formatNote,
   getNote,
   listNotes,
@@ -91,6 +93,51 @@ describe("appendToNote", () => {
 
   it("returns null for unknown slugs", async () => {
     expect(await appendToNote(vault, "ghost", "text")).toBeNull();
+  });
+});
+
+describe("extractRawTail", () => {
+  it("returns the raw tail verbatim when present", () => {
+    const body = "# Summary\n\nWe decided X.\n\n## Raw notes\n\n\"We should do X.\"\n";
+    expect(extractRawTail(body)).toBe("## Raw notes\n\n\"We should do X.\"");
+  });
+
+  it("returns '' when there is no raw tail", () => {
+    expect(extractRawTail("just a body")).toBe("");
+  });
+});
+
+describe("finalizeNote", () => {
+  it("restructures the body above the raw tail and preserves it verbatim", async () => {
+    const note = await addNote(vault, {
+      title: "Auth migration",
+      body: "## Raw notes\n\n\"We should move to OIDC next quarter.\"\n",
+      source: "human",
+      now: new Date("2026-08-22T10:00:00Z"),
+    });
+    const finalized = await finalizeNote(vault, note.slug, {
+      body: "# Auth migration\n\n**Decision:** move toward OIDC.\n\n## Questions\n- Token migration strategy",
+      now: new Date("2026-08-23T10:00:00Z"),
+    });
+    expect(finalized?.updated).toBe("2026-08-23T10:00:00.000Z");
+    expect(finalized?.created).toBe(note.created);
+    expect(finalized?.body).toContain("**Decision:** move toward OIDC.");
+    expect(finalized?.body).toContain("## Raw notes");
+    expect(finalized?.body).toContain("\"We should move to OIDC next quarter.\"");
+    // the raw tail sits at the end, after the restructured body
+    expect(finalized!.body.indexOf("**Decision:**")).toBeLessThan(finalized!.body.indexOf("## Raw notes"));
+  });
+
+  it("finalizing a note with no raw tail just replaces the body", async () => {
+    const note = await addNote(vault, { title: "Plain", body: "old body" });
+    const finalized = await finalizeNote(vault, note.slug, { body: "new body" });
+    expect(finalized?.body).toBe("new body");
+    expect(finalized?.body).not.toContain("## Raw notes");
+  });
+
+  it("returns null for unknown or unsafe slugs", async () => {
+    expect(await finalizeNote(vault, "ghost", { body: "x" })).toBeNull();
+    expect(await finalizeNote(vault, "../escape", { body: "x" })).toBeNull();
   });
 });
 

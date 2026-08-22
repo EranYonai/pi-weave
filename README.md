@@ -38,7 +38,8 @@ Or for development: `pi -e ./src/pi/index.ts`.
 | Tool | `weave_note` | list / get / add / append / search vault notes |
 | Tool | `weave_repo` | status / scan / overview of the `.okf` repo index |
 | Command | `/weave` | workspace dashboard (vault + repository) |
-| Command | `/weave-scan` | build/refresh the repository index |
+| Command | `/weave-scan` | build/refresh the repository index (light) |
+| Command | `/weave-scan deep` | light index + model-summarized sidecars (opt-in, incremental) |
 | Command | `/weave-view` | open the local graph viewer in your browser |
 | Skill | `weave-notepad` | how the agent should take good notes |
 | Skill | `weave-explore` | how the agent should explore repositories |
@@ -53,6 +54,11 @@ markdown side panel.
 
 On session start, pi-weave detects the repository you're in, checks whether
 `.okf` exists and is fresh, and says so in the status line.
+
+**`/weave-scan deep`** is the opt-in, incremental deep pass: it refreshes the
+light index and then writes a short model summary per file to
+`.okf/repository/summaries/`, skipping files whose content hash is unchanged
+since their last summary. It costs tokens, so it never runs implicitly.
 
 ## The formats (why everything is portable)
 

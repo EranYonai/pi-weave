@@ -5,6 +5,7 @@ import { Type } from "typebox";
 import {
   addNote,
   appendToNote,
+  finalizeNote,
   formatNote,
   getNote,
   listNotes,
@@ -28,19 +29,20 @@ export function registerNoteTool(pi: ExtensionAPI): void {
     description:
       "Read and write notes in the pi-weave vault — a persistent, human-readable knowledge base " +
       "of Markdown notes. Actions: list (all notes), get (one note by slug), add (new note), " +
-      "append (extend a note), search (title/tags/body). Use it to remember decisions, facts, " +
-      "and user preferences across sessions.",
+      "append (extend a note), finalize (restructure a note above its raw tail), search (title/tags/body). " +
+      "Use it to remember decisions, facts, and user preferences across sessions.",
     promptSnippet: "Remember and retrieve durable knowledge in the pi-weave vault",
     promptGuidelines: [
       "Use weave_note to store durable knowledge (decisions, preferences, key facts) that should survive the session, marking source as agent-written knowledge.",
       "Use weave_note with action=search before answering questions about past decisions, people, or projects.",
     ],
     parameters: Type.Object({
-      action: StringEnum(["list", "get", "add", "append", "search"] as const),
+      action: StringEnum(["list", "get", "add", "append", "finalize", "search"] as const),
       title: Type.Optional(Type.String({ description: "Note title (add)" })),
-      text: Type.Optional(Type.String({ description: "Markdown body (add) or addition (append)" })),
+      text: Type.Optional(Type.String({ description: "Markdown body (add), addition (append), or restructured body above the raw tail (finalize)" })),
       tags: Type.Optional(Type.Array(Type.String(), { description: "Tags (add)" })),
-      slug: Type.Optional(Type.String({ description: "Note slug (get, append)" })),
+      slug: Type.Optional(Type.String({ description: "Note slug (get, append, finalize)" })),
+      source: Type.Optional(StringEnum(["human", "agent"] as const, { description: "Provenance (add): human for user-scribbled notes, agent for Pi-drafted (default agent)" })),
       query: Type.Optional(Type.String({ description: "Search query (search)" })),
     }),
     async execute(toolCallId, params, signal, onUpdate, ctx) {
@@ -85,7 +87,7 @@ export function registerNoteTool(pi: ExtensionAPI): void {
               title,
               body: text,
               ...(params.tags ? { tags: params.tags } : {}),
-              source: "agent",
+              ...(params.source ? { source: params.source } : {}),
             }),
           );
           return {
@@ -121,6 +123,35 @@ export function registerNoteTool(pi: ExtensionAPI): void {
           return {
             content: [{ type: "text", text: `Appended to ${note.slug} (updated ${note.updated}).` }],
             details: { action: "append", found: true, note },
+          };
+        }
+
+        case "finalize": {
+          if (!params.slug) throw new Error("weave_note(finalize) requires 'slug'");
+          if (!params.text) throw new Error("weave_note(finalize) requires 'text'");
+          const slug = params.slug;
+          const text = params.text;
+          const path = resolveNotePath(vault, slug);
+          if (!path) {
+            return {
+              content: [
+                {
+                  type: "text",
+                  text: `Invalid note slug '${slug}' — notes are flat files inside the vault (no path separators or '..').`,
+                },
+              ],
+              details: { action: "finalize", found: false },
+            };
+          }
+          // Serialized read-modify-write, same as append: finalize replaces the
+          // body above the raw tail, so it must not race other writers.
+          const note = await withMutationQueue(path, () => finalizeNote(vault, slug, { body: text }));
+          if (!note) {
+            return { content: [{ type: "text", text: `No note found with slug '${params.slug}'.` }], details: { action: "finalize", found: false } };
+          }
+          return {
+            content: [{ type: "text", text: `Finalized ${note.slug} (updated ${note.updated}). Raw notes tail preserved.` }],
+            details: { action: "finalize", found: true, note },
           };
         }
 

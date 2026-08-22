@@ -72,15 +72,26 @@ export interface MockCtx {
   hasUI: boolean;
   mode: string;
   ui: MockUi;
+  /** Present only when the session has an active model (deep scans). */
+  model?: { provider: string; id: string };
+  modelRegistry?: { complete: (model: unknown, context: unknown, options?: unknown) => Promise<unknown> };
 }
 
-export function createMockCtx(cwd: string, hasUI = true, mode = "tui"): MockCtx {
+export interface MockCtxOptions {
+  mode?: string;
+  model?: { provider: string; id: string };
+  /** Stub LLM completion handler; defaults to a no-model context. */
+  complete?: (model: unknown, context: unknown, options?: unknown) => Promise<unknown>;
+}
+
+export function createMockCtx(cwd: string, hasUI = true, modeOrOptions: string | MockCtxOptions = "tui"): MockCtx {
+  const opts: MockCtxOptions = typeof modeOrOptions === "string" ? { mode: modeOrOptions } : modeOrOptions;
   const notifications: { message: string; level: string }[] = [];
   const statuses: Record<string, string | undefined> = {};
-  return {
+  const ctx: MockCtx = {
     cwd,
     hasUI,
-    mode,
+    mode: opts.mode ?? "tui",
     ui: {
       notifications,
       statuses,
@@ -92,6 +103,15 @@ export function createMockCtx(cwd: string, hasUI = true, mode = "tui"): MockCtx 
       },
     },
   };
+  if (opts.model) {
+    ctx.model = opts.model;
+    ctx.modelRegistry = {
+      complete: opts.complete ?? (async () => {
+        throw new Error("mock ctx: no complete() stub configured");
+      }),
+    };
+  }
+  return ctx;
 }
 
 type EventHandler = (event: unknown, ctx: MockCtx) => Promise<unknown>;

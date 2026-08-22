@@ -9,6 +9,7 @@
  */
 
 import type { Note, RepoIndex, StalenessReport, VaultStatus } from "../types";
+import type { SummaryRecord } from "../summaries";
 import type { EdgeKind, GraphEdge, GraphModel, GraphNode } from "./model";
 import { extractWikilinks } from "./wikilinks";
 
@@ -21,10 +22,29 @@ export interface BuildGraphInput {
   notes: Note[];
   /** Repository half; null when cwd is not an indexed git repository. */
   repository: { index: RepoIndex; staleness: StalenessReport } | null;
+  /** Deep-scan summaries keyed by repo-relative path (docs/scan-modes.md). */
+  summaries?: ReadonlyMap<string, SummaryRecord>;
 }
 
 const SHORT_SHA_LEN = 7;
 const PREVIEW_LEN = 240;
+
+function moduleDetail(
+  path: string,
+  fileCount: number,
+  summaries: ReadonlyMap<string, SummaryRecord> | undefined,
+): Record<string, string> {
+  const detail: Record<string, string> = { path, files: String(fileCount) };
+  if (summaries) {
+    const prefix = path === "." ? "" : `${path}/`;
+    let count = 0;
+    for (const target of summaries.keys()) {
+      if (target.startsWith(prefix)) count += 1;
+    }
+    if (count > 0) detail["summarized files"] = String(count);
+  }
+  return detail;
+}
 
 function preview(body: string): string {
   const flat = body.trim().replace(/\s+/g, " ");
@@ -39,6 +59,11 @@ export function dataTimestamp(input: BuildGraphInput): string {
   }
   const repoStamp = input.repository?.index.updated ?? "";
   if (repoStamp > max) max = repoStamp;
+  if (input.summaries) {
+    for (const rec of input.summaries.values()) {
+      if (rec.at > max) max = rec.at;
+    }
+  }
   return max;
 }
 
@@ -98,6 +123,7 @@ function buildVaultSide(input: BuildGraphInput, maxNotes: number, nodes: GraphNo
 
 function buildRepositorySide(
   repository: NonNullable<BuildGraphInput["repository"]>,
+  summaries: ReadonlyMap<string, SummaryRecord> | undefined,
   nodes: GraphNode[],
   edges: GraphEdge[],
 ): void {
@@ -158,13 +184,20 @@ function buildRepositorySide(
       kind: "module",
       label,
       provenance: null,
-      detail: { path: mod.path, files: String(mod.fileCount) },
+      detail: moduleDetail(mod.path, mod.fileCount, summaries),
     });
     edges.push({ source: "repository", target: `module:${mod.path}`, kind: "contains" });
   }
 
   for (const entry of structure.entryPoints) {
-    nodes.push({ id: `entryPoint:${entry}`, kind: "entryPoint", label: entry, provenance: null, detail: { path: entry } });
+    const detail: Record<string, string> = { path: entry };
+    const sum = summaries?.get(entry);
+    if (sum) {
+      detail.summary = sum.summary;
+      detail["summarized at"] = sum.at;
+      if (sum.model !== null) detail["summarized by"] = sum.model;
+    }
+    nodes.push({ id: `entryPoint:${entry}`, kind: "entryPoint", label: entry, provenance: null, detail });
     edges.push({ source: "repository", target: `entryPoint:${entry}`, kind: "contains" });
   }
 }
@@ -179,7 +212,7 @@ export function buildGraph(input: BuildGraphInput, options: { maxNotes?: number 
   const edges: GraphEdge[] = [];
   buildVaultSide(input, maxNotes, nodes, edges);
   if (input.repository !== null) {
-    buildRepositorySide(input.repository, nodes, edges);
+    buildRepositorySide(input.repository, input.summaries, nodes, edges);
   }
   return {
     generatedAt: dataTimestamp(input),

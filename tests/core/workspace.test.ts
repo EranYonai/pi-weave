@@ -68,17 +68,17 @@ describe("formatStatusLine", () => {
   });
 
   it("unindexed repo", () => {
-    const repo = { root: "/r", name: "r", indexed: false, staleness: { state: "missing" as const, reasons: [] } };
+    const repo = { root: "/r", name: "r", indexed: false, staleness: { state: "missing" as const, reasons: [] }, summaryCount: 0 };
     expect(formatStatusLine({ cwd: "/r", vault, repository: repo })).toBe("🧵 vault:3 · repo:unindexed");
   });
 
   it("indexed fresh repo", () => {
-    const repo = { root: "/r", name: "r", indexed: true, staleness: { state: "fresh" as const, reasons: [] } };
+    const repo = { root: "/r", name: "r", indexed: true, staleness: { state: "fresh" as const, reasons: [] }, summaryCount: 0 };
     expect(formatStatusLine({ cwd: "/r", vault, repository: repo })).toBe("🧵 vault:3 · r:ok");
   });
 
   it("indexed stale repo", () => {
-    const repo = { root: "/r", name: "r", indexed: true, staleness: { state: "stale" as const, reasons: [] } };
+    const repo = { root: "/r", name: "r", indexed: true, staleness: { state: "stale" as const, reasons: [] }, summaryCount: 0 };
     expect(formatStatusLine({ cwd: "/r", vault, repository: repo })).toBe("🧵 vault:3 · r:stale");
   });
 });
@@ -98,7 +98,7 @@ describe("formatDashboard", () => {
     const text = formatDashboard({
       cwd: "/r",
       vault: { root: "/v", exists: true, noteCount: 5 },
-      repository: { root: "/r", name: "r", indexed: false, staleness: { state: "missing", reasons: [] } },
+      repository: { root: "/r", name: "r", indexed: false, staleness: { state: "missing", reasons: [] }, summaryCount: 0 },
     });
     expect(text).toContain("5 note(s)");
     expect(text).toContain("not indexed");
@@ -113,9 +113,11 @@ describe("formatDashboard", () => {
         name: "r",
         indexed: true,
         staleness: { state: "stale", reasons: ["HEAD moved: a -> b"] },
+        summaryCount: 2,
       },
     });
     expect(text).toContain("index: stale");
+    expect(text).toContain("summaries: 2 file(s)");
     expect(text).toContain("HEAD moved");
   });
 });

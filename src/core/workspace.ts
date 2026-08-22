@@ -1,5 +1,6 @@
 import { findGitRoot } from "./git";
 import { assessStaleness, readRepoIndex } from "./repoIndex";
+import { readSummaries } from "./summaries";
 import { basename } from "node:path";
 import { resolveVaultRoot } from "./paths";
 import { noteCount, vaultExists } from "./vault";
@@ -40,6 +41,7 @@ export async function getWorkspaceStatus(cwd: string, options: WorkspaceOptions 
     name: index?.identity.name ?? basename(repoRoot),
     indexed: index !== null,
     staleness,
+    summaryCount: index === null ? 0 : (await readSummaries(repoRoot)).length,
   };
   return status;
 }
@@ -75,6 +77,9 @@ export function formatDashboard(status: WorkspaceStatus): string {
   lines.push(`  index: ${repo.staleness.state}`);
   for (const reason of repo.staleness.reasons) {
     lines.push(`    - ${reason}`);
+  }
+  if (repo.summaryCount > 0) {
+    lines.push(`  summaries: ${repo.summaryCount} file(s) — run /weave-scan deep to refresh`);
   }
   return lines.join("\n");
 }

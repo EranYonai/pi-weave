@@ -2,7 +2,7 @@ import { promises as fs } from "node:fs";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import type { GraphModel } from "../../src/core/graph/model";
-import { startViewer, buildCurrentGraph } from "../../src/pi/viewer/server";
+import { startViewer, buildCurrentGraph, openNoteCommand, openNoteInEditor } from "../../src/pi/viewer/server";
 import { renderPage } from "../../src/pi/viewer/page";
 import { browserCommand } from "../../src/pi/viewer/browser";
 import { addNote } from "../../src/core/vault";
@@ -25,6 +25,12 @@ describe("renderPage", () => {
     expect(page).toContain("graph.json");
     expect(page).not.toMatch(/src=["']https?:/);
     expect(page).not.toMatch(/href=["']https?:/);
+  });
+
+  it("rendered page contains no backtick and no template substitution (single-file invariant)", () => {
+    const page = renderPage();
+    expect(page).not.toContain("`");
+    expect(page).not.toContain("${");
   });
 });
 
@@ -122,6 +128,39 @@ describe("weave-view server", () => {
     expect(graph.nodes.some((n) => n.id === "repository")).toBe(false);
   });
 
+  it("buildCurrentGraph surfaces a handwritten entry-point summary sidecar", async () => {
+    const repo = await makeTempDir();
+    gitInit(repo);
+    await writeFixture(repo, "src/index.ts", "export const x = 1;\n");
+    commitAll(repo, "init");
+    const index = await buildRepoIndex(repo);
+    if (index !== null) await writeRepoIndex(repo, index);
+
+    // Handwritten sidecar for the entry point (deep-scan output shape).
+    const summariesDir = join(repo, ".okf", "repository", "summaries");
+    await fs.mkdir(summariesDir, { recursive: true });
+    await fs.writeFile(
+      join(summariesDir, "src--index.ts.summary.md"),
+      [
+        "---",
+        "target: src/index.ts",
+        "source: generated",
+        "content_hash: abc",
+        "at: 2026-08-23T12:00:00.000Z",
+        "model: test/model",
+        "---",
+        "Entry point summary.",
+        "",
+      ].join("\n"),
+      "utf8",
+    );
+
+    const graph = await buildCurrentGraph(repo, await makeTempDir());
+    const entry = graph.nodes.find((n) => n.id === "entryPoint:src/index.ts");
+    expect(entry?.detail.summary).toBe("Entry point summary.");
+    expect(entry?.detail["summarized by"]).toBe("test/model");
+  });
+
   it("gives two servers distinct ports and stops idempotently", async () => {
     const a = await startViewer({ cwd: await makeTempDir() });
     const b = await startViewer({ cwd: await makeTempDir() });
@@ -197,6 +236,174 @@ describe("weave-view /note/<slug> route", () => {
   });
 });
 
+describe("page pure functions (extract-and-run)", () => {
+  interface PureFns {
+    focusNeighborhood: (id: string, edges: { source: string; target: string; kind: string }[]) => Record<string, number>;
+    deriveBacklinks: (edges: { source: string; target: string; kind: string }[]) => Record<string, string[]>;
+    applyFilter: (items: { kind: string; provenance: string | null }[], kind: string | null, prov: string | null) => { kind: string; provenance: string | null }[];
+    sortRows: (rows: { label: string; updated: string; links: number; provenance: string }[], key: string) => { label: string; updated: string; links: number; provenance: string }[];
+    counts: (nodes: { provenance: string | null }[]) => { total: number; human: number; agent: number; generated: number; structural: number };
+    relTime: (iso: string, now: number) => string;
+  }
+  function extractScript(html: string): string {
+    const m = /<script>([\s\S]*)<\/script>/.exec(html);
+    if (!m || m[1] === undefined) throw new Error("no script in page");
+    return m[1];
+  }
+  function pureFns(html: string): PureFns {
+    const m = /\/\/ ===== pure =====([\s\S]*?)\/\/ ===== end pure =====/.exec(extractScript(html));
+    if (!m || m[1] === undefined) throw new Error("pure block not found");
+    const make = new Function(
+      m[1] +
+        "; return { focusNeighborhood: focusNeighborhood, deriveBacklinks: deriveBacklinks, " +
+        "applyFilter: applyFilter, sortRows: sortRows, counts: counts, relTime: relTime };",
+    );
+    return make() as PureFns;
+  }
+  const fns = pureFns(renderPage());
+
+  it("focusNeighborhood returns the 1-hop neighborhood including the node", () => {
+    const edges = [
+      { source: "a", target: "b", kind: "links-to" },
+      { source: "c", target: "a", kind: "links-to" },
+      { source: "b", target: "d", kind: "links-to" },
+    ];
+    const nb = fns.focusNeighborhood("a", edges);
+    expect(nb).toEqual({ a: 1, b: 1, c: 1 });
+    expect(nb.d).toBeUndefined(); // 2-hop excluded
+  });
+
+  it("deriveBacklinks maps each target to its incoming links-to sources", () => {
+    const edges = [
+      { source: "a", target: "b", kind: "links-to" },
+      { source: "c", target: "b", kind: "links-to" },
+      { source: "a", target: "c", kind: "contains" }, // non-links-to ignored
+    ];
+    const bl = fns.deriveBacklinks(edges);
+    expect(bl.b).toEqual(["a", "c"]);
+    expect(bl.c).toBeUndefined();
+  });
+
+  it("applyFilter filters by kind and provenance independently", () => {
+    const items = [
+      { kind: "note", provenance: "human" },
+      { kind: "note", provenance: "agent" },
+      { kind: "module", provenance: "generated" },
+    ];
+    expect(fns.applyFilter(items, "note", null)).toHaveLength(2);
+    expect(fns.applyFilter(items, null, "generated")).toHaveLength(1);
+    expect(fns.applyFilter(items, "note", "human")).toEqual([items[0]]);
+    expect(fns.applyFilter(items, null, null)).toHaveLength(3);
+  });
+
+  it("sortRows sorts by name, updated, links, and provenance", () => {
+    const rows = [
+      { label: "beta", updated: "2026-01-01", links: 1, provenance: "agent" },
+      { label: "alpha", updated: "2026-03-01", links: 5, provenance: "human" },
+      { label: "gamma", updated: "2026-02-01", links: 3, provenance: "generated" },
+    ];
+    expect(fns.sortRows(rows, "name").map((r) => r.label)).toEqual(["alpha", "beta", "gamma"]);
+    expect(fns.sortRows(rows, "updated").map((r) => r.label)).toEqual(["alpha", "gamma", "beta"]);
+    expect(fns.sortRows(rows, "links").map((r) => r.label)).toEqual(["alpha", "gamma", "beta"]);
+    expect(fns.sortRows(rows, "provenance").map((r) => r.label)).toEqual(["beta", "gamma", "alpha"]);
+    // does not mutate the input
+    expect(rows.map((r) => r.label)).toEqual(["beta", "alpha", "gamma"]);
+  });
+
+  it("counts tallies provenance split and structural nodes", () => {
+    const nodes = [
+      { provenance: "human" },
+      { provenance: "human" },
+      { provenance: "agent" },
+      { provenance: "generated" },
+      { provenance: null },
+    ];
+    const c = fns.counts(nodes);
+    expect(c).toEqual({ total: 5, human: 2, agent: 1, generated: 1, structural: 1 });
+  });
+
+  it("relTime renders relative human time", () => {
+    const now = Date.parse("2026-03-01T12:00:00Z");
+    expect(fns.relTime("2026-03-01T11:59:30Z", now)).toBe("just now");
+    expect(fns.relTime("2026-03-01T11:30:00Z", now)).toBe("30m ago");
+    expect(fns.relTime("2026-03-01T09:00:00Z", now)).toBe("3h ago");
+    expect(fns.relTime("2026-02-20T12:00:00Z", now)).toBe("9d ago");
+    expect(fns.relTime("2025-12-01T12:00:00Z", now)).toBe("3mo ago");
+    expect(fns.relTime("2024-03-01T12:00:00Z", now)).toBe("2y ago");
+    expect(fns.relTime("", now)).toBe("");
+    expect(fns.relTime("not-a-date", now)).toBe("");
+  });
+});
+
+describe("openNoteCommand", () => {
+  it("respects $EDITOR and $VISUAL, splitting args", () => {
+    expect(openNoteCommand("/v/n.md", { EDITOR: "code --wait" })).toEqual({ command: "code", args: ["--wait", "/v/n.md"] });
+    expect(openNoteCommand("/v/n.md", { VISUAL: "vim" })).toEqual({ command: "vim", args: ["/v/n.md"] });
+    expect(openNoteCommand("/v/n.md", {})).toHaveProperty("command"); // platform fallback
+  });
+});
+
+describe("openNoteInEditor", () => {
+  it("refuses unsafe slugs and missing notes without shelling out", async () => {
+    const vault = await makeTempDir();
+    let called = false;
+    const spy = () => {
+      called = true;
+      return { command: "true", args: [] };
+    };
+    expect(await openNoteInEditor(vault, "../escape", spy)).toBe(false);
+    expect(await openNoteInEditor(vault, "missing", spy)).toBe(false);
+    expect(called).toBe(false);
+  });
+
+  it("opens an existing note via the injected command", async () => {
+    const vault = await makeTempDir();
+    await addNote(vault, { title: "Open Me", body: "x", tags: [], source: "human" });
+    const opened: string[] = [];
+    const spy = (p: string) => {
+      opened.push(p);
+      return { command: "true", args: [] };
+    };
+    expect(await openNoteInEditor(vault, "open-me", spy)).toBe(true);
+    expect(opened).toHaveLength(1);
+    expect(opened[0]).toContain("open-me.md");
+  });
+});
+
+describe("weave-view /open/<slug> route", () => {
+  it("opens an existing note via the injected command and 404s otherwise", async () => {
+    const vault = await makeTempDir();
+    await addNote(vault, { title: "Open Route", body: "x", tags: [], source: "human" });
+    const opened: string[] = [];
+    const server = await startViewer({
+      cwd: await makeTempDir(),
+      vaultRoot: vault,
+      openCommand: (p) => {
+        opened.push(p);
+        return { command: "true", args: [] };
+      },
+    });
+    try {
+      const ok = await fetch(`${server.url}/open/open-route`, { method: "POST" });
+      expect(ok.status).toBe(200);
+      expect(opened).toHaveLength(1);
+      expect(opened[0]).toContain("open-route.md");
+
+      const missing = await fetch(`${server.url}/open/ghost`, { method: "POST" });
+      expect(missing.status).toBe(404);
+
+      const traversal = await fetch(`${server.url}/open/..%2F..%2Fetc%2Fpasswd`, { method: "POST" });
+      expect(traversal.status).toBe(404);
+
+      // GET is not allowed on /open
+      const get = await fetch(`${server.url}/open/open-route`);
+      expect(get.status).toBe(404);
+    } finally {
+      await server.stop();
+    }
+  });
+});
+
 describe("page script (real browser JS, executed through node)", () => {
   function extractScript(html: string): string {
     const m = /<script>([\s\S]*)<\/script>/.exec(html);
@@ -207,6 +414,31 @@ describe("page script (real browser JS, executed through node)", () => {
   it("the whole page script parses as valid JS", () => {
     const js = extractScript(renderPage());
     expect(() => new Function(js)).not.toThrow();
+  });
+
+  it("exposes the three v2 surfaces, status strip, and detail tabs", () => {
+    const page = renderPage();
+    // three surfaces over one model
+    expect(page).toContain('data-surface="graph"');
+    expect(page).toContain('data-surface="list"');
+    expect(page).toContain('data-surface="health"');
+    // overview-first status strip
+    expect(page).toContain('id="status"');
+    expect(page).toContain('id="stamp"');
+    // detail tabs (Overview merges metadata + body; no separate Body tab)
+    expect(page).toContain('data-ptab="overview"');
+    expect(page).toContain('data-ptab="links"');
+    expect(page).toContain('data-ptab="backlinks"');
+    expect(page).not.toContain('data-ptab="body"');
+    // focus + open-in-editor actions
+    expect(page).toContain('id="pfocus"');
+    expect(page).toContain('id="popen"');
+    // provenance is style-first: ring + glyph + filter, never color alone
+    expect(page).toContain('PROV_GLYPH');
+    expect(page).toContain('prov-filter');
+    // dark + light token sets
+    expect(page).toContain('data-theme="dark"');
+    expect(page).toContain('data-theme="light"');
   });
 
   it("the embedded markdown renderer handles the supported syntax", () => {
@@ -221,7 +453,8 @@ describe("page script (real browser JS, executed through node)", () => {
     expect(out).toContain("<strong>bold</strong>");
     expect(out).toContain("<em>ital</em>");
     expect(out).toContain("<code>code</code>");
-    expect(out).toContain('class="wikilink">the link<');
+    expect(out).toContain("class='wikilink'");
+    expect(out).toContain(">the link</a>");
     expect(out).toContain("<ul><li>one</li><li>two</li></ul>");
     expect(out).toContain("<blockquote>quoted</blockquote>");
     expect(out).toContain("<pre><code>var x = 1;");

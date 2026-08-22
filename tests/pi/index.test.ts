@@ -1,7 +1,8 @@
 import { promises as fs } from "node:fs";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
-import piWeave from "../../src/pi/index";
+import { fauxAssistantMessage } from "@earendil-works/pi-ai";
+import piWeave, { deepScanDone } from "../../src/pi/index";
 import { commitAll, createMockCtx, createMockPi, gitExec, gitInit, makeTempDir, withVaultEnv, writeFixture } from "../helpers";
 
 function buildExtension() {
@@ -23,7 +24,7 @@ describe("extension registration", () => {
   it("registers both tools and both commands", () => {
     const mock = buildExtension();
     expect([...mock.tools.keys()].sort()).toEqual(["weave_note", "weave_repo"]);
-    expect([...mock.commands.keys()].sort()).toEqual(["weave", "weave-scan", "weave-view"]);
+    expect([...mock.commands.keys()].sort()).toEqual(["weave", "weave-scan", "weave-scan-cancel", "weave-view"]);
     for (const name of ["weave_note", "weave_repo"]) {
       const tool = mock.tools.get(name)!;
       expect(tool.description.length).toBeGreaterThan(20);
@@ -145,6 +146,154 @@ describe("/weave-scan command", () => {
   });
 });
 
+describe("/weave-scan deep", () => {
+  it("warns and stays light-only when no session model is active", async () => {
+    const mock = buildExtension();
+    const repo = await makeRepo();
+    await withVaultEnv(await makeTempDir(), async () => {
+      const ctx = createMockCtx(repo); // no model configured
+      await mock.commands.get("weave-scan")!.handler("deep", ctx);
+      await deepScanDone(repo); // background scan settles
+      expect(ctx.ui.notifications.some((n) => n.level === "warning" && n.message.includes("deep scan needs an active session model"))).toBe(true);
+      expect(ctx.ui.statuses.weave).toContain(":ok");
+      // light index is still written
+      expect(JSON.parse(await fs.readFile(join(repo, ".okf", "okf.json"), "utf8")).scope).toBe("repository");
+    });
+  });
+
+  it("runs a deep scan with the session model and writes summary sidecars", async () => {
+    const mock = buildExtension();
+    const repo = await makeRepo();
+    await withVaultEnv(await makeTempDir(), async () => {
+      const ctx = createMockCtx(repo, true, {
+        model: { provider: "testprovider", id: "test-model-1" },
+        complete: async () => fauxAssistantMessage("Summarizes the entry point."),
+      });
+      await mock.commands.get("weave-scan")!.handler("deep", ctx);
+      await deepScanDone(repo);
+      expect(ctx.ui.notifications.some((n) => n.level === "info" && n.message.includes("deep scan complete"))).toBe(true);
+      const summariesDir = join(repo, ".okf", "repository", "summaries");
+      const files = await fs.readdir(summariesDir);
+      expect(files.some((f) => f.endsWith(".summary.md"))).toBe(true);
+      expect(ctx.ui.statuses.weave).toContain(":ok");
+    });
+  });
+
+  it("reports live progress on the status line while scanning", async () => {
+    const mock = buildExtension();
+    const repo = await makeRepo();
+    await writeFixture(repo, "src/extra.ts", "export const extra = 1;\n");
+    commitAll(repo, "add extra");
+    await withVaultEnv(await makeTempDir(), async () => {
+      const ctx = createMockCtx(repo, true, {
+        model: { provider: "p", id: "m" },
+        // slow the model so the scan is still in flight when we sample the
+        // status line (the settled status overwrites progress on completion)
+        complete: async () => {
+          await new Promise((r) => setTimeout(r, 100));
+          return fauxAssistantMessage("s");
+        },
+      });
+      await mock.commands.get("weave-scan")!.handler("deep", ctx);
+      // give the background scan a tick to emit its first progress line
+      await new Promise((r) => setTimeout(r, 20));
+      const progress = ctx.ui.statuses.weave ?? "";
+      expect(progress).toMatch(/\d+\/\d+ \(\d+%\)/);
+      expect(progress).toContain("src/");
+      await deepScanDone(repo);
+    });
+  });
+
+  it("treats any non-deep arg as light-only (exact-match contract)", async () => {
+    const mock = buildExtension();
+    const repo = await makeRepo();
+    await withVaultEnv(await makeTempDir(), async () => {
+      const ctx = createMockCtx(repo, true, {
+        model: { provider: "p", id: "m" },
+        complete: async () => { throw new Error("should not be called"); },
+      });
+      await mock.commands.get("weave-scan")!.handler("nonsense", ctx);
+      expect(ctx.ui.notifications.some((n) => n.message.includes("deep scan"))).toBe(false);
+      expect(ctx.ui.statuses.weave).toContain(":ok");
+    });
+  });
+
+  it("matches 'DEEP' case-insensitively", async () => {
+    const mock = buildExtension();
+    const repo = await makeRepo();
+    await withVaultEnv(await makeTempDir(), async () => {
+      const ctx = createMockCtx(repo, true, {
+        model: { provider: "p", id: "m" },
+        complete: async () => fauxAssistantMessage("s"),
+      });
+      await mock.commands.get("weave-scan")!.handler("DEEP", ctx);
+      await deepScanDone(repo);
+      expect(ctx.ui.notifications.some((n) => n.message.includes("deep scan complete"))).toBe(true);
+    });
+  });
+});
+
+describe("/weave-scan-cancel", () => {
+  it("reports when no deep scan is running", async () => {
+    const mock = buildExtension();
+    const repo = await makeRepo();
+    await withVaultEnv(await makeTempDir(), async () => {
+      const ctx = createMockCtx(repo);
+      await mock.commands.get("weave-scan-cancel")!.handler("", ctx);
+      expect(ctx.ui.notifications.some((n) => n.message.includes("no deep scan is currently running"))).toBe(true);
+    });
+  });
+
+  it("warns when a deep scan is already running for the repository", async () => {
+    const mock = buildExtension();
+    const repo = await makeRepo();
+    await writeFixture(repo, "src/a.ts", "export const a = 1;\n");
+    await writeFixture(repo, "src/b.ts", "export const b = 2;\n");
+    commitAll(repo, "add files");
+    await withVaultEnv(await makeTempDir(), async () => {
+      const ctx = createMockCtx(repo, true, {
+        model: { provider: "p", id: "m" },
+        complete: async () => {
+          // Keep the first scan in flight long enough that the second
+          // invocation's buildRepoIndex+writeRepoIndex cannot outrun it
+          // (a short delay made this test flaky on the 95% CI gate).
+          await new Promise((r) => setTimeout(r, 1000));
+          return fauxAssistantMessage("s");
+        },
+      });
+      await mock.commands.get("weave-scan")!.handler("deep", ctx);
+      // second invocation while the first is still in flight
+      await mock.commands.get("weave-scan")!.handler("deep", ctx);
+      expect(ctx.ui.notifications.some((n) => n.message.includes("already running"))).toBe(true);
+      await deepScanDone(repo);
+    });
+  });
+
+  it("aborts an in-flight deep scan and reports cancellation", async () => {
+    const mock = buildExtension();
+    const repo = await makeRepo();
+    await writeFixture(repo, "src/a.ts", "export const a = 1;\n");
+    await writeFixture(repo, "src/b.ts", "export const b = 2;\n");
+    await writeFixture(repo, "src/c.ts", "export const c = 3;\n");
+    commitAll(repo, "add files");
+    await withVaultEnv(await makeTempDir(), async () => {
+      const ctx = createMockCtx(repo, true, {
+        model: { provider: "p", id: "m" },
+        complete: async () => {
+          // Let the scan start, then cancel it from the cancel command.
+          await new Promise((r) => setTimeout(r, 5));
+          return fauxAssistantMessage("s");
+        },
+      });
+      await mock.commands.get("weave-scan")!.handler("deep", ctx);
+      await mock.commands.get("weave-scan-cancel")!.handler("", ctx);
+      await deepScanDone(repo);
+      expect(ctx.ui.notifications.some((n) => n.message.includes("cancellation requested"))).toBe(true);
+      expect(ctx.ui.notifications.some((n) => n.message.includes("deep scan cancelled"))).toBe(true);
+    });
+  });
+});
+
 describe("weave_note tool", () => {
   it("add + get round trip", async () => {
     const mock = buildExtension();
@@ -258,6 +407,43 @@ describe("weave_note tool", () => {
     });
   });
 
+  it("finalize restructures the body above the raw tail and preserves it", async () => {
+    const mock = buildExtension();
+    const ctx = createMockCtx(await makeTempDir());
+    await withVaultEnv(await makeTempDir(), async () => {
+      await mock.runTool("weave_note", { action: "add", title: "Auth migration", text: "## Raw notes\n\n\"We should move to OIDC.\"", source: "human" }, ctx);
+      const res = await mock.runTool("weave_note", { action: "finalize", slug: "auth-migration", text: "**Decision:** move toward OIDC." }, ctx);
+      expect(res.content[0]?.text).toContain("Finalized auth-migration");
+      expect(res.content[0]?.text).toContain("Raw notes tail preserved");
+      const got = await mock.runTool("weave_note", { action: "get", slug: "auth-migration" }, ctx);
+      expect(got.content[0]?.text).toContain("**Decision:** move toward OIDC.");
+      expect(got.content[0]?.text).toContain("## Raw notes");
+      expect(got.content[0]?.text).toContain("\"We should move to OIDC.\"");
+    });
+  });
+
+  it("finalize reports unknown and unsafe slugs", async () => {
+    const mock = buildExtension();
+    const ctx = createMockCtx(await makeTempDir());
+    await withVaultEnv(await makeTempDir(), async () => {
+      const missing = await mock.runTool("weave_note", { action: "finalize", slug: "ghost", text: "x" }, ctx);
+      expect(missing.content[0]?.text).toContain("No note found");
+      const bad = await mock.runTool("weave_note", { action: "finalize", slug: "../escape", text: "x" }, ctx);
+      expect(bad.content[0]?.text).toContain("Invalid note slug");
+    });
+  });
+
+  it("add accepts an explicit source for user-scribbled notes", async () => {
+    const mock = buildExtension();
+    const ctx = createMockCtx(await makeTempDir());
+    await withVaultEnv(await makeTempDir(), async () => {
+      const res = await mock.runTool("weave_note", { action: "add", title: "Scribble", text: "user's words", source: "human" }, ctx);
+      expect(res.details).toMatchObject({ action: "add", note: { source: "human" } });
+      const got = await mock.runTool("weave_note", { action: "get", slug: "scribble" }, ctx);
+      expect(got.content[0]?.text).toContain("source: human");
+    });
+  });
+
   it("throws on missing required params", async () => {
     const mock = buildExtension();
     const ctx = createMockCtx(await makeTempDir());
@@ -267,6 +453,8 @@ describe("weave_note tool", () => {
       await expect(mock.runTool("weave_note", { action: "get" }, ctx)).rejects.toThrow(/slug/);
       await expect(mock.runTool("weave_note", { action: "append", text: "x" }, ctx)).rejects.toThrow(/slug/);
       await expect(mock.runTool("weave_note", { action: "append", slug: "s" }, ctx)).rejects.toThrow(/text/);
+      await expect(mock.runTool("weave_note", { action: "finalize", text: "x" }, ctx)).rejects.toThrow(/slug/);
+      await expect(mock.runTool("weave_note", { action: "finalize", slug: "s" }, ctx)).rejects.toThrow(/text/);
       await expect(mock.runTool("weave_note", { action: "search" }, ctx)).rejects.toThrow(/query/);
     });
   });

@@ -136,6 +136,8 @@ export interface RepoStatus {
   name: string;
   indexed: boolean;
   staleness: StalenessReport;
+  /** Deep-scan summaries on disk (docs/scan-modes.md); 0 when none indexed. */
+  summaryCount: number;
 }
 
 /** Combined knowledge-workspace view for the current directory. */

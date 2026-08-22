@@ -2,7 +2,11 @@
 
 > Status: **product & design spec**. The skill skeleton exists at
 > [`skills/weave-notepad/SKILL.md`](../skills/weave-notepad/SKILL.md); the
-> experience described here is largely roadmap.
+> experience described here is largely roadmap. **Implemented so far:**
+> explicit capture, verbatim scribbles under a `## Raw notes` tail, and
+> on-request finalization that restructures the body above the tail while
+> preserving it verbatim (`weave_note` action=finalize, `finalizeNote` in
+> `src/core/vault.ts`). The graph/visualization layers remain roadmap.
 >
 > Related: [design.md](design.md) (overall architecture, provenance §13,
 > scopes §17), [weave-view.md](weave-view.md) (the viewer this spec drives),
@@ -10,7 +14,10 @@
 > codebase and lists the deltas this spec implies.
 
 *****
-> ERAN INPUT HERE - no, user should explictly request ot create a note. the granola experience is writing scribble notes, and having AI to finalize them. while keeping the raw notes at the end of the document.
+> Eran's directive (2026-08) is incorporated: capture is **explicit** (the
+> user asks for a note to exist), Pi **finalizes** scribbles on request, and
+> the raw notes are preserved at the end of the document. See §3 and
+> Appendix A.
 *****
 
 The Notepad Skill is the primary human-facing interaction model: it gives Pi
@@ -77,25 +84,29 @@ The skill should make all of these feel like **one workspace**.
 
 # 3. The Granola-inspired experience
 
+Capture is **explicit**. Pi never promotes conversation into notes on its own
+initiative. A note exists only because the user asked for it to exist:
 
-The user should not have to think:
+> "Start a note on the authentication migration."
+> "Add this to the OIDC note."
+> "Jot that down."
 
-> "I need to create a note."
-
-Instead, Pi should naturally capture the conversation/session as useful
-knowledge.
+The user drives *what* becomes a note and *when*. Pi's job is to make capture
+effortless and the result useful — not to decide on the user's behalf.
 
 For example:
 
 ```text
 User:
+Start a note on the authentication migration.
+
+User:
 We're probably going to migrate the authentication
 service to OIDC next quarter.
 ```
 
-The Notepad Skill recognizes this as potentially useful knowledge.
-
-Pi might internally structure it as:
+Pi appends the user's words as a rough, verbatim scribble to the note. It may
+internally recognize the shape of the knowledge:
 
 ```text
 Topic:
@@ -118,7 +129,7 @@ Security architecture
 ```
 
 But it should **not automatically promote every statement into authoritative
-knowledge**.
+knowledge**, and it should **not** create notes the user didn't ask for.
 
 This distinction is critical.
 
@@ -128,11 +139,15 @@ This distinction is critical.
 
 The Notepad Skill has two layers.
 
-## Raw note
+## Raw notes
 
-What was actually said.
+What was actually said, kept verbatim. Scribbles are appended to a `## Raw
+notes` tail at the end of the note. This section is **append-only and never
+rewritten** — it is the literal record of the user's words.
 
 ```text
+## Raw notes
+
 "We're probably going to migrate the authentication
 service to OIDC next quarter."
 ```
@@ -256,9 +271,9 @@ During a session:
 ```text
 User talks
    ↓
-Pi captures
+Pi appends scribbles (on request)
    ↓
-Notepad accumulates
+Raw notes accumulate
    ↓
 Pi identifies structure
    ↓
@@ -269,8 +284,11 @@ Later:
 
 > Clean this note up.
 
-Pi can transform the raw session into a structured note while preserving the
-original content and provenance.
+Pi restructures the top of the note — front-loaded summary, sections,
+entities, links — while leaving the `## Raw notes` tail untouched. The
+principle is scoped **within a note**: capture is explicit (the user asked
+for the note to exist), but *organization* is deferred until the user asks
+to finalize.
 
 ---
 
@@ -483,8 +501,8 @@ Security Review
 Incident #421
 ```
 
-This creates a structured session summary without requiring the user to
-manually maintain it.
+This creates a structured session summary — but only for notes the user
+asked to exist, and only when the user asks to finalize them.
 
 ---
 
@@ -523,6 +541,10 @@ Related knowledge
 But the important part is that these aren't merely generated Markdown.
 
 They are backed by structured knowledge and provenance.
+
+Finalization is **editorial, not generative**: the summary is built from the
+user's own words, and the `## Raw notes` tail is preserved verbatim beneath
+it. Pi only summarizes notes the user asked to exist.
 
 ---
 
@@ -919,13 +941,15 @@ User:
 
 > Add a note that we should investigate replacing the GatewayAdapter.
 
-Pi creates a candidate task.
+Pi creates the note (explicit request) and appends the user's words as a
+verbatim scribble.
 
 Later:
 
 > Summarize this investigation.
 
-Pi produces the structured note.
+Pi finalizes the note: restructures the body above, preserves the raw
+scribbles under a `## Raw notes` tail.
 
 The knowledge graph remains updated.
 
@@ -937,11 +961,11 @@ The first version should **not** attempt to reproduce all of Granola.
 
 ### MVP
 
-**Capture**
+**Capture** (explicit only)
 
-* session notes
-* raw conversation provenance
-* structured summary
+* notes created on request
+* verbatim scribbles appended to `## Raw notes`
+* finalization on request (restructure body, preserve raw tail)
 
 **Knowledge**
 
@@ -1058,7 +1082,7 @@ Grounding the spec in what exists today:
 
 | Spec concept | Current primitive | Gap |
 | --- | --- | --- |
-| Capture (§4, §7) | `weave_note` add/append via the skill | Behavioral: skill teaches *when* to capture; none of it is automatic yet |
+| Capture (§4, §7) | `weave_note` add/append via the skill | Explicit by design (redesign 2026-08): capture only on request; finalization is editorial, raw tail preserved. **Implemented:** `finalizeNote` in `src/core/vault.ts` + `weave_note` action=finalize restructure the body above the `## Raw notes` tail and preserve it verbatim. |
 | Retrieval (§17, §18) | `weave_note` search/get with snippets; exact + body search | Semantic/graph/temporal/provenance retrieval variants are future work |
 | Repository scope (§11, §12) | `weave_repo` status/scan/overview; auto-detect on session start | Repo *entity* references inside notes (clickable) need the viewer + richer index levels (design §9) |
 | Visualization (§9, §10, §20) | none | [weave-view.md](weave-view.md) is the planned layer |
@@ -1084,4 +1108,6 @@ Grounding the spec in what exists today:
    existing notes.
 4. **Command naming.** Spec proposes `/notepad*`; current surface uses the
    `weave-` prefix (`/weave`, `/weave-scan`, planned `/weave-view`).
-   Decision pending; one namespace, consistently applied.
+   Decision pending; one namespace, consistently applied. A future
+   `finalize` convenience command stays under the `weave-` namespace
+   (e.g. `/weave-note finalize`) — **not implemented in this sprint**.
