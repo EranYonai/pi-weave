@@ -374,10 +374,34 @@ describe("buildGraph — .okf subtree", () => {
   });
 
   it("omits the .okf subtree when there are no ok files", () => {
-    const index = makeIndex({
-      structure: { ...makeIndex().structure, modules: [{ path: "src", fileCount: 2 }], okFiles: undefined },
-    });
+    const structure = { ...makeIndex().structure, modules: [{ path: "src", fileCount: 2 }] };
+    delete structure.okFiles;
+    const index = makeIndex({ structure });
     const model = buildGraph(input({ repository: { index, staleness: FRESH } }));
     expect(model.nodes.some((n) => n.id.startsWith("okf:"))).toBe(false);
+  });
+
+  it("builds the .okf subtree with only summaries and with only repository files", () => {
+    // only a summary file -> repository folder exists but has no direct files
+    const sumOnly = makeIndex({
+      structure: { ...makeIndex().structure, okFiles: [".okf/repository/summaries/a.md"] },
+    });
+    const a = buildGraph(input({ repository: { index: sumOnly, staleness: FRESH } }));
+    expect(a.nodes.some((n) => n.id === "module:.okf/repository")).toBe(true);
+    expect(a.nodes.some((n) => n.id === "okf:repository/summaries/a.md")).toBe(true);
+    // only a repository file, no summaries -> no summaries folder node
+    const repoOnly = makeIndex({
+      structure: { ...makeIndex().structure, okFiles: [".okf/repository/git.json"] },
+    });
+    const b = buildGraph(input({ repository: { index: repoOnly, staleness: FRESH } }));
+    expect(b.nodes.some((n) => n.id === "module:.okf/repository/summaries")).toBe(false);
+    expect(b.nodes.some((n) => n.id === "okf:repository/git.json")).toBe(true);
+    // only a root-level okf file -> no repository/summaries folders at all
+    const rootOnly = makeIndex({
+      structure: { ...makeIndex().structure, okFiles: [".okf/okf.json"] },
+    });
+    const c = buildGraph(input({ repository: { index: rootOnly, staleness: FRESH } }));
+    expect(c.nodes.some((n) => n.id === "module:.okf/repository")).toBe(false);
+    expect(c.nodes.some((n) => n.id === "okf:okf.json")).toBe(true);
   });
 });
