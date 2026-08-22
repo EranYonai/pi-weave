@@ -27,8 +27,21 @@ harnesses, read the JSON documents under `.okf/` directly.
 3. **Descend progressively** (design §9): only open files in modules relevant
    to the user's question. The index gives you the map; the code gives you
    the terrain.
-4. **Answer with structure**: name modules and packages by their indexed
+4. **Read summaries before full files**: if the repo has been deep-scanned
+   (`.okf/repository/summaries/` exists), read the relevant sidecars first —
+   they tell you what a file does and its outward surface in 1–3 sentences,
+   so you can decide whether to open the full file at all.
+5. **Answer with structure**: name modules and packages by their indexed
    paths so the user can jump straight to them.
+
+## Deep summaries
+
+`/weave-scan deep` creates or refreshes `.okf/repository/summaries/` — one
+sidecar per file, written by the session model. It is **opt-in and
+incremental**: it never runs implicitly, and it only re-summarizes files
+whose content hash changed since their last summary. If summaries are
+missing or stale, offer `/weave-scan deep` to create or refresh them before
+diving into full files.
 
 ## On-disk layout
 
@@ -38,7 +51,8 @@ harnesses, read the JSON documents under `.okf/` directly.
 └── repository/
     ├── identity.json      # name, remotes, default branch
     ├── git.json           # HEAD sha + branch + changed files (staleness anchor)
-    └── structure.json     # languages, packages, modules, entry points
+    ├── structure.json     # languages, packages, modules, entry points
+    └── summaries/         # deep-scan sidecars (one per file, when present)
 ```
 
 ## Trust model

@@ -1,7 +1,19 @@
 # scan-modes.md — light and deep repository scanning
 
-> Status: spec for the next iteration (folds `docs/TODO.md` items **Todo 1**
-> and **Todo 3** — the codebase-memory-mcp study — into one design).
+> Status: **implemented** (folds `docs/TODO.md` items **Todo 1** and **Todo 3**
+> — the codebase-memory-mcp study — into one design).
+
+## As-built deltas
+
+Two details differ from the spec below; the rest matches.
+
+- **Result shape** is `{ considered, written, skippedFresh, skippedTooBig,
+  failed[], pruned }` — the field counting candidates is `considered`, not
+  `total`.
+- **The adapter resolves auth internally.** It calls
+  `ctx.modelRegistry.complete(model, context, { maxTokens, signal })` —
+  auth is owned by `modelRegistry`, not the spec's `getProviderAuth` +
+  `completeSimple` dance.
 
 ## What we have today
 
@@ -73,13 +85,14 @@ The path name is derived by replacing `/` with `--` and appending
 5. Write/refresh sidecars; prune sidecars whose `target` is no longer
    tracked. Collect per-file failures without aborting the run.
 
-Result shape: `{ total, written, skippedFresh, skippedTooBig, failed, pruned }`.
+Result shape: `{ considered, written, skippedFresh, skippedTooBig, failed, pruned }`.
 
 ### The summarizer (adapter: `src/pi/summarize.ts`)
 
-- Resolve the session model via `ctx.model`; auth via
-  `ctx.modelRegistry.getProviderAuth(model.provider)` → pi-ai
-  `completeSimple(model, context, { apiKey, baseUrl, headers, maxTokens, signal })`.
+- Resolve the session model via `ctx.model`; auth is owned by
+  `ctx.modelRegistry` — the adapter calls
+  `ctx.modelRegistry.complete(model, context, { maxTokens, signal })`
+  (pi-ai `completeSimple` is not used directly).
 - Prompt asks for 1–3 sentences: what the file does, its outward surface,
   anything surprising — terse, navigation-oriented.
 - No model available (headless rpc without provider, etc.) → friendly notice,
