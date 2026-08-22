@@ -104,6 +104,17 @@ describe("read/write summaries on disk", () => {
     }
   });
 
+  it("ignores non-summary files sitting in the summaries dir", async () => {
+    const dir = join(root, ".okf", "repository", "summaries");
+    await fs.writeFile(join(dir, "notes.txt"), "not a sidecar", "utf8");
+    try {
+      const all = await readSummaries(root);
+      expect(all.find((r) => r.target === "notes")).toBeUndefined();
+    } finally {
+      await fs.rm(join(dir, "notes.txt"), { force: true });
+    }
+  });
+
   it("pruneSummaries removes sidecars the predicate rejects", async () => {
     const dir = join(root, ".okf", "repository", "summaries");
     const before = await readSummaries(root);
@@ -278,6 +289,21 @@ describe("runDeepScan", () => {
       expect(result!.written).toBeLessThan(3); // at least one skipped for size
     } finally {
       await fs.rm(tiny, { recursive: true, force: true });
+    }
+  });
+
+  it("skips binary content (NUL byte) as too-big", async () => {
+    const repo = await makeTempDir();
+    gitInit(repo);
+    try {
+      await writeFixture(repo, "src/blob.ts", "export const a = 1;\n");
+      await fs.writeFile(join(repo, "src", "blob.ts"), Buffer.from([0x00, 0x01, 0x02]), "utf8");
+      await commitAll(repo);
+      const result = await runDeepScan(repo, { summarize: async () => "s" });
+      expect(result!.skippedTooBig).toBe(1);
+      expect(result!.written).toBe(0);
+    } finally {
+      await fs.rm(repo, { recursive: true, force: true });
     }
   });
 

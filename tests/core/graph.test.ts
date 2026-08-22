@@ -79,6 +79,10 @@ describe("extractWikilinks", () => {
   it("ignores empties, non-link brackets, and unclosed links", () => {
     expect(extractWikilinks("[[]] [x] [[  ]] [[unclosed")).toEqual([]);
   });
+
+  it("skips whitespace-only targets (empty after trim)", () => {
+    expect(extractWikilinks("[[   ]] [[\t]]")).toEqual([]);
+  });
   it("handles no links at all", () => {
     expect(extractWikilinks("plain markdown [text](url)")).toEqual([]);
   });
@@ -251,6 +255,23 @@ describe("buildGraph — edge branches", () => {
     const model = buildGraph(input({ repository: { index, staleness: FRESH } }));
     const labels = model.nodes.filter((n) => n.kind === "external").map((n) => n.label);
     expect(labels).toEqual(["a b", "repo"]);
+  });
+
+  it("labels a detached HEAD as (detached)", () => {
+    const index = makeIndex();
+    index.git.branch = "";
+    const model = buildGraph(input({ repository: { index, staleness: FRESH } }));
+    const gitState = model.nodes.find((n) => n.id === "gitState")!;
+    expect(gitState.label).toContain("(detached)");
+    expect(gitState.detail.branch).toBe("(detached)");
+  });
+
+  it("sorts equal-count languages alphabetically (localeCompare tiebreak)", () => {
+    const index = makeIndex();
+    index.structure.languages = { Zig: 5, Go: 5 };
+    const model = buildGraph(input({ repository: { index, staleness: FRESH } }));
+    const repo = model.nodes.find((n) => n.id === "repository")!;
+    expect(repo.detail.languages).toBe("Go (5), Zig (5)");
   });
 });
 
