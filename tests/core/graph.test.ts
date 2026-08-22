@@ -46,9 +46,11 @@ function makeIndex(overrides: Partial<RepoIndex> = {}): RepoIndex {
       modules: [
         { path: "(root)", fileCount: 2 },
         { path: "src", fileCount: 28 },
+        { path: ".okf", fileCount: 1 },
       ],
       entryPoints: ["src/index.ts"],
       topLevel: [{ name: "src", fileCount: 28 }],
+      okFiles: [".okf/repository/git.json"],
     },
     ...overrides,
   };
@@ -336,5 +338,46 @@ describe("buildGraph — summaries", () => {
     const ep2 = noModel.nodes.find((n) => n.id === "entryPoint:src/index.ts");
     expect(ep2?.detail.summary).toBe("Does a thing.");
     expect(ep2?.detail["summarized by"]).toBeUndefined();
+  });
+});
+
+describe("buildGraph — .okf subtree", () => {
+  it("renders .okf index files as an expandable subtree under the .okf module", () => {
+    const index = makeIndex({
+      structure: {
+        ...makeIndex().structure,
+        modules: [{ path: ".okf", fileCount: 3 }],
+        okFiles: [
+          ".okf/okf.json",
+          ".okf/repository/git.json",
+          ".okf/repository/structure.json",
+          ".okf/repository/summaries/a.md",
+        ],
+      },
+    });
+    const model = buildGraph(input({ repository: { index, staleness: FRESH } }));
+    const ids = model.nodes.map((n) => n.id);
+    // files are file-kind and path-derived
+    expect(ids).toContain("okf:okf.json");
+    expect(ids).toContain("okf:repository/git.json");
+    expect(ids).toContain("okf:repository/summaries/a.md");
+    expect(model.nodes.find((n) => n.id === "okf:okf.json")?.kind).toBe("file");
+    // folder containers exist (repository, summaries)
+    expect(ids).toContain("module:.okf/repository");
+    expect(ids).toContain("module:.okf/repository/summaries");
+    // contains edges: file under repository folder, summary under summaries folder
+    const edgesOf = (s: string) => model.edges.filter((e) => e.source === s && e.kind === "contains").map((e) => e.target).sort();
+    expect(edgesOf("module:.okf/repository")).toEqual(["module:.okf/repository/summaries", "okf:repository/git.json", "okf:repository/structure.json"]);
+    expect(edgesOf("module:.okf/repository/summaries")).toEqual(["okf:repository/summaries/a.md"]);
+    // the .okf root module itself exists
+    expect(ids).toContain("module:.okf");
+  });
+
+  it("omits the .okf subtree when there are no ok files", () => {
+    const index = makeIndex({
+      structure: { ...makeIndex().structure, modules: [{ path: "src", fileCount: 2 }], okFiles: undefined },
+    });
+    const model = buildGraph(input({ repository: { index, staleness: FRESH } }));
+    expect(model.nodes.some((n) => n.id.startsWith("okf:"))).toBe(false);
   });
 });

@@ -246,7 +246,7 @@ describe("page pure functions (extract-and-run)", () => {
     relTime: (iso: string, now: number) => string;
     linksOf: (id: string, edges: { source: string; target: string; kind: string }[]) => number;
     listLabel: (node: { kind: string; label: string; detail: Record<string, string> }) => string;
-    listTree: (model: { nodes: { id: string; kind: string; label: string; provenance: string | null; detail: Record<string, string> }[]; edges: { source: string; target: string; kind: string }[] }, state: { kindFilter: string; provFilter: string; recentDays: number; query: string; listSort: string; listExpanded: Record<string, number> }) => { id: string; depth: number; hasKids: boolean; expanded: boolean }[];
+    listTree: (model: { nodes: { id: string; kind: string; label: string; provenance: string | null; detail: Record<string, string> }[]; edges: { source: string; target: string; kind: string }[] }, state: { kindFilter: string; provFilter: string; recentDays: number; query: string; listSort: string; listExpanded: Record<string, number>; showInternals?: boolean }) => { id: string; depth: number; hasKids: boolean; expanded: boolean }[];
   }
   function extractScript(html: string): string {
     const m = /<script>([\s\S]*)<\/script>/.exec(html);
@@ -367,7 +367,7 @@ describe("page pure functions (extract-and-run)", () => {
     };
     const state = {
       kindFilter: "", provFilter: "", recentDays: 0, query: "", listSort: "name",
-      listExpanded: { vault: 1, repository: 1, "module:src": 1 },
+      listExpanded: { vault: 1, repository: 1, "module:src": 1 }, showInternals: true,
     };
     const rows = fns.listTree(model, state);
     const ids = rows.map((r) => r.id);
@@ -397,7 +397,7 @@ describe("page pure functions (extract-and-run)", () => {
     };
     const state = {
       kindFilter: "", provFilter: "", recentDays: 0, query: "", listSort: "name",
-      listExpanded: { vault: 1, repository: 1 },
+      listExpanded: { vault: 1, repository: 1 }, showInternals: true,
     };
     const rows = fns.listTree(model, state);
     // exactly two roots: vault and repository (order follows node input)
@@ -440,14 +440,14 @@ describe("page pure functions (extract-and-run)", () => {
     // repository collapsed → only the roots are shown
     let rows = fns.listTree(model, {
       kindFilter: "", provFilter: "", recentDays: 0, query: "", listSort: "name",
-      listExpanded: {},
+      listExpanded: {}, showInternals: true,
     });
     expect(rows.map((r) => r.id)).toEqual(["repository", "vault"]);
     expect(rows.find((r) => r.id === "repository")?.expanded).toBe(false);
     // kind filter auto-expands ancestors so the matching file stays reachable
     rows = fns.listTree(model, {
       kindFilter: "entryPoint", provFilter: "", recentDays: 0, query: "", listSort: "name",
-      listExpanded: {},
+      listExpanded: {}, showInternals: true,
     });
     const ids = rows.map((r) => r.id);
     expect(ids).toContain("repository");
@@ -455,6 +455,85 @@ describe("page pure functions (extract-and-run)", () => {
     expect(ids).toContain("entryPoint:src/index.ts");
     expect(rows.find((r) => r.id === "repository")?.expanded).toBe(true);
     expect(rows.find((r) => r.id === "module:src")?.expanded).toBe(true);
+  });
+
+  it("listTree hides repo plumbing (internals) by default and reveals them when requested", () => {
+    const model = {
+      nodes: [
+        { id: "repository", kind: "repository", label: "repo", provenance: null, detail: {} },
+        { id: "gitState", kind: "gitState", label: "main @ ab", provenance: null, detail: {} },
+        { id: "external:x", kind: "external", label: "acme", provenance: null, detail: {} },
+        { id: "package:y", kind: "package", label: "demo", provenance: null, detail: {} },
+        { id: "entryPoint:src/index.ts", kind: "entryPoint", label: "src/index.ts", provenance: null, detail: { path: "src/index.ts" } },
+        { id: "module:src", kind: "module", label: "src", provenance: null, detail: { path: "src" } },
+        { id: "vault", kind: "vault", label: "Vault", provenance: null, detail: {} },
+        { id: "note:a", kind: "note", label: "A", provenance: "agent", detail: {} },
+      ],
+      edges: [
+        { source: "repository", target: "module:src", kind: "contains" },
+        { source: "repository", target: "gitState", kind: "anchored-at" },
+        { source: "repository", target: "external:x", kind: "contains" },
+        { source: "repository", target: "package:y", kind: "contains" },
+        { source: "repository", target: "entryPoint:src/index.ts", kind: "contains" },
+        { source: "vault", target: "note:a", kind: "contains" },
+      ],
+    };
+    const base = { kindFilter: "", provFilter: "", recentDays: 0, query: "", listSort: "name", listExpanded: { vault: 1, repository: 1, "module:src": 1 } };
+    const hidden = fns.listTree(model, { ...base });
+    const hiddenIds = hidden.map((r) => r.id);
+    // plumbing is gone by default, notes/modules remain
+    expect(hiddenIds).toContain("note:a");
+    expect(hiddenIds).toContain("module:src");
+    expect(hiddenIds).not.toContain("gitState");
+    expect(hiddenIds).not.toContain("external:x");
+    expect(hiddenIds).not.toContain("package:y");
+    expect(hiddenIds).not.toContain("entryPoint:src/index.ts");
+    // toggling showInternals reveals them again
+    const shown = fns.listTree(model, { ...base, showInternals: true });
+    const shownIds = shown.map((r) => r.id);
+    expect(shownIds).toContain("gitState");
+    expect(shownIds).toContain("external:x");
+    expect(shownIds).toContain("package:y");
+    expect(shownIds).toContain("entryPoint:src/index.ts");
+  });
+
+  it("listTree nests .okf file nodes under the .okf module as an expandable subtree", () => {
+    const model = {
+      nodes: [
+        { id: "repository", kind: "repository", label: "repo", provenance: null, detail: {} },
+        { id: "module:.okf", kind: "module", label: ".okf", provenance: null, detail: { path: ".okf" } },
+        { id: "module:.okf/repository", kind: "module", label: "repository", provenance: null, detail: { path: ".okf/repository" } },
+        { id: "module:.okf/repository/summaries", kind: "module", label: "summaries", provenance: null, detail: { path: ".okf/repository/summaries" } },
+        { id: "okf:okf.json", kind: "file", label: "okf.json", provenance: null, detail: {} },
+        { id: "okf:repository/git.json", kind: "file", label: "git.json", provenance: null, detail: {} },
+        { id: "okf:repository/summaries/a.md", kind: "file", label: "a.md", provenance: null, detail: {} },
+        { id: "vault", kind: "vault", label: "Vault", provenance: null, detail: {} },
+      ],
+      edges: [
+        { source: "repository", target: "module:.okf", kind: "contains" },
+        { source: "module:.okf", target: "module:.okf/repository", kind: "contains" },
+        { source: "module:.okf/repository", target: "module:.okf/repository/summaries", kind: "contains" },
+        { source: "module:.okf", target: "okf:okf.json", kind: "contains" },
+        { source: "module:.okf/repository", target: "okf:repository/git.json", kind: "contains" },
+        { source: "module:.okf/repository/summaries", target: "okf:repository/summaries/a.md", kind: "contains" },
+      ],
+    };
+    const state = {
+      kindFilter: "", provFilter: "", recentDays: 0, query: "", listSort: "name",
+      listExpanded: { vault: 1, repository: 1, "module:.okf": 1, "module:.okf/repository": 1, "module:.okf/repository/summaries": 1 },
+    };
+    const rows = fns.listTree(model, state);
+    const ids = rows.map((r) => r.id);
+    expect(ids).toContain("module:.okf");
+    // .okf file nodes are present and nested (not hidden as internals)
+    expect(ids).toContain("okf:okf.json");
+    expect(ids).toContain("okf:repository/git.json");
+    expect(ids).toContain("okf:repository/summaries/a.md");
+    expect(rows.find((r) => r.id === "module:.okf")?.hasKids).toBe(true);
+    // nesting depths: okf.json under .okf, git.json under repository, summary under summaries
+    expect(rows.find((r) => r.id === "okf:okf.json")?.depth).toBe(2);
+    expect(rows.find((r) => r.id === "okf:repository/git.json")?.depth).toBe(3);
+    expect(rows.find((r) => r.id === "okf:repository/summaries/a.md")?.depth).toBe(4);
   });
 });
 

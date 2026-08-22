@@ -200,6 +200,39 @@ function buildRepositorySide(
     nodes.push({ id: `entryPoint:${entry}`, kind: "entryPoint", label: entry, provenance: null, detail });
     edges.push({ source: "repository", target: `entryPoint:${entry}`, kind: "contains" });
   }
+
+  // Render the derived .okf index as an expandable subtree under its module.
+  // Files nest by directory: okf.json at the root, repository/*.json under a
+  // "repository" folder, and summary files under a "summaries" folder so a
+  // large summary set never explodes the tree. Ids are path-derived (stable).
+  if (structure.okFiles && structure.okFiles.length > 0) {
+    const okRoot = "module:.okf";
+    const repoDir = "module:.okf/repository";
+    const sumDir = "module:.okf/repository/summaries";
+    const okChildren: string[] = [];
+    const repoChildren: string[] = [];
+    const sumChildren: string[] = [];
+    for (const f of structure.okFiles) {
+      const rel = f.replace(/^\.okf\//, "");
+      const id = `okf:${rel}`;
+      const label = rel.split("/").pop() ?? rel;
+      nodes.push({ id, kind: "file", label, provenance: null, detail: { path: rel } });
+      if (rel.startsWith("repository/summaries/")) sumChildren.push(id);
+      else if (rel.startsWith("repository/")) repoChildren.push(id);
+      else okChildren.push(id);
+    }
+    okChildren.forEach((c) => edges.push({ source: okRoot, target: c, kind: "contains" }));
+    if (repoChildren.length > 0 || sumChildren.length > 0) {
+      nodes.push({ id: repoDir, kind: "module", label: "repository", provenance: null, detail: { path: ".okf/repository" } });
+      edges.push({ source: okRoot, target: repoDir, kind: "contains" });
+      repoChildren.forEach((c) => edges.push({ source: repoDir, target: c, kind: "contains" }));
+      if (sumChildren.length > 0) {
+        nodes.push({ id: sumDir, kind: "module", label: "summaries", provenance: null, detail: { path: ".okf/repository/summaries" } });
+        edges.push({ source: repoDir, target: sumDir, kind: "contains" });
+        sumChildren.forEach((c) => edges.push({ source: sumDir, target: c, kind: "contains" }));
+      }
+    }
+  }
 }
 
 /**

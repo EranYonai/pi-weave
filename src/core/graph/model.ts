@@ -13,7 +13,8 @@ export type NodeKind =
   | "package"
   | "entryPoint"
   | "gitState"
-  | "external";
+  | "external"
+  | "file";
 
 export type EdgeKind = "contains" | "anchored-at" | "links-to" | "mentions";
 
@@ -27,6 +28,7 @@ export const NODE_KINDS: readonly NodeKind[] = [
   "entryPoint",
   "gitState",
   "external",
+  "file",
 ];
 
 /** All edge kinds — the viewer legend and tests iterate this list. */

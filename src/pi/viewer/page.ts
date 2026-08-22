@@ -237,6 +237,7 @@ const PAGE = `<!DOCTYPE html>
       <option value="30">last 30 days</option>
       <option value="90">last 90 days</option>
     </select>
+    <label class="internals"><input id="internals" type="checkbox" aria-label="show internals"> show internals</label>
   </div>
   <div id="list-rows"></div>
   <button id="show-more" style="display:none">Show more</button>
@@ -394,7 +395,16 @@ const PAGE = `<!DOCTYPE html>
       var kids = (tree[id] || []).filter(function (kid) {
         return !(byId[kid] && byId[kid].kind === "entryPoint" && moduleFor(kid));
       });
-      return kids.concat(moduleEntries[id] || []);
+      kids = kids.concat(moduleEntries[id] || []);
+      // Knowledge-first default: hide repo plumbing (git anchor, remotes,
+      // packages, entry points) unless the user explicitly reveals internals.
+      if (!state.showInternals) {
+        kids = kids.filter(function (k) {
+          var kind = byId[k] && byId[k].kind;
+          return kind !== "gitState" && kind !== "external" && kind !== "package" && kind !== "entryPoint";
+        });
+      }
+      return kids;
     }
     var roots = model.nodes.filter(function (n) { return !incoming[n.id]; }).map(function (n) { return n.id; });
     var filtering = state.kindFilter || state.provFilter || state.recentDays || state.query;
@@ -458,7 +468,7 @@ const PAGE = `<!DOCTYPE html>
 
   var COLORS = { vault: "#8b5cf6", note: "#c4b5fd", repository: "#3b82f6",
     module: "#22c55e", "package": "#14b8a6", entryPoint: "#a3e635",
-    gitState: "#facc15", external: "#fb923c" };
+    gitState: "#facc15", external: "#fb923c", file: "#6ee7b7" };
   var PROV_COLOR = { human: "#a7f3d0", agent: "#e9d5ff", generated: "#94a3b8" };
   var PROV_GLYPH = { human: "●", agent: "◐", generated: "○" };
   var EDGE_COLORS = { contains: "#2e3a55", "anchored-at": "#a16207", "links-to": "#7c3aed", mentions: "#525252" };
@@ -473,6 +483,7 @@ const PAGE = `<!DOCTYPE html>
   var query = "", kindFilter = "", provFilter = "", recentDays = 0, listSort = "name";
   var listLimit = 100;
   var listExpanded = { vault: 1, repository: 1 };
+  var showInternals = false;
   var sim = {}, collapsed = {}, alpha = 0;
   var W = window.innerWidth, H = window.innerHeight, world = null;
   var cam = { x: 0, y: 0, k: 1 };
@@ -796,7 +807,7 @@ const PAGE = `<!DOCTYPE html>
     var byId = listById();
     var rows = listTree(model, {
       kindFilter: kindFilter, provFilter: provFilter, recentDays: recentDays,
-      query: query, listSort: listSort, listExpanded: listExpanded,
+      query: query, listSort: listSort, listExpanded: listExpanded, showInternals: showInternals,
     });
     var shown = rows.slice(0, listLimit);
     var html = "";
@@ -832,6 +843,9 @@ const PAGE = `<!DOCTYPE html>
   document.getElementById("prov-filter").addEventListener("change", function (e) { provFilter = e.target.value; renderList(); });
   document.getElementById("recent-filter").addEventListener("change", function (e) {
     recentDays = Number(e.target.value) || 0; renderList();
+  });
+  document.getElementById("internals").addEventListener("change", function (e) {
+    showInternals = !!e.target.checked; renderList();
   });
 
   // ---------- health ----------
@@ -1231,7 +1245,7 @@ const PAGE = `<!DOCTYPE html>
   // ---------- legend ----------
   var legend = document.getElementById("legend");
   var L = [["vault", "vault root"], ["note", "vault note"], ["repository", "repository"],
-    ["module", "module"], ["package", "package"], ["entryPoint", "entry point"],
+    ["module", "module"], ["file", "okf file"], ["package", "package"], ["entryPoint", "entry point"],
     ["gitState", "git anchor"], ["external", "remote"]];
   legend.innerHTML = L.map(function (p) {
     return "<div class='row'><span class='dot' style='background:" + COLORS[p[0]] + "'></span>" + p[1] + "</div>";
