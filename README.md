@@ -25,8 +25,9 @@ agents.** No opaque databases. No lock-in formats.
 ## Install
 
 ```bash
-pi install /path/to/pi-weave            # local path
-pi install git:github.com/EranYonai/pi-weave   # from git (once published)
+pi install npm:pi-weave             # from npm
+pi install git:github.com/EranYonai/pi-weave   # from git
+pi install /path/to/pi-weave       # local path
 ```
 
 Or for development: `pi -e ./src/pi/index.ts`.
