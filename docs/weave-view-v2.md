@@ -224,13 +224,22 @@ All motion respects `prefers-reduced-motion` (→ instant).
 ### 5.2 List
 
 - **Left rail (~340px)** with Detail on the right (the graph stays the hero).
-- Sortable: by name, updated, link count, provenance.
+- **Expandable index tree.** The list is a tree over the `contains`
+  hierarchy, not a flat dump: roots (`vault`, `repository`) are expanded by
+  default, and each node with children shows a `▸`/`▾` chevron to expand or
+  collapse it. Entry points (files) are nested under the module whose path is
+  their directory prefix, so the repository reads as a real file tree —
+  expand `repository` → `module` → file, then click a file to open its Detail.
+- Sortable within each sibling group: by name, updated, link count,
+  provenance.
 - Filterable: by kind, provenance, and a **"recent"** filter (last N days).
+  When a filter or search is active, ancestors of matching nodes are
+  auto-expanded so matches stay reachable.
 - **Search** layers core's relevance-scored `searchNotes` over the substring
   filter, with a grouped result dropdown.
 - Cap at `DEFAULT_MAX_NOTES` (500) with a **"show more"** affordance; true
   virtualization deferred (§9).
-- Keyboard: arrow up/down + Enter.
+- Keyboard: arrow up/down + Enter; `▸`/`▾` toggles expansion.
 
 ### 5.3 Detail
 
@@ -315,7 +324,9 @@ keeps core untouched. The only server addition is the `/open/<slug>` endpoint
   existing regex-extraction tests (`extractScript`, physics test) keep working.
 - **New pure functions** live inside the page script and are extract-and-run
   tested (§13): `focusNeighborhood(id, edges)`, `deriveBacklinks(edges)`,
-  `applyFilter(nodes, kind, prov)`, `sortRows(rows, key)`, `counts(nodes)`.
+  `applyFilter(nodes, kind, prov)`, `sortRows(rows, key)`, `counts(nodes)`,
+  `linksOf(id, edges)`, and `listTree(model, state)` (the expandable index
+  tree).
 - **CI guard:** assert the rendered page contains no backtick and no `${` —
   protects the single-file invariant from silently breaking.
 - Acknowledge the **doubled-escaping tax**: every regex/string escape in the

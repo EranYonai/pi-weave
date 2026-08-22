@@ -244,6 +244,8 @@ describe("page pure functions (extract-and-run)", () => {
     sortRows: (rows: { label: string; updated: string; links: number; provenance: string }[], key: string) => { label: string; updated: string; links: number; provenance: string }[];
     counts: (nodes: { provenance: string | null }[]) => { total: number; human: number; agent: number; generated: number; structural: number };
     relTime: (iso: string, now: number) => string;
+    linksOf: (id: string, edges: { source: string; target: string; kind: string }[]) => number;
+    listTree: (model: { nodes: { id: string; kind: string; label: string; provenance: string | null; detail: Record<string, string> }[]; edges: { source: string; target: string; kind: string }[] }, state: { kindFilter: string; provFilter: string; recentDays: number; query: string; listSort: string; listExpanded: Record<string, number> }) => { id: string; depth: number; hasKids: boolean; expanded: boolean }[];
   }
   function extractScript(html: string): string {
     const m = /<script>([\s\S]*)<\/script>/.exec(html);
@@ -256,7 +258,8 @@ describe("page pure functions (extract-and-run)", () => {
     const make = new Function(
       m[1] +
         "; return { focusNeighborhood: focusNeighborhood, deriveBacklinks: deriveBacklinks, " +
-        "applyFilter: applyFilter, sortRows: sortRows, counts: counts, relTime: relTime };",
+        "applyFilter: applyFilter, sortRows: sortRows, counts: counts, relTime: relTime, " +
+        "linksOf: linksOf, listTree: listTree };",
     );
     return make() as PureFns;
   }
@@ -332,6 +335,85 @@ describe("page pure functions (extract-and-run)", () => {
     expect(fns.relTime("2024-03-01T12:00:00Z", now)).toBe("2y ago");
     expect(fns.relTime("", now)).toBe("");
     expect(fns.relTime("not-a-date", now)).toBe("");
+  });
+
+  it("linksOf counts incident edges", () => {
+    const edges = [
+      { source: "a", target: "b", kind: "contains" },
+      { source: "b", target: "c", kind: "links-to" },
+    ];
+    expect(fns.linksOf("b", edges)).toBe(2);
+    expect(fns.linksOf("a", edges)).toBe(1);
+    expect(fns.linksOf("z", edges)).toBe(0);
+  });
+
+  it("listTree builds an expandable index tree, nesting entry points under modules", () => {
+    const model = {
+      nodes: [
+        { id: "repository", kind: "repository", label: "repo", provenance: null, detail: {} },
+        { id: "module:src", kind: "module", label: "src", provenance: null, detail: { path: "src" } },
+        { id: "entryPoint:src/index.ts", kind: "entryPoint", label: "src/index.ts", provenance: null, detail: { path: "src/index.ts" } },
+        { id: "entryPoint:main.ts", kind: "entryPoint", label: "main.ts", provenance: null, detail: { path: "main.ts" } },
+        { id: "vault", kind: "vault", label: "Vault", provenance: null, detail: {} },
+        { id: "note:a", kind: "note", label: "A", provenance: "human", detail: {} },
+      ],
+      edges: [
+        { source: "repository", target: "module:src", kind: "contains" },
+        { source: "repository", target: "entryPoint:src/index.ts", kind: "contains" },
+        { source: "repository", target: "entryPoint:main.ts", kind: "contains" },
+        { source: "vault", target: "note:a", kind: "contains" },
+      ],
+    };
+    const state = {
+      kindFilter: "", provFilter: "", recentDays: 0, query: "", listSort: "name",
+      listExpanded: { vault: 1, repository: 1, "module:src": 1 },
+    };
+    const rows = fns.listTree(model, state);
+    const ids = rows.map((r) => r.id);
+    expect(ids[0]).toBe("repository");
+    expect(ids).toContain("module:src");
+    expect(ids).toContain("entryPoint:main.ts");
+    // src/index.ts is nested under module:src (depth 2), not a direct child of repository
+    expect(rows.find((r) => r.id === "entryPoint:src/index.ts")?.depth).toBe(2);
+    expect(rows.find((r) => r.id === "entryPoint:main.ts")?.depth).toBe(1);
+    expect(ids.indexOf("module:src")).toBeLessThan(ids.indexOf("entryPoint:src/index.ts"));
+  });
+
+  it("listTree collapses unexpanded branches and prunes to matches under a filter", () => {
+    const model = {
+      nodes: [
+        { id: "repository", kind: "repository", label: "repo", provenance: null, detail: {} },
+        { id: "module:src", kind: "module", label: "src", provenance: null, detail: { path: "src" } },
+        { id: "entryPoint:src/index.ts", kind: "entryPoint", label: "src/index.ts", provenance: null, detail: { path: "src/index.ts" } },
+        { id: "entryPoint:main.ts", kind: "entryPoint", label: "main.ts", provenance: null, detail: { path: "main.ts" } },
+        { id: "vault", kind: "vault", label: "Vault", provenance: null, detail: {} },
+        { id: "note:a", kind: "note", label: "A", provenance: "human", detail: {} },
+      ],
+      edges: [
+        { source: "repository", target: "module:src", kind: "contains" },
+        { source: "repository", target: "entryPoint:src/index.ts", kind: "contains" },
+        { source: "repository", target: "entryPoint:main.ts", kind: "contains" },
+        { source: "vault", target: "note:a", kind: "contains" },
+      ],
+    };
+    // repository collapsed → only the roots are shown
+    let rows = fns.listTree(model, {
+      kindFilter: "", provFilter: "", recentDays: 0, query: "", listSort: "name",
+      listExpanded: {},
+    });
+    expect(rows.map((r) => r.id)).toEqual(["repository", "vault"]);
+    expect(rows.find((r) => r.id === "repository")?.expanded).toBe(false);
+    // kind filter auto-expands ancestors so the matching file stays reachable
+    rows = fns.listTree(model, {
+      kindFilter: "entryPoint", provFilter: "", recentDays: 0, query: "", listSort: "name",
+      listExpanded: {},
+    });
+    const ids = rows.map((r) => r.id);
+    expect(ids).toContain("repository");
+    expect(ids).toContain("module:src");
+    expect(ids).toContain("entryPoint:src/index.ts");
+    expect(rows.find((r) => r.id === "repository")?.expanded).toBe(true);
+    expect(rows.find((r) => r.id === "module:src")?.expanded).toBe(true);
   });
 });
 
@@ -439,6 +521,15 @@ describe("page script (real browser JS, executed through node)", () => {
     // dark + light token sets
     expect(page).toContain('data-theme="dark"');
     expect(page).toContain('data-theme="light"');
+  });
+
+  it("the List surface is an expandable index tree (chevrons + toggle)", () => {
+    const page = renderPage();
+    expect(page).toContain("listTree");
+    expect(page).toContain("data-toggle");
+    expect(page).toContain("listExpanded");
+    expect(page).toContain("▸");
+    expect(page).toContain("▾");
   });
 
   it("the embedded markdown renderer handles the supported syntax", () => {
