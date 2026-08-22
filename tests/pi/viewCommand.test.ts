@@ -4,7 +4,7 @@ import { join } from "node:path";
 import piWeave from "../../src/pi/index";
 import { readOkfFileForView } from "../../src/pi/viewer/server";
 import type { GraphModel } from "../../src/core/graph/model";
-import { createMockCtx, createMockPi, makeTempDir } from "../helpers";
+import { createMockCtx, createMockPi, makeTempDir, withVaultEnv } from "../helpers";
 
 function buildExtension() {
   const mock = createMockPi();
@@ -141,5 +141,81 @@ describe("/weave-view command", () => {
 
     const traversal = await readOkfFileForView(repo, "../../secret.txt");
     expect(traversal).toBeNull();
+  });
+});
+
+describe("/weave-view tui", () => {
+  it("parses 'tui' and invokes ctx.ui.custom once; done(null) completes the handler", async () => {
+    const vault = await makeTempDir();
+    await withVaultEnv(vault, async () => {
+      const mock = buildExtension();
+      const ctx = createMockCtx(await makeTempDir()); // tui + hasUI
+      const handlerPromise = mock.commands.get("weave-view")!.handler("tui", ctx);
+      // let the handler reach ctx.ui.custom (await buildCurrentGraph over disk, then custom)
+      for (let i = 0; i < 50 && ctx.ui.customCalls.length === 0; i++) await new Promise((r) => setTimeout(r, 5));
+      expect(ctx.ui.customCalls).toHaveLength(1);
+      // simulate the user pressing q -> done(null) resolves the handler
+      ctx.ui.resolveCustom(null);
+      await handlerPromise;
+      // status line refreshed after close
+      expect(ctx.ui.statuses["weave"]).toBeTruthy();
+      // no browser/server started
+      expect(mock.api.execCalls).toEqual([]);
+    });
+  });
+
+  it("warns and does nothing without UI (hasUI=false)", async () => {
+    const mock = buildExtension();
+    const ctx = createMockCtx(await makeTempDir(), false, "tui");
+    await mock.commands.get("weave-view")!.handler("tui", ctx);
+    expect(ctx.ui.customCalls).toHaveLength(0);
+    expect(ctx.ui.notifications.some((n) => n.message.includes("interactive terminal"))).toBe(true);
+  });
+
+  it("warns in rpc mode even with UI present", async () => {
+    const mock = buildExtension();
+    const ctx = createMockCtx(await makeTempDir(), true, "rpc");
+    await mock.commands.get("weave-view")!.handler("tui", ctx);
+    expect(ctx.ui.customCalls).toHaveLength(0);
+    expect(ctx.ui.notifications.some((n) => n.message.includes("interactive terminal"))).toBe(true);
+  });
+
+  it("unknown arg → usage warning, nothing else", async () => {
+    const mock = buildExtension();
+    const ctx = createMockCtx(await makeTempDir());
+    await mock.commands.get("weave-view")!.handler("nope", ctx);
+    expect(ctx.ui.customCalls).toHaveLength(0);
+    expect(mock.api.execCalls).toEqual([]);
+    expect(ctx.ui.notifications.some((n) => n.message === "usage: /weave-view [tui]")).toBe(true);
+  });
+
+  it("/weave-view (no arg) still starts the server and opens the browser (unchanged)", async () => {
+    const vault = await makeTempDir();
+    await withVaultEnv(vault, async () => {
+      const mock = buildExtension();
+      const ctx = createMockCtx(await makeTempDir());
+      try {
+        await mock.commands.get("weave-view")!.handler("", ctx);
+        const url = ctx.ui.notifications[0]?.message.match(/http:\/\/127\.0\.0\.1:\d+/)?.[0];
+        expect(url).toBeTruthy();
+        expect(mock.api.execCalls).toHaveLength(1);
+        expect(ctx.ui.customCalls).toHaveLength(0);
+      } finally {
+        await mock.emit("session_shutdown", {}, ctx);
+      }
+    });
+  });
+
+  it("session_shutdown still closes the HTTP server; TUI holds no session resources", async () => {
+    const vault = await makeTempDir();
+    await withVaultEnv(vault, async () => {
+      const mock = buildExtension();
+      const ctx = createMockCtx(await makeTempDir());
+      await mock.commands.get("weave-view")!.handler("", ctx);
+      const url = ctx.ui.notifications[0]?.message.match(/http:\/\/127\.0\.0\.1:\d+/)?.[0];
+      expect(url).toBeTruthy();
+      await mock.emit("session_shutdown", {}, ctx);
+      await expect(fetch(`${url}/`)).rejects.toThrow();
+    });
   });
 });

@@ -14,6 +14,7 @@ import { registerRepoTool } from "./tools/repoTool";
 import { deepScanRepository, formatDeepScanResult } from "./summarize";
 import { openInBrowser } from "./viewer/browser";
 import { startViewer, type ViewerServer } from "./viewer/server";
+import { runWeaveViewTui } from "./viewer/tui/run";
 
 /**
  * pi-weave — an agent-native knowledge workspace (docs/design.md):
@@ -64,8 +65,17 @@ export default function piWeave(pi: ExtensionAPI): void {
   });
 
   pi.registerCommand("weave-view", {
-    description: "Open the local knowledge-graph viewer in your browser (vault + repository)",
-    handler: async (_args, ctx) => {
+    description: "Open the local knowledge-graph viewer in your browser (vault + repository); '/weave-view tui' explores in-terminal",
+    handler: async (args, ctx) => {
+      const arg = args.trim().toLowerCase();
+      if (arg === "tui") {
+        await runWeaveViewTui(ctx);
+        return;
+      }
+      if (arg !== "") {
+        ctx.ui.notify("usage: /weave-view [tui]", "warning");
+        return;
+      }
       viewer ??= await startViewer({ cwd: ctx.cwd });
       ctx.ui.notify(`pi-weave viewer: ${viewer.url} (reads from disk live; refresh the page any time)`, "info");
       await openInBrowser(pi, ctx, viewer.url);

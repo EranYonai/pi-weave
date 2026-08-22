@@ -40,7 +40,6 @@ export interface WeaveTheme {
   fg(slot: ThemeSlot, text: string): string;
   bg(slot: "selectedBg", text: string): string;
   bold(text: string): string;
-  dim(text: string): string;
 }
 
 /** Minimal TUI surface the component uses (the real pi TUI satisfies it). */
@@ -156,7 +155,7 @@ export class WeaveExplorer implements Component {
     this.tui = opts.tui;
     this.loaders = opts.loaders;
     this.done = opts.done;
-    this.rows = opts.rows ?? opts.tui.terminal?.rows ?? 24;
+    this.rows = opts.rows ?? 24;
     this.nowFn = opts.now ?? Date.now;
     this.state = initialState(graphRoots(this.model));
   }

@@ -19,7 +19,6 @@ function fakeTheme(): WeaveTheme {
     fg: (slot, text) => `{${slot}}${text}{/}`,
     bg: (_slot, text) => `{bg}${text}{/}`,
     bold: (text) => `{b}${text}{/b}`,
-    dim: (text) => `{dim}${text}{/}`,
   };
 }
 

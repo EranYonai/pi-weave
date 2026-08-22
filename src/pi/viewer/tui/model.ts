@@ -160,9 +160,9 @@ function indexTree(model: GraphModel): TreeIndex {
   }
 
   // Entry points nest under the module whose path is the entry's directory prefix.
-  const moduleFor = (entryId: string): string | null => {
-    const entry = byId.get(entryId);
-    if (!entry || entry.kind !== "entryPoint" || !entry.detail.path) return null;
+  // The caller only invokes this for entryPoint nodes, so the path guard suffices.
+  const moduleFor = (entry: GraphNode): string | null => {
+    if (!entry.detail.path) return null;
     const p = entry.detail.path;
     let best: string | null = null;
     let bestLen = 0;
@@ -183,7 +183,7 @@ function indexTree(model: GraphModel): TreeIndex {
   const moduleEntries = new Map<string, string[]>();
   for (const n of model.nodes) {
     if (n.kind !== "entryPoint") continue;
-    const m = moduleFor(n.id);
+    const m = moduleFor(n);
     if (m) {
       const list = moduleEntries.get(m);
       if (list) list.push(n.id);
@@ -254,6 +254,9 @@ export function treeRows(model: GraphModel, state: TreeState): TreeRow[] {
       return true;
     });
     let all = filtered.concat(moduleEntries.get(id) ?? []);
+    // Skip kids absent from the node set (corrupt/hand-built graphs): the page
+    // never produces these, but a defensive filter keeps the tree robust.
+    all = all.filter((k) => byId.has(k));
     if (!state.showInternals) {
       all = all.filter((k) => {
         const n = byId.get(k);
@@ -274,8 +277,7 @@ export function treeRows(model: GraphModel, state: TreeState): TreeRow[] {
   // Pass 1: mark visible nodes (self-match or a visible descendant).
   const visible = new Set<string>();
   const mark = (id: string): boolean => {
-    const node = byId.get(id);
-    if (!node) return false;
+    const node = byId.get(id)!;
     let any = false;
     for (const k of children(id)) if (mark(k)) any = true;
     const show = matches(node) || any;
@@ -287,8 +289,7 @@ export function treeRows(model: GraphModel, state: TreeState): TreeRow[] {
   const rows: TreeRow[] = [];
   const walk = (id: string, depth: number): void => {
     if (!visible.has(id)) return;
-    const node = byId.get(id);
-    if (!node) return;
+    const node = byId.get(id)!;
     const kids = children(id);
     const visibleKids = kids.filter((k) => visible.has(k));
     const expanded = filtering ? visibleKids.length > 0 : state.expanded.has(id);
@@ -772,14 +773,12 @@ function bump(s: ExplorerState): ExplorerState {
 
 function clampIndex(idx: number, len: number): number {
   if (len === 0) return -1;
-  if (idx < 0) return 0;
   if (idx >= len) return len - 1;
   return idx;
 }
 
 function scrollForSelection(idx: number, window: number, prev: number): number {
   if (window <= 0) return 0;
-  if (idx < 0) return 0;
   // keep selection visible: offset <= idx < offset + window
   if (idx < prev) return idx;
   if (idx >= prev + window) return idx - window + 1;
@@ -982,10 +981,9 @@ export function reduce(state: ExplorerState, action: Action, ctx: ReduceCtx = { 
       if (state.searching) return state;
       return bump({ ...state, helpOpen: !state.helpOpen });
     }
-
-    default:
-      return state;
   }
+  // Exhaustive over Action; unreachable for valid inputs.
+  return state;
 }
 
 /**
