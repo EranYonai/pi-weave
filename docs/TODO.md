@@ -18,6 +18,12 @@ Reference: https://github.com/DeusData/codebase-memory-mcp
 Do **not** integrate with it — instead, study the ideas and see which ones
 could make our automatic `/weave-scan` better.
 
+Research brief: `docs/research-codebase-memory.md` (answers the open
+questions below). The transferable, dependency-free ideas are a diff-impact
+view, honest index-coverage reporting, a `.okfignore` layer, and incremental
+light-scan re-derivation. Tree-sitter/semantic/SQLite ideas stay in the
+Phase 2 Level 2 design space.
+
 Open questions:
 
 - Which ideas transfer cleanly to a git-aware, derived `.okf` index?
