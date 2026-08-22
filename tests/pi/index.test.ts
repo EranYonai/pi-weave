@@ -2,7 +2,7 @@ import { promises as fs } from "node:fs";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import { fauxAssistantMessage } from "@earendil-works/pi-ai";
-import piWeave from "../../src/pi/index";
+import piWeave, { deepScanDone } from "../../src/pi/index";
 import { commitAll, createMockCtx, createMockPi, gitExec, gitInit, makeTempDir, withVaultEnv, writeFixture } from "../helpers";
 
 function buildExtension() {
@@ -24,7 +24,7 @@ describe("extension registration", () => {
   it("registers both tools and both commands", () => {
     const mock = buildExtension();
     expect([...mock.tools.keys()].sort()).toEqual(["weave_note", "weave_repo"]);
-    expect([...mock.commands.keys()].sort()).toEqual(["weave", "weave-scan", "weave-view"]);
+    expect([...mock.commands.keys()].sort()).toEqual(["weave", "weave-scan", "weave-scan-cancel", "weave-view"]);
     for (const name of ["weave_note", "weave_repo"]) {
       const tool = mock.tools.get(name)!;
       expect(tool.description.length).toBeGreaterThan(20);
@@ -153,6 +153,7 @@ describe("/weave-scan deep", () => {
     await withVaultEnv(await makeTempDir(), async () => {
       const ctx = createMockCtx(repo); // no model configured
       await mock.commands.get("weave-scan")!.handler("deep", ctx);
+      await deepScanDone(repo); // background scan settles
       expect(ctx.ui.notifications.some((n) => n.level === "warning" && n.message.includes("deep scan needs an active session model"))).toBe(true);
       expect(ctx.ui.statuses.weave).toContain(":ok");
       // light index is still written
@@ -169,11 +170,37 @@ describe("/weave-scan deep", () => {
         complete: async () => fauxAssistantMessage("Summarizes the entry point."),
       });
       await mock.commands.get("weave-scan")!.handler("deep", ctx);
+      await deepScanDone(repo);
       expect(ctx.ui.notifications.some((n) => n.level === "info" && n.message.includes("deep scan complete"))).toBe(true);
       const summariesDir = join(repo, ".okf", "repository", "summaries");
       const files = await fs.readdir(summariesDir);
       expect(files.some((f) => f.endsWith(".summary.md"))).toBe(true);
       expect(ctx.ui.statuses.weave).toContain(":ok");
+    });
+  });
+
+  it("reports live progress on the status line while scanning", async () => {
+    const mock = buildExtension();
+    const repo = await makeRepo();
+    await writeFixture(repo, "src/extra.ts", "export const extra = 1;\n");
+    commitAll(repo, "add extra");
+    await withVaultEnv(await makeTempDir(), async () => {
+      const ctx = createMockCtx(repo, true, {
+        model: { provider: "p", id: "m" },
+        // slow the model so the scan is still in flight when we sample the
+        // status line (the settled status overwrites progress on completion)
+        complete: async () => {
+          await new Promise((r) => setTimeout(r, 100));
+          return fauxAssistantMessage("s");
+        },
+      });
+      await mock.commands.get("weave-scan")!.handler("deep", ctx);
+      // give the background scan a tick to emit its first progress line
+      await new Promise((r) => setTimeout(r, 20));
+      const progress = ctx.ui.statuses.weave ?? "";
+      expect(progress).toMatch(/\d+\/\d+ \(\d+%\)/);
+      expect(progress).toContain("src/");
+      await deepScanDone(repo);
     });
   });
 
@@ -200,7 +227,66 @@ describe("/weave-scan deep", () => {
         complete: async () => fauxAssistantMessage("s"),
       });
       await mock.commands.get("weave-scan")!.handler("DEEP", ctx);
+      await deepScanDone(repo);
       expect(ctx.ui.notifications.some((n) => n.message.includes("deep scan complete"))).toBe(true);
+    });
+  });
+});
+
+describe("/weave-scan-cancel", () => {
+  it("reports when no deep scan is running", async () => {
+    const mock = buildExtension();
+    const repo = await makeRepo();
+    await withVaultEnv(await makeTempDir(), async () => {
+      const ctx = createMockCtx(repo);
+      await mock.commands.get("weave-scan-cancel")!.handler("", ctx);
+      expect(ctx.ui.notifications.some((n) => n.message.includes("no deep scan is currently running"))).toBe(true);
+    });
+  });
+
+  it("warns when a deep scan is already running for the repository", async () => {
+    const mock = buildExtension();
+    const repo = await makeRepo();
+    await writeFixture(repo, "src/a.ts", "export const a = 1;\n");
+    await writeFixture(repo, "src/b.ts", "export const b = 2;\n");
+    commitAll(repo, "add files");
+    await withVaultEnv(await makeTempDir(), async () => {
+      const ctx = createMockCtx(repo, true, {
+        model: { provider: "p", id: "m" },
+        complete: async () => {
+          await new Promise((r) => setTimeout(r, 50));
+          return fauxAssistantMessage("s");
+        },
+      });
+      await mock.commands.get("weave-scan")!.handler("deep", ctx);
+      // second invocation while the first is still in flight
+      await mock.commands.get("weave-scan")!.handler("deep", ctx);
+      expect(ctx.ui.notifications.some((n) => n.message.includes("already running"))).toBe(true);
+      await deepScanDone(repo);
+    });
+  });
+
+  it("aborts an in-flight deep scan and reports cancellation", async () => {
+    const mock = buildExtension();
+    const repo = await makeRepo();
+    await writeFixture(repo, "src/a.ts", "export const a = 1;\n");
+    await writeFixture(repo, "src/b.ts", "export const b = 2;\n");
+    await writeFixture(repo, "src/c.ts", "export const c = 3;\n");
+    commitAll(repo, "add files");
+    await withVaultEnv(await makeTempDir(), async () => {
+      const ctx = createMockCtx(repo, true, {
+        model: { provider: "p", id: "m" },
+        complete: async () => {
+          // Let the scan start, then cancel it from the cancel command.
+          await new Promise((r) => setTimeout(r, 5));
+          return fauxAssistantMessage("s");
+        },
+      });
+      await mock.commands.get("weave-scan")!.handler("deep", ctx);
+      await mock.commands.get("weave-scan-cancel")!.handler("", ctx);
+      await deepScanDone(repo);
+      expect(ctx.ui.notifications.some((n) => n.message.includes("cancellation requested"))).toBe(true);
+      expect(ctx.ui.notifications.some((n) => n.message.includes("deep scan cancelled"))).toBe(true);
     });
   });
 });

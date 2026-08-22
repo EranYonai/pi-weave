@@ -88,6 +88,8 @@ type DeepScanTuning = {
   maxFiles?: DeepScanOptions["maxFiles"];
   maxFileBytes?: DeepScanOptions["maxFileBytes"];
   concurrency?: DeepScanOptions["concurrency"];
+  onProgress?: DeepScanOptions["onProgress"];
+  signal?: DeepScanOptions["signal"];
 };
 
 /** Run the deep pass against a repo root using the session model. */
@@ -106,6 +108,8 @@ export async function deepScanRepository(
     ...(deps.maxFiles !== undefined ? { maxFiles: deps.maxFiles } : {}),
     ...(deps.maxFileBytes !== undefined ? { maxFileBytes: deps.maxFileBytes } : {}),
     ...(deps.concurrency !== undefined ? { concurrency: deps.concurrency } : {}),
+    ...(deps.onProgress !== undefined ? { onProgress: deps.onProgress } : {}),
+    ...(deps.signal !== undefined ? { signal: deps.signal } : {}),
   });
   if (result === null) return { kind: "not-a-repo" };
   return { kind: "ok", result };

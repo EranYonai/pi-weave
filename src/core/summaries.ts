@@ -46,6 +46,14 @@ export interface DeepScanOptions {
   concurrency?: number;
   /** Model label recorded in sidecar front matter (provenance detail). */
   model?: string;
+  /**
+   * Called before each candidate file is processed. `current` is 1-based
+   * (the file about to be handled), `total` is the candidate count — the
+   * adapter renders this as a live progress line.
+   */
+  onProgress?: (info: { current: number; total: number; path: string }) => void;
+  /** When aborted, stop scheduling new work and return partial results. */
+  signal?: AbortSignal;
 }
 
 export interface DeepScanFailure {
@@ -174,14 +182,16 @@ export function hashContent(content: string | Buffer): string {
 async function mapWithConcurrency<T, R>(
   items: readonly T[],
   concurrency: number,
-  fn: (item: T) => Promise<R>,
+  fn: (item: T, index: number) => Promise<R>,
+  shouldStop?: () => boolean,
 ): Promise<R[]> {
   const results: R[] = new Array(items.length);
   let next = 0;
   async function worker(): Promise<void> {
     while (next < items.length) {
+      if (shouldStop?.()) return;
       const i = next++;
-      results[i] = await fn(items[i] as T);
+      results[i] = await fn(items[i] as T, i);
     }
   }
   await Promise.all(Array.from({ length: Math.max(1, concurrency) }, worker));
@@ -197,6 +207,9 @@ export async function runDeepScan(repoRoot: string, options: DeepScanOptions): P
   const maxFileBytes = options.maxFileBytes ?? DEEP_SCAN_MAX_FILE_BYTES;
   const concurrency = options.concurrency ?? DEEP_SCAN_CONCURRENCY;
   const now = options.at ?? (() => new Date());
+  const signal = options.signal;
+  const onProgress = options.onProgress;
+  const aborted = () => signal?.aborted === true;
 
   const listed = await listFiles(repoRoot);
   if (listed === null) return null; // not a git repository
@@ -216,7 +229,8 @@ export async function runDeepScan(repoRoot: string, options: DeepScanOptions): P
     pruned: 0,
   };
 
-  await mapWithConcurrency(candidates, concurrency, async (path) => {
+  await mapWithConcurrency(candidates, concurrency, async (path, index) => {
+    onProgress?.({ current: index + 1, total: candidates.length, path });
     let buf: Buffer;
     try {
       buf = await fs.readFile(join(repoRoot, path));
@@ -247,7 +261,7 @@ export async function runDeepScan(repoRoot: string, options: DeepScanOptions): P
     } catch (err) {
       result.failed.push({ path, error: err instanceof Error ? err.message : String(err) });
     }
-  });
+  }, aborted);
 
   // Prune sidecars whose target left the tracked set.
   const targets = new Set(listed);

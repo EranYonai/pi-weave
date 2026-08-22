@@ -305,6 +305,52 @@ describe("runDeepScan", () => {
     }
   });
 
+  it("reports progress for each candidate before processing it", async () => {
+    const repo = await makeTempDir();
+    gitInit(repo);
+    try {
+      await writeFixture(repo, "a.ts", "export const a = 1;\n");
+      await writeFixture(repo, "b.ts", "export const b = 2;\n");
+      await writeFixture(repo, "c.ts", "export const c = 3;\n");
+      await commitAll(repo);
+      const seen: { current: number; total: number; path: string }[] = [];
+      await runDeepScan(repo, {
+        summarize: async () => "s",
+        onProgress: (info) => seen.push(info),
+      });
+      expect(seen.map((s) => s.path).sort()).toEqual(["a.ts", "b.ts", "c.ts"]);
+      expect(seen.every((s) => s.total === 3)).toBe(true);
+      expect(seen.map((s) => s.current).sort()).toEqual([1, 2, 3]);
+    } finally {
+      await fs.rm(repo, { recursive: true, force: true });
+    }
+  });
+
+  it("stops scheduling new work when the signal aborts, returning partial results", async () => {
+    const repo = await makeTempDir();
+    gitInit(repo);
+    try {
+      for (let i = 0; i < 5; i++) await writeFixture(repo, `f${i}.ts`, `export const x${i} = ${i};\n`);
+      await commitAll(repo);
+      const controller = new AbortController();
+      let processed = 0;
+      const result = await runDeepScan(repo, {
+        concurrency: 1,
+        summarize: async () => {
+          processed += 1;
+          if (processed === 2) controller.abort();
+          return "s";
+        },
+        signal: controller.signal,
+      });
+      expect(result).not.toBeNull();
+      expect(processed).toBeLessThan(5);
+      expect(result!.written).toBe(processed);
+    } finally {
+      await fs.rm(repo, { recursive: true, force: true });
+    }
+  });
+
   it("hashContent is stable sha1", () => {
     expect(hashContent("hello")).toBe("aaf4c61ddcc5e8a2dabede0f3b482cd9aea9434d");
   });

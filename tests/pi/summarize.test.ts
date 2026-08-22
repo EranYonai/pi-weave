@@ -146,6 +146,28 @@ describe("deepScanRepository", () => {
       await fs.rm(root, { recursive: true, force: true });
     }
   });
+
+  it("forwards onProgress and signal to the deep scan", async () => {
+    const root = await makeTempDir();
+    try {
+      gitInit(root);
+      await writeFixture(root, "a.ts", "export {};\n");
+      await writeFixture(root, "b.ts", "export {};\n");
+      await commitAll(root);
+      const ctx = ctxWithModel(root, async () => fauxAssistantMessage("s"));
+      const controller = new AbortController();
+      const seen: { current: number; total: number; path: string }[] = [];
+      const outcome = await deepScanRepository(root, asExtensionCtx(ctx), {
+        onProgress: (info) => seen.push(info),
+        signal: controller.signal,
+      });
+      expect(outcome.kind).toBe("ok");
+      expect(seen.map((s) => s.path).sort()).toEqual(["a.ts", "b.ts"]);
+      expect(seen.every((s) => s.total === 2)).toBe(true);
+    } finally {
+      await fs.rm(root, { recursive: true, force: true });
+    }
+  });
 });
 
 describe("formatDeepScanResult", () => {
