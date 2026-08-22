@@ -40,7 +40,8 @@
     ],
     "skills": [
       "./skills"
-    ]
+    ],
+    "image": "https://raw.githubusercontent.com/EranYonai/pi-weave/main/docs/logo-high-res.jpg"
   },
   "scripts": {
     "test": "vitest run",

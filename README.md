@@ -1,5 +1,9 @@
 # pi-weave
 
+<p align="center">
+  <img src="https://raw.githubusercontent.com/EranYonai/pi-weave/main/docs/logo-high-res.jpg" alt="pi-weave — an agent-native knowledge workspace" width="220"/>
+</p>
+
 **An agent-native knowledge workspace for your life and your code.**
 
 pi-weave is a [pi](https://github.com/earendil-works/pi-coding-agent)
