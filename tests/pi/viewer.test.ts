@@ -122,6 +122,39 @@ describe("weave-view server", () => {
     expect(graph.nodes.some((n) => n.id === "repository")).toBe(false);
   });
 
+  it("buildCurrentGraph surfaces a handwritten entry-point summary sidecar", async () => {
+    const repo = await makeTempDir();
+    gitInit(repo);
+    await writeFixture(repo, "src/index.ts", "export const x = 1;\n");
+    commitAll(repo, "init");
+    const index = await buildRepoIndex(repo);
+    if (index !== null) await writeRepoIndex(repo, index);
+
+    // Handwritten sidecar for the entry point (deep-scan output shape).
+    const summariesDir = join(repo, ".okf", "repository", "summaries");
+    await fs.mkdir(summariesDir, { recursive: true });
+    await fs.writeFile(
+      join(summariesDir, "src--index.ts.summary.md"),
+      [
+        "---",
+        "target: src/index.ts",
+        "source: generated",
+        "content_hash: abc",
+        "at: 2026-08-23T12:00:00.000Z",
+        "model: test/model",
+        "---",
+        "Entry point summary.",
+        "",
+      ].join("\n"),
+      "utf8",
+    );
+
+    const graph = await buildCurrentGraph(repo, await makeTempDir());
+    const entry = graph.nodes.find((n) => n.id === "entryPoint:src/index.ts");
+    expect(entry?.detail.summary).toBe("Entry point summary.");
+    expect(entry?.detail["summarized by"]).toBe("test/model");
+  });
+
   it("gives two servers distinct ports and stops idempotently", async () => {
     const a = await startViewer({ cwd: await makeTempDir() });
     const b = await startViewer({ cwd: await makeTempDir() });
