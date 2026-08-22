@@ -950,10 +950,12 @@ Markdown body, free-form. Wiki-links later, plain text today.
 ```text
 .okf/
 ├── okf.json                 # { "okfVersion": 1, "scope": "repository",
-                             #   "generator": "pi-weave@x.y.z" }
+                             #   "generator": "pi-weave@x.y.z",
+                             #   "source": "generated" }
 └── repository/
     ├── identity.json        # name, root, remotes, default branch
-    ├── git.json             # headSha, branch, changed files — staleness anchor
+    ├── git.json             # headSha, branch, changed files + worktree
+                             #   content hashes — staleness anchor
     └── structure.json       # Level 0/1: files, languages, packages, modules
 ```
 

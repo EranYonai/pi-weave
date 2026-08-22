@@ -9,6 +9,7 @@ import {
   getNote,
   listNotes,
   noteCount,
+  resolveNotePath,
   searchNotes,
   vaultExists,
 } from "../../src/core/vault";
@@ -118,6 +119,36 @@ describe("listNotes / noteCount", () => {
   });
 });
 
+describe("slug safety (untrusted tool input)", () => {
+  it("resolves safe slugs and rejects traversal/nested/empty ones", () => {
+    expect(resolveNotePath(vault, "plain-slug_2")).toBe(join(vault, "notes", "plain-slug_2.md"));
+    expect(resolveNotePath(vault, "../escape")).toBeNull();
+    expect(resolveNotePath(vault, "../../deep/escape")).toBeNull();
+    expect(resolveNotePath(vault, "..")).toBeNull();
+    expect(resolveNotePath(vault, "nested/note")).toBeNull();
+    expect(resolveNotePath(vault, "")).toBeNull();
+    expect(resolveNotePath(vault, "   ")).toBeNull();
+  });
+
+  it("getNote never reads files outside the notes directory", async () => {
+    // A well-formed, note-shaped file living OUTSIDE notes/:
+    await fs.writeFile(
+      join(vault, "secret.md"),
+      "---\ntitle: Secret\nsource: human\n---\n\nnot for the vault\n",
+      "utf8",
+    );
+    expect(await getNote(vault, "../secret")).toBeNull();
+  });
+
+  it("appendToNote never writes files outside the notes directory", async () => {
+    const target = join(vault, "target.md");
+    const original = "---\ntitle: Target\nsource: human\n---\n\noriginal body\n";
+    await fs.writeFile(target, original, "utf8");
+    expect(await appendToNote(vault, "../target", "injected")).toBeNull();
+    expect(await fs.readFile(target, "utf8")).toBe(original);
+  });
+});
+
 describe("searchNotes", () => {
   beforeEach(async () => {
     await addNote(vault, {
@@ -194,3 +225,4 @@ describe("formatNote", () => {
     expect(formatNote(note)).not.toContain("tags:");
   });
 });
+

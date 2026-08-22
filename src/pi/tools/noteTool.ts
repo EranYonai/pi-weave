@@ -1,5 +1,6 @@
 import { StringEnum } from "@earendil-works/pi-ai";
-import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
+import { withFileMutationQueue, type ExtensionAPI } from "@earendil-works/pi-coding-agent";
+import { join } from "node:path";
 import { Type } from "typebox";
 import {
   addNote,
@@ -7,6 +8,8 @@ import {
   formatNote,
   getNote,
   listNotes,
+  NOTES_DIR,
+  resolveNotePath,
   resolveVaultRoot,
   searchNotes,
 } from "../../core";
@@ -72,12 +75,18 @@ export function registerNoteTool(pi: ExtensionAPI): void {
         case "add": {
           if (!params.title) throw new Error("weave_note(add) requires 'title'");
           if (!params.text) throw new Error("weave_note(add) requires 'text'");
-          const note = await addNote(vault, {
-            title: params.title,
-            body: params.text,
-            ...(params.tags ? { tags: params.tags } : {}),
-            source: "agent",
-          });
+          const title = params.title;
+          const text = params.text;
+          // Serialized per vault: parallel adds of the same title must not
+          // race the unique-slug check and overwrite each other.
+          const note = await withFileMutationQueue(join(vault, NOTES_DIR), () =>
+            addNote(vault, {
+              title,
+              body: text,
+              ...(params.tags ? { tags: params.tags } : {}),
+              source: "agent",
+            }),
+          );
           return {
             content: [{ type: "text", text: `Note created: ${note.slug} (${vault})` }],
             details: { action: "add", note },
@@ -87,7 +96,24 @@ export function registerNoteTool(pi: ExtensionAPI): void {
         case "append": {
           if (!params.slug) throw new Error("weave_note(append) requires 'slug'");
           if (!params.text) throw new Error("weave_note(append) requires 'text'");
-          const note = await appendToNote(vault, params.slug, params.text);
+          const slug = params.slug;
+          const text = params.text;
+          const path = resolveNotePath(vault, slug);
+          if (!path) {
+            return {
+              content: [
+                {
+                  type: "text",
+                  text: `Invalid note slug '${slug}' — notes are flat files inside the vault (no path separators or '..').`,
+                },
+              ],
+              details: { action: "append", found: false },
+            };
+          }
+          // Serialized read-modify-write: parallel weave_note appends (and
+          // pi's own file tools) targeting the same note would otherwise
+          // lose each other's additions.
+          const note = await withFileMutationQueue(path, () => appendToNote(vault, slug, text));
           if (!note) {
             return { content: [{ type: "text", text: `No note found with slug '${params.slug}'.` }], details: { action: "append", found: false } };
           }

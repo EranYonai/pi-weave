@@ -188,6 +188,55 @@ describe("writeRepoIndex / readRepoIndex", () => {
     expect(back).toEqual(index);
   });
 
+  it("persists generated provenance and round-trips it", async () => {
+    const dir = await makeTempDir();
+    gitInit(dir);
+    await writeFixture(dir, "src/main.ts", "export {};\n");
+    commitAll(dir, "initial");
+
+    const index = (await buildRepoIndex(dir, { now: NOW }))!;
+    expect(index.source).toBe("generated");
+    await writeRepoIndex(dir, index);
+
+    const manifest = JSON.parse(await fs.readFile(join(dir, ".okf", "okf.json"), "utf8"));
+    expect(manifest.source).toBe("generated");
+    expect((await readRepoIndex(dir))?.source).toBe("generated");
+  });
+
+  it("defaults missing or unknown provenance to 'generated'", async () => {
+    const dir = await makeTempDir();
+    gitInit(dir);
+    await writeFixture(dir, "src/main.ts", "export {};\n");
+    commitAll(dir, "initial");
+    await writeRepoIndex(dir, (await buildRepoIndex(dir))!);
+
+    const manifestPath = join(dir, ".okf", "okf.json");
+    const manifest = JSON.parse(await fs.readFile(manifestPath, "utf8"));
+    delete manifest.source; // indexes written before provenance existed
+    await fs.writeFile(manifestPath, JSON.stringify(manifest), "utf8");
+    expect((await readRepoIndex(dir))?.source).toBe("generated");
+
+    manifest.source = "sideways"; // unknown values don't masquerade
+    await fs.writeFile(manifestPath, JSON.stringify(manifest), "utf8");
+    expect((await readRepoIndex(dir))?.source).toBe("generated");
+  });
+
+  it("writes indexes from linked worktrees (.git is a file)", async () => {
+    const dir = await makeTempDir();
+    gitInit(dir);
+    await writeFixture(dir, "src/main.ts", "export {};\n");
+    commitAll(dir, "initial");
+    const wt = join(await makeTempDir(), "wt");
+    gitExec(dir, ["worktree", "add", wt, "-b", "wt-branch"]);
+    expect((await fs.lstat(join(wt, ".git"))).isFile()).toBe(true);
+
+    const index = (await buildRepoIndex(wt))!;
+    await writeRepoIndex(wt, index);
+    expect(await readRepoIndex(wt)).not.toBeNull();
+    // exclusion landed in the shared git dir of the main worktree
+    expect(await fs.readFile(join(dir, ".git", "info", "exclude"), "utf8")).toContain(".okf/");
+  });
+
   it("readRepoIndex returns null when nothing exists", async () => {
     const dir = await makeTempDir();
     expect(await readRepoIndex(dir)).toBeNull();
@@ -259,6 +308,55 @@ describe("assessStaleness", () => {
     const report = await assessStaleness(dir);
     expect(report.state).toBe("stale");
     expect(report.reasons.some((r) => r.includes("resolved"))).toBe(true);
+  });
+
+  it("is 'stale' when an already-dirty file is edited further", async () => {
+    const dir = await makeTempDir();
+    gitInit(dir);
+    await writeFixture(dir, "package.json", JSON.stringify({ name: "one" }));
+    commitAll(dir, "initial");
+
+    // dirty at capture time, then assessed without changes → fresh
+    await writeFixture(dir, "package.json", JSON.stringify({ name: "two" }));
+    await writeRepoIndex(dir, (await buildRepoIndex(dir))!);
+    expect((await assessStaleness(dir)).state).toBe("fresh");
+
+    // same path still dirty, but the content moved: membership-only
+    // comparisons would (wrongly) stay fresh here
+    await writeFixture(dir, "package.json", JSON.stringify({ name: "three" }));
+    const report = await assessStaleness(dir);
+    expect(report.state).toBe("stale");
+    expect(report.reasons.some((r) => r.includes("edited since capture") && r.includes("package.json"))).toBe(true);
+  });
+
+  it("caps the edited-since-capture file list at 5", async () => {
+    const dir = await makeTempDir();
+    gitInit(dir);
+    for (let i = 0; i < 6; i++) await writeFixture(dir, `f${i}.ts`, "v1");
+    commitAll(dir, "initial");
+    for (let i = 0; i < 6; i++) await writeFixture(dir, `f${i}.ts`, "v2"); // dirty at capture
+    await writeRepoIndex(dir, (await buildRepoIndex(dir))!);
+    for (let i = 0; i < 6; i++) await writeFixture(dir, `f${i}.ts`, "v3"); // re-edited
+    const report = await assessStaleness(dir);
+    expect(report.reasons.some((r) => r.includes("6 uncommitted file(s) edited since capture") && r.includes("…"))).toBe(true);
+  });
+
+  it("degrades to path comparison for indexes captured before content anchoring", async () => {
+    const dir = await makeTempDir();
+    gitInit(dir);
+    await writeFixture(dir, "package.json", JSON.stringify({ name: "one" }));
+    commitAll(dir, "initial");
+    await writeFixture(dir, "package.json", JSON.stringify({ name: "two" }));
+    await writeRepoIndex(dir, (await buildRepoIndex(dir))!);
+
+    // Simulate a pre-content-anchoring index: no changedHashes on disk.
+    const gitJsonPath = join(dir, ".okf", "repository", "git.json");
+    const raw = JSON.parse(await fs.readFile(gitJsonPath, "utf8"));
+    delete raw.changedHashes;
+    await fs.writeFile(gitJsonPath, JSON.stringify(raw, null, 2), "utf8");
+
+    await writeFixture(dir, "package.json", JSON.stringify({ name: "three" }));
+    expect((await assessStaleness(dir)).state).toBe("fresh");
   });
 
   it("is 'stale' when no longer inside a git repository", async () => {

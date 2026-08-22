@@ -65,10 +65,10 @@ Repository index (`<repo>/.okf/`):
 
 ```text
 .okf/
-├── okf.json            # format version + generator
+├── okf.json            # format version + generator + source: generated
 └── repository/
     ├── identity.json   # name, remotes, default branch
-    ├── git.json        # HEAD sha + branch + changes (staleness anchor)
+    ├── git.json        # HEAD sha + branch + changed-file content hashes (staleness anchor)
     └── structure.json  # languages, packages, modules, entry points
 ```
 

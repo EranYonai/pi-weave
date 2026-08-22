@@ -1,6 +1,6 @@
 import { existsSync } from "node:fs";
 import { promises as fs } from "node:fs";
-import { join } from "node:path";
+import { isAbsolute, join, relative, sep } from "node:path";
 import { parseNoteFile, serializeNote } from "./frontmatter";
 import { NOTES_DIR, OKF_MANIFEST } from "./paths";
 import { slugify, uniqueSlug } from "./slug";
@@ -55,6 +55,21 @@ function notePath(root: string, slug: string): string {
   return join(root, NOTES_DIR, `${slug}.md`);
 }
 
+/**
+ * Resolve a note slug to its on-disk path, or null when the slug is unsafe.
+ * Slugs arrive from tool parameters, so they are untrusted: `../x`, nested
+ * paths, and absolute escapes must never read or write outside the flat
+ * <vault>/notes/ directory.
+ */
+export function resolveNotePath(root: string, slug: string): string | null {
+  if (slug.trim().length === 0) return null;
+  const notesDir = join(root, NOTES_DIR);
+  const candidate = join(notesDir, `${slug}.md`);
+  const rel = relative(notesDir, candidate);
+  if (rel.startsWith("..") || isAbsolute(rel) || rel.includes(sep)) return null;
+  return candidate;
+}
+
 /** Create a note. Returns the written note (with its final, unique slug). */
 export async function addNote(root: string, input: AddNoteInput): Promise<Note> {
   await ensureVault(root);
@@ -74,9 +89,10 @@ export async function addNote(root: string, input: AddNoteInput): Promise<Note> 
   return { slug, ...meta, body: input.body };
 }
 
-/** Read a note by slug. Returns null when missing or malformed. */
+/** Read a note by slug. Returns null when missing, malformed, or an unsafe slug. */
 export async function getNote(root: string, slug: string): Promise<Note | null> {
-  const path = notePath(root, slug);
+  const path = resolveNotePath(root, slug);
+  if (!path) return null;
   let text: string;
   try {
     text = await fs.readFile(path, "utf8");
@@ -98,11 +114,13 @@ export async function appendToNote(
   addition: string,
   now: Date = new Date(),
 ): Promise<Note | null> {
+  const path = resolveNotePath(root, slug);
+  if (!path) return null;
   const note = await getNote(root, slug);
   if (!note) return null;
   const body = note.body.replace(/\s+$/, "") + "\n\n" + addition.trim() + "\n";
   const meta: NoteMeta = { ...note, updated: now.toISOString() };
-  await fs.writeFile(notePath(root, slug), serializeNote(meta, body), "utf8");
+  await fs.writeFile(path, serializeNote(meta, body), "utf8");
   return { slug, ...meta, body };
 }
 
