@@ -159,9 +159,15 @@ const PAGE = `<!DOCTYPE html>
 
   /* ---------- legend ---------- */
   #legend { position: fixed; left: 10px; bottom: 10px; background: var(--surface);
-            border: 1px solid var(--line); border-radius: 9px; padding: 9px 12px; z-index: 8;
+            border: 1px solid var(--line); border-radius: 9px; padding: 7px 10px; z-index: 8;
             font-size: 11px; color: var(--muted); }
-  #legend .row { display: flex; align-items: center; gap: 7px; margin: 2px 0; }
+  #legend .legend-head { display: flex; align-items: center; gap: 6px; cursor: pointer; background: none;
+            border: none; color: var(--muted); font: inherit; font-size: 11px; padding: 0; width: 100%; text-align: left; }
+  #legend .legend-head .caret { transition: transform 140ms; }
+  #legend.collapsed .legend-head .caret { transform: rotate(-90deg); }
+  #legend .legend-body { margin-top: 6px; }
+  #legend.collapsed .legend-body { display: none; }
+  #legend .row { display: flex; align-items: center; gap: 7px; margin: 2px 0; white-space: nowrap; }
   #legend .dot { width: 10px; height: 10px; border-radius: 50%; display: inline-block; }
   #legend .ring { width: 12px; height: 12px; border-radius: 50%; display: inline-block; }
   #legend .ring.human { border: 2px solid var(--ok); }
@@ -261,7 +267,7 @@ const PAGE = `<!DOCTYPE html>
   <h2>Health</h2>
   <div id="health-content"></div>
 </section>
-<div id="legend"></div>
+<div id="legend" class="collapsed"></div>
 <div id="help" class="hidden">
   <div class="card">
     <h2>Shortcuts</h2>
@@ -1242,18 +1248,24 @@ const PAGE = `<!DOCTYPE html>
     }
   });
 
-  // ---------- legend ----------
+  // ---------- legend (collapsible; hidden by default so it stays out of the face) ----------
   var legend = document.getElementById("legend");
   var L = [["vault", "vault root"], ["note", "vault note"], ["repository", "repository"],
     ["module", "module"], ["file", "okf file"], ["package", "package"], ["entryPoint", "entry point"],
     ["gitState", "git anchor"], ["external", "remote"]];
-  legend.innerHTML = L.map(function (p) {
+  var legendBody = L.map(function (p) {
     return "<div class='row'><span class='dot' style='background:" + COLORS[p[0]] + "'></span>" + p[1] + "</div>";
   }).join("") +
     "<div class='row'><span class='ring human'></span>human</div>" +
     "<div class='row'><span class='ring agent'></span>agent</div>" +
     "<div class='row'><span class='ring generated'></span>generated</div>" +
     "<div class='row'>scroll=zoom · drag=pan · dblclick=focus</div>";
+  legend.innerHTML = "<button id='legend-toggle' class='legend-head' aria-expanded='false'><span class='caret'>▾</span>legend</button>" +
+    "<div class='legend-body'>" + legendBody + "</div>";
+  document.getElementById("legend-toggle").addEventListener("click", function () {
+    var collapsed = legend.classList.toggle("collapsed");
+    document.getElementById("legend-toggle").setAttribute("aria-expanded", String(!collapsed));
+  });
 
   // ---------- init ----------
   collapsed = { vault: 1, repository: 1 };
