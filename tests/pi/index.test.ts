@@ -254,7 +254,10 @@ describe("/weave-scan-cancel", () => {
       const ctx = createMockCtx(repo, true, {
         model: { provider: "p", id: "m" },
         complete: async () => {
-          await new Promise((r) => setTimeout(r, 50));
+          // Keep the first scan in flight long enough that the second
+          // invocation's buildRepoIndex+writeRepoIndex cannot outrun it
+          // (a short delay made this test flaky on the 95% CI gate).
+          await new Promise((r) => setTimeout(r, 1000));
           return fauxAssistantMessage("s");
         },
       });
