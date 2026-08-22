@@ -258,20 +258,38 @@ both edit `docs/` but **different files** — safe. A touches no docs.
 
 ## 8. Definition of done (sprint)
 
-- [ ] All streams committed; `git status` clean (`.pi/` ignored is expected).
-- [ ] `npm run check` fully green (typecheck + coverage ≥95 everywhere).
-- [ ] Todo 1 & 3 removed from TODO.md; Todo 2 reworded.
-- [ ] notepad.md matches Eran's directive; banner folded.
-- [ ] README shows `/weave-scan deep`.
-- [ ] This handoff updated with a closing note per stream (§9).
+- [x] All streams committed; `git status` clean (`.pi/` ignored is expected).
+- [x] `npm run check` fully green (typecheck + coverage ≥95 everywhere).
+- [x] Todo 1 removed from TODO.md; Todo 2 reworded. **Todo 3 kept** (per Eran's
+      direction — it is a forward-looking research item, not folded into the
+      implemented feature).
+- [x] notepad.md matches Eran's directive; banner folded.
+- [x] README shows `/weave-scan deep`.
+- [x] This handoff updated with a closing note per stream (§9).
 
 ## 9. Agent log (append-only; orchestrator writes)
 
 ```text
 2026-08-23  handoff authored by previous (kimi) agent; state verified:
             tsc clean, 210 tests pass, coverage gate red at 93.2% branches.
-<date>      <agent>  <stream>  started
-<date>      <agent>  <stream>  done: <commit(s)> — notes
+2026-08-23  orchestrator  step 0  done: 7ef200a wip(scan-modes) baseline commit.
+2026-08-23  Agent-A  A  done: c3a5267, f8c4f48, 87a873b — closed branch coverage
+            93.2%→95.43% (12 new tests across graph/summaries/summarize/index/
+            viewer), refactored formatDeepScanResult per §4 A1, /weave-scan deep
+            command-path + viewer tests. npm run check green (222 tests).
+            Note: HANDOFF's vi.spyOn on node:fs/promises unlink is impossible in
+            this ESM vitest setup; substituted chmod-based tests (skip as root).
+2026-08-23  Agent-B  B  done: e825010 — README /weave-scan deep row, TODO.md
+            (removed Todo 1, reworded Todo 2), scan-modes.md flipped to
+            implemented + as-built deltas, weave-explore skill teaches
+            summaries-first reading.
+2026-08-23  Agent-C  C  done: 5fb3053 — notepad.md redesign (explicit capture,
+            AI finalization, ## Raw notes tail, provenance rule), banner folded
+            into Appendix A, weave-notepad skill updated. No code changes.
+2026-08-23  orchestrator  close-out  done: e271856 restored Todo 3 in TODO.md
+            (Eran wants the codebase-memory-mcp research thought kept).
+            Verified: git status clean, npm run check green (222 tests,
+            branches 95.43%). No PR opened — human decides.
 ```
 
 ## 10. Hard-won gotchas (keep the flash agents out of known traps)
