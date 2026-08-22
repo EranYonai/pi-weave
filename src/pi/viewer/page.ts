@@ -354,14 +354,19 @@ const PAGE = `<!DOCTYPE html>
   function listTree(model, state) {
     var byId = {};
     model.nodes.forEach(function (n) { byId[n.id] = n; });
-    var contains = {};
-    model.edges.forEach(function (e) {
-      if (e.kind !== "contains") return;
-      (contains[e.source] = contains[e.source] || []).push(e.target);
-    });
+    var contains = {}; // strict contains (used for file/module placement)
+    var tree = {};     // contains + anchored-at (nesting hierarchy)
     var incoming = {};
     model.edges.forEach(function (e) {
-      if (e.kind === "contains") incoming[e.target] = 1;
+      if (e.kind === "contains") {
+        (contains[e.source] = contains[e.source] || []).push(e.target);
+      }
+      // Nest under a parent via contains OR anchored-at (the git anchor
+      // belongs under its repository); only nodes with no parent become roots.
+      if (e.kind === "contains" || e.kind === "anchored-at") {
+        (tree[e.source] = tree[e.source] || []).push(e.target);
+        incoming[e.target] = 1;
+      }
     });
     function moduleFor(entryId) {
       var entry = byId[entryId];
@@ -383,7 +388,7 @@ const PAGE = `<!DOCTYPE html>
       if (m) (moduleEntries[m] = moduleEntries[m] || []).push(n.id);
     });
     function children(id) {
-      var kids = (contains[id] || []).filter(function (kid) {
+      var kids = (tree[id] || []).filter(function (kid) {
         return !(byId[kid] && byId[kid].kind === "entryPoint" && moduleFor(kid));
       });
       return kids.concat(moduleEntries[id] || []);
@@ -432,6 +437,19 @@ const PAGE = `<!DOCTYPE html>
     }
     roots.forEach(function (r) { walk(r, 0); });
     return rows;
+  }
+  // Disambiguate labels that would otherwise read as the same entry twice
+  // (a remote URL whose tail matches the repo name, an npm package named
+  // after the repo). The raw node label still drives sorting and search.
+  function listLabel(n) {
+    if (n.kind === "external" && n.detail.url) {
+      var u = n.detail.url.replace(/^[a-z]+:\\/\\//, "").replace(/^[^@\\/]+@/, "").replace(/\\.git$/, "").replace(/\\/+$/, "");
+      if (u) return u;
+    }
+    if (n.kind === "package" && n.detail.manifest) {
+      return n.label + " (" + n.detail.manifest + ")";
+    }
+    return n.label;
   }
   // ===== end pure =====
 
@@ -773,7 +791,7 @@ const PAGE = `<!DOCTYPE html>
       var chev = r.hasKids ? (r.expanded ? "▾" : "▸") : "";
       html += "<div class='row" + (selectedId === r.id ? " selected" : "") + "' data-id='" + esc(r.id) + "' tabindex='0' role='button' style='padding-left:" + (8 + r.depth * 16) + "px'>" +
         "<span class='chev" + (r.hasKids ? "" : " empty") + "' data-toggle='" + esc(r.id) + "'>" + chev + "</span>" +
-        "<span class='row-label'>" + esc(n.label) + "</span>" +
+        "<span class='row-label' title='" + esc(listLabel(n)) + "'>" + esc(listLabel(n)) + "</span>" +
         "<span class='row-kind'>" + esc(n.kind) + "</span>" +
         (n.provenance ? "<span class='prov " + esc(n.provenance) + "'>" + esc(n.provenance) + "</span>" : "") +
         "<span class='row-meta'>" + (n.detail.updated ? relTime(n.detail.updated, Date.now()) : "") + " · " + linksOf(n.id, model.edges) + "</span>" +

@@ -245,6 +245,7 @@ describe("page pure functions (extract-and-run)", () => {
     counts: (nodes: { provenance: string | null }[]) => { total: number; human: number; agent: number; generated: number; structural: number };
     relTime: (iso: string, now: number) => string;
     linksOf: (id: string, edges: { source: string; target: string; kind: string }[]) => number;
+    listLabel: (node: { kind: string; label: string; detail: Record<string, string> }) => string;
     listTree: (model: { nodes: { id: string; kind: string; label: string; provenance: string | null; detail: Record<string, string> }[]; edges: { source: string; target: string; kind: string }[] }, state: { kindFilter: string; provFilter: string; recentDays: number; query: string; listSort: string; listExpanded: Record<string, number> }) => { id: string; depth: number; hasKids: boolean; expanded: boolean }[];
   }
   function extractScript(html: string): string {
@@ -259,7 +260,7 @@ describe("page pure functions (extract-and-run)", () => {
       m[1] +
         "; return { focusNeighborhood: focusNeighborhood, deriveBacklinks: deriveBacklinks, " +
         "applyFilter: applyFilter, sortRows: sortRows, counts: counts, relTime: relTime, " +
-        "linksOf: linksOf, listTree: listTree };",
+        "linksOf: linksOf, listLabel: listLabel, listTree: listTree };",
     );
     return make() as PureFns;
   }
@@ -377,6 +378,46 @@ describe("page pure functions (extract-and-run)", () => {
     expect(rows.find((r) => r.id === "entryPoint:src/index.ts")?.depth).toBe(2);
     expect(rows.find((r) => r.id === "entryPoint:main.ts")?.depth).toBe(1);
     expect(ids.indexOf("module:src")).toBeLessThan(ids.indexOf("entryPoint:src/index.ts"));
+  });
+
+  it("listTree nests the git anchor (anchored-at) under the repository, not as a stray root", () => {
+    const model = {
+      nodes: [
+        { id: "repository", kind: "repository", label: "repo", provenance: null, detail: {} },
+        { id: "gitState", kind: "gitState", label: "main @ abc1234", provenance: null, detail: {} },
+        { id: "module:src", kind: "module", label: "src", provenance: null, detail: { path: "src" } },
+        { id: "vault", kind: "vault", label: "Vault", provenance: null, detail: {} },
+        { id: "note:a", kind: "note", label: "A", provenance: "human", detail: {} },
+      ],
+      edges: [
+        { source: "repository", target: "module:src", kind: "contains" },
+        { source: "repository", target: "gitState", kind: "anchored-at" },
+        { source: "vault", target: "note:a", kind: "contains" },
+      ],
+    };
+    const state = {
+      kindFilter: "", provFilter: "", recentDays: 0, query: "", listSort: "name",
+      listExpanded: { vault: 1, repository: 1 },
+    };
+    const rows = fns.listTree(model, state);
+    // exactly two roots: vault and repository (order follows node input)
+    const roots = rows.filter((r) => r.depth === 0).map((r) => r.id).sort();
+    expect(roots).toEqual(["repository", "vault"]);
+    // gitState sits under repository (depth 1), not as a third root
+    expect(rows.find((r) => r.id === "gitState")?.depth).toBe(1);
+    expect(rows.find((r) => r.id === "repository")?.expanded).toBe(true);
+  });
+
+  it("listLabel disambiguates external remotes and packages that collide with the repo name", () => {
+    expect(fns.listLabel({ kind: "external", label: "pi-weave", detail: { url: "https://github.com/EranYonai/pi-weave.git" } }))
+      .toBe("github.com/EranYonai/pi-weave");
+    expect(fns.listLabel({ kind: "package", label: "pi-weave", detail: { manifest: "package.json" } }))
+      .toBe("pi-weave (package.json)");
+    // non-colliding kinds keep their raw label
+    expect(fns.listLabel({ kind: "module", label: "src/core", detail: {} })).toBe("src/core");
+    // scp-style bare URLs still resolve to a readable label
+    expect(fns.listLabel({ kind: "external", label: "demo", detail: { url: "git@github.com:acme/demo.git" } }))
+      .toBe("github.com:acme/demo");
   });
 
   it("listTree collapses unexpanded branches and prunes to matches under a filter", () => {
