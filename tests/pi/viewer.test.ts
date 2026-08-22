@@ -245,7 +245,9 @@ describe("page pure functions (extract-and-run)", () => {
     counts: (nodes: { provenance: string | null }[]) => { total: number; human: number; agent: number; generated: number; structural: number };
     relTime: (iso: string, now: number) => string;
     linksOf: (id: string, edges: { source: string; target: string; kind: string }[]) => number;
-    listTree: (model: { nodes: { id: string; kind: string; label: string; provenance: string | null; detail: Record<string, string> }[]; edges: { source: string; target: string; kind: string }[] }, state: { kindFilter: string; provFilter: string; recentDays: number; query: string; listSort: string; listExpanded: Record<string, number> }) => { id: string; depth: number; hasKids: boolean; expanded: boolean }[];
+    listLabel: (node: { kind: string; label: string; detail: Record<string, string> }) => string;
+    listTree: (model: { nodes: { id: string; kind: string; label: string; provenance: string | null; detail: Record<string, string> }[]; edges: { source: string; target: string; kind: string }[] }, state: { kindFilter: string; provFilter: string; recentDays: number; query: string; listSort: string; listExpanded: Record<string, number>; showInternals?: boolean }) => { id: string; depth: number; hasKids: boolean; expanded: boolean }[];
+    parseFrontMatter: (text: string) => { body: string; meta: [string, string][]; tags: string[] };
   }
   function extractScript(html: string): string {
     const m = /<script>([\s\S]*)<\/script>/.exec(html);
@@ -259,7 +261,7 @@ describe("page pure functions (extract-and-run)", () => {
       m[1] +
         "; return { focusNeighborhood: focusNeighborhood, deriveBacklinks: deriveBacklinks, " +
         "applyFilter: applyFilter, sortRows: sortRows, counts: counts, relTime: relTime, " +
-        "linksOf: linksOf, listTree: listTree };",
+        "linksOf: linksOf, listLabel: listLabel, listTree: listTree, parseFrontMatter: parseFrontMatter };",
     );
     return make() as PureFns;
   }
@@ -366,7 +368,7 @@ describe("page pure functions (extract-and-run)", () => {
     };
     const state = {
       kindFilter: "", provFilter: "", recentDays: 0, query: "", listSort: "name",
-      listExpanded: { vault: 1, repository: 1, "module:src": 1 },
+      listExpanded: { vault: 1, repository: 1, "module:src": 1 }, showInternals: true,
     };
     const rows = fns.listTree(model, state);
     const ids = rows.map((r) => r.id);
@@ -377,6 +379,71 @@ describe("page pure functions (extract-and-run)", () => {
     expect(rows.find((r) => r.id === "entryPoint:src/index.ts")?.depth).toBe(2);
     expect(rows.find((r) => r.id === "entryPoint:main.ts")?.depth).toBe(1);
     expect(ids.indexOf("module:src")).toBeLessThan(ids.indexOf("entryPoint:src/index.ts"));
+  });
+
+  it("listTree nests the git anchor (anchored-at) under the repository, not as a stray root", () => {
+    const model = {
+      nodes: [
+        { id: "repository", kind: "repository", label: "repo", provenance: null, detail: {} },
+        { id: "gitState", kind: "gitState", label: "main @ abc1234", provenance: null, detail: {} },
+        { id: "module:src", kind: "module", label: "src", provenance: null, detail: { path: "src" } },
+        { id: "vault", kind: "vault", label: "Vault", provenance: null, detail: {} },
+        { id: "note:a", kind: "note", label: "A", provenance: "human", detail: {} },
+      ],
+      edges: [
+        { source: "repository", target: "module:src", kind: "contains" },
+        { source: "repository", target: "gitState", kind: "anchored-at" },
+        { source: "vault", target: "note:a", kind: "contains" },
+      ],
+    };
+    const state = {
+      kindFilter: "", provFilter: "", recentDays: 0, query: "", listSort: "name",
+      listExpanded: { vault: 1, repository: 1 }, showInternals: true,
+    };
+    const rows = fns.listTree(model, state);
+    // exactly two roots: vault and repository (order follows node input)
+    const roots = rows.filter((r) => r.depth === 0).map((r) => r.id).sort();
+    expect(roots).toEqual(["repository", "vault"]);
+    // gitState sits under repository (depth 1), not as a third root
+    expect(rows.find((r) => r.id === "gitState")?.depth).toBe(1);
+    expect(rows.find((r) => r.id === "repository")?.expanded).toBe(true);
+  });
+
+  it("parseFrontMatter strips the YAML block, exposing fields and tags", () => {
+    const src = "---\ntarget: docs/scan-modes.md\nsource: generated\ncontent_hash: abc123\nmodel: \"ollama/x\"\n---\n\nBody line";
+    const pf = fns.parseFrontMatter(src);
+    expect(pf.body).toContain("Body line");
+    expect(pf.body.startsWith("---")).toBe(false);
+    const kv = Object.fromEntries(pf.meta);
+    expect(kv.target).toBe("docs/scan-modes.md");
+    expect(kv.source).toBe("generated");
+    expect(kv.model).toBe("ollama/x");
+    expect(pf.tags).toEqual([]);
+  });
+
+  it("parseFrontMatter extracts comma-separated tags and quotes", () => {
+    const pf = fns.parseFrontMatter("---\ntags: pi-weave, milestone, self-index\nupdated: \"2026-08-22\"\n---\nbody\n");
+    expect(pf.tags).toEqual(["pi-weave", "milestone", "self-index"]);
+    expect(Object.fromEntries(pf.meta).updated).toBe("2026-08-22");
+    expect(pf.body.trim()).toBe("body");
+  });
+
+  it("parseFrontMatter passes through plain text with no front matter", () => {
+    expect(fns.parseFrontMatter("just body").body).toBe("just body");
+    expect(fns.parseFrontMatter("just body").meta).toEqual([]);
+    expect(fns.parseFrontMatter(undefined as unknown as string).body).toBe("");
+  });
+
+  it("listLabel disambiguates external remotes and packages that collide with the repo name", () => {
+    expect(fns.listLabel({ kind: "external", label: "pi-weave", detail: { url: "https://github.com/EranYonai/pi-weave.git" } }))
+      .toBe("github.com/EranYonai/pi-weave");
+    expect(fns.listLabel({ kind: "package", label: "pi-weave", detail: { manifest: "package.json" } }))
+      .toBe("pi-weave (package.json)");
+    // non-colliding kinds keep their raw label
+    expect(fns.listLabel({ kind: "module", label: "src/core", detail: {} })).toBe("src/core");
+    // scp-style bare URLs still resolve to a readable label
+    expect(fns.listLabel({ kind: "external", label: "demo", detail: { url: "git@github.com:acme/demo.git" } }))
+      .toBe("github.com:acme/demo");
   });
 
   it("listTree collapses unexpanded branches and prunes to matches under a filter", () => {
@@ -399,14 +466,14 @@ describe("page pure functions (extract-and-run)", () => {
     // repository collapsed → only the roots are shown
     let rows = fns.listTree(model, {
       kindFilter: "", provFilter: "", recentDays: 0, query: "", listSort: "name",
-      listExpanded: {},
+      listExpanded: {}, showInternals: true,
     });
     expect(rows.map((r) => r.id)).toEqual(["repository", "vault"]);
     expect(rows.find((r) => r.id === "repository")?.expanded).toBe(false);
     // kind filter auto-expands ancestors so the matching file stays reachable
     rows = fns.listTree(model, {
       kindFilter: "entryPoint", provFilter: "", recentDays: 0, query: "", listSort: "name",
-      listExpanded: {},
+      listExpanded: {}, showInternals: true,
     });
     const ids = rows.map((r) => r.id);
     expect(ids).toContain("repository");
@@ -414,6 +481,85 @@ describe("page pure functions (extract-and-run)", () => {
     expect(ids).toContain("entryPoint:src/index.ts");
     expect(rows.find((r) => r.id === "repository")?.expanded).toBe(true);
     expect(rows.find((r) => r.id === "module:src")?.expanded).toBe(true);
+  });
+
+  it("listTree hides repo plumbing (internals) by default and reveals them when requested", () => {
+    const model = {
+      nodes: [
+        { id: "repository", kind: "repository", label: "repo", provenance: null, detail: {} },
+        { id: "gitState", kind: "gitState", label: "main @ ab", provenance: null, detail: {} },
+        { id: "external:x", kind: "external", label: "acme", provenance: null, detail: {} },
+        { id: "package:y", kind: "package", label: "demo", provenance: null, detail: {} },
+        { id: "entryPoint:src/index.ts", kind: "entryPoint", label: "src/index.ts", provenance: null, detail: { path: "src/index.ts" } },
+        { id: "module:src", kind: "module", label: "src", provenance: null, detail: { path: "src" } },
+        { id: "vault", kind: "vault", label: "Vault", provenance: null, detail: {} },
+        { id: "note:a", kind: "note", label: "A", provenance: "agent", detail: {} },
+      ],
+      edges: [
+        { source: "repository", target: "module:src", kind: "contains" },
+        { source: "repository", target: "gitState", kind: "anchored-at" },
+        { source: "repository", target: "external:x", kind: "contains" },
+        { source: "repository", target: "package:y", kind: "contains" },
+        { source: "repository", target: "entryPoint:src/index.ts", kind: "contains" },
+        { source: "vault", target: "note:a", kind: "contains" },
+      ],
+    };
+    const base = { kindFilter: "", provFilter: "", recentDays: 0, query: "", listSort: "name", listExpanded: { vault: 1, repository: 1, "module:src": 1 } };
+    const hidden = fns.listTree(model, { ...base });
+    const hiddenIds = hidden.map((r) => r.id);
+    // plumbing is gone by default, notes/modules remain
+    expect(hiddenIds).toContain("note:a");
+    expect(hiddenIds).toContain("module:src");
+    expect(hiddenIds).not.toContain("gitState");
+    expect(hiddenIds).not.toContain("external:x");
+    expect(hiddenIds).not.toContain("package:y");
+    expect(hiddenIds).not.toContain("entryPoint:src/index.ts");
+    // toggling showInternals reveals them again
+    const shown = fns.listTree(model, { ...base, showInternals: true });
+    const shownIds = shown.map((r) => r.id);
+    expect(shownIds).toContain("gitState");
+    expect(shownIds).toContain("external:x");
+    expect(shownIds).toContain("package:y");
+    expect(shownIds).toContain("entryPoint:src/index.ts");
+  });
+
+  it("listTree nests .okf file nodes under the .okf module as an expandable subtree", () => {
+    const model = {
+      nodes: [
+        { id: "repository", kind: "repository", label: "repo", provenance: null, detail: {} },
+        { id: "module:.okf", kind: "module", label: ".okf", provenance: null, detail: { path: ".okf" } },
+        { id: "module:.okf/repository", kind: "module", label: "repository", provenance: null, detail: { path: ".okf/repository" } },
+        { id: "module:.okf/repository/summaries", kind: "module", label: "summaries", provenance: null, detail: { path: ".okf/repository/summaries" } },
+        { id: "okf:okf.json", kind: "file", label: "okf.json", provenance: null, detail: {} },
+        { id: "okf:repository/git.json", kind: "file", label: "git.json", provenance: null, detail: {} },
+        { id: "okf:repository/summaries/a.md", kind: "file", label: "a.md", provenance: null, detail: {} },
+        { id: "vault", kind: "vault", label: "Vault", provenance: null, detail: {} },
+      ],
+      edges: [
+        { source: "repository", target: "module:.okf", kind: "contains" },
+        { source: "module:.okf", target: "module:.okf/repository", kind: "contains" },
+        { source: "module:.okf/repository", target: "module:.okf/repository/summaries", kind: "contains" },
+        { source: "module:.okf", target: "okf:okf.json", kind: "contains" },
+        { source: "module:.okf/repository", target: "okf:repository/git.json", kind: "contains" },
+        { source: "module:.okf/repository/summaries", target: "okf:repository/summaries/a.md", kind: "contains" },
+      ],
+    };
+    const state = {
+      kindFilter: "", provFilter: "", recentDays: 0, query: "", listSort: "name",
+      listExpanded: { vault: 1, repository: 1, "module:.okf": 1, "module:.okf/repository": 1, "module:.okf/repository/summaries": 1 },
+    };
+    const rows = fns.listTree(model, state);
+    const ids = rows.map((r) => r.id);
+    expect(ids).toContain("module:.okf");
+    // .okf file nodes are present and nested (not hidden as internals)
+    expect(ids).toContain("okf:okf.json");
+    expect(ids).toContain("okf:repository/git.json");
+    expect(ids).toContain("okf:repository/summaries/a.md");
+    expect(rows.find((r) => r.id === "module:.okf")?.hasKids).toBe(true);
+    // nesting depths: okf.json under .okf, git.json under repository, summary under summaries
+    expect(rows.find((r) => r.id === "okf:okf.json")?.depth).toBe(2);
+    expect(rows.find((r) => r.id === "okf:repository/git.json")?.depth).toBe(3);
+    expect(rows.find((r) => r.id === "okf:repository/summaries/a.md")?.depth).toBe(4);
   });
 });
 
@@ -498,12 +644,15 @@ describe("page script (real browser JS, executed through node)", () => {
     expect(() => new Function(js)).not.toThrow();
   });
 
-  it("exposes the three v2 surfaces, status strip, and detail tabs", () => {
+  it("exposes the merged Explore (graph+list) and Health surfaces, status strip, and detail tabs", () => {
     const page = renderPage();
-    // three surfaces over one model
+    // Graph and List are merged into one Explore surface (list is a sidebar)
     expect(page).toContain('data-surface="graph"');
-    expect(page).toContain('data-surface="list"');
+    expect(page).toContain('id="list-toggle"');
     expect(page).toContain('data-surface="health"');
+    expect(page).not.toContain('data-surface="list"');
+    // list sidebar is open by default on the Explore surface
+    expect(page).toContain('class="list-open"');
     // overview-first status strip
     expect(page).toContain('id="status"');
     expect(page).toContain('id="stamp"');

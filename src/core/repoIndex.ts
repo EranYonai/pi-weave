@@ -163,6 +163,32 @@ function detectTopLevel(files: string[]): { name: string; fileCount: number }[] 
     .sort((a, b) => a.name.localeCompare(b.name));
 }
 
+/**
+ * Recursively count files under <root>/.okf (the derived index). The index is
+ * gitignored/excluded locally (design §15), so `listFiles` never sees it; we
+ * walk it directly so the viewer can surface `.okf` as a distinct folder.
+ * Returns repo-relative paths (e.g. "repository/git.json") or [] when absent.
+ */
+async function listOkfFiles(root: string): Promise<string[]> {
+  const dir = join(root, OKF_DIR);
+  const out: string[] = [];
+  async function walk(p: string): Promise<void> {
+    let entries;
+    try {
+      entries = await fs.readdir(p, { withFileTypes: true });
+    } catch {
+      return;
+    }
+    for (const e of entries) {
+      const full = join(p, e.name);
+      if (e.isDirectory()) await walk(full);
+      else out.push(posix.relative(root, full));
+    }
+  }
+  await walk(dir);
+  return out.sort();
+}
+
 export function buildStructure(files: string[], now: Date = new Date()): RepoStructure {
   return {
     capturedAt: now.toISOString(),
@@ -190,6 +216,19 @@ export async function buildRepoIndex(root: string, options: ScanOptions = {}): P
   const now = options.now ?? new Date();
   const structure = buildStructure(capped, now);
   await enrichPackageNames(root, structure.packages);
+
+  // Surface the derived .okf index as an expandable folder in the repo tree
+  // so it is visible in the viewer. It is excluded from the git source list,
+  // so we capture it explicitly (without polluting the source stats like
+  // languages/fileCount).
+  const okFiles = await listOkfFiles(root);
+  if (okFiles.length > 0) {
+    structure.okFiles = okFiles;
+    structure.modules = [
+      ...structure.modules.filter((m) => m.path !== ".okf"),
+      { path: ".okf", fileCount: okFiles.length },
+    ];
+  }
 
   const identity: RepoIdentity = {
     name: basename(root),

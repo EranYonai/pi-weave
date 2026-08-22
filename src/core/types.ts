@@ -95,6 +95,12 @@ export interface RepoStructure {
   entryPoints: string[];
   /** Top-level directory listing with direct file counts. */
   topLevel: { name: string; fileCount: number }[];
+  /**
+   * Files under the derived <repo>/.okf/ index (repo-relative, e.g.
+   * "repository/git.json"), captured so the viewer can render `.okf` as an
+   * expandable subtree. Absent when there is no `.okf` directory.
+   */
+  okFiles?: string[];
 }
 
 /** The full repository index held under <repo>/.okf/repository/. */

@@ -92,6 +92,8 @@ const PAGE = `<!DOCTYPE html>
   /* ---------- surfaces ---------- */
   .surface { position: fixed; top: 48px; bottom: 0; overflow-y: auto; background: var(--bg); }
   #list { left: 0; width: 340px; border-right: 1px solid var(--line); display: none; padding: 12px; }
+  body.list-open #list { display: block; }
+  #list-toggle[aria-pressed="true"] { background: var(--accent); color: #0b1020; }
   #health { left: 0; right: 0; display: none; padding: 20px 24px; max-width: 760px; }
   #health h2 { font-size: 18px; line-height: 1.3; font-weight: 650; margin: 0 0 4px; }
   #health h3 { font-size: 13px; text-transform: uppercase; letter-spacing: .08em; color: var(--muted);
@@ -157,9 +159,15 @@ const PAGE = `<!DOCTYPE html>
 
   /* ---------- legend ---------- */
   #legend { position: fixed; left: 10px; bottom: 10px; background: var(--surface);
-            border: 1px solid var(--line); border-radius: 9px; padding: 9px 12px; z-index: 8;
+            border: 1px solid var(--line); border-radius: 9px; padding: 7px 10px; z-index: 8;
             font-size: 11px; color: var(--muted); }
-  #legend .row { display: flex; align-items: center; gap: 7px; margin: 2px 0; }
+  #legend .legend-head { display: flex; align-items: center; gap: 6px; cursor: pointer; background: none;
+            border: none; color: var(--muted); font: inherit; font-size: 11px; padding: 0; width: 100%; text-align: left; }
+  #legend .legend-head .caret { transition: transform 140ms; }
+  #legend.collapsed .legend-head .caret { transform: rotate(-90deg); }
+  #legend .legend-body { margin-top: 6px; }
+  #legend.collapsed .legend-body { display: none; }
+  #legend .row { display: flex; align-items: center; gap: 7px; margin: 2px 0; white-space: nowrap; }
   #legend .dot { width: 10px; height: 10px; border-radius: 50%; display: inline-block; }
   #legend .ring { width: 12px; height: 12px; border-radius: 50%; display: inline-block; }
   #legend .ring.human { border: 2px solid var(--ok); }
@@ -195,13 +203,13 @@ const PAGE = `<!DOCTYPE html>
   }
 </style>
 </head>
-<body>
+<body class="list-open">
 <header>
   <h1>pi-weave <span>knowledge view</span></h1>
   <nav class="tabs" aria-label="surface">
-    <button data-surface="graph" class="tab active">Graph</button>
-    <button data-surface="list" class="tab">List</button>
+    <button data-surface="graph" class="tab active">Explore</button>
     <button data-surface="health" class="tab">Health</button>
+    <button id="list-toggle" title="Toggle list sidebar" aria-pressed="true">▤</button>
   </nav>
   <input id="search" placeholder="search…" aria-label="search">
   <span class="zoomgrp">
@@ -235,6 +243,7 @@ const PAGE = `<!DOCTYPE html>
       <option value="30">last 30 days</option>
       <option value="90">last 90 days</option>
     </select>
+    <label class="internals"><input id="internals" type="checkbox" aria-label="show internals"> show internals</label>
   </div>
   <div id="list-rows"></div>
   <button id="show-more" style="display:none">Show more</button>
@@ -258,12 +267,13 @@ const PAGE = `<!DOCTYPE html>
   <h2>Health</h2>
   <div id="health-content"></div>
 </section>
-<div id="legend"></div>
+<div id="legend" class="collapsed"></div>
 <div id="help" class="hidden">
   <div class="card">
     <h2>Shortcuts</h2>
     <table>
-      <tr><td>1 / 2 / 3</td><td>Graph / List / Health</td></tr>
+      <tr><td>1 / 3</td><td>Graph / Health</td></tr>
+      <tr><td>2</td><td>Toggle list sidebar</td></tr>
       <tr><td>f</td><td>Focus selected node</td></tr>
       <tr><td>g</td><td>Exit focus</td></tr>
       <tr><td>▸ / ▾</td><td>Expand / collapse in List</td></tr>
@@ -354,14 +364,19 @@ const PAGE = `<!DOCTYPE html>
   function listTree(model, state) {
     var byId = {};
     model.nodes.forEach(function (n) { byId[n.id] = n; });
-    var contains = {};
-    model.edges.forEach(function (e) {
-      if (e.kind !== "contains") return;
-      (contains[e.source] = contains[e.source] || []).push(e.target);
-    });
+    var contains = {}; // strict contains (used for file/module placement)
+    var tree = {};     // contains + anchored-at (nesting hierarchy)
     var incoming = {};
     model.edges.forEach(function (e) {
-      if (e.kind === "contains") incoming[e.target] = 1;
+      if (e.kind === "contains") {
+        (contains[e.source] = contains[e.source] || []).push(e.target);
+      }
+      // Nest under a parent via contains OR anchored-at (the git anchor
+      // belongs under its repository); only nodes with no parent become roots.
+      if (e.kind === "contains" || e.kind === "anchored-at") {
+        (tree[e.source] = tree[e.source] || []).push(e.target);
+        incoming[e.target] = 1;
+      }
     });
     function moduleFor(entryId) {
       var entry = byId[entryId];
@@ -383,10 +398,19 @@ const PAGE = `<!DOCTYPE html>
       if (m) (moduleEntries[m] = moduleEntries[m] || []).push(n.id);
     });
     function children(id) {
-      var kids = (contains[id] || []).filter(function (kid) {
+      var kids = (tree[id] || []).filter(function (kid) {
         return !(byId[kid] && byId[kid].kind === "entryPoint" && moduleFor(kid));
       });
-      return kids.concat(moduleEntries[id] || []);
+      kids = kids.concat(moduleEntries[id] || []);
+      // Knowledge-first default: hide repo plumbing (git anchor, remotes,
+      // packages, entry points) unless the user explicitly reveals internals.
+      if (!state.showInternals) {
+        kids = kids.filter(function (k) {
+          var kind = byId[k] && byId[k].kind;
+          return kind !== "gitState" && kind !== "external" && kind !== "package" && kind !== "entryPoint";
+        });
+      }
+      return kids;
     }
     var roots = model.nodes.filter(function (n) { return !incoming[n.id]; }).map(function (n) { return n.id; });
     var filtering = state.kindFilter || state.provFilter || state.recentDays || state.query;
@@ -433,11 +457,41 @@ const PAGE = `<!DOCTYPE html>
     roots.forEach(function (r) { walk(r, 0); });
     return rows;
   }
+  // Disambiguate labels that would otherwise read as the same entry twice
+  // (a remote URL whose tail matches the repo name, an npm package named
+  // after the repo). The raw node label still drives sorting and search.
+  function listLabel(n) {
+    if (n.kind === "external" && n.detail.url) {
+      var u = n.detail.url.replace(/^[a-z]+:\\/\\//, "").replace(/^[^@\\/]+@/, "").replace(/\\.git$/, "").replace(/\\/+$/, "");
+      if (u) return u;
+    }
+    if (n.kind === "package" && n.detail.manifest) {
+      return n.label + " (" + n.detail.manifest + ")";
+    }
+    return n.label;
+  }
+  // Split YAML front matter (--- … ---) from a markdown body, returning the
+  // stripped body plus the fields (and tags, when present). Pure/derivable.
+  function parseFrontMatter(text) {
+    if (typeof text !== "string" || text.slice(0, 3) !== "---") return { body: text || "", meta: [], tags: [] };
+    var m = /^---\\r?\\n([\\s\\S]*?)\\r?\\n---\\r?\\n?/.exec(text);
+    if (!m) return { body: text, meta: [], tags: [] };
+    var meta = [], tags = [];
+    m[1].split(/\\r?\\n/).forEach(function (line) {
+      var i = line.indexOf(":");
+      if (i <= 0) return;
+      var k = line.slice(0, i).trim();
+      var v = line.slice(i + 1).trim().replace(/^["']|["']$/g, "");
+      if (k === "tags") { tags = v.split(",").map(function (t) { return t.trim(); }).filter(Boolean); return; }
+      meta.push([k, v]);
+    });
+    return { body: text.slice(m[0].length), meta: meta, tags: tags };
+  }
   // ===== end pure =====
 
   var COLORS = { vault: "#8b5cf6", note: "#c4b5fd", repository: "#3b82f6",
     module: "#22c55e", "package": "#14b8a6", entryPoint: "#a3e635",
-    gitState: "#facc15", external: "#fb923c" };
+    gitState: "#facc15", external: "#fb923c", file: "#6ee7b7" };
   var PROV_COLOR = { human: "#a7f3d0", agent: "#e9d5ff", generated: "#94a3b8" };
   var PROV_GLYPH = { human: "●", agent: "◐", generated: "○" };
   var EDGE_COLORS = { contains: "#2e3a55", "anchored-at": "#a16207", "links-to": "#7c3aed", mentions: "#525252" };
@@ -452,6 +506,7 @@ const PAGE = `<!DOCTYPE html>
   var query = "", kindFilter = "", provFilter = "", recentDays = 0, listSort = "name";
   var listLimit = 100;
   var listExpanded = { vault: 1, repository: 1 };
+  var showInternals = false;
   var sim = {}, collapsed = {}, alpha = 0;
   var W = window.innerWidth, H = window.innerHeight, world = null;
   var cam = { x: 0, y: 0, k: 1 };
@@ -710,20 +765,31 @@ const PAGE = `<!DOCTYPE html>
   }
 
   // ---------- surfaces ----------
+  // Graph and List are merged into one "Explore" surface: the graph canvas is
+  // the main view with the index tree as a collapsible left sidebar (there is
+  // no separate List tab). Health stays a distinct full surface.
+  var listOpen = true;
   function showSurface(s) {
     surface = s;
     document.querySelectorAll(".tab").forEach(function (b) {
       b.classList.toggle("active", b.getAttribute("data-surface") === s);
     });
     svg.style.display = s === "graph" ? "block" : "none";
-    document.getElementById("list").style.display = s === "list" ? "block" : "none";
+    document.body.classList.toggle("list-open", s === "graph" && listOpen);
     document.getElementById("health").style.display = s === "health" ? "block" : "none";
-    if (s === "list") renderList();
+    if (s === "graph") renderList();
     if (s === "health") renderHealth();
+  }
+  function toggleListPanel() {
+    listOpen = !listOpen;
+    document.body.classList.toggle("list-open", surface === "graph" && listOpen);
+    var t = document.getElementById("list-toggle");
+    t.setAttribute("aria-pressed", listOpen ? "true" : "false");
   }
   document.querySelectorAll(".tab").forEach(function (b) {
     b.addEventListener("click", function () { showSurface(b.getAttribute("data-surface")); });
   });
+  document.getElementById("list-toggle").addEventListener("click", toggleListPanel);
 
   function provBar(c) {
     var total = Math.max(1, c.human + c.agent + c.generated);
@@ -764,7 +830,7 @@ const PAGE = `<!DOCTYPE html>
     var byId = listById();
     var rows = listTree(model, {
       kindFilter: kindFilter, provFilter: provFilter, recentDays: recentDays,
-      query: query, listSort: listSort, listExpanded: listExpanded,
+      query: query, listSort: listSort, listExpanded: listExpanded, showInternals: showInternals,
     });
     var shown = rows.slice(0, listLimit);
     var html = "";
@@ -773,7 +839,7 @@ const PAGE = `<!DOCTYPE html>
       var chev = r.hasKids ? (r.expanded ? "▾" : "▸") : "";
       html += "<div class='row" + (selectedId === r.id ? " selected" : "") + "' data-id='" + esc(r.id) + "' tabindex='0' role='button' style='padding-left:" + (8 + r.depth * 16) + "px'>" +
         "<span class='chev" + (r.hasKids ? "" : " empty") + "' data-toggle='" + esc(r.id) + "'>" + chev + "</span>" +
-        "<span class='row-label'>" + esc(n.label) + "</span>" +
+        "<span class='row-label' title='" + esc(listLabel(n)) + "'>" + esc(listLabel(n)) + "</span>" +
         "<span class='row-kind'>" + esc(n.kind) + "</span>" +
         (n.provenance ? "<span class='prov " + esc(n.provenance) + "'>" + esc(n.provenance) + "</span>" : "") +
         "<span class='row-meta'>" + (n.detail.updated ? relTime(n.detail.updated, Date.now()) : "") + " · " + linksOf(n.id, model.edges) + "</span>" +
@@ -800,6 +866,9 @@ const PAGE = `<!DOCTYPE html>
   document.getElementById("prov-filter").addEventListener("change", function (e) { provFilter = e.target.value; renderList(); });
   document.getElementById("recent-filter").addEventListener("change", function (e) {
     recentDays = Number(e.target.value) || 0; renderList();
+  });
+  document.getElementById("internals").addEventListener("change", function (e) {
+    showInternals = !!e.target.checked; renderList();
   });
 
   // ---------- health ----------
@@ -892,12 +961,36 @@ const PAGE = `<!DOCTYPE html>
       }).catch(function () {
         container.innerHTML = "<p class='muted'>(could not load note body — it may have moved)</p>";
       });
+    } else if (node.kind === "file" && node.detail.path) {
+      // A derived index file (.okf/…) — fetch its real body from the viewer server.
+      container.innerHTML = "<p class='muted'>loading file…</p>";
+      fetch("okffile/" + encodeURIComponent(node.detail.path)).then(function (r) {
+        if (!r.ok) throw new Error(String(r.status));
+        return r.json();
+      }).then(function (fileData) {
+        var pf = parseFrontMatter(fileData.body || "");
+        renderOverviewMeta(pf.meta, pf.tags);
+        container.innerHTML = renderMd(pf.body || "(empty file)");
+        wireWikilinks(container);
+      }).catch(function () {
+        container.innerHTML = "<p class='muted'>(could not load file body)</p>";
+      });
     } else {
       var body = node.detail.summary ? renderMd(node.detail.summary)
         : node.detail.preview ? renderMd(node.detail.preview) : "<p class='muted'>(no body)</p>";
       container.innerHTML = body;
       wireWikilinks(container);
     }
+  }
+  // Fill the Overview meta table (#pmeta) and tag chips (#ptags) from a
+  // front-matter parse (used for both notes and derived .okf files).
+  function renderOverviewMeta(meta, tags) {
+    var pt = document.getElementById("ptags");
+    var pm = document.getElementById("pmeta");
+    if (pt) pt.innerHTML = tags.map(function (t) { return "<span class='chip'>" + esc(t) + "</span>"; }).join("");
+    if (pm) pm.innerHTML = meta.map(function (p) {
+      return "<div><span class='k'>" + esc(p[0]) + "</span>" + esc(p[1]) + "</div>";
+    }).join("");
   }
   function renderPtab(node, tab) {
     var content = document.getElementById("pcontent");
@@ -906,13 +999,9 @@ const PAGE = `<!DOCTYPE html>
       if (node.detail.slug) meta.push(["slug", node.detail.slug]);
       if (node.detail.updated) meta.push(["updated", node.detail.updated]);
       if (node.detail["dangling links"]) meta.push(["dangling links", node.detail["dangling links"]]);
-      var tags = node.detail.tags || "";
-      var tagHtml = tags.split(",").map(function (t) { return t.trim(); }).filter(Boolean)
-        .map(function (t) { return "<span class='chip'>" + esc(t) + "</span>"; }).join("");
-      var metaHtml = meta.map(function (p) {
-        return "<div><span class='k'>" + esc(p[0]) + "</span>" + esc(p[1]) + "</div>";
-      }).join("");
-      content.innerHTML = "<div id='ptags'>" + tagHtml + "</div><div id='pmeta'>" + metaHtml + "</div><div id='pbody'></div>";
+      var tags = (node.detail.tags || "").split(",").map(function (t) { return t.trim(); }).filter(Boolean);
+      content.innerHTML = "<div id='ptags'></div><div id='pmeta'></div><div id='pbody'></div>";
+      renderOverviewMeta(meta, tags);
       renderBodyInto(node, document.getElementById("pbody"));
     } else if (tab === "links") {
       var out = [];
@@ -951,7 +1040,7 @@ const PAGE = `<!DOCTYPE html>
       b.classList.toggle("active", b.getAttribute("data-ptab") === "overview");
     });
     renderPtab(node, "overview");
-    if (surface === "list") renderList();
+    if (surface === "graph" && listOpen) renderList();
     paint();
   }
   document.querySelectorAll(".ptabs button").forEach(function (b) {
@@ -1110,7 +1199,7 @@ const PAGE = `<!DOCTYPE html>
       model = JSON.parse(text);
       renderStatus();
       buildScene(first);
-      if (surface === "list") renderList();
+      if (surface === "graph" && listOpen) renderList();
       if (surface === "health") renderHealth();
       overlay.className = "hidden";
       if (!model.nodes.length) {
@@ -1128,7 +1217,7 @@ const PAGE = `<!DOCTYPE html>
   // ---------- search ----------
   searchEl.addEventListener("input", function () {
     query = searchEl.value.trim().toLowerCase();
-    if (surface === "list") renderList();
+    if (surface === "graph" && listOpen) renderList();
     paint();
   });
 
@@ -1167,7 +1256,7 @@ const PAGE = `<!DOCTYPE html>
   document.addEventListener("keydown", function (ev) {
     var k = ev.key;
     if (k === "1") showSurface("graph");
-    else if (k === "2") showSurface("list");
+    else if (k === "2") toggleListPanel();
     else if (k === "3") showSurface("health");
     else if (k === "f") { if (selectedId) focusOn(selectedId); }
     else if (k === "g") exitFocus();
@@ -1180,7 +1269,7 @@ const PAGE = `<!DOCTYPE html>
       if (t && t.getAttribute && t.getAttribute("data-id")) { ev.preventDefault(); selectById(t.getAttribute("data-id")); }
     }
     else if (k === "ArrowDown" || k === "ArrowUp") {
-      if (surface === "list") {
+      if (surface === "graph" && listOpen) {
         ev.preventDefault();
         var rows = document.querySelectorAll("#list-rows .row");
         var idx = Array.prototype.indexOf.call(rows, document.activeElement);
@@ -1196,18 +1285,24 @@ const PAGE = `<!DOCTYPE html>
     }
   });
 
-  // ---------- legend ----------
+  // ---------- legend (collapsible; hidden by default so it stays out of the face) ----------
   var legend = document.getElementById("legend");
   var L = [["vault", "vault root"], ["note", "vault note"], ["repository", "repository"],
-    ["module", "module"], ["package", "package"], ["entryPoint", "entry point"],
+    ["module", "module"], ["file", "okf file"], ["package", "package"], ["entryPoint", "entry point"],
     ["gitState", "git anchor"], ["external", "remote"]];
-  legend.innerHTML = L.map(function (p) {
+  var legendBody = L.map(function (p) {
     return "<div class='row'><span class='dot' style='background:" + COLORS[p[0]] + "'></span>" + p[1] + "</div>";
   }).join("") +
     "<div class='row'><span class='ring human'></span>human</div>" +
     "<div class='row'><span class='ring agent'></span>agent</div>" +
     "<div class='row'><span class='ring generated'></span>generated</div>" +
     "<div class='row'>scroll=zoom · drag=pan · dblclick=focus</div>";
+  legend.innerHTML = "<button id='legend-toggle' class='legend-head' aria-expanded='false'><span class='caret'>▾</span>legend</button>" +
+    "<div class='legend-body'>" + legendBody + "</div>";
+  document.getElementById("legend-toggle").addEventListener("click", function () {
+    var collapsed = legend.classList.toggle("collapsed");
+    document.getElementById("legend-toggle").setAttribute("aria-expanded", String(!collapsed));
+  });
 
   // ---------- init ----------
   collapsed = { vault: 1, repository: 1 };

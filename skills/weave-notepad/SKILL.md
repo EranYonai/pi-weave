@@ -1,6 +1,6 @@
 ---
 name: weave-notepad
-description: Take and retrieve durable notes in the pi-weave vault. Use when the user asks to remember something or to start/add to a note, or when answering questions about past decisions, people, or projects.
+description: Take and retrieve durable notes in the pi-weave vault. Use when the user asks to remember something or to start/add to a note (aliases: notes, ai note, note-taking, note-taker), or when answering questions about past decisions, people, or projects. Also handles interview note-taking where raw dictations are appended AND expanded.
 ---
 
 # Weave Notepad
@@ -20,6 +20,21 @@ available), operate on the files directly:
 - `weave_note` actions: `list`, `get`, `add`, `append`, `finalize`, `search`.
   `finalize` restructures the body *above* the `## Raw notes` tail and preserves
   the tail verbatim.
+
+## Dictation mode ("I will write, you expand")
+
+When the user is dictating (e.g. "I am in an interview", "I will write, you
+expand on my draft"), behave as notepad + expander:
+
+1. **Every raw line the user adds MUST be captured.** Append their words
+   verbatim to the active note (`weave_note` action=append).
+2. **Then expand it immediately.** Add `## Raw: "<user's line>"` followed by
+   `**Expand:** <polished, interview-ready passage>` (STAR-style when
+   applicable). Never append without expanding.
+3. **Terse replies.** Acknowledge briefly and show what was written. Do NOT
+   dump long prose in chat — the expansion lives in the note, not the reply.
+4. **Small talk / questions → ask the user.** If you want to chat, clarify,
+   or ask something, pose it to the user directly and briefly, and wait.
 
 ## When to take a note
 

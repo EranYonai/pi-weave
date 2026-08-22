@@ -1,5 +1,8 @@
 import { describe, expect, it } from "vitest";
+import { mkdir, writeFile } from "node:fs/promises";
+import { join } from "node:path";
 import piWeave from "../../src/pi/index";
+import { readOkfFileForView } from "../../src/pi/viewer/server";
 import type { GraphModel } from "../../src/core/graph/model";
 import { createMockCtx, createMockPi, makeTempDir } from "../helpers";
 
@@ -97,5 +100,46 @@ describe("/weave-view command", () => {
       else process.env.PI_WEAVE_VIEW_NO_OPEN = before;
       await mock.emit("session_shutdown", {}, ctx);
     }
+  });
+
+  it("serves a derived .okf file body and rejects traversal/missing paths", async () => {
+    const repo = await makeTempDir();
+    await mkdir(join(repo, ".okf", "repository", "summaries"), { recursive: true });
+    await writeFile(join(repo, ".okf", "repository", "summaries", "a.md"), "# summary\n\nhello", "utf8");
+    const mock = buildExtension();
+    const ctx = createMockCtx(repo);
+    try {
+      await mock.commands.get("weave-view")!.handler("", ctx);
+      const url = ctx.ui.notifications[0]?.message.match(/http:\/\/127\.0\.0\.1:\d+/)?.[0];
+      expect(url).toBeTruthy();
+
+      const ok = await fetch(`${url}/okffile/${encodeURIComponent("repository/summaries/a.md")}`);
+      expect(ok.status).toBe(200);
+      expect(((await ok.json()) as { body: string }).body).toContain("hello");
+
+      const missing = await fetch(`${url}/okffile/${encodeURIComponent("nope.md")}`);
+      expect(missing.status).toBe(404);
+
+      const traversal = await fetch(`${url}/okffile/${encodeURIComponent("../../package.json")}`);
+      expect(traversal.status).toBe(404);
+    } finally {
+      await mock.emit("session_shutdown", {}, ctx);
+    }
+  });
+
+  it("readOkfFileForView: reads a file, and rejects traversal or missing paths", async () => {
+    const repo = await makeTempDir();
+    await mkdir(join(repo, ".okf", "repository"), { recursive: true });
+    await writeFile(join(repo, ".okf", "repository", "git.json"), "{\"branch\":\"main\"}", "utf8");
+    await writeFile(join(repo, "secret.txt"), "top secret", "utf8");
+
+    const good = await readOkfFileForView(repo, "repository/git.json");
+    expect(good?.body).toContain("main");
+
+    const missing = await readOkfFileForView(repo, "repository/absent.json");
+    expect(missing).toBeNull();
+
+    const traversal = await readOkfFileForView(repo, "../../secret.txt");
+    expect(traversal).toBeNull();
   });
 });
