@@ -40,11 +40,12 @@ jobs:
 
       - name: Bump patch version
         run: |
-          npm version patch -m "chore: release %s [skip ci]"
+          VERSION=$(npm version patch --no-git-tag-version)
+          git tag "$VERSION" -f
 
-      - name: Push version bump & tag
+      - name: Push tag
         run: |
-          git push origin main --follow-tags
+          git push origin --tags --force
 
       - name: Publish to npm
         run: |
