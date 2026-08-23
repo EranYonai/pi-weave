@@ -5,21 +5,17 @@ description: "Take and retrieve durable notes in the pi-weave vault. Use when th
 
 # Weave Notepad
 
-The pi-weave vault is the user's long-term memory: plain Markdown notes with
-front matter under `~/.okf/notes/`. It is shared with the human — anything
-you write here, they can read and edit, and vice versa.
+The pi-weave vault is the user's long-term memory: plain Markdown notes with front matter under `~/.okf/notes/`. It is shared with the human
+— anything you write here, they can read and edit, and vice versa.
 
 ## Tools
 
-In pi, use the `weave_note` tool. In other harnesses (or when the tool is not
-available), operate on the files directly:
+In pi, use the `weave_note` tool. In other harnesses (or when the tool is not available), operate on the files directly:
 
 - **Notes** live at `~/.okf/notes/<slug>.md` (vault root overridable via `PI_WEAVE_VAULT`).
-- Each note has YAML front matter: `title`, `created`, `updated` (ISO-8601),
-  `tags: [..]`, and `source: human | agent | generated`.
-- `weave_note` actions: `list`, `get`, `add`, `append`, `finalize`, `search`.
-  `finalize` restructures the body *above* the `## Raw` tail and preserves
-  the tail verbatim.
+- Each note has YAML front matter: `title`, `created`, `updated` (ISO-8601), `tags: [..]`, and `source: human | agent | generated`.
+- `weave_note` actions: `list`, `get`, `add`, `append`, `finalize`, `search`. `finalize` restructures the body *above* the `## Raw` tail and
+  preserves the tail verbatim.
 
 ## Raw Tail Format
 
@@ -41,7 +37,8 @@ Every note maintains a verbatim, append-only raw section at the bottom separated
 
 ### How to capture and append raw input
 
-1. **Divider and Heading**: The raw section starts with `---` followed by `## Raw` and the notice comment: `<!-- NEVER edit below this line. Verbatim user input preserved here. -->`.
+1. **Divider and Heading**: The raw section starts with `---` followed by `## Raw` and the notice comment: `<!-- NEVER edit below this line.
+   Verbatim user input preserved here. -->`.
 2. **Code Blocks for Verbatim Input**: Always wrap verbatim user lines inside code blocks (triple backticks).
 3. **Date and Time on Appends**: When appending subsequent snippets, prepend each snippet with: `<!-- appended YYYY-MM-DD HH:MM -->`.
 4. **Finalization (`finalize`)**:
@@ -50,63 +47,46 @@ Every note maintains a verbatim, append-only raw section at the bottom separated
 
 ## Dictation mode (continuous compile)
 
-During live dictation / interview note-taking (see the skill description),
-Pi does **not** wait until the end to organize the note. Every interactive
-append is immediately compiled into the body:
+During live dictation / interview note-taking (see the skill description), Pi does **not** wait until the end to organize the note. Every
+interactive append is immediately compiled into the body:
 
-1. **Append the raw words verbatim** to the `## Raw` tail as usual (a dated
-   `<!-- appended YYYY-MM-DD HH:MM -->` code block).
-2. **Then immediately finalize** (`weave_note` action=finalize): rewrite the
-   body *above* the `## Raw` tail — front-loaded summary, sections,
-   decisions, questions, tasks, entities, links — so the compiled document
-   reflects everything said so far.
-3. **Never rewrite or remove the `## Raw` tail.** It stays append-only and
-   verbatim; only the body above it changes.
+1. **Append the raw words verbatim** to the `## Raw` tail as usual (a dated `<!-- appended YYYY-MM-DD HH:MM -->` code block).
+2. **Then immediately finalize** (`weave_note` action=finalize): rewrite the body *above* the `## Raw` tail — front-loaded summary,
+   sections, decisions, questions, tasks, entities, links — so the compiled document reflects everything said so far.
+3. **Never rewrite or remove the `## Raw` tail.** It stays append-only and verbatim; only the body above it changes.
 
-The result is a continuously-updated compiled document that stays current
-throughout the session — not just a raw tail that gets organized once at the
-end.
+The result is a continuously-updated compiled document that stays current throughout the session — not just a raw tail that gets organized
+once at the end.
 
 ## When to take a note
 
-Create a note **only when the user explicitly asks** for one to exist:
-"start a note on X", "add to the X note", "remember this", "jot that down".
-Never promote conversation into a note on your own initiative — capture is
-explicit by design.
+Create a note **only when the user explicitly asks** for one to exist: "start a note on X", "add to the X note", "remember this", "jot that
+down". Never promote conversation into a note on your own initiative — capture is explicit by design.
 
 ## When NOT to take a note
 
-- Anything derivable from the repository itself (that knowledge belongs to
-  the `.okf` index, not the vault).
+- Anything derivable from the repository itself (that knowledge belongs to the `.okf` index, not the vault).
 - Session-scratch information (in-progress task state).
 - Secrets, credentials, or anything the user hasn't confirmed is safe to persist.
 
 ## How to write a good note
 
-1. **Search first** (`weave_note` action=search): if a note exists, `append`
-   to it rather than creating a duplicate.
+1. **Search first** (`weave_note` action=search): if a note exists, `append` to it rather than creating a duplicate.
 2. Title: short noun phrase ("Auth boundary decision", not "Notes").
-3. **Scribble in, verbatim.** When the user is dictating, append their words
-   to the note as rough, verbatim scribbles — no silent rewording. Keep them
-   under the `## Raw` tail format at the end of the note.
-4. **Compile continuously during dictation.** After *every* interactive
-   append in dictation mode, immediately finalize the body *above* the raw
-   tail so the compiled doc stays current (see [Dictation mode](#dictation-mode-continuous-compile)).
-   Outside dictation mode, compilation stays on request.
-5. **Finalize on request.** When the user says "finalize this" / "clean this
-   up", restructure the body *above* the raw tail: front-loaded summary,
-   sections, entities, links. Use `weave_note` action=finalize (or edit the
-   file directly in other harnesses). Move nothing out of `## Raw` — it
-   is append-only and never rewritten.
+3. **Scribble in, verbatim.** When the user is dictating, append their words to the note as rough, verbatim scribbles — no silent rewording.
+   Keep them under the `## Raw` tail format at the end of the note.
+4. **Compile continuously during dictation.** After *every* interactive append in dictation mode, immediately finalize the body *above* the
+   raw tail so the compiled doc stays current (see [Dictation mode](#dictation-mode-continuous-compile)). Outside dictation mode,
+   compilation stays on request.
+5. **Finalize on request.** When the user says "finalize this" / "clean this up", restructure the body *above* the raw tail: front-loaded
+   summary, sections, entities, links. Use `weave_note` action=finalize (or edit the file directly in other harnesses). Move nothing out of
+   `## Raw` — it is append-only and never rewritten.
 6. Tags: 1–4 lowercase tags; reuse existing tags when possible.
-7. Provenance: notes the user scribbled stay `source: human` (finalization is
-   editorial, not authorship) — pass `source: "human"` to `add` for
-   user-scribbled notes. Notes you draft from scratch are `source: agent`
-   (the default). Never overwrite a `source: human` note's meaning; append
-   with a dated "Agent addendum" section instead.
+7. Provenance: notes the user scribbled stay `source: human` (finalization is editorial, not authorship) — pass `source: "human"` to `add`
+   for user-scribbled notes. Notes you draft from scratch are `source: agent` (the default). Never overwrite a `source: human` note's
+   meaning; append with a dated "Agent addendum" section instead.
 
 ## Retrieving knowledge
 
-Use `weave_note` action=search with the user's key terms, then `get` the best
-hits. When a note and the repository index disagree, trust the repository for
-facts about code and flag the discrepancy — the note may be stale intent.
+Use `weave_note` action=search with the user's key terms, then `get` the best hits. When a note and the repository index disagree, trust the
+repository for facts about code and flag the discrepancy — the note may be stale intent.
