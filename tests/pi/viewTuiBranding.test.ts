@@ -1,9 +1,11 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import {
+  LOGO_B64,
   MARK_GLYPH,
   PLAIN_ENV,
   PLAIN_MARK,
   WORDMARK,
+  bundledLogoImage,
   getBrandCapabilities,
   logoImage,
   logoTier,
@@ -15,6 +17,7 @@ import {
   type LogoTier,
 } from "../../src/pi/viewer/tui/branding";
 import { visibleWidth } from "@earendil-works/pi-tui";
+import { resetCapabilitiesCache, setCapabilities } from "@earendil-works/pi-tui";
 
 function theme() {
   return { fg: (_slot: string, t: string) => t };
@@ -22,6 +25,7 @@ function theme() {
 
 afterEach(() => {
   resetBrandCache();
+  resetCapabilitiesCache();
   vi.restoreAllMocks();
 });
 
@@ -113,8 +117,27 @@ describe("renderMark", () => {
 describe("logoImage", () => {
   it("returns a kitty Image component that renders at least one line", () => {
     const img = logoImage("aGVsbG8=", "image/jpeg", theme());
-    expect(img).not.toBeNull();
-    const lines = img!.render(20);
+    const lines = img.render(20);
     expect(lines.length).toBeGreaterThan(0);
+  });
+});
+
+describe("bundled logo asset", () => {
+  it("ships a small bundled raster copy of the logo", () => {
+    // A few-KB base64 JPEG: small enough to embed, big enough to be the logo.
+    expect(LOGO_B64.length).toBeGreaterThan(256);
+    expect(LOGO_B64.length).toBeLessThan(8192);
+    expect(LOGO_B64).not.toContain(" ");
+    expect(LOGO_B64).not.toContain("\n");
+  });
+  it("bundledLogoImage returns a component when Kitty is supported", () => {
+    setCapabilities({ images: "kitty", trueColor: true, hyperlinks: false });
+    const img = bundledLogoImage(theme());
+    expect(img).not.toBeNull();
+    expect(img!.render(40).length).toBeGreaterThan(0);
+  });
+  it("bundledLogoImage returns null (glyph header) without Kitty support", () => {
+    setCapabilities({ images: null, trueColor: true, hyperlinks: false });
+    expect(bundledLogoImage(theme())).toBeNull();
   });
 });

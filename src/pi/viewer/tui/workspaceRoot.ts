@@ -49,6 +49,12 @@ export interface WeaveWorkspaceOptions {
   now?: () => number;
   /** Pre-rendered brand mark line (from branding.renderMark). */
   logo?: string;
+  /**
+   * Raster kitty logo (branding.bundledLogoImage) rendered on its own row(s)
+   * above the header text strip when Kitty graphics are available. `null`/
+   * absent keeps the one-line glyph header (decision 1 favicon, not a splash).
+   */
+  logoImage?: Component | null;
   /** Optional initial workspace (defaults to the Explore default). */
   workspace?: Workspace;
 }
@@ -74,6 +80,7 @@ export class WeaveWorkspace implements Component {
   private readonly rows: number;
   private readonly nowFn: () => number;
   private readonly logo: string;
+  private readonly logoImage: Component | null;
   private readonly bodies: BodyStore;
   private ctx: SurfaceContext;
   /** paneId → surface instance. */
@@ -95,6 +102,7 @@ export class WeaveWorkspace implements Component {
     this.rows = opts.rows ?? 24;
     this.nowFn = opts.now ?? Date.now;
     this.logo = opts.logo ?? renderMark("glyph", opts.theme, 20);
+    this.logoImage = opts.logoImage ?? null;
     this.bodies = new BodyStore({
       loaders: opts.loaders,
       onChange: () => this.invalidateAndRender(),
@@ -373,10 +381,25 @@ export class WeaveWorkspace implements Component {
     const repo = this.model.nodes.find((n) => n.kind === "repository");
     const repoState = repoStaleness(this.model, repo);
     const repoPart = repo ? ` · repo ${repo.label}:${repoState}` : "";
-    const head = `${this.logo} ${t.bold("weave view")}`;
+    // Kitty: the raster logo leads on its own row(s) and replaces the glyph in
+    // the text strip (decision 1 favicon). Otherwise the one-line glyph header
+    // stays intact.
+    let imageLines: string[] | null = null;
+    if (this.logoImage) {
+      try {
+        const lines = this.logoImage.render(width);
+        if (lines && lines.length) imageLines = lines;
+      } catch {
+        imageLines = null;
+      }
+    }
+    const mark = imageLines ? "" : this.logo;
+    const head = `${mark}${mark ? " " : ""}${t.bold("weave view")}`;
     const fill = "─".repeat(Math.max(1, width - visibleWidth(head) - 2));
     const line1 = `${head} ${fill} ${this.workspace.name} · ${workspacePanes(this.workspace).length} panes${repoPart}`;
-    const out = [truncateToWidth(line1, width)];
+    const out: string[] = [];
+    if (imageLines) out.push(...imageLines);
+    out.push(truncateToWidth(line1, width));
     const banner = this.bannerText();
     if (banner) out.push(t.fg("warning", truncateToWidth(banner, width)));
     const countsLine = `notes ${counts.total} (● ${counts.human} / ◐ ${counts.agent} / ○ ${counts.generated})`;
@@ -390,7 +413,7 @@ export class WeaveWorkspace implements Component {
 
   private renderBody(width: number): string[] {
     const effective = collapseForWidth(this.workspace, width);
-    const bodyRows = Math.max(1, this.rows - (width < 80 ? 4 : 4));
+    const bodyRows = Math.max(1, this.rows - 4);
     const tree = this.buildSplit(effective.root, bodyRows);
     return tree.render(width);
   }

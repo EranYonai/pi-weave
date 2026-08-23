@@ -1,10 +1,12 @@
-import { describe, expect, it, vi } from "vitest";
+import { describe, expect, it, vi, afterEach } from "vitest";
+import { resetCapabilitiesCache, setCapabilities } from "@earendil-works/pi-tui";
 import { WeaveWorkspace, decodeWorkspaceKey } from "../../src/pi/viewer/tui/workspaceRoot";
 import type { WeaveTheme, WeaveTui, WeaveLoaders } from "../../src/pi/viewer/tui/explorer";
 import { workspacePanes } from "../../src/pi/viewer/tui/workspace";
 import type { GraphModel, GraphNode } from "../../src/core/graph/model";
 import type { NoteSource } from "../../src/core/types";
 import { visibleWidth } from "@earendil-works/pi-tui";
+import { bundledLogoImage } from "../../src/pi/viewer/tui/branding";
 
 const NOW = Date.parse("2026-06-01T00:00:00.000Z");
 function theme(): WeaveTheme {
@@ -89,6 +91,32 @@ describe("WeaveWorkspace render", () => {
     w.handleInput("?");
     const lines = w.render(100).join("\n");
     expect(lines).toContain("focus");
+  });
+  it("keeps the one-line glyph header without the kitty image", () => {
+    const { w } = ws();
+    const lines = w.render(100);
+    expect(lines.join("\n")).toContain("◈");
+    expect(lines.join("\n")).not.toContain("\x1b_G");
+  });
+  it("splices the kitty raster logo onto its own row(s) above the wordmark", () => {
+    // Simulate Kitty graphics so the bundled Image emits the Kitty sequence.
+    setCapabilities({ images: "kitty", trueColor: true, hyperlinks: false });
+    const { w } = ws({ logo: "◈", logoImage: bundledLogoImage(theme()) });
+    const lines = w.render(100).join("\n");
+    expect(lines).toContain("\x1b_G"); // the Image's kitty line is present
+    expect(lines).toContain("weave view");
+    // The raster replaces the glyph in the text strip (no inline ◈ + image).
+    expect(lines).not.toContain("◈");
+  });
+  it("falls back to the glyph header when the kitty image render throws", () => {
+    const throwing = { render: () => { throw new Error("boom"); }, invalidate: () => {} };
+    const { w } = ws({ logo: "◈", logoImage: throwing });
+    expect(w.render(100).join("\n")).toContain("◈");
+  });
+  it("falls back to the glyph header when the kitty image renders no lines", () => {
+    const empty = { render: () => [], invalidate: () => {} };
+    const { w } = ws({ logo: "◈", logoImage: empty });
+    expect(w.render(100).join("\n")).toContain("◈");
   });
 });
 
@@ -191,4 +219,8 @@ describe("WeaveWorkspace setModel", () => {
     w.setModel(model());
     expect(w.model.nodes.length).toBeGreaterThan(0);
   });
+});
+
+afterEach(() => {
+  resetCapabilitiesCache();
 });
