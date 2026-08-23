@@ -181,7 +181,7 @@ function route(
 }
 
 export async function startViewer(options: StartViewerOptions): Promise<ViewerServer> {
-  const page = renderPage();
+  const page = renderPage(options.cwd);
   const cwd = options.cwd;
   const vaultRoot = options.vaultRoot ?? resolveVaultRoot();
   const openCommand = options.openCommand ?? openNoteCommand;

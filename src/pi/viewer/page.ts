@@ -15,8 +15,11 @@
  * matching uses the `\x60` hex escape so no literal backtick reaches output.
  */
 
-export function renderPage(): string {
-  return PAGE;
+export function renderPage(cwd?: string): string {
+  // Inject the cwd so per-repo positions can be keyed by a stable cwd hash
+  // (decision 4). Without it the placeholder stays (still valid JS when
+  // parsed; the real server always passes cwd).
+  return cwd ? PAGE.replace("__VIEWER_CWD_JSON__", JSON.stringify(cwd)) : PAGE;
 }
 
 const PAGE = `<!DOCTYPE html>
@@ -84,6 +87,7 @@ const PAGE = `<!DOCTYPE html>
   text.label { fill: var(--text); font-size: 12px; pointer-events: none;
                paint-order: stroke; stroke: var(--bg); stroke-width: 3px; stroke-linejoin: round; }
   text.glyph { font-size: 7px; fill: var(--bg); pointer-events: none; text-anchor: middle; }
+  text.badge { font-size: 9px; fill: var(--muted); pointer-events: none; text-anchor: end; font-weight: 700; }
   g.node { cursor: pointer; }
   g.node .shape { transition: transform 120ms ease; }
   g.node.hovered .shape { transform: scale(1.06); }
@@ -158,6 +162,9 @@ const PAGE = `<!DOCTYPE html>
   .prov.human { background: var(--ok); color: #0b1020; }
   .prov.agent { background: var(--accent); color: #0b1020; }
   .prov.generated { background: var(--faint); color: #0b1020; }
+  .cluster-meta { border-bottom: 1px solid var(--line); margin-bottom: 10px; padding-bottom: 10px; font-size: 12px; }
+  .cluster-meta .k { color: var(--muted); display: inline-block; min-width: 88px; }
+  #pexpand { margin-bottom: 12px; }
 
   /* ---------- legend ---------- */
   #legend { position: fixed; left: 10px; bottom: 10px; background: var(--surface);
@@ -215,10 +222,12 @@ const PAGE = `<!DOCTYPE html>
   </nav>
   <input id="search" placeholder="search…" aria-label="search">
   <select id="layout" aria-label="layout" title="Layout">
-    <option value="force">force</option>
-    <option value="radial">radial</option>
+    <option value="cluster" selected>cluster</option>
     <option value="tree">tree</option>
+    <option value="radial">radial</option>
+    <option value="force">physics</option>
   </select>
+  <button id="layout-reset" title="Reset layout">⟲</button>
   <span class="zoomgrp">
     <button id="zoom-in" title="Zoom in">+</button><button id="zoom-out" title="Zoom out">−</button><button id="zoom-reset" title="Reset view">⌂</button>
   </span>
@@ -596,6 +605,190 @@ const PAGE = `<!DOCTYPE html>
   function labelVisible(zoom, degree) {
     return zoom >= 0.6 || degree >= 8;
   }
+
+  // ---- weave-view v3: cluster aggregation + deterministic layouts ----
+  // Structural aggregation over contains/anchored-at edges (zero core
+  // change). Clusters are nodes with >0 children; leaves hide inside their
+  // collapsed parent cluster until it is expanded. Everything is derived from
+  // the model + the client expand-set, so a no-op rebuild changes nothing.
+  function clusterAggregate(model, expanded) {
+    var byId = {}, children = {}, incoming = {};
+    model.nodes.forEach(function (n) { byId[n.id] = n; });
+    model.edges.forEach(function (e) {
+      if (e.kind !== "contains" && e.kind !== "anchored-at") return;
+      (children[e.source] = children[e.source] || []).push(e.target);
+      incoming[e.target] = 1;
+    });
+    // Dedupe children (a DAG may mention a child twice); classify clusters.
+    var clusters = {}, counts = {};
+    Object.keys(children).forEach(function (id) {
+      var seen = {}, list = [];
+      (children[id] || []).forEach(function (c) { if (!seen[c]) { seen[c] = 1; list.push(c); } });
+      children[id] = list;
+      if (list.length === 0) return;
+      clusters[id] = { child: list, count: list.length };
+      counts[id] = list.length;
+    });
+    // Per-cluster provenance split over all descendants (ring = dominant,
+    // mini-bar if mixed).
+    var provSplits = {};
+    function descend(id, seen) {
+      var s = { human: 0, agent: 0, generated: 0 };
+      if (seen[id]) return s;
+      seen[id] = 1;
+      (children[id] || []).forEach(function (c) {
+        var n = byId[c];
+        if (n && n.provenance === "human") s.human++;
+        else if (n && n.provenance === "agent") s.agent++;
+        else if (n && n.provenance === "generated") s.generated++;
+        var sub = descend(c, seen);
+        s.human += sub.human; s.agent += sub.agent; s.generated += sub.generated;
+      });
+      return s;
+    }
+    Object.keys(clusters).forEach(function (id) { provSplits[id] = descend(id, {}); });
+    // Visibility: clusters are the aggregation surface (always shown); leaves
+    // are revealed only when every containing cluster is expanded.
+    var roots = model.nodes.filter(function (n) { return !incoming[n.id]; }).map(function (n) { return n.id; });
+    var visible = {};
+    function reveal(id) {
+      if (visible[id]) return;
+      visible[id] = 1;
+      (children[id] || []).forEach(function (c) {
+        if (clusters[c]) reveal(c);
+        else if (expanded[id]) reveal(c);
+      });
+    }
+    roots.forEach(reveal);
+    var hiddenLeafIds = [];
+    model.nodes.forEach(function (n) {
+      if (!visible[n.id] && !clusters[n.id]) hiddenLeafIds.push(n.id);
+    });
+    return { clusters: clusters, counts: counts, provSplits: provSplits,
+      hiddenLeafIds: hiddenLeafIds, visible: visible, roots: roots };
+  }
+  // All cluster ids nested under [clusterId] (recursively), used by both
+  // expand-all and collapse.
+  function clusterDescendants(model, clusterId) {
+    var children = {}, clusters = {};
+    model.edges.forEach(function (e) {
+      if (e.kind !== "contains" && e.kind !== "anchored-at") return;
+      (children[e.source] = children[e.source] || []).push(e.target);
+    });
+    Object.keys(children).forEach(function (id) {
+      var seen = {}, list = [];
+      (children[id] || []).forEach(function (c) { if (!seen[c]) { seen[c] = 1; list.push(c); } });
+      children[id] = list;
+      if (list.length) clusters[id] = 1;
+    });
+    function collect(id, out) {
+      (children[id] || []).forEach(function (c) {
+        if (clusters[c]) { out[c] = 1; collect(c, out); }
+      });
+    }
+    var out = {}; collect(clusterId, out);
+    return out;
+  }
+  // Return the set of cluster ids that should be added to the expand-set.
+  // one level: just [clusterId]; [all] adds every descendant cluster too.
+  function expandChildren(model, clusterId, all) {
+    var set = new Set();
+    set.add(clusterId);
+    if (all) { var d = clusterDescendants(model, clusterId); Object.keys(d).forEach(function (k) { set.add(k); }); }
+    return set;
+  }
+  // Return the set of cluster ids that should be removed from the expand-set
+  // (the cluster and every descendant cluster it swallows).
+  function collapseChildren(model, clusterId) {
+    var set = new Set();
+    set.add(clusterId);
+    var d = clusterDescendants(model, clusterId); Object.keys(d).forEach(function (k) { set.add(k); });
+    return set;
+  }
+  // Deterministic cluster layout: containment roots fanned around the centre,
+  // each expanded cluster's children in a ring around their frame (so revealed
+  // leaves stay local and never collide with the rest of the graph).
+  function clusterLayout(agg, expanded) {
+    var out = {};
+    var roots = agg.roots || [];
+    roots.forEach(function (id, i) {
+      var a = -Math.PI / 2 + (2 * Math.PI * i) / Math.max(1, roots.length);
+      var R = 190;
+      out[id] = { x: Math.cos(a) * R, y: Math.sin(a) * R };
+    });
+    function childrenOf(id) { return agg.clusters[id] ? agg.clusters[id].child : []; }
+    function placeChildren(id) {
+      var kids = childrenOf(id);
+      if (!kids.length || !out[id]) return;
+      var shown = 0;
+      kids.forEach(function (k) { if (agg.clusters[k] || expanded[id]) shown++; });
+      if (shown === 0) return;
+      var r = 70 + Math.sqrt(agg.counts[id] || 0) * 16;
+      var idx = 0;
+      kids.forEach(function (k) {
+        var isCluster = !!agg.clusters[k];
+        if (!isCluster && !expanded[id]) return; // hidden leaf: no position yet
+        var a = -Math.PI / 2 + (2 * Math.PI * idx) / Math.max(1, shown);
+        out[k] = { x: out[id].x + Math.cos(a) * r, y: out[id].y + Math.sin(a) * r };
+        idx++;
+        if (isCluster && expanded[k]) placeChildren(k);
+      });
+    }
+    roots.forEach(function (id) { placeChildren(id); });
+    return out;
+  }
+  // FNV-1a hash of a string (used to key per-repo localStorage positions).
+  function hashCwd(s) {
+    var h = 2166136261;
+    for (var i = 0; i < s.length; i++) {
+      h ^= s.charCodeAt(i);
+      h = Math.imul(h, 16777619);
+    }
+    return (h >>> 0).toString(16);
+  }
+  // Cubic-bezier easing (.2,.7,.2,1) — Newton solve on the x curve, then
+  // evaluate y. t is normalised progress in [0,1].
+  function cubicBezierEase(progress, x1, y1, x2, y2) {
+    var p = Math.max(0, Math.min(1, progress));
+    var t = p;
+    for (var i = 0; i < 8; i++) {
+      var x = 3 * (1 - t) * (1 - t) * t * x1 + 3 * (1 - t) * t * t * x2 + t * t * t;
+      var dx = 3 * (1 - t) * (1 - t) * x1 + 6 * (1 - t) * t * (x2 - x1) + 3 * t * t * (1 - x2);
+      t -= (x - p) / (dx || 1e-9);
+    }
+    return 3 * (1 - t) * (1 - t) * t * y1 + 3 * (1 - t) * t * t * y2 + t * t * t;
+  }
+  // Interpolate node positions from [from] to [to] by progress t (reduced-motion
+  // callers pass t=1 for an instant cut). New nodes (no [from]) jump to target.
+  function tweenPositions(from, to, t) {
+    var u = cubicBezierEase(t, 0.2, 0.7, 0.2, 1);
+    var out = {};
+    for (var id in to) {
+      var f = from[id], end = to[id];
+      out[id] = f ? { x: f.x + (end.x - f.x) * u, y: f.y + (end.y - f.y) * u } : { x: end.x, y: end.y };
+    }
+    return out;
+  }
+  // Restore persisted node positions for [ids] from a per-repo localStorage
+  // store (keyed by cwd hash). Drops ids that no longer exist and ignores
+  // malformed/corrupt entries (never throws). [store] may be a real
+  // localStorage (getItem) or a plain map for tests.
+  function persistedPositions(cwdHash, store, ids) {
+    var raw = null;
+    try { raw = store.getItem ? store.getItem(cwdHash) : store[cwdHash]; } catch (e) { raw = null; }
+    var data = null;
+    if (raw) { try { data = JSON.parse(raw); } catch (e) { data = null; } }
+    if (!data || typeof data !== "object" || data === null) return {};
+    var out = {};
+    for (var i = 0; i < ids.length; i++) {
+      var p = data[ids[i]];
+      if (p && typeof p.x === "number" && typeof p.y === "number" &&
+        isFinite(p.x) && isFinite(p.y)) {
+        out[ids[i]] = { x: p.x, y: p.y };
+      }
+    }
+    return out;
+  }
   // ===== end pure =====
 
   var COLORS = { vault: "#8b5cf6", note: "#c4b5fd", repository: "#3b82f6",
@@ -616,7 +809,13 @@ const PAGE = `<!DOCTYPE html>
   var listLimit = 100;
   var listExpanded = { vault: 1, repository: 1 };
   var showInternals = false;
-  var sim = {}, collapsed = {}, alpha = 0, posMap = {}, layoutMode = "force";
+  var sim = {}, alpha = 0, posMap = {}, layoutMode = "cluster";
+  var expanded = {}, aggregate = null;
+  // cwd is injected by the server (renderPage(cwd)) so per-repo positions are
+  // keyed by a stable cwd hash, not by the volatile loopback port.
+  var PAGE_CWD = __VIEWER_CWD_JSON__;
+  var cwdHash = hashCwd(typeof PAGE_CWD === "string" ? PAGE_CWD : "");
+  var storeKey = function () { return "weave-pos-" + cwdHash; };
   var W = window.innerWidth, H = window.innerHeight, world = null;
   var cam = { x: 0, y: 0, k: 1 };
   var panning = null, helpOpen = false;
@@ -734,16 +933,6 @@ const PAGE = `<!DOCTYPE html>
     });
     return out;
   }
-  function hiddenSet() {
-    var hidden = {};
-    function bury(id) {
-      childrenOf(id).forEach(function (c) {
-        if (!hidden[c]) { hidden[c] = 1; bury(c); }
-      });
-    }
-    Object.keys(collapsed).forEach(bury);
-    return hidden;
-  }
 
   // ---------- force layout (section 16: persisted positions, degree-scaled
   // forces, real collision, anti-oscillation; warm-up before paint) ----------
@@ -828,10 +1017,10 @@ const PAGE = `<!DOCTYPE html>
 
   var edgeLines = [];
   function paint() {
-    var hidden = hiddenSet();
+    if (!aggregate) return;
     Object.keys(sim).forEach(function (id) {
       var n = sim[id];
-      n.visible = !hidden[id];
+      n.visible = !!aggregate.visible[id];
       n.g.style.display = n.visible ? "" : "none";
       if (n.visible) {
         var dimmed = (query.length > 0 && n.node.label.toLowerCase().indexOf(query) < 0) ||
@@ -840,11 +1029,12 @@ const PAGE = `<!DOCTYPE html>
         n.g.setAttribute("transform", "translate(" + n.x + "," + n.y + ")");
         if (n.selRing) n.selRing.style.display = selectedId === id ? "" : "none";
         // label fade (section 16 Tier C): below the zoom threshold low-degree
-        // labels are hidden; hover / selection / zoom-in reveal them.
+        // labels are hidden; cluster labels + hover / selection / zoom reveal them.
         if (n.labelEl) {
           var hover = n.g.classList.contains("hovered");
+          var cluster = !!aggregate.clusters[id];
           n.labelEl.style.opacity =
-            (labelVisible(cam.k, n.deg || 0) || hover || selectedId === id) ? "1" : "0";
+            (cluster || labelVisible(cam.k, n.deg || 0) || hover || selectedId === id) ? "1" : "0";
         }
       }
     });
@@ -1132,6 +1322,10 @@ const PAGE = `<!DOCTYPE html>
   function renderPtab(node, tab) {
     var content = document.getElementById("pcontent");
     if (tab === "overview") {
+      if (aggregate && aggregate.clusters[node.id]) {
+        renderClusterDetail(node, content);
+        return;
+      }
       var meta = [];
       if (node.detail.slug) meta.push(["slug", node.detail.slug]);
       if (node.detail.updated) meta.push(["updated", node.detail.updated]);
@@ -1152,6 +1346,30 @@ const PAGE = `<!DOCTYPE html>
         : "<p class='muted'>no backlinks</p>";
       wireLinks(content);
     }
+  }
+  // v3: a selected cluster's Overview shows the aggregate — count, provenance
+  // split, and top children — instead of a single node's metadata.
+  function renderClusterDetail(node, content) {
+    var count = aggregate.counts[node.id] || 0;
+    var info = clusterProvInfo(aggregate.provSplits[node.id]);
+    var kids = (aggregate.clusters[node.id].child || []).map(function (k) {
+      return model.nodes.find(function (x) { return x.id === k; });
+    }).filter(Boolean);
+    var top = kids.slice().sort(function (a, b) {
+      return degreeOf(b.id, model.edges) - degreeOf(a.id, model.edges);
+    }).slice(0, 10);
+    var html = "<div class='cluster-meta'>" +
+      "<div><span class='k'>cluster</span>" + count + " children</div>" +
+      "<div><span class='k'>provenance</span>" +
+      provBar({ human: info.human, agent: info.agent, generated: info.generated }) + "</div>" +
+      "</div>";
+    html += "<button id='pexpand' class='pactions'>" + (expanded[node.id] ? "Collapse cluster" : "Expand cluster") + "</button>";
+    html += "<h3>Top children</h3>" +
+      (top.length ? top.map(function (n) { return linkRow(n.id); }).join("") : "<p class='muted'>no children</p>");
+    content.innerHTML = html;
+    wireLinks(content);
+    var b = document.getElementById("pexpand");
+    if (b) b.addEventListener("click", function () { toggleExpand(node.id, false); });
   }
   function selectById(id) {
     selectedId = id;
@@ -1209,20 +1427,88 @@ const PAGE = `<!DOCTYPE html>
     paint();
   }
 
-  // ---------- scene ----------
+  // ---------- scene (weave-view v3: aggregation + deterministic layouts) ----------
+  function loadPersisted() {
+    var out = {};
+    try {
+      var p = persistedPositions(cwdHash, localStorage,
+        model.nodes.map(function (n) { return n.id; }));
+      Object.keys(p).forEach(function (id) { out[id] = { x: p[id].x, y: p[id].y }; });
+    } catch (e) { /* storage unavailable */ }
+    return out;
+  }
+  function deterministicPositions() {
+    var pos;
+    if (layoutMode === "cluster") pos = clusterLayout(aggregate, expanded);
+    else if (layoutMode === "tree") pos = treeLayout(model.nodes, model.edges);
+    else pos = radialLayout(model.nodes, function (n) { return degreeOf(n.id, model.edges); });
+    var out = {};
+    Object.keys(pos).forEach(function (id) { out[id] = { x: W / 2 + pos[id].x, y: H / 2 + pos[id].y }; });
+    return out;
+  }
+  function applyPositions(pos) {
+    Object.keys(pos).forEach(function (id) {
+      var n = sim[id]; if (!n) return;
+      n.x = pos[id].x; n.y = pos[id].y; n.vx = 0; n.vy = 0;
+    });
+  }
+  var tweenAnim = null;
+  // Layout-switch / expand-collapse tween (~250ms, cubic-bezier .2,.7,.2,1);
+  // prefers-reduced-motion cuts straight to the target.
+  function tweenTo(targetPos) {
+    if (tweenAnim) { cancelAnimationFrame(tweenAnim); tweenAnim = null; }
+    var from = {};
+    Object.keys(targetPos).forEach(function (id) { var n = sim[id]; if (n) from[id] = { x: n.x, y: n.y }; });
+    var reduced = false;
+    try { reduced = !!window.matchMedia && window.matchMedia("(prefers-reduced-motion: reduce)").matches; } catch (e) { reduced = false; }
+    if (reduced) { applyPositions(targetPos); paint(); return; }
+    var start = null;
+    function step(ts) {
+      if (start === null) start = ts;
+      var t = Math.min(1, (ts - start) / 250);
+      applyPositions(tweenPositions(from, targetPos, t));
+      paint();
+      if (t < 1) { tweenAnim = requestAnimationFrame(step); }
+      else { applyPositions(targetPos); paint(); tweenAnim = null; }
+    }
+    tweenAnim = requestAnimationFrame(step);
+  }
+  // Cluster node sizing: log(childCount) so a big cluster reads big.
+  function clusterRadius(count) { return 22 + Math.log(count + 1) * 9; }
+  function clusterShape(r) {
+    var n = document.createElementNS(svgNS, "rect");
+    n.setAttribute("x", -r); n.setAttribute("y", -r);
+    n.setAttribute("width", r * 2); n.setAttribute("height", r * 2);
+    n.setAttribute("rx", r * 0.22);
+    return n;
+  }
+  // Dominant provenance (ring) vs mixed split (mini-bar) for a cluster.
+  function clusterProvInfo(split) {
+    var s = split || { human: 0, agent: 0, generated: 0 };
+    var mixed = (s.human > 0 ? 1 : 0) + (s.agent > 0 ? 1 : 0) + (s.generated > 0 ? 1 : 0) > 1;
+    var dom = (s.human >= s.agent && s.human >= s.generated) ? "human"
+      : (s.agent >= s.generated ? "agent" : "generated");
+    return { mixed: mixed, dom: s.human + s.agent + s.generated > 0 ? dom : null,
+      human: s.human, agent: s.agent, generated: s.generated };
+  }
   function buildScene(first, prevJson) {
+    aggregate = clusterAggregate(model, expanded);
     while (svg.firstChild) svg.removeChild(svg.firstChild);
     sim = {}; edgeLines = [];
     world = el("g", {});
     svg.appendChild(world);
-    // Position persistence (section 16 Tier A): reuse survivor coords, seed only
-    // new ids on a deterministic phyllotaxis spiral; drop removed ids. Pinned
-    // (fixed) flags survive the rebuild via posMap.
-    var seeded = seedPositions(posMap, model.nodes.map(function (n) { return n.id; }), W, H);
+    // Position persistence (v3): restore saved positions from localStorage
+    // (per repo, keyed by cwd hash), then reuse in-session survivors; seed only
+    // new ids on a deterministic phyllotaxis spiral; drop removed ids.
+    var persisted = loadPersisted();
+    var merged = {};
+    Object.keys(persisted).forEach(function (pid) { merged[pid] = { x: persisted[pid].x, y: persisted[pid].y }; });
+    Object.keys(posMap).forEach(function (pid) { merged[pid] = posMap[pid]; });
+    var seeded = seedPositions(merged, model.nodes.map(function (n) { return n.id; }), W, H);
     model.nodes.forEach(function (node) {
       var was = posMap[node.id];
       var p = seeded[node.id];
-      sim[node.id] = { node: node, x: p.x, y: p.y, vx: 0, vy: 0, visible: true,
+      sim[node.id] = { node: node, x: p.x, y: p.y, vx: 0, vy: 0, visible: !!aggregate.visible[node.id],
         fixed: !!(was && was.fixed), deg: degreeOf(node.id, model.edges), g: null, selRing: null, labelEl: null };
     });
     var edgeLayer = el("g", {}), nodeLayer = el("g", {});
@@ -1236,11 +1522,29 @@ const PAGE = `<!DOCTYPE html>
     });
     model.nodes.forEach(function (node) {
       var n = sim[node.id];
+      var isCluster = !!aggregate.clusters[node.id];
       var prov = node.provenance;
       var root = node.kind === "vault" || node.kind === "repository";
-      var r = radiusFor(node, model.edges);
+      var r = isCluster ? clusterRadius(aggregate.counts[node.id] || 0) : radiusFor(node, model.edges);
       var g = el("g", { "class": "node", tabindex: "0", role: "button" });
-      if (prov) {
+      if (isCluster) {
+        var info = clusterProvInfo(aggregate.provSplits[node.id]);
+        if (info.mixed) {
+          var total = Math.max(1, info.human + info.agent + info.generated);
+          var bar = el("g", { "class": "provbar" });
+          var acc = 0;
+          ["human", "agent", "generated"].forEach(function (p) {
+            var w = Math.round(info[p] / total * (r * 2));
+            if (w > 0) { bar.appendChild(el("rect", { x: acc, y: 0, width: w, height: 3, fill: PROV_COLOR[p] })); acc += w; }
+          });
+          bar.setAttribute("transform", "translate(" + (-r) + "," + (-r - 4) + ")");
+          g.appendChild(bar);
+        } else if (info.dom) {
+          var ring = el("rect", { x: -r - 3, y: -r - 3, width: r * 2 + 6, height: r * 2 + 6, rx: r * 0.22 + 3,
+            fill: "none", stroke: PROV_COLOR[info.dom], "stroke-width": "1.4" });
+          g.appendChild(ring);
+        }
+      } else if (prov) {
         var ring = el("circle", { r: r + 2.5, fill: "none", stroke: PROV_COLOR[prov], "stroke-width": "1.4" });
         if (prov === "agent") ring.setAttribute("stroke-dasharray", "3 2");
         if (prov === "generated") ring.setAttribute("stroke-dasharray", "1 2");
@@ -1248,15 +1552,30 @@ const PAGE = `<!DOCTYPE html>
       }
       var halo = el("circle", { r: r + 6, fill: "none", stroke: "var(--accent)", "stroke-width": "1", "class": "halo", opacity: "0" });
       g.appendChild(halo);
-      var shape = shapeEl(node.kind, r);
-      shape.setAttribute("fill", COLORS[node.kind] || "#6b7280");
-      shape.setAttribute("stroke", "#0b1020");
-      shape.setAttribute("stroke-width", "1.2");
+      var shape;
+      if (isCluster) {
+        shape = clusterShape(r);
+        shape.setAttribute("fill", COLORS[node.kind] || "#6b7280");
+        shape.setAttribute("fill-opacity", "0.28");
+        shape.setAttribute("stroke", COLORS[node.kind] || "#6b7280");
+        shape.setAttribute("stroke-width", "1.6");
+        // collapsed = solid frame; expanded = dashed frame around its children.
+        shape.setAttribute("stroke-dasharray", expanded[node.id] ? "5 3" : "");
+      } else {
+        shape = shapeEl(node.kind, r);
+        shape.setAttribute("fill", COLORS[node.kind] || "#6b7280");
+        shape.setAttribute("stroke", "#0b1020");
+        shape.setAttribute("stroke-width", "1.2");
+      }
       if (node.id === "repository" && model.staleness && model.staleness.state === "stale") {
         shape.setAttribute("stroke", "#f59e0b"); shape.setAttribute("stroke-width", "3");
       }
       g.appendChild(shape);
-      if (prov) {
+      if (isCluster) {
+        var badge = el("text", { "class": "badge", x: r - 6, y: -r - 4 });
+        badge.textContent = String(aggregate.counts[node.id] || 0);
+        g.appendChild(badge);
+      } else if (prov) {
         var glyph = el("text", { "class": "glyph", x: 0, y: 2.5 });
         glyph.textContent = PROV_GLYPH[prov];
         g.appendChild(glyph);
@@ -1265,9 +1584,8 @@ const PAGE = `<!DOCTYPE html>
       selRing.style.display = "none";
       g.appendChild(selRing);
       n.selRing = selRing;
-      var hasKids = childrenOf(node.id).length > 0;
       var label = el("text", { "class": "label", x: root ? r + 5 : r + 4, y: 4 });
-      label.textContent = capLabel(node.label) + (hasKids ? (collapsed[node.id] ? "  ▸" : "  ▾") : "");
+      label.textContent = capLabel(node.label) + (isCluster ? (expanded[node.id] ? "  ▾" : "  ▸") : "");
       if (node.id === "repository" && model.staleness && model.staleness.state === "stale") {
         label.textContent = "⚠ " + label.textContent;
       }
@@ -1283,21 +1601,21 @@ const PAGE = `<!DOCTYPE html>
         var p = toWorld(ev);
         n.x = p.x; n.y = p.y; n.vx = 0; n.vy = 0; moved = true;
         posMap[node.id] = { x: n.x, y: n.y, fixed: true };
-        alpha = Math.max(alpha, .08); paint();
+        if (layoutMode === "force") alpha = Math.max(alpha, .08);
+        paint(); scheduleSave();
       });
-      shape.addEventListener("pointerup", function () {
+      shape.addEventListener("pointerup", function (ev) {
         n.fixed = false;
         if (posMap[node.id]) posMap[node.id].fixed = false; // released pin no longer fixed
         if (!moved) {
-          if (hasKids) {
-            if (collapsed[node.id]) delete collapsed[node.id]; else collapsed[node.id] = 1;
-            alpha = Math.max(alpha, .35);
-            paint();
-          }
+          if (isCluster) toggleExpand(node.id, !!(ev && ev.shiftKey)); // dbl/shift = expand recursively
           selectById(node.id);
         }
+        scheduleSave();
       });
-      shape.addEventListener("dblclick", function () { focusOn(node.id); });
+      shape.addEventListener("dblclick", function () {
+        if (isCluster) toggleExpand(node.id, false); else focusOn(node.id);
+      });
       shape.addEventListener("pointerenter", function () {
         g.classList.add("hovered");
         edgeLines.forEach(function (rec) {
@@ -1312,57 +1630,88 @@ const PAGE = `<!DOCTYPE html>
         paint();
       });
       g.addEventListener("keydown", function (ev) {
-        if (ev.key === "Enter" || ev.key === " ") { ev.preventDefault(); selectById(node.id); }
+        if (ev.key === "Enter" || ev.key === " ") {
+          ev.preventDefault();
+          if (isCluster) toggleExpand(node.id, !!(ev.shiftKey));
+          selectById(node.id);
+        }
       });
       nodeLayer.appendChild(g);
       n.g = g;
     });
     camApply();
-    paint();
-    if (first) {
-      alpha = .6;
-      for (var i = 0; i < 140; i++) {
-        tick();
-        if (i % 20 === 19) paint();
+    if (layoutMode === "force") {
+      if (first) {
+        alpha = .6;
+        for (var i = 0; i < 140; i++) { tick(); if (i % 20 === 19) paint(); }
+        alpha = .06;
+      } else {
+        // delta-aware reheat (section 16 Tier A): no-op -> none, small -> gentle.
+        alpha = Math.max(alpha, deltaAlpha(prevJson, lastJson));
       }
-      alpha = .06;
-      paint();
     } else {
-      // delta-aware reheat (section 16 Tier A): small change -> gentle nudge,
-      // large change -> fuller re-simulate; never a full 1.0 reset.
-      alpha = Math.max(alpha, deltaAlpha(prevJson, lastJson));
+      applyPositions(deterministicPositions()); // deterministic: no physics
+      alpha = 0;
     }
+    paint();
     // persist settled positions + pins so the next rebuild does not jump.
     posMap = {};
     Object.keys(sim).forEach(function (id) {
-      var n = sim[id];
-      posMap[id] = { x: n.x, y: n.y, fixed: n.fixed };
+      var nn = sim[id];
+      posMap[id] = { x: nn.x, y: nn.y, fixed: nn.fixed };
     });
   }
 
-  // ---------- layout toggle (section 16 Tier D): force / radial / tree ----------
+  // ---------- layout toggle (weave-view v3): cluster (default) / tree / radial / force ----------
+  function toggleExpand(id, recursive) {
+    if (!aggregate || !aggregate.clusters[id]) return;
+    if (expanded[id]) {
+      var out = collapseChildren(model, id);
+      out.forEach(function (k) { delete expanded[k]; });
+    } else {
+      var set = expandChildren(model, id, !!recursive);
+      set.forEach(function (k) { expanded[k] = 1; });
+    }
+    aggregate = clusterAggregate(model, expanded);
+    Object.keys(sim).forEach(function (nid) { if (sim[nid]) sim[nid].visible = !!aggregate.visible[nid]; });
+    if (layoutMode === "force") { alpha = Math.max(alpha, 0.5); paint(); }
+    else tweenTo(deterministicPositions());
+    scheduleSave();
+  }
   function applyLayout() {
     if (layoutMode === "force") { alpha = Math.max(alpha, 0.5); return; } // re-simulate
-    var pos = layoutMode === "radial"
-      ? radialLayout(model.nodes, function (n) { return degreeOf(n.id, model.edges); })
-      : treeLayout(model.nodes, model.edges);
-    Object.keys(pos).forEach(function (id) {
-      var n = sim[id]; if (!n) return;
-      n.x = W / 2 + pos[id].x; n.y = H / 2 + pos[id].y;
-      n.vx = 0; n.vy = 0;
-    });
-    posMap = {};
-    Object.keys(sim).forEach(function (id) {
-      var n = sim[id];
-      posMap[id] = { x: n.x, y: n.y, fixed: n.fixed };
-    });
-    alpha = 0; // deterministic layout: no physics needed
-    paint();
+    if (!aggregate) return;
+    tweenTo(deterministicPositions());
+    scheduleSave();
   }
   document.getElementById("layout").addEventListener("change", function () {
     layoutMode = this.value;
     applyLayout();
   });
+  document.getElementById("layout-reset").addEventListener("click", function () {
+    try { localStorage.removeItem(storeKey()); } catch (e) { /* ignore */ }
+    posMap = {};
+    expanded = {};
+    layoutMode = "cluster";
+    document.getElementById("layout").value = "cluster";
+    buildScene(true, "");
+    scheduleSave();
+  });
+
+  // ---------- position persistence (v3, decision 4): debounced localStorage ----------
+  var saveTimer = null;
+  function scheduleSave() {
+    if (saveTimer) clearTimeout(saveTimer);
+    saveTimer = setTimeout(persistNow, 300);
+  }
+  function persistNow() {
+    if (!sim) return;
+    var data = {};
+    Object.keys(sim).forEach(function (id) {
+      var n = sim[id]; if (n) data[id] = { x: Math.round(n.x), y: Math.round(n.y) };
+    });
+    try { localStorage.setItem(storeKey(), JSON.stringify(data)); } catch (e) { /* ignore */ }
+  }
 
   // ---------- data ----------
   function fetchGraph(first) {
@@ -1438,6 +1787,9 @@ const PAGE = `<!DOCTYPE html>
     else if (k === "2") toggleListPanel();
     else if (k === "3") showSurface("health");
     else if (k === "f") { if (selectedId) focusOn(selectedId); }
+    else if (k === "e" || k === "E") {
+      if (selectedId && aggregate && aggregate.clusters[selectedId]) toggleExpand(selectedId, k === "E");
+    }
     else if (k === "g") exitFocus();
     else if (k === "/") { ev.preventDefault(); searchEl.focus(); }
     else if (k === "?") toggleHelp();
@@ -1484,7 +1836,7 @@ const PAGE = `<!DOCTYPE html>
   });
 
   // ---------- init ----------
-  collapsed = { vault: 1, repository: 1 };
+  expanded = {}; // weave-view v3 decision 1: clusters-only first paint
   fetchGraph(true);
   setInterval(function () { fetchGraph(false).catch(function () {}); }, 5000);
   loop();

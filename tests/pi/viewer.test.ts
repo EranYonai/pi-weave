@@ -256,6 +256,21 @@ describe("page pure functions (extract-and-run)", () => {
     radialLayout: (nodes: { id: string }[], degreeOf: (n: { id: string }) => number) => Record<string, { x: number; y: number }>;
     treeLayout: (nodes: { id: string }[], edges: { source: string; target: string; kind: string }[]) => Record<string, { x: number; y: number }>;
     labelVisible: (zoom: number, degree: number) => boolean;
+    clusterAggregate: (model: { nodes: { id: string; kind: string; label: string; provenance: string | null; detail: Record<string, string> }[]; edges: { source: string; target: string; kind: string }[] }, expanded: Record<string, number>) => {
+      clusters: Record<string, { child: string[]; count: number }>;
+      counts: Record<string, number>;
+      provSplits: Record<string, { human: number; agent: number; generated: number }>;
+      hiddenLeafIds: string[];
+      visible: Record<string, number>;
+      roots: string[];
+    };
+    expandChildren: (model: { nodes: { id: string }[]; edges: { source: string; target: string; kind: string }[] }, clusterId: string, all: boolean) => Set<string>;
+    collapseChildren: (model: { nodes: { id: string }[]; edges: { source: string; target: string; kind: string }[] }, clusterId: string) => Set<string>;
+    clusterLayout: (agg: { clusters: Record<string, { child: string[]; count: number }>; counts: Record<string, number>; roots: string[] }, expanded: Record<string, number>) => Record<string, { x: number; y: number }>;
+    hashCwd: (s: string) => string;
+    cubicBezierEase: (progress: number, x1: number, y1: number, x2: number, y2: number) => number;
+    tweenPositions: (from: Record<string, { x: number; y: number }>, to: Record<string, { x: number; y: number }>, t: number) => Record<string, { x: number; y: number }>;
+    persistedPositions: (cwdHash: string, store: Record<string, string>, ids: string[]) => Record<string, { x: number; y: number }>;
   }
   function extractScript(html: string): string {
     const m = /<script>([\s\S]*)<\/script>/.exec(html);
@@ -272,11 +287,37 @@ describe("page pure functions (extract-and-run)", () => {
         "linksOf: linksOf, listLabel: listLabel, listTree: listTree, parseFrontMatter: parseFrontMatter, " +
         "seedPositions: seedPositions, collideRadius: collideRadius, degreeRepulsion: degreeRepulsion, " +
         "localSpeed: localSpeed, deltaAlpha: deltaAlpha, radialLayout: radialLayout, treeLayout: treeLayout," +
-        " labelVisible: labelVisible };",
+        " labelVisible: labelVisible, clusterAggregate: clusterAggregate, expandChildren: expandChildren," +
+        "collapseChildren: collapseChildren, clusterLayout: clusterLayout, hashCwd: hashCwd," +
+        "cubicBezierEase: cubicBezierEase, tweenPositions: tweenPositions, persistedPositions: persistedPositions };",
     );
     return make() as PureFns;
   }
   const fns = pureFns(renderPage());
+
+  // A small repo-shaped model for v3 clustering tests: repository -> module ->
+  // files, plus a git anchor (leaf) and a vault with one note.
+  function clusterModel() {
+    return {
+      nodes: [
+        { id: "repository", kind: "repository", label: "repo", provenance: null, detail: {} },
+        { id: "module:src", kind: "module", label: "src", provenance: null, detail: {} },
+        { id: "gitState", kind: "gitState", label: "main", provenance: null, detail: {} },
+        { id: "file:a", kind: "file", label: "a.ts", provenance: "human", detail: {} },
+        { id: "file:b", kind: "file", label: "b.ts", provenance: "generated", detail: {} },
+        { id: "vault", kind: "vault", label: "Vault", provenance: null, detail: {} },
+        { id: "note:x", kind: "note", label: "X", provenance: "agent", detail: {} },
+      ],
+      edges: [
+        { source: "repository", target: "module:src", kind: "contains" },
+        { source: "repository", target: "gitState", kind: "anchored-at" },
+        { source: "module:src", target: "file:a", kind: "contains" },
+        { source: "module:src", target: "file:b", kind: "contains" },
+        { source: "vault", target: "note:x", kind: "contains" },
+        { source: "file:a", target: "file:b", kind: "links-to" }, // cross-link: ignored by aggregation
+      ],
+    };
+  }
 
   it("focusNeighborhood returns the 1-hop neighborhood including the node", () => {
     const edges = [
@@ -661,6 +702,116 @@ describe("page pure functions (extract-and-run)", () => {
     expect(fns.labelVisible(0.4, 2)).toBe(false); // low zoom + low degree -> hidden
     expect(fns.labelVisible(0.4, 10)).toBe(true); // hub label shown even at low zoom
     expect(fns.labelVisible(0.9, 0)).toBe(true); // zoomed in -> shown regardless of degree
+  });
+
+  it("clusterAggregate shows clusters only on first paint (leaves hidden inside collapsed parents)", () => {
+    const model = clusterModel();
+    const agg = fns.clusterAggregate(model, {});
+    // roots + cluster children visible; leaves (incl. git anchor + files) hidden
+    expect(Object.keys(agg.visible).sort()).toEqual(["module:src", "repository", "vault"]);
+    expect(agg.hiddenLeafIds.sort()).toEqual(["file:a", "file:b", "gitState", "note:x"]);
+    // cluster classification + counts
+    expect(agg.counts.repository).toBe(2);
+    expect(agg.counts["module:src"]).toBe(2);
+    expect(agg.counts.vault).toBe(1);
+    expect(agg.clusters.gitState).toBeUndefined(); // leaves are not clusters
+    expect(agg.roots.sort()).toEqual(["repository", "vault"]);
+    // provenance split over descendants (human + generated inside module:src)
+    expect(agg.provSplits["module:src"]).toEqual({ human: 1, agent: 0, generated: 1 });
+    // cross-links are ignored by structural aggregation
+    expect(agg.counts["file:a"]).toBeUndefined();
+  });
+
+  it("clusterAggregate reveals leaves when their parent cluster is expanded", () => {
+    const model = clusterModel();
+    const agg = fns.clusterAggregate(model, { "module:src": 1 });
+    expect(agg.visible["file:a"]).toBe(1);
+    expect(agg.visible["file:b"]).toBe(1);
+    expect(agg.visible.gitState).toBeUndefined(); // repository still collapsed
+    expect(agg.hiddenLeafIds).not.toContain("file:a");
+    // sub-cluster is visible regardless of its parent's collapse (aggregation surface)
+    expect(agg.visible["module:src"]).toBe(1);
+  });
+
+  it("expandChildren returns one-level vs recursive (all) expansion sets", () => {
+    const model = clusterModel();
+    expect([...fns.expandChildren(model, "repository", false)].sort()).toEqual(["repository"]);
+    const all = fns.expandChildren(model, "repository", true);
+    expect(all.has("repository")).toBe(true);
+    expect(all.has("module:src")).toBe(true);
+    expect(all.has("file:a")).toBe(false); // leaves never enter the expand-set
+  });
+
+  it("collapseChildren returns the cluster and every descendant cluster", () => {
+    const model = clusterModel();
+    const set = fns.collapseChildren(model, "repository");
+    expect(set.has("repository")).toBe(true);
+    expect(set.has("module:src")).toBe(true);
+    expect(set.size).toBe(2);
+  });
+
+  it("clusterLayout is deterministic and fans expanded children around their cluster", () => {
+    const model = clusterModel();
+    const agg = fns.clusterAggregate(model, { "module:src": 1 });
+    const a = fns.clusterLayout(agg, { "module:src": 1 });
+    const b = fns.clusterLayout(agg, { "module:src": 1 });
+    expect(a).toEqual(b); // identical data -> identical positions (zero jumpiness)
+    // every cluster root has a position
+    expect(a.repository).toBeDefined();
+    expect(a["module:src"]).toBeDefined();
+    // leaves inside an expanded cluster get positions near their parent
+    expect(a["file:a"]).toBeDefined();
+    expect(a["file:b"]).toBeDefined();
+    // hidden leaf (gitState, under collapsed repository) is not placed
+    expect(a.gitState).toBeUndefined();
+  });
+
+  it("tweenPositions interpolates with cubic-bezier easing and honors endpoints", () => {
+    const from = { a: { x: 0, y: 0 } };
+    const to = { a: { x: 100, y: 50 } };
+    expect(fns.tweenPositions(from, to, 0).a).toEqual({ x: 0, y: 0 });
+    expect(fns.tweenPositions(from, to, 1).a).toEqual({ x: 100, y: 50 });
+    const mid = fns.tweenPositions(from, to, 0.5).a!;
+    expect(mid.x).toBeGreaterThan(0);
+    expect(mid.x).toBeLessThan(100);
+    // new nodes (no from entry) jump straight to target even at t=0
+    expect(fns.tweenPositions({}, to, 0).a).toEqual({ x: 100, y: 50 });
+  });
+
+  it("cubicBezierEase eases for the (.2,.7,.2,1) curve, clamped to [0,1]", () => {
+    expect(fns.cubicBezierEase(0, 0.2, 0.7, 0.2, 1)).toBeCloseTo(0);
+    expect(fns.cubicBezierEase(1, 0.2, 0.7, 0.2, 1)).toBeCloseTo(1);
+    const e = fns.cubicBezierEase(0.5, 0.2, 0.7, 0.2, 1);
+    expect(e).toBeGreaterThan(0);
+    expect(e).toBeLessThan(1);
+    expect(fns.cubicBezierEase(-1, 0.2, 0.7, 0.2, 1)).toBeGreaterThanOrEqual(0);
+    expect(fns.cubicBezierEase(2, 0.2, 0.7, 0.2, 1)).toBeLessThanOrEqual(1);
+  });
+
+  it("hashCwd is deterministic and distinct for distinct inputs", () => {
+    expect(fns.hashCwd("alpha")).toBe(fns.hashCwd("alpha"));
+    expect(fns.hashCwd("alpha")).not.toBe(fns.hashCwd("beta"));
+    expect(fns.hashCwd("")).toMatch(/^[0-9a-f]+$/);
+  });
+
+  it("persistedPositions restores saved coords, drops removed ids, and ignores corrupt entries", () => {
+    const store: Record<string, string> = {
+      key: JSON.stringify({ a: { x: 1, y: 2 }, b: { x: NaN, y: 0 }, gone: { x: 9, y: 9 } }),
+    };
+    // a restored; b has a non-finite x so ignored; gone is not in ids (dropped)
+    expect(fns.persistedPositions("key", store, ["a", "b", "c"])).toEqual({ a: { x: 1, y: 2 } });
+    // corrupt JSON degrades to empty (never throws)
+    expect(fns.persistedPositions("key", { key: "not json" }, ["a"])).toEqual({});
+    // missing key -> empty
+    expect(fns.persistedPositions("nope", store, ["a"])).toEqual({});
+  });
+
+  it("aggregation and cluster layout are pure no-ops on identical rebuilds", () => {
+    const model = clusterModel();
+    const a1 = fns.clusterAggregate(model, {});
+    const a2 = fns.clusterAggregate(model, {});
+    expect(a1).toEqual(a2);
+    expect(fns.clusterLayout(a1, {})).toEqual(fns.clusterLayout(a2, {}));
   });
 });
 
