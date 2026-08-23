@@ -424,28 +424,26 @@ Force-mode force-sliders ship with M1 (reuse §16 sim) but aren't the default.
 
 ---
 
-## 15. Open questions (need your input before implementation)
+## 15. Decisions (resolved — proceeding with proposed defaults)
 
-1. **Default first paint — clusters, or clusters-with-top-notes-expanded?**
-   I propose **clusters only** (cleanest, kills the hairball on first sight).
-   If you'd rather see your notes immediately, the default could auto-expand
-   the `vault` cluster. Your call.
-2. **Aggregation axis — structural (containment) only, or also a "by kind /
-   by provenance" cluster toggle?** I propose structural-only for v3.1 (cheap,
-   honest, matches the repo's real shape). A "group notes by tag/provenance"
-   cluster mode is a nice future toggle but adds a clustering policy — defer?
-3. **Controls panel default state — collapsed (`⚙` button) or open?** I lean
-   **collapsed** so the graph is the hero (Obsidian hides its controls behind a
-   cog too). Confirm?
-4. **Position persistence scope — per-repo (`localStorage` keyed by cwd hash)
-   or one global layout?** I propose **per-repo** (a workspace's spatial map
-   is repo-specific), matching the TUI v2 workspace decision (per-project).
-5. **Force mode prominence — keep it as a 4th layout tab, or demote it to an
-   "advanced" toggle?** I lean **4th tab** (discoverable, the §16 work is good),
-   clearly labeled "physics." Confirm?
-6. **Truncation style — mid-ellipsis (`src…slug.ts.summary.md`) vs head-trunc
-   with full name in tooltip?** I propose mid-ellipsis (keeps prefix +
-   extension). OK?
-7. **Should cluster nodes be draggable/pinnable like leaves, or anchored
-   (move only on layout switch)?** I propose **draggable + pinnable**
-   (consistency), with layout switch re-tweening from pinned positions.
+1. **Default first paint — clusters only.** The graph opens showing only
+   cluster nodes (roots + their direct children as clusters). The `vault`
+   cluster is NOT auto-expanded; the user drills in. Cleanest, kills the
+   hairball on first sight.
+2. **Aggregation axis — structural (containment) only for v3.1.** Clusters
+   follow `contains`/`anchored-at` edges (the repo's real shape). A
+   "group notes by tag/provenance" cluster mode is a future toggle, not now.
+3. **Controls panel — collapsed by default** (a `⚙` button; `c` toggles).
+   The graph is the hero; controls hide behind a cog (Obsidian-style).
+4. **Position persistence — per-repo**, in `localStorage` keyed by cwd hash.
+   A workspace's spatial map is repo-specific (matches the TUI v2 per-project
+   decision).
+5. **Force mode — a 4th layout tab**, clearly labeled "physics". The §16
+   work is good and stays discoverable; deterministic layouts are the default.
+6. **Truncation — mid-ellipsis** (`src…slug.ts.summary.md`) so prefix +
+   extension stay visible. Full name always in the hover tooltip + Detail panel.
+7. **Cluster nodes — draggable + pinnable**, same as leaves. Layout switches
+   tween from pinned positions.
+
+These are the defaults the implementation follows; revisit only if real use
+shows one is wrong.
