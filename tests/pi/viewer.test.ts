@@ -271,6 +271,14 @@ describe("page pure functions (extract-and-run)", () => {
     cubicBezierEase: (progress: number, x1: number, y1: number, x2: number, y2: number) => number;
     tweenPositions: (from: Record<string, { x: number; y: number }>, to: Record<string, { x: number; y: number }>, t: number) => Record<string, { x: number; y: number }>;
     persistedPositions: (cwdHash: string, store: Record<string, string>, ids: string[]) => Record<string, { x: number; y: number }>;
+    semanticZoomBand: (scale: number) => string;
+    clusterLabelPolicy: (zoom: number, degree: number, selection: boolean) => boolean;
+    midEllipsis: (label: string, maxLen: number) => string;
+    labelCollision: (positions: Record<string, { x: number; y: number }>, labels: { id: string; w?: number; h?: number; priority?: number }[], score?: (l: { id: string }) => number) => Set<string>;
+    bundledEdges: (edges: { source: string; target: string; kind: string }[], visible: Record<string, number>) => { source: string; target: string; kind: string; count: number; opacity: number }[];
+    scoredSearch: (nodes: { id: string; label: string; kind: string; detail: Record<string, string> }[], query: string) => { id: string; score: number; label: string }[];
+    nodeMatchesFilter: (node: { id: string; kind: string; provenance: string | null; detail: Record<string, string> }, opts: { kinds?: Record<string, number>; provenance?: Record<string, number>; orphans?: boolean; hideInternals?: boolean; recentDays?: number; now?: number; backlinks?: Record<string, string[]> }) => boolean;
+    ancestorClusters: (model: { nodes: { id: string }[]; edges: { source: string; target: string; kind: string }[] }, matchSet: Record<string, number>) => Set<string>;
   }
   function extractScript(html: string): string {
     const m = /<script>([\s\S]*)<\/script>/.exec(html);
@@ -289,7 +297,10 @@ describe("page pure functions (extract-and-run)", () => {
         "localSpeed: localSpeed, deltaAlpha: deltaAlpha, radialLayout: radialLayout, treeLayout: treeLayout," +
         " labelVisible: labelVisible, clusterAggregate: clusterAggregate, expandChildren: expandChildren," +
         "collapseChildren: collapseChildren, clusterLayout: clusterLayout, hashCwd: hashCwd," +
-        "cubicBezierEase: cubicBezierEase, tweenPositions: tweenPositions, persistedPositions: persistedPositions };",
+        "cubicBezierEase: cubicBezierEase, tweenPositions: tweenPositions, persistedPositions: persistedPositions," +
+        "semanticZoomBand: semanticZoomBand, clusterLabelPolicy: clusterLabelPolicy, midEllipsis: midEllipsis," +
+        "labelCollision: labelCollision, bundledEdges: bundledEdges, scoredSearch: scoredSearch," +
+        "nodeMatchesFilter: nodeMatchesFilter, ancestorClusters: ancestorClusters };",
     );
     return make() as PureFns;
   }
@@ -813,6 +824,177 @@ describe("page pure functions (extract-and-run)", () => {
     expect(a1).toEqual(a2);
     expect(fns.clusterLayout(a1, {})).toEqual(fns.clusterLayout(a2, {}));
   });
+
+  // ---- M3: semantic zoom + labels + edges ----
+  it("semanticZoomBand picks far / mid / near by camera scale", () => {
+    expect(fns.semanticZoomBand(0.2)).toBe("far");
+    expect(fns.semanticZoomBand(0.39)).toBe("far");
+    expect(fns.semanticZoomBand(0.4)).toBe("mid");
+    expect(fns.semanticZoomBand(0.6)).toBe("mid");
+    expect(fns.semanticZoomBand(0.79)).toBe("mid");
+    expect(fns.semanticZoomBand(0.8)).toBe("near");
+    expect(fns.semanticZoomBand(2)).toBe("near");
+  });
+
+  it("clusterLabelPolicy gates labels by zoom band + degree, selection always shows", () => {
+    // far: only high-degree hubs
+    expect(fns.clusterLabelPolicy(0.2, 7, false)).toBe(false);
+    expect(fns.clusterLabelPolicy(0.2, 8, false)).toBe(true);
+    // mid: mid/high degree shown, low-degree leaves hidden unless selected
+    expect(fns.clusterLabelPolicy(0.5, 2, false)).toBe(false);
+    expect(fns.clusterLabelPolicy(0.5, 3, false)).toBe(true);
+    // near: everything
+    expect(fns.clusterLabelPolicy(1.2, 0, false)).toBe(true);
+    // selection always reveals regardless of band + degree
+    expect(fns.clusterLabelPolicy(0.2, 0, true)).toBe(true);
+  });
+
+  it("midEllipsis keeps the prefix and the extension, and passes short labels through", () => {
+    const short = fns.midEllipsis("a.ts", 26);
+    expect(short).toBe("a.ts");
+    const long = fns.midEllipsis("src--core--slug.ts.summary.md", 16);
+    expect(long).toContain("…");
+    expect(long.length).toBeLessThanOrEqual(16);
+    // prefix and extension survive so the reader keeps context
+    expect(long.startsWith("src--")).toBe(true);
+    expect(long.endsWith("mary.md")).toBe(true);
+    // a very short cap still ends in ellipsis without crashing
+    expect(fns.midEllipsis("abcdef", 3)).toContain("…");
+  });
+
+  it("labelCollision keeps higher-priority labels and drops overlaps (no overlaps returned)", () => {
+    const pos = { a: { x: 0, y: 0 }, b: { x: 5, y: 0 }, c: { x: 100, y: 100 } };
+    // a and b overlap; c is far away. a has higher priority, so a + c render.
+    const out = fns.labelCollision(
+      pos,
+      [
+        { id: "a", w: 30, h: 10, priority: 5 },
+        { id: "b", w: 30, h: 10, priority: 1 },
+        { id: "c", w: 30, h: 10, priority: 1 },
+      ],
+      undefined,
+    );
+    expect(out.has("a")).toBe(true);
+    expect(out.has("b")).toBe(false); // overlapped by higher-priority a
+    expect(out.has("c")).toBe(true); // no overlap
+    expect(out.size).toBe(2);
+  });
+
+  it("labelCollision is deterministic and identical input yields the same set", () => {
+    const pos = { a: { x: 0, y: 0 }, b: { x: 4, y: 0 }, c: { x: 60, y: 0 } };
+    const labels = [
+      { id: "a", w: 30, h: 10, priority: 2 },
+      { id: "b", w: 30, h: 10, priority: 3 },
+      { id: "c", w: 30, h: 10, priority: 1 },
+    ];
+    const s1 = fns.labelCollision(pos, labels, undefined);
+    const s2 = fns.labelCollision(pos, labels, undefined);
+    expect([...s1].sort()).toEqual([...s2].sort());
+    expect(s1.has("b")).toBe(true); // higher priority wins its slot
+    expect(s1.has("a")).toBe(false); // a loses to b, then overlaps nothing after
+  });
+
+  it("bundledEdges merges parallel edges and prunes edges to hidden leaves", () => {
+    const visible = { a: 1, b: 1, c: 1 };
+    const edges = [
+      { source: "a", target: "b", kind: "links-to" },
+      { source: "a", target: "b", kind: "links-to" }, // parallel duplicate
+      { source: "a", target: "c", kind: "links-to" },
+      { source: "a", target: "hidden", kind: "links-to" }, // hidden leaf -> pruned
+    ];
+    const out = fns.bundledEdges(edges, visible);
+    // only a->b (merged count 2) and a->c remain
+    expect(out).toHaveLength(2);
+    const ab = out.find((e) => e.target === "b");
+    expect(ab?.count).toBe(2);
+    expect(ab?.opacity).toBeLessThan(1); // bundling reduces opacity
+    const ac = out.find((e) => e.target === "c");
+    expect(ac?.count).toBe(1);
+    expect(ac?.opacity).toBe(1);
+    // no edge references the hidden leaf
+    expect(out.every((e) => e.source !== "hidden" && e.target !== "hidden")).toBe(true);
+  });
+
+  // ---- M4: filters + scored search ----
+  it("nodeMatchesFilter applies kind / provenance / internals / recency independently", () => {
+    const note = { id: "n1", kind: "note", provenance: "human", detail: { updated: "2026-03-01T12:00:00Z" } };
+    expect(fns.nodeMatchesFilter(note, {})).toBe(true);
+    expect(fns.nodeMatchesFilter(note, { kinds: { note: 1 } })).toBe(true);
+    expect(fns.nodeMatchesFilter(note, { kinds: { module: 1 } })).toBe(false);
+    expect(fns.nodeMatchesFilter(note, { provenance: { agent: 1 } })).toBe(false);
+    expect(fns.nodeMatchesFilter(note, { provenance: { human: 1 } })).toBe(true);
+    const git = { id: "g", kind: "gitState", provenance: null, detail: {} };
+    expect(fns.nodeMatchesFilter(git, { hideInternals: true })).toBe(false);
+    expect(fns.nodeMatchesFilter(git, { hideInternals: false })).toBe(true);
+    // recent: within the window passes, older than the window is filtered out
+    expect(fns.nodeMatchesFilter(note, { recentDays: 1, now: Date.parse("2026-03-02T00:00:00Z") })).toBe(true);
+    expect(fns.nodeMatchesFilter(note, { recentDays: 30, now: Date.parse("2026-04-01T00:00:00Z") })).toBe(false);
+  });
+
+  it("nodeMatchesFilter orphans filter only passes unlinked notes", () => {
+    const note = { id: "n", kind: "note", provenance: null, detail: {} };
+    expect(fns.nodeMatchesFilter(note, { orphans: true, backlinks: {} })).toBe(true);
+    expect(fns.nodeMatchesFilter(note, { orphans: true, backlinks: { n: ["x"] } })).toBe(false);
+    const module = { id: "m", kind: "module", provenance: null, detail: {} };
+    expect(fns.nodeMatchesFilter(module, { orphans: true, backlinks: {} })).toBe(false);
+  });
+
+  it("ancestorClusters returns clusters containing a match", () => {
+    const model = {
+      nodes: [
+        { id: "repository" }, { id: "module:src" }, { id: "file:a" }, { id: "vault" }, { id: "note:x" },
+      ],
+      edges: [
+        { source: "repository", target: "module:src", kind: "contains" },
+        { source: "module:src", target: "file:a", kind: "contains" },
+        { source: "vault", target: "note:x", kind: "contains" },
+      ],
+    };
+    const anc = fns.ancestorClusters(model, { "file:a": 1 });
+    expect(anc.has("repository")).toBe(true);
+    expect(anc.has("module:src")).toBe(true);
+    expect(anc.has("vault")).toBe(false); // no match under the vault
+    const self = fns.ancestorClusters(model, { "module:src": 1 });
+    expect(self.has("repository")).toBe(true);
+    expect(self.has("module:src")).toBe(true);
+  });
+
+  it("scoredSearch ranks label hits over summary hits and sorts deterministically", () => {
+    const nodes = [
+      { id: "n1", label: "auth flow", kind: "note", detail: { slug: "auth-flow", summary: "nothing" } },
+      { id: "n2", label: "random", kind: "note", detail: { slug: "x", summary: "auth handling notes" } },
+      { id: "n3", label: "Auth", kind: "note", detail: { slug: "auth-other", summary: "none" } },
+    ];
+    const hits = fns.scoredSearch(nodes, "auth");
+    // label hits (n1, n3 score 3) rank above the summary-only hit (n2 score 1)
+    expect(hits.slice(0, 2).map((h) => h.score)).toEqual([5, 5]); // label + slug hits
+    expect(hits[0]!.score).toBeGreaterThan(hits[2]!.score);
+    expect(hits[2]!.id).toBe("n2"); // summary-only ranks last
+    const ids = hits.map((h) => h.id);
+    expect(ids).toContain("n1");
+    expect(ids).toContain("n3");
+    // empty query returns nothing
+    expect(fns.scoredSearch(nodes, "   ")).toEqual([]);
+  });
+
+  it("M3/M4 pure helpers are no-ops on identical rebuilds (no label/edge/filter churn)", () => {
+    const model = clusterModel();
+    const pos = { repository: { x: 0, y: 0 }, "module:src": { x: 50, y: 0 } };
+    const labels = [
+      { id: "repository", w: 60, h: 10, priority: 4 },
+      { id: "module:src", w: 60, h: 10, priority: 3 },
+    ];
+    const lbl1 = fns.labelCollision(pos, labels, undefined);
+    const lbl2 = fns.labelCollision(pos, labels, undefined);
+    expect([...lbl1]).toEqual([...lbl2]);
+    const visible = { repository: 1, "module:src": 1, vault: 1 };
+    const e1 = fns.bundledEdges(model.edges, visible);
+    const e2 = fns.bundledEdges(model.edges, visible);
+    expect(e1).toEqual(e2);
+    const f1 = fns.scoredSearch(model.nodes, "");
+    const f2 = fns.scoredSearch(model.nodes, "");
+    expect(f1).toEqual(f2);
+  });
 });
 
 describe("openNoteCommand", () => {
@@ -989,7 +1171,8 @@ describe("physics (real tick loop, extracted from the page)", () => {
     const run = new Function(
       "sim", "model", "W", "H",
       `var REST = { contains: 105, "anchored-at": 130, "links-to": 160, mentions: 160 };
-       var alpha = 0.6; ${pureSrc}\n${tickSrc}
+       var alpha = 0.6; var REPEL_K = 1, CENTER_K = 1, COLLIDE_K = 1;
+       ${pureSrc}\n${tickSrc}
        for (var i = 0; i < 1100; i++) tick();
        return { alpha: alpha, sim: sim };`,
     ) as (s: typeof sim, m: typeof model, w: number, h: number) => { alpha: number; sim: typeof sim };

@@ -183,6 +183,39 @@ const PAGE = `<!DOCTYPE html>
   #legend .ring.agent { border: 2px dashed var(--accent); }
   #legend .ring.generated { border: 2px dotted var(--faint); }
 
+  /* ---------- controls panel (v3 5.2) ---------- */
+  #controls-open { position: fixed; left: 12px; top: 58px; z-index: 11; width: 32px; height: 32px;
+            border-radius: 50%; font-size: 16px; line-height: 1; }
+  #controls { position: fixed; left: 0; top: 48px; bottom: 0; width: 250px; z-index: 11;
+            background: var(--surface); border-right: 1px solid var(--line); overflow-y: auto;
+            transform: translateX(-100%); transition: transform 200ms cubic-bezier(.2,.7,.2,1);
+            padding: 12px 12px 24px; }
+  body.controls-open #controls { transform: translateX(0); }
+  body.controls-open #controls-open { display: none; }
+  #controls-grip { position: absolute; top: 0; right: -3px; width: 6px; height: 100%; cursor: col-resize; }
+  #controls-head { display: flex; align-items: center; justify-content: space-between; margin-bottom: 10px; }
+  #controls-head strong { font-size: 12px; text-transform: uppercase; letter-spacing: .08em; color: var(--muted); }
+  #controls-close { width: 24px; height: 24px; border-radius: 50%; padding: 0; }
+  .cgroup { border-top: 1px solid var(--line); padding: 10px 0; }
+  .ct-label { font-size: 10px; text-transform: uppercase; letter-spacing: .08em; color: var(--muted); margin-bottom: 6px; }
+  #controls label { display: flex; align-items: center; gap: 6px; font-size: 12px; margin: 4px 0; color: var(--muted); }
+  #controls input[type="range"], #controls select { flex: 1; min-width: 0; }
+  #controls input[type=text], #controls input:not([type]) { flex: 1; min-width: 0; background: var(--raised); border: 1px solid var(--line); border-radius: 6px; padding: 4px 6px; color: var(--text); }
+  .seg { display: flex; gap: 2px; background: var(--raised); border: 1px solid var(--line); border-radius: 8px; padding: 2px; }
+  .seg button { border: none; background: none; padding: 3px 6px; font-size: 11px; font-weight: 600; color: var(--muted); border-radius: 6px; flex: 1; }
+  .seg button.active { background: var(--accent); color: #0b1020; }
+  #force-sliders { margin-top: 8px; }
+  #force-sliders.hidden { display: none; }
+  .chips { display: flex; flex-wrap: wrap; gap: 4px; margin: 4px 0; }
+  .chips .chip { background: var(--raised); border: 1px solid var(--line); border-radius: 999px; padding: 2px 9px; font-size: 11px; cursor: pointer; color: var(--muted); }
+  .chips .chip.active { background: var(--accent); border-color: var(--accent); color: #0b1020; }
+  .ctoggle input { accent-color: var(--accent); }
+  .cbtns { display: flex; gap: 6px; }
+  .cbtns button { flex: 1; }
+  #search-drop { margin-top: 6px; max-height: 220px; overflow-y: auto; display: flex; flex-direction: column; gap: 2px; }
+  #search-drop .row { font-size: 12px; }
+  .hidden { display: none !important; }
+
   /* ---------- overlays ---------- */
   #overlay { position: fixed; inset: 0; display: flex; align-items: center; justify-content: center;
              background: var(--bg); z-index: 20; }
@@ -283,17 +316,67 @@ const PAGE = `<!DOCTYPE html>
   <h2>Health</h2>
   <div id="health-content"></div>
 </section>
+<aside id="controls" class="controls-closed">
+  <div id="controls-grip"></div>
+  <div id="controls-head"><strong>View</strong><button id="controls-close" title="Close (c)">✕</button></div>
+  <div class="cgroup">
+    <div class="ct-label">Layout</div>
+    <div class="seg" id="ctl-layout">
+      <button data-layout="cluster" class="active">Cluster</button>
+      <button data-layout="tree">Tree</button>
+      <button data-layout="radial">Radial</button>
+      <button data-layout="force">Force</button>
+    </div>
+    <div id="force-sliders" class="hidden">
+      <label>Repel <input type="range" id="f-repel" min="0" max="200" value="100"></label>
+      <label>Link <input type="range" id="f-link" min="40" max="260" value="150"></label>
+      <label>Center <input type="range" id="f-center" min="0" max="100" value="30"></label>
+      <label>Collide <input type="range" id="f-collide" min="0" max="100" value="70"></label>
+    </div>
+  </div>
+  <div class="cgroup">
+    <div class="ct-label">Filter</div>
+    <div class="chips" id="kind-chips"></div>
+    <div class="chips" id="prov-chips"></div>
+    <label class="ctoggle"><input type="checkbox" id="ctl-orphans"> orphans</label>
+    <label class="ctoggle"><input type="checkbox" id="ctl-internals"> internals</label>
+    <label class="ctoggle"><input type="checkbox" id="ctl-dim"> dim filtered</label>
+    <label class="cselect">Recent
+      <select id="ctl-recent"><option value="0">any</option><option value="7">7d</option><option value="30">30d</option><option value="90">90d</option></select>
+    </label>
+  </div>
+  <div class="cgroup">
+    <div class="ct-label">Aggregation</div>
+    <div class="cbtns">
+      <button id="ctl-expand-all">Expand all</button>
+      <button id="ctl-collapse-all">Collapse all</button>
+    </div>
+    <label class="ctoggle"><input type="checkbox" id="ctl-hover"> auto-expand on hover</label>
+    <label>Depth <input type="range" id="ctl-depth" min="0" max="10" value="0"></label>
+  </div>
+  <div class="cgroup">
+    <div class="ct-label">Search</div>
+    <input id="ctl-search" placeholder="search…">
+    <div id="search-drop"></div>
+  </div>
+</aside>
+<button id="controls-open" title="View controls (c)">⚙</button>
 <div id="legend" class="collapsed"></div>
 <div id="help" class="hidden">
   <div class="card">
     <h2>Shortcuts</h2>
     <table>
-      <tr><td>1 / 3</td><td>Graph / Health</td></tr>
-      <tr><td>2</td><td>Toggle list sidebar</td></tr>
+      <tr><td>1 2 3 4</td><td>Cluster / Tree / Radial / Force layout</td></tr>
+      <tr><td>c</td><td>Toggle controls panel</td></tr>
+      <tr><td>/</td><td>Focus search</td></tr>
+      <tr><td>p</td><td>Cycle provenance filter</td></tr>
+      <tr><td>i</td><td>Toggle internals</td></tr>
+      <tr><td>o</td><td>Toggle orphans</td></tr>
+      <tr><td>e / E</td><td>Expand selected / expand all</td></tr>
+      <tr><td>Space</td><td>Toggle selected cluster</td></tr>
       <tr><td>f</td><td>Focus selected node</td></tr>
       <tr><td>g</td><td>Exit focus</td></tr>
       <tr><td>▸ / ▾</td><td>Expand / collapse in List</td></tr>
-      <tr><td>/</td><td>Focus search</td></tr>
       <tr><td>?</td><td>This help</td></tr>
       <tr><td>+ / −</td><td>Zoom in / out</td></tr>
       <tr><td>Esc</td><td>Close / clear / exit</td></tr>
@@ -789,6 +872,190 @@ const PAGE = `<!DOCTYPE html>
     }
     return out;
   }
+  // ---- weave-view v3 M3: semantic zoom + labels + edges (pure) ----
+  // Camera-scale zoom band: far (overview) / mid / near (drill-in). Labels and
+  // detail follow this policy (section 3.2).
+  function semanticZoomBand(scale) {
+    if (scale < 0.4) return "far";
+    if (scale < 0.8) return "mid";
+    return "near";
+  }
+  // Whether a (non-cluster) node label shows at the current camera scale.
+  // Degree priority + zoom gate + selection (section 4.3): far shows only hubs,
+  // mid shows mid/high degree + selection, near shows everything. Cluster labels
+  // are always shown by the renderer (few of them), so this policy only gates leaves.
+  function clusterLabelPolicy(zoom, degree, selection) {
+    var band = semanticZoomBand(zoom);
+    if (selection) return true;
+    if (band === "far") return degree >= 8;
+    if (band === "mid") return degree >= 3;
+    return true;
+  }
+  // Mid-ellipsis truncation (decision 6): keep the prefix AND the extension so
+  // src…slug.ts.summary.md stays readable. Returns the label unchanged when it fits.
+  function midEllipsis(label, maxLen) {
+    if (!label || label.length <= maxLen) return label;
+    var ell = "…";
+    var keep = maxLen - ell.length;
+    if (keep < 2) return label.slice(0, Math.max(0, maxLen - 1)) + ell;
+    var left = Math.ceil(keep / 2);
+    var right = Math.floor(keep / 2);
+    return label.slice(0, left) + ell + label.slice(label.length - right);
+  }
+  // Axis-aligned rect helpers for the quadtree label collision pass.
+  function Rect(x, y, w, h) { this.x = x; this.y = y; this.w = w; this.h = h; }
+  function rectsOverlap(a, b) {
+    return a.x < b.x + b.w && a.x + a.w > b.x && a.y < b.y + b.h && a.y + a.h > b.y;
+  }
+  // Hand-rolled quadtree (no dep) over label rects: O(n log n) overlap tests.
+  // Items may be duplicated into boundary quadrants (safe superset for queries).
+  function Quad(x, y, w, h, depth) {
+    this.x = x; this.y = y; this.w = w; this.h = h; this.depth = depth;
+    this.items = []; this.nw = null; this.ne = null; this.sw = null; this.se = null;
+  }
+  Quad.prototype.insert = function (rect, maxDepth) {
+    if (this.nw) {
+      if (rectsOverlap(rect, this.nw)) this.nw.insert(rect, maxDepth);
+      if (rectsOverlap(rect, this.ne)) this.ne.insert(rect, maxDepth);
+      if (rectsOverlap(rect, this.sw)) this.sw.insert(rect, maxDepth);
+      if (rectsOverlap(rect, this.se)) this.se.insert(rect, maxDepth);
+      return;
+    }
+    this.items.push(rect);
+    if (this.items.length > 8 && this.depth < maxDepth) {
+      var hw = this.w / 2, hh = this.h / 2, d = this.depth + 1;
+      this.nw = new Quad(this.x, this.y, hw, hh, d);
+      this.ne = new Quad(this.x + hw, this.y, hw, hh, d);
+      this.sw = new Quad(this.x, this.y + hh, hw, hh, d);
+      this.se = new Quad(this.x + hw, this.y + hh, hw, hh, d);
+      var items = this.items; this.items = [];
+      for (var i = 0; i < items.length; i++) this.insert(items[i], maxDepth);
+    }
+  };
+  Quad.prototype.query = function (rect, out) {
+    out = out || [];
+    for (var i = 0; i < this.items.length; i++) {
+      if (rectsOverlap(rect, this.items[i])) out.push(this.items[i]);
+    }
+    if (this.nw) {
+      if (rectsOverlap(rect, this.nw)) this.nw.query(rect, out);
+      if (rectsOverlap(rect, this.ne)) this.ne.query(rect, out);
+      if (rectsOverlap(rect, this.sw)) this.sw.query(rect, out);
+      if (rectsOverlap(rect, this.se)) this.se.query(rect, out);
+    }
+    return out;
+  };
+  // Label collision pass (section 4.3): draw a label only if it doesn't overlap a
+  // higher-priority label. Priority = degree/selection then alphabetical. Returns
+  // the Set of label ids to render.
+  function labelCollision(positions, labels, priority) {
+    var scored = labels.map(function (l) {
+      var pos = positions[l.id] || { x: 0, y: 0 };
+      var p = typeof priority === "function" ? priority(l) : (l.priority || 0);
+      return { id: l.id, x: pos.x, y: pos.y, w: l.w || 60, h: l.h || 12, p: p };
+    });
+    scored.sort(function (a, b) { return b.p - a.p || a.id.localeCompare(b.id); });
+    var minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+    scored.forEach(function (s) {
+      if (s.x < minX) minX = s.x; if (s.y < minY) minY = s.y;
+      if (s.x + s.w > maxX) maxX = s.x + s.w; if (s.y + s.h > maxY) maxY = s.y + s.h;
+    });
+    var tree = new Quad(minX, minY, Math.max(1, maxX - minX), Math.max(1, maxY - minY), 0);
+    var out = new Set();
+    scored.forEach(function (s) {
+      var rect = new Rect(s.x, s.y, s.w, s.h);
+      var hits = tree.query(rect), clash = false;
+      for (var i = 0; i < hits.length; i++) {
+        if (rectsOverlap(rect, hits[i])) { clash = true; break; }
+      }
+      if (!clash) { tree.insert(rect, 6); out.add(s.id); }
+    });
+    return out;
+  }
+  // Edge declutter (section 4.2): merge parallel edges (same source+kind+target)
+  // into one line with reduced opacity, and prune edges to hidden/clustered
+  // leaves. [visible] is a record {id:1} of currently visible nodes.
+  function bundledEdges(edges, visible) {
+    var byKey = {}, out = [];
+    edges.forEach(function (e) {
+      if (!visible || !visible[e.source] || !visible[e.target]) return;
+      var key = e.source + "\u0001" + e.kind + "\u0001" + e.target;
+      if (!byKey[key]) {
+        byKey[key] = { source: e.source, target: e.target, kind: e.kind, count: 0 };
+        out.push(byKey[key]);
+      }
+      byKey[key].count++;
+    });
+    return out.map(function (b) {
+      var opacity = b.count > 2 ? 0.4 : b.count > 1 ? 0.7 : 1;
+      return { source: b.source, target: b.target, kind: b.kind, count: b.count, opacity: opacity };
+    });
+  }
+  // ---- weave-view v3 M4: filter + scored search (pure) ----
+  // Whether a single node passes the current control-panel filter. opts = {
+  //   kinds, provenance (sets), hideInternals, orphans, backlinks, recentDays }.
+  function nodeMatchesFilter(node, opts) {
+    opts = opts || {};
+    if (opts.kinds && Object.keys(opts.kinds).length && !opts.kinds[node.kind]) return false;
+    if (opts.provenance && Object.keys(opts.provenance).length &&
+      !(node.provenance && opts.provenance[node.provenance])) return false;
+    if (opts.hideInternals && (node.kind === "gitState" || node.kind === "external")) return false;
+    if (opts.orphans) {
+      var isNote = node.kind === "note";
+      var back = opts.backlinks ? opts.backlinks[node.id] : null;
+      if (isNote && (!back || !back.length)) { /* orphan note: pass */ }
+      else return false;
+    }
+    if (opts.recentDays) {
+      var now = opts.now != null ? opts.now : Date.now();
+      var u = node.detail && node.detail.updated ? new Date(node.detail.updated).getTime() : NaN;
+      if (isNaN(u) || u < now - opts.recentDays * 86400000) return false;
+    }
+    return true;
+  }
+  // The set of cluster ids that contain a matching node (auto-expand ancestors so
+  // filtered matches stay reachable).
+  function ancestorClusters(model, matchSet) {
+    var children = {};
+    model.edges.forEach(function (e) {
+      if (e.kind === "contains" || e.kind === "anchored-at") (children[e.source] = children[e.source] || []).push(e.target);
+    });
+    Object.keys(children).forEach(function (id) {
+      var seen = {}, list = [];
+      (children[id] || []).forEach(function (c) { if (!seen[c]) { seen[c] = 1; list.push(c); } });
+      children[id] = list;
+    });
+    function hasMatch(id, visited) {
+      visited = visited || {};
+      if (visited[id]) return false;
+      visited[id] = 1;
+      if (matchSet[id]) return true;
+      return (children[id] || []).some(function (c) { return hasMatch(c, visited); });
+    }
+    var out = new Set();
+    Object.keys(children).forEach(function (id) {
+      if (hasMatch(id, {})) out.add(id);
+    });
+    return out;
+  }
+  // Client-side scored search over the graph (mirrors core searchNotes ranking):
+  // label/title = 3, slug/path = 2, summary = 1; sorted score desc then label asc.
+  function scoredSearch(nodes, query) {
+    var q = String(query || "").toLowerCase().trim();
+    if (!q) return [];
+    var hits = [];
+    nodes.forEach(function (n) {
+      var score = 0;
+      var label = (n.label || "").toLowerCase();
+      if (label.indexOf(q) >= 0) score += 3;
+      var d = n.detail || {};
+      if ((d.slug || "").toLowerCase().indexOf(q) >= 0 || (d.path || "").toLowerCase().indexOf(q) >= 0) score += 2;
+      if ((d.summary || "").toLowerCase().indexOf(q) >= 0) score += 1;
+      if (score > 0) hits.push({ id: n.id, score: score, label: n.label });
+    });
+    hits.sort(function (a, b) { return b.score - a.score || a.label.localeCompare(b.label); });
+    return hits;
+  }
   // ===== end pure =====
 
   var COLORS = { vault: "#8b5cf6", note: "#c4b5fd", repository: "#3b82f6",
@@ -811,6 +1078,8 @@ const PAGE = `<!DOCTYPE html>
   var showInternals = false;
   var sim = {}, alpha = 0, posMap = {}, layoutMode = "cluster";
   var expanded = {}, aggregate = null;
+  // Force-layout tunables surfaced in the controls panel force sliders (M4).
+  var REPEL_K = 1, CENTER_K = 1, COLLIDE_K = 1;
   // cwd is injected by the server (renderPage(cwd)) so per-repo positions are
   // keyed by a stable cwd hash, not by the volatile loopback port.
   var PAGE_CWD = __VIEWER_CWD_JSON__;
@@ -819,6 +1088,18 @@ const PAGE = `<!DOCTYPE html>
   var W = window.innerWidth, H = window.innerHeight, world = null;
   var cam = { x: 0, y: 0, k: 1 };
   var panning = null, helpOpen = false;
+  // weave-view v3 M3/M4 state: hovered node (default edge/label emphasis) and
+  // the control-panel filter state (kinds/provenance sets, toggles, depth).
+  var hoveredId = null;
+  var matchSet = null;             // ids matching the active filter
+  var ancSet = null;               // clusters that contain a filter match
+  var ctl = { kinds: {}, provenance: {}, orphans: false, hideInternals: false,
+    recentDays: 0, dimFiltered: false, hoverExpand: false, depthLimit: 0 };
+  var controlsOpen = false;
+  function filterActive() {
+    return !!Object.keys(ctl.kinds).length || !!Object.keys(ctl.provenance).length ||
+      ctl.orphans || ctl.hideInternals || ctl.recentDays > 0;
+  }
 
   function resize() {
     W = window.innerWidth; H = window.innerHeight;
@@ -948,7 +1229,7 @@ const PAGE = `<!DOCTYPE html>
     // degree) pulled gently so they pack without imploding into the center.
     for (i = 0; i < ids.length; i++) {
       id = ids[i]; a = sim[id];
-      var g = 0.0006 * alpha * (1 + (deg[id] || 0) * 0.12);
+      var g = 0.0006 * alpha * (1 + (deg[id] || 0) * 0.12) * CENTER_K;
       a.vx += (W / 2 - a.x) * g;
       a.vy += (H / 2 - a.y) * g;
     }
@@ -962,7 +1243,7 @@ const PAGE = `<!DOCTYPE html>
         d2 = dx * dx + dy * dy;
         if (d2 > 67600) continue; // 260px repulsion cutoff
         d = Math.sqrt(d2) || 0.001;
-        f = 380 * alpha * degreeRepulsion(deg[id] || 0, deg[ids[j]] || 0) / d2;
+        f = 380 * alpha * degreeRepulsion(deg[id] || 0, deg[ids[j]] || 0) / d2 * REPEL_K;
         a.vx += dx / d * f; a.vy += dy / d * f;
         b.vx -= dx / d * f; b.vy -= dy / d * f;
       }
@@ -986,7 +1267,7 @@ const PAGE = `<!DOCTYPE html>
           dx = (a.x + a.vx) - (b.x + b.vx);
           dy = (a.y + a.vy) - (b.y + b.vy);
           d2 = dx * dx + dy * dy;
-          var minD = collideRadius(deg[id] || 0) + collideRadius(deg[ids[j]] || 0);
+          var minD = (collideRadius(deg[id] || 0) + collideRadius(deg[ids[j]] || 0)) * COLLIDE_K;
           if (d2 >= minD * minD) continue;
           d = Math.sqrt(d2) || 0.001;
           var push = (minD - d) / 2;
@@ -1016,28 +1297,68 @@ const PAGE = `<!DOCTYPE html>
   }
 
   var edgeLines = [];
+  // The label text for a node: mid-ellipsis (decision 6) + cluster chevron +
+  // staleness warning. Full name stays in the hover tooltip and Detail panel.
+  function displayLabel(node, isCluster) {
+    var txt = midEllipsis(node.label, 26);
+    if (isCluster) txt += expanded[node.id] ? "  ▾" : "  ▸";
+    if (node.id === "repository" && model.staleness && model.staleness.state === "stale") txt = "⚠ " + txt;
+    return txt;
+  }
+  // Semantic-zoom + collision label pass (M3): decide which labels draw this
+  // frame. Cluster labels always qualify; leaves follow clusterLabelPolicy;
+  // then a quadtree collision pass drops any label that overlaps a higher-
+  // priority label (priority = cluster > selection/hover > degree).
+  function paintLabels() {
+    var positions = {}, labels = [];
+    Object.keys(sim).forEach(function (id) {
+      var n = sim[id];
+      if (!n.labelEl || !n.visible) return;
+      var isCluster = !!aggregate.clusters[id];
+      var hovered = n.g.classList.contains("hovered") || id === hoveredId;
+      var sel = selectedId === id;
+      var show = isCluster || clusterLabelPolicy(cam.k, n.deg || 0, sel || hovered);
+      var txt = displayLabel(n.node, isCluster);
+      // label rect in screen space (the world group is scaled by cam.k)
+      positions[id] = { x: cam.x + n.x * cam.k, y: cam.y + n.y * cam.k };
+      labels.push({ id: id, w: (txt.length * 6.2 + 10) * cam.k, h: 12 * cam.k,
+        priority: (isCluster ? 10000 : 0) + (sel || hovered ? 5000 : 0) + (n.deg || 0) });
+    });
+    var toShow = labelCollision(positions, labels, null);
+    Object.keys(sim).forEach(function (id) {
+      var n = sim[id];
+      if (!n.labelEl || !n.visible) return;
+      n.labelEl.style.opacity = toShow.has(id) ? "1" : "0";
+    });
+  }
   function paint() {
     if (!aggregate) return;
     Object.keys(sim).forEach(function (id) {
       var n = sim[id];
       n.visible = !!aggregate.visible[id];
+      if (n.visible && filterActive()) {
+        var isC = !!aggregate.clusters[id];
+        if (!matchSet[id]) {
+          // hide non-matching nodes unless they are a dimmed ancestor frame.
+          if (!(isC && ancSet[id]) && !ctl.dimFiltered) n.visible = false;
+        }
+      }
       n.g.style.display = n.visible ? "" : "none";
       if (n.visible) {
+        var filtered = filterActive() && !matchSet[id];
         var dimmed = (query.length > 0 && n.node.label.toLowerCase().indexOf(query) < 0) ||
-          (focusSet && !focusSet[id]);
+          (focusSet && !focusSet[id]) || filtered;
         n.g.setAttribute("class", dimmed ? "node dim" : "node");
         n.g.setAttribute("transform", "translate(" + n.x + "," + n.y + ")");
         if (n.selRing) n.selRing.style.display = selectedId === id ? "" : "none";
-        // label fade (section 16 Tier C): below the zoom threshold low-degree
-        // labels are hidden; cluster labels + hover / selection / zoom reveal them.
+        // keep the drawn label text in sync (mid-ellipsis + chevron).
         if (n.labelEl) {
-          var hover = n.g.classList.contains("hovered");
-          var cluster = !!aggregate.clusters[id];
-          n.labelEl.style.opacity =
-            (cluster || labelVisible(cam.k, n.deg || 0) || hover || selectedId === id) ? "1" : "0";
+          var txt = displayLabel(n.node, !!aggregate.clusters[id]);
+          if (n.labelEl.__txt !== txt) { n.labelEl.__txt = txt; n.labelEl.textContent = txt; }
         }
       }
     });
+    paintLabels();
     edgeLines.forEach(function (rec) {
       var s = sim[rec.e.source], t = sim[rec.e.target];
       var vis = s && t && s.visible && t.visible;
@@ -1045,8 +1366,12 @@ const PAGE = `<!DOCTYPE html>
       if (vis) {
         rec.line.setAttribute("x1", s.x); rec.line.setAttribute("y1", s.y);
         rec.line.setAttribute("x2", t.x); rec.line.setAttribute("y2", t.y);
-        var inFocus = !focusSet || (focusSet[rec.e.source] && focusSet[rec.e.target]);
-        rec.line.setAttribute("opacity", inFocus ? "1" : "0.12");
+        // default interaction (v3 4.2): incident edges brighten, the rest fade;
+        // containment skeleton stays thin under nodes; cross-links bundle-dimmer.
+        var incident = rec.e.source === selectedId || rec.e.target === selectedId ||
+          rec.e.source === hoveredId || rec.e.target === hoveredId;
+        var focusDim = focusSet && !(focusSet[rec.e.source] && focusSet[rec.e.target]);
+        rec.line.setAttribute("opacity", (incident && !focusDim) ? "1" : String(rec.base));
       }
     });
   }
@@ -1513,12 +1838,22 @@ const PAGE = `<!DOCTYPE html>
     });
     var edgeLayer = el("g", {}), nodeLayer = el("g", {});
     world.appendChild(edgeLayer); world.appendChild(nodeLayer);
-    model.edges.forEach(function (e) {
-      if (!sim[e.source] || !sim[e.target]) return;
-      var line = el("line", { stroke: EDGE_COLORS[e.kind] || "#2e3a55", "stroke-width": "1.2" });
-      if (EDGE_DASH[e.kind]) line.setAttribute("stroke-dasharray", EDGE_DASH[e.kind]);
+    // Edge declutter (v3 4.2): bundle parallel edges (same kind + pair), draw
+    // containment as a thin skeleton under nodes, cross-links as dimmer accent
+    // curves. Hidden leaves are pruned at paint time via sim visibility.
+    var allVisible = {};
+    model.nodes.forEach(function (nd) { allVisible[nd.id] = 1; });
+    var bundled = bundledEdges(model.edges, allVisible);
+    bundled.forEach(function (be) {
+      var isLink = be.kind === "links-to";
+      var line = el("line", { stroke: EDGE_COLORS[be.kind] || "#2e3a55",
+        "stroke-width": isLink ? "1.4" : "1" });
+      if (EDGE_DASH[be.kind]) line.setAttribute("stroke-dasharray", EDGE_DASH[be.kind]);
       edgeLayer.appendChild(line);
-      edgeLines.push({ e: e, line: line });
+      // base dim: containment stays low-sat under nodes; cross-links fade unless
+      // incident to the hovered/selected node (default interaction, 4.2).
+      var base = isLink ? (be.count > 2 ? 0.1 : 0.12) : 0.35;
+      edgeLines.push({ e: be, line: line, base: base });
     });
     model.nodes.forEach(function (node) {
       var n = sim[node.id];
@@ -1585,10 +1920,7 @@ const PAGE = `<!DOCTYPE html>
       g.appendChild(selRing);
       n.selRing = selRing;
       var label = el("text", { "class": "label", x: root ? r + 5 : r + 4, y: 4 });
-      label.textContent = capLabel(node.label) + (isCluster ? (expanded[node.id] ? "  ▾" : "  ▸") : "");
-      if (node.id === "repository" && model.staleness && model.staleness.state === "stale") {
-        label.textContent = "⚠ " + label.textContent;
-      }
+      label.textContent = displayLabel(node, isCluster);
       g.appendChild(label);
       n.labelEl = label;
       var moved = false;
@@ -1617,15 +1949,13 @@ const PAGE = `<!DOCTYPE html>
         if (isCluster) toggleExpand(node.id, false); else focusOn(node.id);
       });
       shape.addEventListener("pointerenter", function () {
+        hoveredId = node.id;
         g.classList.add("hovered");
-        edgeLines.forEach(function (rec) {
-          if (rec.e.source === node.id || rec.e.target === node.id) {
-            rec.line.setAttribute("stroke-width", "1.8");
-            rec.line.setAttribute("opacity", "1");
-          }
-        });
+        if (ctl.hoverExpand && isCluster && !expanded[node.id]) toggleExpand(node.id, false);
+        paint();
       });
       shape.addEventListener("pointerleave", function () {
+        if (hoveredId === node.id) hoveredId = null;
         g.classList.remove("hovered");
         paint();
       });
@@ -1780,41 +2110,255 @@ const PAGE = `<!DOCTYPE html>
     toastTimer = setTimeout(function () { t.classList.remove("show"); }, 1800);
   }
 
-  // ---------- keyboard ----------
+  // ---------- keyboard (v3 6): every control is also a key ----------
   document.addEventListener("keydown", function (ev) {
     var k = ev.key;
-    if (k === "1") showSurface("graph");
-    else if (k === "2") toggleListPanel();
-    else if (k === "3") showSurface("health");
+    if (k === "1") { layoutMode = "cluster"; setLayoutUI(); applyLayout(); }
+    else if (k === "2") { layoutMode = "tree"; setLayoutUI(); applyLayout(); }
+    else if (k === "3") { layoutMode = "radial"; setLayoutUI(); applyLayout(); }
+    else if (k === "4") { layoutMode = "force"; setLayoutUI(); applyLayout(); }
+    else if (k === "c") toggleControls();
+    else if (k === "o") { toggleChip("orphans"); }
+    else if (k === "i") { toggleChip("internals"); }
+    else if (k === "p") cycleProvenance();
     else if (k === "f") { if (selectedId) focusOn(selectedId); }
-    else if (k === "e" || k === "E") {
-      if (selectedId && aggregate && aggregate.clusters[selectedId]) toggleExpand(selectedId, k === "E");
+    else if (k === "e") {
+      if (selectedId && aggregate && aggregate.clusters[selectedId]) toggleExpand(selectedId, false);
+      else expandAll();
     }
+    else if (k === "E") expandAll();
+    else if (k === "x") collapseAll();
     else if (k === "g") exitFocus();
-    else if (k === "/") { ev.preventDefault(); searchEl.focus(); }
+    else if (k === "/") { ev.preventDefault(); focusSearch(); }
     else if (k === "?") toggleHelp();
     else if (k === "=" || k === "+") zoomAt(W / 2, H / 2, 1.25);
     else if (k === "-" || k === "_") zoomAt(W / 2, H / 2, 0.8);
-    else if (k === "Enter" || k === " ") {
+    else if (k === " ") {
+      // Space toggles the selected cluster's expand state.
+      if (selectedId && aggregate && aggregate.clusters[selectedId]) {
+        ev.preventDefault(); toggleExpand(selectedId, false);
+      }
+    }
+    else if (k === "Enter") {
       var t = ev.target;
       if (t && t.getAttribute && t.getAttribute("data-id")) { ev.preventDefault(); selectById(t.getAttribute("data-id")); }
-    }
-    else if (k === "ArrowDown" || k === "ArrowUp") {
-      if (surface === "graph" && listOpen) {
-        ev.preventDefault();
-        var rows = document.querySelectorAll("#list-rows .row");
-        var idx = Array.prototype.indexOf.call(rows, document.activeElement);
-        var next = k === "ArrowDown" ? idx + 1 : idx - 1;
-        if (next >= 0 && next < rows.length) rows[next].focus();
-      }
     }
     else if (k === "Escape") {
       if (helpOpen) { helpOpen = false; document.getElementById("help").classList.add("hidden"); }
       else if (document.activeElement === searchEl) { searchEl.blur(); }
+      else if (document.activeElement === ctlSearchEl) { ctlSearchEl.blur(); }
       else if (panel.className === "open") { closePanel(); }
       else if (focusId) { exitFocus(); }
     }
   });
+
+  // ---------- controls panel (v3 5.2 / M4) ----------
+  var controls = document.getElementById("controls");
+  var ctlSearchEl = document.getElementById("ctl-search");
+  var searchDrop = document.getElementById("search-drop");
+  function toggleControls() {
+    controlsOpen = !controlsOpen;
+    document.body.classList.toggle("controls-open", controlsOpen);
+    if (controlsOpen) { buildKindChips(); buildProvChips(); }
+  }
+  document.getElementById("controls-open").addEventListener("click", toggleControls);
+  document.getElementById("controls-close").addEventListener("click", function () { if (controlsOpen) toggleControls(); });
+  // Draggable panel width via the grip (v3 5.2).
+  (function () {
+    var grip = document.getElementById("controls-grip"), start = null;
+    grip.addEventListener("pointerdown", function (ev) {
+      start = { x: ev.clientX, w: controls.offsetWidth };
+      grip.setPointerCapture(ev.pointerId);
+    });
+    grip.addEventListener("pointermove", function (ev) {
+      if (!start) return;
+      controls.style.width = Math.max(170, Math.min(460, start.w + (ev.clientX - start.x))) + "px";
+    });
+    grip.addEventListener("pointerup", function () { start = null; });
+  })();
+  // Layout segmented control + force sliders (reuse the 16 sim tunables).
+  function setLayoutUI() {
+    document.querySelectorAll("#ctl-layout button").forEach(function (b) {
+      b.classList.toggle("active", b.getAttribute("data-layout") === layoutMode);
+    });
+    document.getElementById("force-sliders").classList.toggle("hidden", layoutMode !== "force");
+  }
+  document.querySelectorAll("#ctl-layout button").forEach(function (b) {
+    b.addEventListener("click", function () {
+      layoutMode = b.getAttribute("data-layout");
+      setLayoutUI(); applyLayout();
+    });
+  });
+  document.getElementById("f-repel").addEventListener("input", function () {
+    // repel slider tunes the repulsion scale factor.
+    REPEL_K = Number(this.value) / 100;
+    if (layoutMode === "force") alpha = Math.max(alpha, 0.5);
+  });
+  document.getElementById("f-link").addEventListener("input", function () {
+    REST["links-to"] = Number(this.value); REST.contains = Number(this.value) * 0.7;
+    if (layoutMode === "force") alpha = Math.max(alpha, 0.5);
+  });
+  document.getElementById("f-center").addEventListener("input", function () {
+    CENTER_K = Number(this.value) / 100;
+    if (layoutMode === "force") alpha = Math.max(alpha, 0.5);
+  });
+  document.getElementById("f-collide").addEventListener("input", function () {
+    COLLIDE_K = Number(this.value) / 100;
+    if (layoutMode === "force") alpha = Math.max(alpha, 0.5);
+  });
+  // ---- filter chips ----
+  function buildKindChips() {
+    var kinds = [];
+    model.nodes.forEach(function (n) { if (kinds.indexOf(n.kind) < 0) kinds.push(n.kind); });
+    var box = document.getElementById("kind-chips");
+    box.innerHTML = "";
+    kinds.sort().forEach(function (kd) {
+      var c = document.createElement("button");
+      c.className = "chip" + (ctl.kinds[kd] ? " active" : "");
+      c.textContent = kd;
+      c.setAttribute("data-kind", kd);
+      c.addEventListener("click", function () { toggleChip("kinds", kd); });
+      box.appendChild(c);
+    });
+  }
+  function buildProvChips() {
+    var box = document.getElementById("prov-chips");
+    box.innerHTML = "";
+    ["human", "agent", "generated"].forEach(function (p) {
+      var c = document.createElement("button");
+      c.className = "chip" + (ctl.provenance[p] ? " active" : "");
+      c.textContent = p;
+      c.setAttribute("data-prov", p);
+      c.addEventListener("click", function () { toggleChip("provenance", p); });
+      box.appendChild(c);
+    });
+  }
+  function toggleChip(which, key) {
+    if (which === "orphans") { ctl.orphans = !ctl.orphans; }
+    else if (which === "internals") { ctl.hideInternals = !ctl.hideInternals; }
+    else if (which === "kinds" || which === "provenance") {
+      var set = which === "kinds" ? ctl.kinds : ctl.provenance;
+      if (set[key]) delete set[key]; else set[key] = 1;
+    }
+    applyFilters();
+  }
+  function cycleProvenance() {
+    var order = ["human", "agent", "generated"], cur = Object.keys(ctl.provenance);
+    ctl.provenance = {};
+    var next = cur.length ? order[(order.indexOf(cur[0]) + 1) % order.length] : order[0];
+    if (next) ctl.provenance[next] = 1;
+    buildProvChips(); applyFilters();
+  }
+  function applyFilters() {
+    if (!model) return;
+    var backlinks = deriveBacklinks(model.edges);
+    var opts = { kinds: ctl.kinds, provenance: ctl.provenance, orphans: ctl.orphans,
+      hideInternals: ctl.hideInternals, recentDays: ctl.recentDays, backlinks: backlinks };
+    matchSet = {}; ancSet = {};
+    model.nodes.forEach(function (n) {
+      if (nodeMatchesFilter(n, opts)) matchSet[n.id] = 1;
+    });
+    if (filterActive()) {
+      ancestorClusters(model, matchSet).forEach(function (c) { ancSet[c] = 1; expanded[c] = 1; });
+    }
+    applyDepth();
+    reflow();
+    if (surface === "graph") renderList();
+  }
+  function applyDepth() {
+    if (!ctl.depthLimit || !aggregate) return;
+    var depths = clusterDepths(model);
+    Object.keys(depths).forEach(function (id) {
+      if (depths[id] >= ctl.depthLimit) delete expanded[id];
+    });
+  }
+  function expandAll() {
+    if (!aggregate) return;
+    Object.keys(aggregate.clusters).forEach(function (id) { expanded[id] = 1; });
+    reflow();
+  }
+  function collapseAll() {
+    if (!aggregate) return;
+    expanded = {};
+    reflow();
+  }
+  function reflow() {
+    if (!model || !aggregate) return;
+    aggregate = clusterAggregate(model, expanded);
+    Object.keys(sim).forEach(function (id) { if (sim[id]) sim[id].visible = !!aggregate.visible[id]; });
+    if (layoutMode === "force") { alpha = Math.max(alpha, 0.5); paint(); }
+    else tweenTo(deterministicPositions());
+    scheduleSave();
+  }
+  document.getElementById("ctl-expand-all").addEventListener("click", expandAll);
+  document.getElementById("ctl-collapse-all").addEventListener("click", collapseAll);
+  document.getElementById("ctl-hover").addEventListener("change", function (e) {
+    ctl.hoverExpand = !!e.target.checked;
+  });
+  document.getElementById("ctl-depth").addEventListener("input", function (e) {
+    ctl.depthLimit = Number(e.target.value) || 0;
+    applyFilters();
+  });
+  document.getElementById("ctl-orphans").addEventListener("change", function (e) {
+    ctl.orphans = !!e.target.checked; applyFilters();
+  });
+  document.getElementById("ctl-internals").addEventListener("change", function (e) {
+    ctl.hideInternals = !!e.target.checked; applyFilters();
+  });
+  document.getElementById("ctl-dim").addEventListener("change", function (e) {
+    ctl.dimFiltered = !!e.target.checked; reflow();
+  });
+  document.getElementById("ctl-recent").addEventListener("change", function (e) {
+    ctl.recentDays = Number(e.target.value) || 0; applyFilters();
+  });
+  // ---- scored search dropdown (v3 5.2) ----
+  function focusSearch() {
+    if (!controlsOpen) toggleControls();
+    ctlSearchEl.focus();
+  }
+  ctlSearchEl.addEventListener("input", function () {
+    runSearch(ctlSearchEl.value);
+  });
+  function runSearch(q) {
+    if (!model) { searchDrop.innerHTML = ""; return; }
+    var hits = scoredSearch(model.nodes, q);
+    searchDrop.innerHTML = hits.length ? "" : "<div class='row muted'>no matches</div>";
+    hits.slice(0, 8).forEach(function (h) {
+      var row = document.createElement("div");
+      row.className = "row"; row.setAttribute("data-id", h.id); row.setAttribute("tabindex", "0");
+      row.setAttribute("role", "button");
+      row.innerHTML = esc(h.label);
+      searchDrop.appendChild(row);
+    });
+    // highlight matching nodes + auto-expand ancestor clusters.
+    if (q) {
+      var m = {}; hits.forEach(function (h) { m[h.id] = 1; });
+      ancestorClusters(model, m).forEach(function (c) { expanded[c] = 1; });
+      reflow();
+    }
+  }
+  document.getElementById("search-drop").addEventListener("click", function (ev) {
+    var t = ev.target;
+    if (t && t.getAttribute && t.getAttribute("data-id")) selectById(t.getAttribute("data-id"));
+  });
+  // ---- auto-expand on hover (v3 aggregation toggle) ----
+  // clusterDepths maps every node to its depth from the containment roots.
+  function clusterDepths(model) {
+    var children = {}, incoming = {};
+    model.edges.forEach(function (e) {
+      if (e.kind !== "contains" && e.kind !== "anchored-at") return;
+      (children[e.source] = children[e.source] || []).push(e.target);
+      incoming[e.target] = 1;
+    });
+    var depths = {};
+    function walk(id, d) {
+      if (depths[id] !== undefined) return;
+      depths[id] = d;
+      (children[id] || []).forEach(function (c) { walk(c, d + 1); });
+    }
+    model.nodes.forEach(function (n) { if (!incoming[n.id]) walk(n.id, 0); });
+    return depths;
+  }
 
   // ---------- legend (collapsible; hidden by default so it stays out of the face) ----------
   var legend = document.getElementById("legend");
