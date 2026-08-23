@@ -167,6 +167,19 @@ export class WeaveWorkspace implements Component {
   handleInput(data: string): void {
     if (matchesKey(data, "tab")) return this.cycleFocus(1);
     if (matchesKey(data, "shift+tab")) return this.cycleFocus(-1);
+    if (matchesKey(data, "escape")) {
+      // Esc precedence (mirrors v1): if the active pane is in a search/filter
+      // sub-mode, Esc clears it; otherwise Esc quits the explorer.
+      const active = this.activePane();
+      if (active && isSearching(active)) {
+        active.handleInput?.(data);
+        this.invalidate();
+        this.tui.requestRender();
+        return;
+      }
+      this.quit();
+      return;
+    }
     const wsKey = decodeWorkspaceKey(data);
     if (wsKey) {
       this.applyWorkspaceKey(wsKey);
@@ -184,7 +197,23 @@ export class WeaveWorkspace implements Component {
       return;
     }
     const active = this.activePane();
-    if (active?.handleInput) active.handleInput(data);
+    if (active?.handleInput) {
+      active.handleInput(data);
+      // CRITICAL: the surface updated its own selection/scroll state, but it
+      // has no `tui` and the workspace render cache is now stale. Invalidate
+      // (clears the workspace + per-surface caches) and request a fresh render
+      // — without this, arrow/enter/filter keys change state but the screen
+      // never updates (the "arrows don't navigate" bug).
+      this.invalidate();
+      this.tui.requestRender();
+    }
+  }
+
+  private quit(): void {
+    if (!this.quitted) {
+      this.quitted = true;
+      this.done(null);
+    }
   }
 
   private applyWorkspaceKey(key: string): void {
@@ -205,10 +234,7 @@ export class WeaveWorkspace implements Component {
         this.invalidateAndRender();
         return;
       case "quit":
-        if (!this.quitted) {
-          this.quitted = true;
-          this.done(null);
-        }
+        this.quit();
         return;
       case "refresh":
         if (this.refreshing) return;
@@ -422,7 +448,7 @@ export class WeaveWorkspace implements Component {
     if (node.type === "pane") {
       const s = this.panes.get(node.id);
       if (!s) return { render: () => [], invalidate: () => {} };
-      (s as { paneRows?: number }).paneRows = rows;
+      (s as { paneRows?: number }).paneRows = Math.max(1, rows - 3);
       const p = new Pane(s, this.theme);
       p.rows = rows;
       p.setFocused(node.id === this.workspace.activePaneId);
@@ -464,6 +490,14 @@ function charCode(data: string): number | undefined {
   if (data.length !== 1) return undefined;
   const c = data.charCodeAt(0);
   return c >= 0 && c < 0x20 ? c : undefined;
+}
+
+/** True when the active surface is in a search/filter sub-mode (Esc clears it
+ *  instead of quitting). Surfaces own their own state; read `state.searching`
+ *  defensively so surfaces without a search mode simply return false. */
+function isSearching(s: Surface | undefined): boolean {
+  const st = (s as { state?: { searching?: boolean } }).state;
+  return !!st && st.searching === true;
 }
 
 function repoStaleness(model: GraphModel, repo: GraphNode | undefined): string {

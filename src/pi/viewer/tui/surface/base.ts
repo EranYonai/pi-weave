@@ -13,7 +13,7 @@
  * workspace root routes input to the single active pane's surface.
  */
 
-import type { Component } from "@earendil-works/pi-tui";
+import { truncateToWidth, visibleWidth, type Component } from "@earendil-works/pi-tui";
 import type { GraphModel } from "../../../../core/graph/model";
 import { BodyStore } from "../bodyStore";
 import type { WeaveLoaders, WeaveTheme } from "../explorer";
@@ -142,19 +142,32 @@ export class Pane implements Component {
   }
 
   render(width: number): string[] {
-    const surfaceLines = this.surface.render(Math.max(2, width - 2));
+    const inner = Math.max(2, width - 2);
+    // The surface already windows + selection-marks its own lines (each
+    // surface owns its scroll/selection state). The pane only wraps them in a
+    // border and PADS to fill its allocated height so the split looks clean —
+    // it must NOT re-window (that double-applies the indent/marker and corrupts
+    // the layout). Each body line is sliced/padded to `inner` so borders align.
+    const surfaceLines = this.surface.render(inner);
     const title = this.surface.title();
     const active = this.focused;
     const borderSlot = active ? "accent" : "dim";
     const marker = active ? "◆ " : "  ";
     const titleText = `${marker}${title}  `;
-    const top = `${this.borderFn(borderSlot, "┌")}${this.borderFn("dim", "─".repeat(Math.max(0, width - 2)))}${this.borderFn(borderSlot, "┐")}`;
-    const titleLine = `${this.borderFn(borderSlot, "│")}${this.theme.bold(titleText)}${" ".repeat(Math.max(0, width - 2 - (this.theme.bold(titleText).length > width - 2 ? 0 : titleText.length)))}${this.borderFn(borderSlot, "│")}`;
-    const win = Math.max(1, this.rows - 2);
-    const body = windowLines(surfaceLines, -1, 0, win, (t) => t);
+    const top = `${this.borderFn(borderSlot, "┌")}${this.borderFn("dim", "─".repeat(inner))}${this.borderFn(borderSlot, "┐")}`;
+    const titleVis = visibleWidth(titleText);
+    const titleLine = `${this.borderFn(borderSlot, "│")}${this.theme.bold(titleText)}${" ".repeat(Math.max(0, inner - titleVis))}${this.borderFn(borderSlot, "│")}`;
+    // top + title + bottom = 3 fixed lines; body fills the rest so both panes
+    // in a split render the same height.
+    const bodyRows = Math.max(0, this.rows - 3);
     const out = [top, titleLine];
-    for (const l of body) out.push(`${this.borderFn(borderSlot, "│")}${l.slice(0, Math.max(0, width - 2))}${this.borderFn(borderSlot, "│")}`);
-    const bottom = `${this.borderFn(borderSlot, "└")}${this.borderFn("dim", "─".repeat(Math.max(0, width - 2)))}${this.borderFn(borderSlot, "┘")}`;
+    for (let i = 0; i < bodyRows; i++) {
+      const ln = surfaceLines[i] ?? "";
+      const slice = visibleWidth(ln) > inner ? truncateToWidth(ln, inner) : ln;
+      const pad = Math.max(0, inner - visibleWidth(slice));
+      out.push(`${this.borderFn(borderSlot, "│")}${slice}${" ".repeat(pad)}${this.borderFn(borderSlot, "│")}`);
+    }
+    const bottom = `${this.borderFn(borderSlot, "└")}${this.borderFn("dim", "─".repeat(inner))}${this.borderFn(borderSlot, "┘")}`;
     out.push(bottom);
     return out;
   }
