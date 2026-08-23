@@ -62,6 +62,8 @@ const PAGE = `<!DOCTYPE html>
   #search { background: var(--raised); border: 1px solid var(--line); color: var(--text);
             border-radius: 7px; padding: 5px 10px; width: 200px; }
   #search:focus { outline: none; border-color: var(--accent); }
+  #layout { background: var(--raised); border: 1px solid var(--line); border-radius: 7px;
+            padding: 4px 8px; font-size: 12px; }
   .zoomgrp button { width: 30px; }
   #status { display: flex; align-items: center; gap: 8px; margin-left: auto; font-size: 12px;
             font-feature-settings: "tnum"; color: var(--muted); }
@@ -212,6 +214,11 @@ const PAGE = `<!DOCTYPE html>
     <button id="list-toggle" title="Toggle list sidebar" aria-pressed="true">▤</button>
   </nav>
   <input id="search" placeholder="search…" aria-label="search">
+  <select id="layout" aria-label="layout" title="Layout">
+    <option value="force">force</option>
+    <option value="radial">radial</option>
+    <option value="tree">tree</option>
+  </select>
   <span class="zoomgrp">
     <button id="zoom-in" title="Zoom in">+</button><button id="zoom-out" title="Zoom out">−</button><button id="zoom-reset" title="Reset view">⌂</button>
   </span>
@@ -487,6 +494,108 @@ const PAGE = `<!DOCTYPE html>
     });
     return { body: text.slice(m[0].length), meta: meta, tags: tags };
   }
+  // ---- graph layout (section 16): position persistence, degree-scaled forces ----
+  // Global anti-oscillation tolerance (ForceAtlas2 swinging/traction): the
+  // larger it is, the harder oscillating nodes are damped.
+  var SWING_K = 0.25;
+  // Reuse survivor positions across rebuilds; seed only NEW ids on a
+  // deterministic phyllotaxis spiral (no Math.random). Returns id -> {x,y,vx,vy}.
+  function seedPositions(existing, ids, W, H) {
+    var out = {}, cx = W / 2, cy = H / 2, newIds = [], i, id;
+    for (i = 0; i < ids.length; i++) {
+      id = ids[i];
+      if (existing && existing[id]) {
+        out[id] = { x: existing[id].x, y: existing[id].y, vx: 0, vy: 0 };
+      } else newIds.push(id);
+    }
+    for (i = 0; i < newIds.length; i++) {
+      var angle = i * 2.399963, r = 24 + i * 4; // golden-angle spiral
+      out[newIds[i]] = { x: cx + Math.cos(angle) * r, y: cy + Math.sin(angle) * r, vx: 0, vy: 0 };
+    }
+    return out;
+  }
+  // Degree-sized collision radius (matches the v2 node sizing).
+  function collideRadius(degree) {
+    return 7 + Math.min(6, Math.sqrt(degree) * 1.2);
+  }
+  // Repulsion-by-degree (ForceAtlas2): leaves (low degree) repel weakly so they
+  // pack near hubs instead of scattering to the periphery. Normalized by /4 so a
+  // pair of degree-1 leaves keeps the original neutral strength (~1).
+  function degreeRepulsion(deg1, deg2) {
+    return (deg1 + 1) * (deg2 + 1) / 4;
+  }
+  // ForceAtlas2 swinging/traction local speed: scale a node's displacement by
+  // 1/(1+k*sqrt(swing)) where swing is the change in its force between ticks.
+  // Oscillators (large swing) take smaller steps than steady movers.
+  function localSpeed(prevForce, force) {
+    var pfx = prevForce ? prevForce.x : 0;
+    var pfy = prevForce ? prevForce.y : 0;
+    var dx = force.x - pfx, dy = force.y - pfy;
+    var swing = Math.sqrt(dx * dx + dy * dy);
+    return 1 / (1 + SWING_K * Math.sqrt(swing));
+  }
+  // Delta-aware reheat policy: identical structure -> no reheat (0); small delta
+  // (<=3 nodes added/removed) -> gentle 0.05; larger change / explicit rebuild -> 0.5.
+  function deltaAlpha(prev, next) {
+    var a, b;
+    try { a = JSON.parse(prev); b = JSON.parse(next); } catch (e) { return 0.5; }
+    if (!a || !b || !a.nodes || !b.nodes) return 0.5;
+    var idsA = {}, idsB = {}, k, added = 0, removed = 0;
+    a.nodes.forEach(function (n) { idsA[n.id] = 1; });
+    b.nodes.forEach(function (n) { idsB[n.id] = 1; });
+    for (k in idsB) if (!idsA[k]) added++;
+    for (k in idsA) if (!idsB[k]) removed++;
+    if (added === 0 && removed === 0) return 0; // identical structure (no-op)
+    return (added + removed <= 3) ? 0.05 : 0.5;
+  }
+  // Deterministic concentric-by-degree layout: hubs in the center, leaves outward.
+  function radialLayout(nodes, degreeOf) {
+    var deg = {}, groups = {};
+    nodes.forEach(function (n) { deg[n.id] = degreeOf(n); });
+    nodes.forEach(function (n) { (groups[deg[n.id]] = groups[deg[n.id]] || []).push(n.id); });
+    var degs = Object.keys(groups).map(Number).sort(function (a, b) { return b - a; });
+    var out = {}, ring = 0;
+    for (var g = 0; g < degs.length; g++) {
+      var ids = groups[degs[g]];
+      var radius = 30 + ring * 60;
+      for (var i = 0; i < ids.length; i++) {
+        var angle = (2 * Math.PI * i) / ids.length + ring * 0.618;
+        out[ids[i]] = { x: Math.cos(angle) * radius, y: Math.sin(angle) * radius };
+      }
+      ring++;
+    }
+    return out;
+  }
+  // Deterministic layered tree over the containment DAG (contains + anchored-at).
+  // Cross-links are not drawn by this helper; it only places nodes on depth rows.
+  function treeLayout(nodes, edges) {
+    var children = {}, incoming = {};
+    edges.forEach(function (e) {
+      if (e.kind !== "contains" && e.kind !== "anchored-at") return;
+      (children[e.source] = children[e.source] || []).push(e.target);
+      incoming[e.target] = 1;
+    });
+    var roots = nodes.filter(function (n) { return !incoming[n.id]; }).map(function (n) { return n.id; });
+    var out = {}, x = 0;
+    function place(id, depth) {
+      out[id] = { x: x, y: depth * 70 };
+      var kids = children[id] || [];
+      if (kids.length === 0) x += 50;
+      else kids.forEach(function (k) { place(k, depth + 1); });
+    }
+    roots.forEach(function (r) { place(r, 0); });
+    var minX = Infinity, maxX = -Infinity;
+    Object.keys(out).forEach(function (id) {
+      minX = Math.min(minX, out[id].x); maxX = Math.max(maxX, out[id].x);
+    });
+    Object.keys(out).forEach(function (id) { out[id].x -= (minX + maxX) / 2; });
+    return out;
+  }
+  // Label discipline (section 16 Tier C): show a label only above a camera zoom
+  // threshold or for high-degree nodes; hover/selection reveal it regardless.
+  function labelVisible(zoom, degree) {
+    return zoom >= 0.6 || degree >= 8;
+  }
   // ===== end pure =====
 
   var COLORS = { vault: "#8b5cf6", note: "#c4b5fd", repository: "#3b82f6",
@@ -507,7 +616,7 @@ const PAGE = `<!DOCTYPE html>
   var listLimit = 100;
   var listExpanded = { vault: 1, repository: 1 };
   var showInternals = false;
-  var sim = {}, collapsed = {}, alpha = 0;
+  var sim = {}, collapsed = {}, alpha = 0, posMap = {}, layoutMode = "force";
   var W = window.innerWidth, H = window.innerHeight, world = null;
   var cam = { x: 0, y: 0, k: 1 };
   var panning = null, helpOpen = false;
@@ -636,25 +745,38 @@ const PAGE = `<!DOCTYPE html>
     return hidden;
   }
 
-  // ---------- force layout (calm: capped forces, warm-up before paint) ----------
+  // ---------- force layout (section 16: persisted positions, degree-scaled
+  // forces, real collision, anti-oscillation; warm-up before paint) ----------
   function tick() {
     var ids = Object.keys(sim).filter(function (id) { return sim[id].visible; });
-    var i, j, a, b, dx, dy, d2, d, f;
+    var i, j, a, b, dx, dy, d2, d, f, id, iter;
+    var deg = {};
+    model.edges.forEach(function (e) {
+      if (sim[e.source]) deg[e.source] = (deg[e.source] || 0) + 1;
+      if (sim[e.target]) deg[e.target] = (deg[e.target] || 0) + 1;
+    });
+    // degree-weighted gravity (ForceAtlas2): hubs held central, islands (low
+    // degree) pulled gently so they pack without imploding into the center.
     for (i = 0; i < ids.length; i++) {
-      a = sim[ids[i]];
+      id = ids[i]; a = sim[id];
+      var g = 0.0006 * alpha * (1 + (deg[id] || 0) * 0.12);
+      a.vx += (W / 2 - a.x) * g;
+      a.vy += (H / 2 - a.y) * g;
+    }
+    // repulsion-by-degree (ForceAtlas2): weak between leaves (so they pack near
+    // hubs), strong around hubs. Normalized so a leaf-leaf pair ~original.
+    for (i = 0; i < ids.length; i++) {
+      id = ids[i]; a = sim[id];
       for (j = i + 1; j < ids.length; j++) {
         b = sim[ids[j]];
         dx = a.x - b.x; dy = a.y - b.y;
         d2 = dx * dx + dy * dy;
         if (d2 > 67600) continue; // 260px repulsion cutoff
-        if (d2 < 400) { dx = (i - j) * 1.3 + 0.2; dy = 0.6; d2 = dx * dx + dy * dy; }
-        d = Math.sqrt(d2);
-        f = 380 * alpha / d2;
-        a.vx += dx * f / d; a.vy += dy * f / d;
-        b.vx -= dx * f / d; b.vy -= dy * f / d;
+        d = Math.sqrt(d2) || 0.001;
+        f = 380 * alpha * degreeRepulsion(deg[id] || 0, deg[ids[j]] || 0) / d2;
+        a.vx += dx / d * f; a.vy += dy / d * f;
+        b.vx -= dx / d * f; b.vy -= dy / d * f;
       }
-      a.vx += (W / 2 - a.x) * 0.006 * alpha;
-      a.vy += (H / 2 - a.y) * 0.006 * alpha;
     }
     model.edges.forEach(function (e) {
       var s = sim[e.source], t = sim[e.target];
@@ -665,34 +787,42 @@ const PAGE = `<!DOCTYPE html>
       s.vx += ddx * k; s.vy += ddy * k;
       t.vx -= ddx * k; t.vy -= ddy * k;
     });
+    // real collision: border-to-border, 2 relaxation iterations, anticipated
+    // positions (x+vx) to reduce jitter. Replaces the old 22px floor.
+    for (iter = 0; iter < 2; iter++) {
+      for (i = 0; i < ids.length; i++) {
+        id = ids[i]; a = sim[id];
+        for (j = i + 1; j < ids.length; j++) {
+          b = sim[ids[j]];
+          dx = (a.x + a.vx) - (b.x + b.vx);
+          dy = (a.y + a.vy) - (b.y + b.vy);
+          d2 = dx * dx + dy * dy;
+          var minD = collideRadius(deg[id] || 0) + collideRadius(deg[ids[j]] || 0);
+          if (d2 >= minD * minD) continue;
+          d = Math.sqrt(d2) || 0.001;
+          var push = (minD - d) / 2;
+          if (!a.fixed) { a.x += dx / d * push; a.y += dy / d * push; }
+          if (!b.fixed) { b.x -= dx / d * push; b.y -= dy / d * push; }
+        }
+      }
+    }
+    // integrate with anti-oscillation (ForceAtlas2 swinging/traction local
+    // speed): oscillators take smaller steps than steady movers.
     ids.forEach(function (id) {
       var n = sim[id];
       if (n.fixed) return;
       var sp = Math.sqrt(n.vx * n.vx + n.vy * n.vy);
       if (sp > 14) { n.vx = n.vx * 14 / sp; n.vy = n.vy * 14 / sp; } // speed cap
-      n.vx *= .82; n.vy *= .82;
+      var speed = localSpeed(n.prevForce, { x: n.vx, y: n.vy });
+      n.prevForce = { x: n.vx, y: n.vy };
+      n.vx *= 0.82 * speed; n.vy *= 0.82 * speed;
       n.x += n.vx; n.y += n.vy;
     });
-    var touched = false;
-    for (i = 0; i < ids.length; i++) {
-      for (j = i + 1; j < ids.length; j++) {
-        a = sim[ids[i]]; b = sim[ids[j]];
-        dx = b.x - a.x; dy = b.y - a.y;
-        var gap2 = dx * dx + dy * dy;
-        if (gap2 > 484) continue; // 22px minimum separation
-        var gap = Math.sqrt(gap2) || 0.01;
-        var push = (22 - gap) / 2;
-        touched = true;
-        if (!a.fixed) { a.x -= dx / gap * push; a.y -= dy / gap * push; }
-        if (!b.fixed) { b.x += dx / gap * push; b.y += dy / gap * push; }
-      }
-    }
     ids.forEach(function (id) {
       var n = sim[id];
       n.x = Math.max(20, Math.min(W - 20, n.x));
       n.y = Math.max(60, Math.min(H - 20, n.y));
     });
-    if (touched) alpha = Math.max(alpha, 0.008);
     alpha *= 0.995;
   }
 
@@ -709,6 +839,13 @@ const PAGE = `<!DOCTYPE html>
         n.g.setAttribute("class", dimmed ? "node dim" : "node");
         n.g.setAttribute("transform", "translate(" + n.x + "," + n.y + ")");
         if (n.selRing) n.selRing.style.display = selectedId === id ? "" : "none";
+        // label fade (section 16 Tier C): below the zoom threshold low-degree
+        // labels are hidden; hover / selection / zoom-in reveal them.
+        if (n.labelEl) {
+          var hover = n.g.classList.contains("hovered");
+          n.labelEl.style.opacity =
+            (labelVisible(cam.k, n.deg || 0) || hover || selectedId === id) ? "1" : "0";
+        }
       }
     });
     edgeLines.forEach(function (rec) {
@@ -1073,15 +1210,20 @@ const PAGE = `<!DOCTYPE html>
   }
 
   // ---------- scene ----------
-  function buildScene(first) {
+  function buildScene(first, prevJson) {
     while (svg.firstChild) svg.removeChild(svg.firstChild);
     sim = {}; edgeLines = [];
     world = el("g", {});
     svg.appendChild(world);
-    model.nodes.forEach(function (node, idx) {
-      var angle = idx * 2.399963;
-      sim[node.id] = { node: node, x: W / 2 + Math.cos(angle) * (24 + idx * 4), y: H / 2 + Math.sin(angle) * (24 + idx * 4),
-        vx: 0, vy: 0, visible: true, fixed: false, g: null, selRing: null };
+    // Position persistence (section 16 Tier A): reuse survivor coords, seed only
+    // new ids on a deterministic phyllotaxis spiral; drop removed ids. Pinned
+    // (fixed) flags survive the rebuild via posMap.
+    var seeded = seedPositions(posMap, model.nodes.map(function (n) { return n.id; }), W, H);
+    model.nodes.forEach(function (node) {
+      var was = posMap[node.id];
+      var p = seeded[node.id];
+      sim[node.id] = { node: node, x: p.x, y: p.y, vx: 0, vy: 0, visible: true,
+        fixed: !!(was && was.fixed), deg: degreeOf(node.id, model.edges), g: null, selRing: null, labelEl: null };
     });
     var edgeLayer = el("g", {}), nodeLayer = el("g", {});
     world.appendChild(edgeLayer); world.appendChild(nodeLayer);
@@ -1130,18 +1272,22 @@ const PAGE = `<!DOCTYPE html>
         label.textContent = "⚠ " + label.textContent;
       }
       g.appendChild(label);
+      n.labelEl = label;
       var moved = false;
       shape.addEventListener("pointerdown", function (ev) {
         n.fixed = true; moved = false; ev.stopPropagation(); shape.setPointerCapture(ev.pointerId);
+        posMap[node.id] = { x: n.x, y: n.y, fixed: true }; // pin survives rebuilds
       });
       shape.addEventListener("pointermove", function (ev) {
         if (!n.fixed) return;
         var p = toWorld(ev);
         n.x = p.x; n.y = p.y; n.vx = 0; n.vy = 0; moved = true;
+        posMap[node.id] = { x: n.x, y: n.y, fixed: true };
         alpha = Math.max(alpha, .08); paint();
       });
       shape.addEventListener("pointerup", function () {
         n.fixed = false;
+        if (posMap[node.id]) posMap[node.id].fixed = false; // released pin no longer fixed
         if (!moved) {
           if (hasKids) {
             if (collapsed[node.id]) delete collapsed[node.id]; else collapsed[node.id] = 1;
@@ -1173,8 +1319,8 @@ const PAGE = `<!DOCTYPE html>
     });
     camApply();
     paint();
-    alpha = .6;
     if (first) {
+      alpha = .6;
       for (var i = 0; i < 140; i++) {
         tick();
         if (i % 20 === 19) paint();
@@ -1182,9 +1328,41 @@ const PAGE = `<!DOCTYPE html>
       alpha = .06;
       paint();
     } else {
-      alpha = .22;
+      // delta-aware reheat (section 16 Tier A): small change -> gentle nudge,
+      // large change -> fuller re-simulate; never a full 1.0 reset.
+      alpha = Math.max(alpha, deltaAlpha(prevJson, lastJson));
     }
+    // persist settled positions + pins so the next rebuild does not jump.
+    posMap = {};
+    Object.keys(sim).forEach(function (id) {
+      var n = sim[id];
+      posMap[id] = { x: n.x, y: n.y, fixed: n.fixed };
+    });
   }
+
+  // ---------- layout toggle (section 16 Tier D): force / radial / tree ----------
+  function applyLayout() {
+    if (layoutMode === "force") { alpha = Math.max(alpha, 0.5); return; } // re-simulate
+    var pos = layoutMode === "radial"
+      ? radialLayout(model.nodes, function (n) { return degreeOf(n.id, model.edges); })
+      : treeLayout(model.nodes, model.edges);
+    Object.keys(pos).forEach(function (id) {
+      var n = sim[id]; if (!n) return;
+      n.x = W / 2 + pos[id].x; n.y = H / 2 + pos[id].y;
+      n.vx = 0; n.vy = 0;
+    });
+    posMap = {};
+    Object.keys(sim).forEach(function (id) {
+      var n = sim[id];
+      posMap[id] = { x: n.x, y: n.y, fixed: n.fixed };
+    });
+    alpha = 0; // deterministic layout: no physics needed
+    paint();
+  }
+  document.getElementById("layout").addEventListener("change", function () {
+    layoutMode = this.value;
+    applyLayout();
+  });
 
   // ---------- data ----------
   function fetchGraph(first) {
@@ -1194,11 +1372,12 @@ const PAGE = `<!DOCTYPE html>
       if (!r.ok) throw new Error(String(r.status));
       return r.text();
     }).then(function (text) {
-      if (text === lastJson) { overlay.className = "hidden"; return; }
+      if (text === lastJson) { overlay.className = "hidden"; return; } // identical JSON -> no reheat (polling no-op)
+      var prev = lastJson;
       lastJson = text;
       model = JSON.parse(text);
       renderStatus();
-      buildScene(first);
+      buildScene(first, prev);
       if (surface === "graph" && listOpen) renderList();
       if (surface === "health") renderHealth();
       overlay.className = "hidden";
