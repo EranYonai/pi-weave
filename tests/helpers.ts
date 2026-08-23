@@ -60,11 +60,23 @@ export interface MockToolResult {
   details?: Record<string, unknown>;
 }
 
+export interface MockCustomCall {
+  /** The factory passed to `ui.custom`. */
+  factory: (tui: unknown, theme: unknown, keybindings: unknown, done: (result: unknown) => void) => unknown;
+  options: unknown;
+}
+
 export interface MockUi {
   notifications: { message: string; level: string }[];
   statuses: Record<string, string | undefined>;
+  customCalls: MockCustomCall[];
+  /** Resolves the most recent `custom()` promise (simulates the user closing the explorer). */
+  resolveCustom(result: unknown): void;
   notify(message: string, level: string): void;
   setStatus(key: string, value: string | undefined): void;
+  /** Stub for `ctx.ui.custom`. Invokes the factory with a fake tui/theme and a
+   *  `done` that resolves the returned promise. Configurable via `customResult`. */
+  custom<T>(factory: (tui: unknown, theme: unknown, keybindings: unknown, done: (result: T) => void) => unknown, options?: unknown): Promise<T>;
 }
 
 export interface MockCtx {
@@ -88,6 +100,12 @@ export function createMockCtx(cwd: string, hasUI = true, modeOrOptions: string |
   const opts: MockCtxOptions = typeof modeOrOptions === "string" ? { mode: modeOrOptions } : modeOrOptions;
   const notifications: { message: string; level: string }[] = [];
   const statuses: Record<string, string | undefined> = {};
+  const customCalls: MockCustomCall[] = [];
+  // Resolves the custom() promise when the explorer calls done().
+  let resolveCustom: ((value: unknown) => void) | undefined;
+  const customDone = () => new Promise<unknown>((resolve) => {
+    resolveCustom = resolve;
+  });
   const ctx: MockCtx = {
     cwd,
     hasUI,
@@ -95,11 +113,29 @@ export function createMockCtx(cwd: string, hasUI = true, modeOrOptions: string |
     ui: {
       notifications,
       statuses,
+      customCalls,
       notify(message: string, level: string) {
         notifications.push({ message, level });
       },
       setStatus(key: string, value: string | undefined) {
         statuses[key] = value;
+      },
+      custom<T>(factory: (tui: unknown, theme: unknown, keybindings: unknown, done: (result: T) => void) => unknown, options?: unknown): Promise<T> {
+        customCalls.push({ factory: factory as MockCustomCall["factory"], options });
+        const donePromise = customDone();
+        const done = (result: T) => resolveCustom?.(result);
+        // Invoke the factory with a fake tui/theme; the component is returned but
+        // we keep the promise pending until `done` is called.
+        void factory(
+          { requestRender: () => {}, terminal: { rows: 24, columns: 80 } },
+          { fg: (_s: string, t: string) => t, bg: (_s: string, t: string) => t, bold: (t: string) => t },
+          undefined,
+          done,
+        );
+        return donePromise as Promise<T>;
+      },
+      resolveCustom(result: unknown) {
+        resolveCustom?.(result);
       },
     },
   };

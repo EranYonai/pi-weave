@@ -11,8 +11,10 @@ Deleting `.okf` loses nothing — rescan to regenerate it.
 
 ## Tools
 
-In pi, use the `weave_repo` tool (or the `/weave-scan` command). In other
-harnesses, read the JSON documents under `.okf/` directly.
+In pi, use the `weave_repo` tool (or the `/weave-scan` command). To see
+the assembled graph in the terminal, run `/weave-view tui` (Explore tree,
+Focus neighborhood, Health surface); `/weave-view` opens the browser viewer.
+In other harnesses, read the JSON documents under `.okf/` directly.
 
 ## Workflow
 

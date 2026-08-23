@@ -87,5 +87,8 @@ notification suggests exploring.
 - ESM. Extensionless relative imports (jiti and vitest both resolve them).
 - Dependencies: keep near-zero. Runtime deps today: `typebox`,
   `@earendil-works/pi-ai`. Anything new needs a justification in the PR.
-- No custom TUI renderers yet; tool output is plain text. That is a
-  deliberate MVP choice (see roadmap in docs/design.md §22).
+- The first custom TUI surface is `/weave-view tui` (docs/weave-view-tui-design.md):
+  a keyboard-driven explorer over the same GraphModel the browser viewer uses.
+  Its pure view-model lives in `src/pi/viewer/tui/model.ts` (harness-free);
+  the `WeaveExplorer` component is a thin input/render shell. Tool output
+  outside the explorer is still plain text.

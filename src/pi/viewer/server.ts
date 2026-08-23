@@ -10,27 +10,19 @@ import { execFile } from "node:child_process";
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from "node:http";
 import { promisify } from "node:util";
 import { platform } from "node:os";
-import { join, resolve, sep } from "node:path";
-import { readFile } from "node:fs/promises";
+import { getNote, resolveNotePath, resolveVaultRoot, type GraphModel } from "../../core";
+import { renderPage } from "./page";
 
 const execFileAsync = promisify(execFile);
 import {
-  assessStaleness,
-  buildGraph,
-  DEFAULT_MAX_NOTES,
-  findGitRoot,
-  getNote,
-  listNotes,
-  noteCount,
-  readRepoIndex,
-  readSummaryMap,
-  resolveNotePath,
-  resolveVaultRoot,
-  type BuildGraphInput,
-  type GraphModel,
-  type Note,
+  buildCurrentGraph,
+  readNoteForView,
+  readOkfFileForView,
+  type ViewNote,
 } from "../../core";
-import { renderPage } from "./page";
+
+// Re-export the moved readers so existing import sites (tests) keep passing.
+export { buildCurrentGraph, readNoteForView, readOkfFileForView, type ViewNote } from "../../core";
 
 export interface ViewerServer {
   /** Resolved base URL, e.g. http://127.0.0.1:53217 */
@@ -102,72 +94,14 @@ export async function openNoteInEditor(
  */
 const CSP = "default-src 'self'; style-src 'unsafe-inline'; script-src 'unsafe-inline'";
 
-/** Live-read one note for the viewer's side panel (read-only; never caches). */
-export async function readNoteForView(
-  vaultRoot: string,
-  slug: string,
-): Promise<Record<string, unknown> | null> {
-  if (resolveNotePath(vaultRoot, slug) === null) return null; // traversal-safe
-  const note = await getNote(vaultRoot, slug);
-  if (note === null) return null;
-  return {
-    slug: note.slug,
-    title: note.title,
-    body: note.body,
-    created: note.created,
-    updated: note.updated,
-    tags: note.tags,
-    source: note.source,
-  };
-}
-
-/** Assemble the fresh graph from disk — called on EVERY /graph.json request (no caching, docs/weave-view.md §2). */
-/**
- * Read one derived index file under <cwd>/.okf for the viewer (traversal-safe).
- * The `rel` path is anchored to <cwd>/.okf, so summary/identity/structure bodies
- * can be shown in the Focus panel instead of "(no body)".
- */
-export async function readOkfFileForView(
-  cwd: string,
-  rel: string,
-): Promise<{ path: string; body: string } | null> {
-  const okfRoot = join(cwd, ".okf");
-  const resolved = resolve(okfRoot, rel);
-  if (resolved !== okfRoot && !resolved.startsWith(okfRoot + sep)) return null; // traversal-safe
-  try {
-    const body = await readFile(resolved, "utf8");
-    return { path: rel, body };
-  } catch {
-    return null;
-  }
-}
-
-export async function buildCurrentGraph(cwd: string, vaultRoot: string = resolveVaultRoot()): Promise<GraphModel> {
-  const noteSummaries = (await listNotes(vaultRoot)).slice(0, DEFAULT_MAX_NOTES);
-  const loaded = await Promise.all(noteSummaries.map((s) => getNote(vaultRoot, s.slug)));
-  const notes = loaded.filter((n): n is Note => n !== null);
-
-  const input: BuildGraphInput = {
-    vault: { root: vaultRoot, exists: true, noteCount: await noteCount(vaultRoot) },
-    notes,
-    repository: null,
-  };
-
-  const repoRoot = await findGitRoot(cwd);
-  if (repoRoot !== null) {
-    const index = await readRepoIndex(repoRoot);
-    if (index !== null) {
-      input.repository = { index, staleness: await assessStaleness(repoRoot) };
-      input.summaries = await readSummaryMap(repoRoot); // deep-scan sidecars, read live
-    }
-  }
-  return buildGraph(input);
-}
+// `readNoteForView`, `readOkfFileForView`, and `buildCurrentGraph` moved to
+// core (src/core/graph/current.ts) and re-exported above; the HTTP route wires
+// them in below.
 
 function route(
   page: string,
   graph: () => Promise<GraphModel>,
-  noteBySlug: (slug: string) => Promise<Record<string, unknown> | null>,
+  noteBySlug: (slug: string) => Promise<ViewNote | null>,
   okfBody: (rel: string) => Promise<{ path: string; body: string } | null>,
   openNote: (slug: string) => Promise<boolean>,
   res: ServerResponse,

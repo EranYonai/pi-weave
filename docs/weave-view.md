@@ -218,3 +218,60 @@ Size estimate: ~300 LOC core graph, ~400 LOC viewer (mostly the page),
    `terminate: true` result.
 3. Embedding a read-only graph *snapshot* export (single self-contained HTML
    file for sharing) — trivial once M1 exists; in or out for v1?
+
+---
+
+## weave-view TUI — the in-terminal explorer
+
+`/weave-view tui` is a terminal-native counterpart to the browser viewer:
+same data (the `GraphModel` assembled from vault + repo index), same
+principles (provenance-first, read-only, derived), a different interaction
+model (keyboard-driven tree + neighbors instead of a force graph). Full
+design: [`weave-view-tui-design.md`](./weave-view-tui-design.md).
+
+### Command shape
+
+| arg | behavior |
+| --- | --- |
+| `""` | Browser viewer (unchanged): lazy-start/reuse server, notify URL, open browser. |
+| `"tui"` | Open the in-terminal explorer (needs an interactive terminal). |
+| anything else | `usage: /weave-view [tui]` warning. |
+
+### Surfaces
+
+- **Explore** — an expandable containment tree (vault + repository + `.okf`
+  files), with entry points nested under their module and repo plumbing
+  hidden by default. `i` reveals internals; `/` filters; `p` cycles a
+  provenance filter.
+- **Detail** — the selected node's metadata, body (note markdown / `.okf`
+  file text), and outgoing links + backlinks. `enter` jumps to a link.
+- **Focus** — the 1-hop neighborhood of the pinned node, grouped by edge
+  kind and direction. `f` pins; `g`/`esc` exits.
+- **Health** — repository staleness + reasons, vault provenance split, and
+  link health (orphans, dangling links, top hubs). `2` opens it; `1` returns.
+
+### Theming & security
+
+Provenance is glyph + dimness (`●` human / `◐` agent / `○` generated),
+never color alone; all colors come from theme slots so pi themes restyle
+everything. Read-only by construction: the only shell-out is `o` (open the
+note in `$EDITOR`), reusing the traversal-safe `openNoteInEditor`. All
+disk/user strings pass through `sanitizeTerminalText` before styling.
+
+### Architecture
+
+- `src/core/graph/current.ts` — workspace assembly readers
+  (`buildCurrentGraph`, `readNoteForView`, `readOkfFileForView`), moved to
+  core so any adapter can assemble the same graph.
+- `src/pi/viewer/tui/model.ts` — the pure view-model (`treeRows`,
+  `focusModel`, `detailModel`, `healthModel`, `reduce`,
+  `sanitizeTerminalText`). Imports only core types.
+- `src/pi/viewer/tui/theme.ts` — provenance/kind → glyph + theme slot maps.
+- `src/pi/viewer/tui/explorer.ts` — the `WeaveExplorer` pi-tui component
+  (thin: key routing, render cache, windowing, lazy body loads).
+- `src/pi/viewer/tui/run.ts` — `runWeaveViewTui(ctx)`: guards, graph build,
+  `ctx.ui.custom` wiring, post-close status refresh.
+
+The view-model ports the page's `listTree`/`focusNeighborhood`/`deriveBacklinks`
+semantics into TypeScript; the two viewers share one model and drift is
+mitigated by porting the page tests 1:1.
