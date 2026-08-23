@@ -1,7 +1,7 @@
 # pi-weave
 
 <p align="center">
-  <img src="https://raw.githubusercontent.com/EranYonai/pi-weave/main/docs/logo-high-res.jpg" alt="pi-weave — an agent-native knowledge workspace" width="220"/>
+  <img src="https://raw.githubusercontent.com/EranYonai/pi-weave/main/docs/pi-weave-logo.jpg" alt="pi-weave — an agent-native knowledge workspace" width="220"/>
 </p>
 
 <p align="center">

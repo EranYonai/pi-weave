@@ -7,6 +7,7 @@ import {
   appendToNote,
   finalizeNote,
   formatNote,
+  formatRawAppend,
   getNote,
   listNotes,
   NOTES_DIR,
@@ -176,3 +177,5 @@ export function registerNoteTool(pi: ExtensionAPI): void {
     },
   });
 }
+
+export { formatRawAppend };

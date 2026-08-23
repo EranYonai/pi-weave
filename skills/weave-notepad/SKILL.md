@@ -18,23 +18,35 @@ available), operate on the files directly:
 - Each note has YAML front matter: `title`, `created`, `updated` (ISO-8601),
   `tags: [..]`, and `source: human | agent | generated`.
 - `weave_note` actions: `list`, `get`, `add`, `append`, `finalize`, `search`.
-  `finalize` restructures the body *above* the `## Raw notes` tail and preserves
+  `finalize` restructures the body *above* the `## Raw` tail and preserves
   the tail verbatim.
 
-## Dictation mode ("I will write, you expand")
+## Raw Tail Format
 
-When the user is dictating (e.g. "I am in an interview", "I will write, you
-expand on my draft"), behave as notepad + expander:
+Every note maintains a verbatim, append-only raw section at the bottom separated by a horizontal rule (`---`):
 
-1. **Every raw line the user adds MUST be captured.** Append their words
-   verbatim to the active note (`weave_note` action=append).
-2. **Then expand it immediately.** Add `## Raw: "<user's line>"` followed by
-   `**Expand:** <polished, interview-ready passage>` (STAR-style when
-   applicable). Never append without expanding.
-3. **Terse replies.** Acknowledge briefly and show what was written. Do NOT
-   dump long prose in chat — the expansion lives in the note, not the reply.
-4. **Small talk / questions → ask the user.** If you want to chat, clarify,
-   or ask something, pose it to the user directly and briefly, and wait.
+---
+
+## Raw
+<!-- NEVER edit below this line. Verbatim user input preserved here. -->
+
+```
+<Initial verbatim input>
+```
+
+<!-- appended 2026-08-23 08:45 -->
+```
+<Follow-up verbatim user input>
+```
+
+### How to capture and append raw input
+
+1. **Divider and Heading**: The raw section starts with `---` followed by `## Raw` and the notice comment: `<!-- NEVER edit below this line. Verbatim user input preserved here. -->`.
+2. **Code Blocks for Verbatim Input**: Always wrap verbatim user lines inside code blocks (triple backticks).
+3. **Date and Time on Appends**: When appending subsequent snippets, prepend each snippet with: `<!-- appended YYYY-MM-DD HH:MM -->`.
+4. **Finalization (`finalize`)**:
+   - `finalize` replaces or structures content only above the `---` and `## Raw` section.
+   - The `## Raw` block and all verbatim code blocks are never modified or removed.
 
 ## When to take a note
 
@@ -57,11 +69,11 @@ explicit by design.
 2. Title: short noun phrase ("Auth boundary decision", not "Notes").
 3. **Scribble in, verbatim.** When the user is dictating, append their words
    to the note as rough, verbatim scribbles — no silent rewording. Keep them
-   under a `## Raw notes` tail at the end of the note.
+   under the `## Raw` tail format at the end of the note.
 4. **Finalize on request.** When the user says "finalize this" / "clean this
    up", restructure the body *above* the raw tail: front-loaded summary,
    sections, entities, links. Use `weave_note` action=finalize (or edit the
-   file directly in other harnesses). Move nothing out of `## Raw notes` — it
+   file directly in other harnesses). Move nothing out of `## Raw` — it
    is append-only and never rewritten.
 5. Tags: 1–4 lowercase tags; reuse existing tags when possible.
 6. Provenance: notes the user scribbled stay `source: human` (finalization is
