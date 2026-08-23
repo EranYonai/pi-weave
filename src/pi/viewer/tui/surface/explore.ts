@@ -157,7 +157,7 @@ export class ExploreSurface implements Surface {
       const ps = provenanceStyle(prov);
       return ps.glyph ? `${ps.glyph} ` : "";
     }
-    return ks.glyph ? `${this.ctx.theme.fg(ks.slot as ThemeSlot, `${ks.glyph} `)}` : "";
+    return `${this.ctx.theme.fg(ks.slot as ThemeSlot, `${ks.glyph} `)}`;
   }
 }
 

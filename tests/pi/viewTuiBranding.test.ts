@@ -75,6 +75,12 @@ describe("logoTier (session resolution)", () => {
     probeGraphics(() => ({ kitty: false }));
     expect(logoTier({})).toBe("glyph");
   });
+  it("returns the cached tier on subsequent calls within the session", () => {
+    probeGraphics(() => ({ kitty: false }));
+    const first = logoTier({});
+    // second call short-circuits on the cached tier and ignores a different env
+    expect(logoTier({ [PLAIN_ENV]: "1" })).toBe(first);
+  });
 });
 
 describe("getBrandCapabilities", () => {

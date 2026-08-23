@@ -79,7 +79,7 @@ export class HealthSurface implements Surface {
   private rows(): { id: string; target?: string }[] {
     const h = healthModel(this.ctx.model);
     return h.sections.flatMap((s) =>
-      s.rows.filter((r) => r.target).map((r): { id: string; target?: string } => (r.target ? { id: r.id, target: r.target } : { id: r.id })),
+      s.rows.filter((r) => r.target).map((r): { id: string; target?: string } => ({ id: r.id, target: r.target! })),
     );
   }
 

@@ -93,8 +93,7 @@ export function windowLines(
   const out: string[] = [];
   const end = Math.min(lines.length, offset + win);
   for (let i = offset; i < end; i++) {
-    const ln = lines[i];
-    if (ln === undefined) continue;
+    const ln = lines[i]!;
     out.push(i === selLine ? marker(ln) : `  ${ln}`);
   }
   return out;

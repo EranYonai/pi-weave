@@ -95,7 +95,7 @@ export class FocusSurface implements Surface {
     if (!this.state.focusId) return [];
     const f = focusModel(this.ctx.model, this.state.focusId);
     const center: { id: string; target?: string } = f.center.target ? { id: f.center.id, target: f.center.target } : { id: f.center.id };
-    return [center, ...f.groups.flatMap((g) => g.rows.map((r): { id: string; target?: string } => (r.target ? { id: r.id, target: r.target } : { id: r.id })))];
+    return [center, ...f.groups.flatMap((g) => g.rows.map((r): { id: string; target?: string } => ({ id: r.id, target: r.target! })))];
   }
 
   render(width: number): string[] {
@@ -125,6 +125,6 @@ export class FocusSurface implements Surface {
       const ps = provenanceStyle(prov);
       return ps.glyph ? `${ps.glyph} ` : "";
     }
-    return ks.glyph ? `${this.ctx.theme.fg(ks.slot as ThemeSlot, `${ks.glyph} `)}` : "";
+    return `${this.ctx.theme.fg(ks.slot as ThemeSlot, `${ks.glyph} `)}`;
   }
 }

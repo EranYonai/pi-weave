@@ -49,6 +49,14 @@ describe("BodyStore", () => {
     expect(s.get("okf:git.json")).toBe('{"x":1}');
   });
 
+  it("caches null for a file load whose loader returns null", async () => {
+    const s = new BodyStore({ loaders: fakeLoaders({ loadOkf: async () => null }) });
+    s.load("okf:missing", "file", "missing.json");
+    await new Promise((r) => setTimeout(r, 0));
+    expect(s.has("okf:missing")).toBe(true);
+    expect(s.get("okf:missing")).toBeNull();
+  });
+
   it("returns false (no load) when ref is undefined or id already cached", () => {
     const loadNote = vi.fn(async () => note("x"));
     const s = new BodyStore({ loaders: fakeLoaders({ loadNote }) });

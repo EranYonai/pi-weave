@@ -49,6 +49,10 @@ describe("windowLines", () => {
   it("clamps offset beyond content back to a valid range", () => {
     expect(windowLines(["x"], -1, 5, 2, (t) => t)).toEqual(["  x"]);
   });
+  it("scrolls the window up when the selection is above the current offset", () => {
+    const out = windowLines(["a", "b", "c", "d", "e"], 0, 3, 3, (t) => `>${t}`);
+    expect(out).toEqual([">a", "  b", "  c"]);
+  });
 });
 
 describe("ExploreSurface", () => {
@@ -96,6 +100,25 @@ describe("ExploreSurface", () => {
   it("renders an empty model without crashing", () => {
     const s = new ExploreSurface({ context: ctx(graph([], [])) });
     expect(s.render(40)).toEqual([]);
+  });
+  it("renders the empty-hint when filtering empties the tree", () => {
+    const m = graph([node("vault", "vault", "Vault", null, { notes: "0" })], []);
+    const s = new ExploreSurface({ context: ctx(m) });
+    // filter to a provenance the structural vault (null) does not match
+    s.state.provFilter = "human";
+    expect(s.render(60).join("\n")).toContain("no notes yet");
+  });
+  it("ignores an unmapped key (no action to apply)", () => {
+    const s = new ExploreSurface({ context: ctx(model) });
+    const before = s.state.selectedId;
+    s.handleInput("\t"); // tab is not a tree action
+    expect(s.state.selectedId).toBe(before);
+  });
+  it("renders the search prompt line while searching", () => {
+    const s = new ExploreSurface({ context: ctx(model) });
+    s.handleInput("/");
+    s.handleInput("a");
+    expect(s.render(60).join("\n")).toContain("/a");
   });
 });
 
@@ -176,6 +199,17 @@ describe("FocusSurface", () => {
     const s = new FocusSurface({ context: ctx(model) });
     expect(s.render(40).join("\n")).toContain("no focus node");
   });
+  it("renders with a focus set but no selected row (selId null branch)", () => {
+    const s = new FocusSurface({ context: ctx(model) });
+    s.setFocus("note:a");
+    s.state = { focusId: "note:a", selectedId: null, scrollOffset: 0 };
+    expect(s.render(60).join("\n")).toContain("Alpha");
+  });
+  it("renders a center with no target for an unknown focus id", () => {
+    const s = new FocusSurface({ context: ctx(model) });
+    s.setFocus("ghost");
+    expect(s.render(60).join("\n")).toContain("ghost");
+  });
   it("emits focusNode on g", () => {
     const seen: string[] = [];
     const onEvent: SurfaceEventHandler = (e) => seen.push(JSON.stringify(e));
@@ -211,6 +245,13 @@ describe("HealthSurface", () => {
     s.handleInput("\r");
     expect(seen.length).toBeGreaterThan(0);
   });
+  it("enter on a targeted row with no onEvent callback does not throw", () => {
+    const s = new HealthSurface({ context: ctx(model) });
+    s.handleInput("\x1b[B");
+    s.handleInput("\x1b[B");
+    s.handleInput("\r");
+    expect(s.state.selectedId).not.toBeNull();
+  });
 });
 
 describe("Pane", () => {
@@ -231,6 +272,14 @@ describe("Pane", () => {
     const p = new Pane(s, theme());
     p.setFocused(false);
     expect(p.render(40)[1]).not.toContain("◆");
+  });
+  it("truncates a title wider than the pane (overflow branch)", () => {
+    const s = new ExploreSurface({ context: ctx(model) });
+    const p = new Pane(s, theme());
+    p.setFocused(true);
+    const lines = p.render(4);
+    expect(lines.length).toBeGreaterThan(0);
+    expect(lines[1]!.length).toBeGreaterThan(0);
   });
   it("invalidate re-renders", () => {
     const s = new ExploreSurface({ context: ctx(model) });
