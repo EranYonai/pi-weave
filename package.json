@@ -48,6 +48,8 @@
     "coverage": "vitest run --coverage",
     "typecheck": "tsc --noEmit",
     "check": "npm run typecheck && npm run coverage",
+    "rewrap:md": "node scripts/rewrap-md.mjs",
+    "rewrap:md:check": "node scripts/rewrap-md.mjs --check",
     "prepublishOnly": "npm run check"
   },
   "peerDependencies": {

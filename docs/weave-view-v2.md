@@ -1,22 +1,18 @@
 # weave-view v2 — Beautiful, Modern, Useful
 
-A design proposal to revive the `/weave-view` human surface. It keeps every
-hard constraint of v1 (single self-contained HTML string, zero external
-resources, no new dependencies, read-only, derived/disposable) while making
-the knowledge space *legible, navigable, and trustworthy*.
+A design proposal to revive the `/weave-view` human surface. It keeps every hard constraint of v1 (single self-contained HTML string, zero
+external resources, no new dependencies, read-only, derived/disposable) while making the knowledge space *legible, navigable, and
+trustworthy*.
 
-> **Status: design draft, iterated.** Reviewed by three parallel subagents
-> (UX/visual, engineering/constraints, product/usefulness). §0 records the
-> synthesis; every review finding is folded into the body below.
+> **Status: design draft, iterated.** Reviewed by three parallel subagents (UX/visual, engineering/constraints, product/usefulness). §0
+> records the synthesis; every review finding is folded into the body below.
 
 ---
 
 ## 0. Review synthesis (what changed from the first draft)
 
-Three reviewers read the draft against the live code (`page.ts`, `server.ts`,
-`core/graph/model.ts`, `core/graph/build.ts`, `core/vault.ts`,
-`tests/pi/viewer.test.ts`). Consensus findings and how this revision answers
-them:
+Three reviewers read the draft against the live code (`page.ts`, `server.ts`, `core/graph/model.ts`, `core/graph/build.ts`, `core/vault.ts`,
+`tests/pi/viewer.test.ts`). Consensus findings and how this revision answers them:
 
 | # | Finding | Resolution in this revision |
 | --- | --- | --- |
@@ -47,28 +43,23 @@ them:
 
 ## 1. Vision & principles
 
-The viewer is the human face of pi-weave: an agent-native knowledge workspace
-that unifies a **vault** of human/agent notes with a **derived repository
-index**, where **provenance** (human / agent / generated) is the trust signal
-that keeps the space honest (design §13, AGENTS.md rule 4).
+The viewer is the human face of pi-weave: an agent-native knowledge workspace that unifies a **vault** of human/agent notes with a **derived
+repository index**, where **provenance** (human / agent / generated) is the trust signal that keeps the space honest (design §13, AGENTS.md
+rule 4).
 
-v2's job: make the space *legible at a glance, navigable by intent, and
-trustworthy by design* — not merely prettier.
+v2's job: make the space *legible at a glance, navigable by intent, and trustworthy by design* — not merely prettier.
 
 **Principles (unchanged from v1, reaffirmed):**
 
-1. **Trust at a glance.** Provenance is the hero. Human vs agent vs generated
-   must be legible through ring style + glyph + filter, never color alone.
-2. **Three surfaces, one space.** Graph (explore), List (find), Detail (read)
-   are switchable views of the same data — not competing tools.
-3. **Overview first.** The map precedes the detail: a status strip gives
-   scale, health, and staleness before the user dives in.
-4. **Progressive disclosure, preserved.** Nothing expands until clicked; focus
-   mode is a reading tool, not a decoration.
-5. **Zero-dependency, single file.** Every improvement is hand-rolled, offline,
-   auditable. No build step, no framework, no external resources.
-6. **Read-only, derived.** The viewer never mutates; it points back to pi for
-   editing. Everything it shows is derivable from `.okf` + the vault.
+1. **Trust at a glance.** Provenance is the hero. Human vs agent vs generated must be legible through ring style + glyph + filter, never
+   color alone.
+2. **Three surfaces, one space.** Graph (explore), List (find), Detail (read) are switchable views of the same data — not competing tools.
+3. **Overview first.** The map precedes the detail: a status strip gives scale, health, and staleness before the user dives in.
+4. **Progressive disclosure, preserved.** Nothing expands until clicked; focus mode is a reading tool, not a decoration.
+5. **Zero-dependency, single file.** Every improvement is hand-rolled, offline, auditable. No build step, no framework, no external
+   resources.
+6. **Read-only, derived.** The viewer never mutates; it points back to pi for editing. Everything it shows is derivable from `.okf` + the
+   vault.
 
 ---
 
@@ -82,29 +73,23 @@ trustworthy by design* — not merely prettier.
 - Provenance field already on every node (`model.ts:31`).
 
 **What v1 does poorly (fix):**
-- **Graph is the only surface.** You cannot find a note by name or see the
-  whole inventory; search is a substring filter that just dims nodes
-  (`page.ts:497-498`).
-- **Dead ends.** Wiki-links render as inert spans; there are no backlinks; the
-  graph is a dead end once you open a note.
+- **Graph is the only surface.** You cannot find a note by name or see the whole inventory; search is a substring filter that just dims
+  nodes (`page.ts:497-498`).
+- **Dead ends.** Wiki-links render as inert spans; there are no backlinks; the graph is a dead end once you open a note.
 - **No overview.** First paint gives no sense of scale, health, or staleness.
-- **No focus/context.** The whole graph is always shown; no way to isolate a
-  neighborhood.
-- **Dead hover code.** `g.node-hovered` CSS exists (`page.ts:50`) but is never
-  set in JS.
-- **Visual layer is generic.** Competent dark-developer-tool palette, no
-  distinctive identity, underspecified type, no choreographed motion.
+- **No focus/context.** The whole graph is always shown; no way to isolate a neighborhood.
+- **Dead hover code.** `g.node-hovered` CSS exists (`page.ts:50`) but is never set in JS.
+- **Visual layer is generic.** Competent dark-developer-tool palette, no distinctive identity, underspecified type, no choreographed motion.
 
 ---
 
 ## 3. Design pillars
 
-1. **P1 — Provenance is the hero.** Multi-channel (ring style + glyph + filter),
-   not color-only. A "show only human" query is a first-class, useful action.
+1. **P1 — Provenance is the hero.** Multi-channel (ring style + glyph + filter), not color-only. A "show only human" query is a first-class,
+   useful action.
 2. **P2 — Three surfaces, one space.** Graph / List / Detail over one model.
 3. **P3 — Overview first.** Status strip = the map before the detail.
-4. **P4 — Focus as a reading tool.** Explicit focus mode isolates a node's
-   neighborhood; the graph becomes a way to *read*, not just look.
+4. **P4 — Focus as a reading tool.** Explicit focus mode isolates a node's neighborhood; the graph becomes a way to *read*, not just look.
 
 ---
 
@@ -112,9 +97,8 @@ trustworthy by design* — not merely prettier.
 
 ### 4.1 Provenance — style-first, not hue-first
 
-Provenance is encoded **primarily by ring style + glyph + filter**, with color
-as a weak secondary cue. This survives color-blindness, light/dark themes, and
-collisions with kind fills.
+Provenance is encoded **primarily by ring style + glyph + filter**, with color as a weak secondary cue. This survives color-blindness,
+light/dark themes, and collisions with kind fills.
 
 | Provenance | Ring style | Glyph | Weak color (dark) | Weak color (light) |
 | --- | --- | --- | --- | --- |
@@ -123,10 +107,8 @@ collisions with kind fills.
 | `generated` | dotted | `○` | `#94a3b8` | `#475569` |
 | structural (null) | none | — | — | — |
 
-- The ring is **offset outside the node** (`r+2.5`) with a thin dark gap so it
-  reads as a ring, not a border.
-- **Staleness is a separate signal** (amber pulse/badge), never the provenance
-  ring — v1 conflated the two on the node stroke.
+- The ring is **offset outside the node** (`r+2.5`) with a thin dark gap so it reads as a ring, not a border.
+- **Staleness is a separate signal** (amber pulse/badge), never the provenance ring — v1 conflated the two on the node stroke.
 
 ### 4.2 Kind encoding — color + shape (color-blind safe)
 
@@ -143,9 +125,8 @@ Kinds get both a hue and a shape so no two kinds rely on color alone:
 | `gitState` | diamond | `#facc15` | `#ca8a04` |
 | `external` | hexagon | `#fb923c` | `#ea580c` |
 
-Shapes: circle, rounded-square, triangle, diamond, hexagon. This removes the
-three-greens deuteranopia problem (module/package/entryPoint now differ by
-shape and hue).
+Shapes: circle, rounded-square, triangle, diamond, hexagon. This removes the three-greens deuteranopia problem (module/package/entryPoint
+now differ by shape and hue).
 
 ### 4.3 Typography
 
@@ -163,8 +144,8 @@ Concrete type scale (system stack, no webfonts):
 
 ### 4.4 Color tokens — dark + light
 
-Dark (default) and light (toggleable, `prefers-color-scheme` aware) token sets.
-Both are specified now so contrast is verifiable, not asserted.
+Dark (default) and light (toggleable, `prefers-color-scheme` aware) token sets. Both are specified now so contrast is verifiable, not
+asserted.
 
 ```css
 :root[data-theme="dark"] {
@@ -179,8 +160,7 @@ Both are specified now so contrast is verifiable, not asserted.
 }
 ```
 
-A subtle background dot-grid or vignette keeps the graph from floating on a
-flat `--bg`.
+A subtle background dot-grid or vignette keeps the graph from floating on a flat `--bg`.
 
 ### 4.5 Motion — choreography, not just a shared curve
 
@@ -196,14 +176,11 @@ All motion respects `prefers-reduced-motion` (→ instant).
 
 ### 4.6 Node rendering & selection
 
-- **Radius ∝ degree:** `r = 7 + min(6, sqrt(degree)*1.2)` so hubs read at a
-  glance (the single biggest "useful" win for graph legibility).
-- **Hover:** `pointerenter/leave` → scale 1.06 + soft halo (0.15 opacity,
-  120ms); incident edges brightened to full opacity and thickened to 1.8px.
-- **Selection:** 2px `--accent` ring at `r+4` on the selected node, distinct
-  from the provenance ring; panel opens.
-- **Edge direction:** small triangle markers on `links-to`; subtle animated dash
-  flow to show direction.
+- **Radius ∝ degree:** `r = 7 + min(6, sqrt(degree)*1.2)` so hubs read at a glance (the single biggest "useful" win for graph legibility).
+- **Hover:** `pointerenter/leave` → scale 1.06 + soft halo (0.15 opacity, 120ms); incident edges brightened to full opacity and thickened to
+  1.8px.
+- **Selection:** 2px `--accent` ring at `r+4` on the selected node, distinct from the provenance ring; panel opens.
+- **Edge direction:** small triangle markers on `links-to`; subtle animated dash flow to show direction.
 
 ---
 
@@ -212,33 +189,23 @@ All motion respects `prefers-reduced-motion` (→ instant).
 ### 5.1 Graph
 
 - Force layout with pre-simulated warm-up (keep).
-- **Focus mode:** explicit (double-click, `f`, or panel button). Centers +
-  zooms the node, dims everything outside its 1-hop neighborhood, shows its
-  incident edges. **Enter/exit is visibility-only — no sim reheat, positions
-  preserved.** Full rebuild only on data change.
-- **Hover tooltip:** kind, provenance, updated, link count before committing to
-  a click.
-- **Breadcrumb / path** showing where you are in the neighborhood, with a
-  visible "back to full view" affordance.
+- **Focus mode:** explicit (double-click, `f`, or panel button). Centers + zooms the node, dims everything outside its 1-hop neighborhood,
+  shows its incident edges. **Enter/exit is visibility-only — no sim reheat, positions preserved.** Full rebuild only on data change.
+- **Hover tooltip:** kind, provenance, updated, link count before committing to a click.
+- **Breadcrumb / path** showing where you are in the neighborhood, with a visible "back to full view" affordance.
 
 ### 5.2 List
 
 - **Left rail (~340px)** with Detail on the right (the graph stays the hero).
-- **Expandable index tree.** The list is a tree over the `contains`
-  hierarchy, not a flat dump: roots (`vault`, `repository`) are expanded by
-  default, and each node with children shows a `▸`/`▾` chevron to expand or
-  collapse it. Entry points (files) are nested under the module whose path is
-  their directory prefix, so the repository reads as a real file tree —
-  expand `repository` → `module` → file, then click a file to open its Detail.
-- Sortable within each sibling group: by name, updated, link count,
-  provenance.
-- Filterable: by kind, provenance, and a **"recent"** filter (last N days).
-  When a filter or search is active, ancestors of matching nodes are
-  auto-expanded so matches stay reachable.
-- **Search** layers core's relevance-scored `searchNotes` over the substring
-  filter, with a grouped result dropdown.
-- Cap at `DEFAULT_MAX_NOTES` (500) with a **"show more"** affordance; true
-  virtualization deferred (§9).
+- **Expandable index tree.** The list is a tree over the `contains` hierarchy, not a flat dump: roots (`vault`, `repository`) are expanded
+  by default, and each node with children shows a `▸`/`▾` chevron to expand or collapse it. Entry points (files) are nested under the module
+  whose path is their directory prefix, so the repository reads as a real file tree — expand `repository` → `module` → file, then click a
+  file to open its Detail.
+- Sortable within each sibling group: by name, updated, link count, provenance.
+- Filterable: by kind, provenance, and a **"recent"** filter (last N days). When a filter or search is active, ancestors of matching nodes
+  are auto-expanded so matches stay reachable.
+- **Search** layers core's relevance-scored `searchNotes` over the substring filter, with a grouped result dropdown.
+- Cap at `DEFAULT_MAX_NOTES` (500) with a **"show more"** affordance; true virtualization deferred (§9).
 - Keyboard: arrow up/down + Enter; `▸`/`▾` toggles expansion.
 
 ### 5.3 Detail
@@ -246,33 +213,27 @@ All motion respects `prefers-reduced-motion` (→ instant).
 Tabs: **Overview | Body | Links | Backlinks.**
 
 - **Overview:** provenance, tags, updated, link count, dangling-link warning.
-- **Body:** markdown renderer (keep escape-first); **wiki-links are now
-  clickable** and navigate to the target note (fetch + render through the same
-  safe `/note/<slug>` path).
+- **Body:** markdown renderer (keep escape-first); **wiki-links are now clickable** and navigate to the target note (fetch + render through
+  the same safe `/note/<slug>` path).
 - **Links:** outgoing edges.
 - **Backlinks:** incoming edges, derived client-side from `model.edges`.
-- **Open in editor:** a button that calls a new server `/open/<slug>` endpoint
-  (shells out to the OS editor). Raw `file://` links are blocked by browser/CSP,
-  so this needs the endpoint — acknowledged constraint (§11).
+- **Open in editor:** a button that calls a new server `/open/<slug>` endpoint (shells out to the OS editor). Raw `file://` links are
+  blocked by browser/CSP, so this needs the endpoint — acknowledged constraint (§11).
 
 ### 5.4 Overview / status strip
 
-A compact strip: note count, human/agent/generated split (mini bars), repo
-staleness, **relative** "indexed 3m ago", generatedAt. All computed client-side
-from `model.nodes` + vault `detail.notes` (§7).
+A compact strip: note count, human/agent/generated split (mini bars), repo staleness, **relative** "indexed 3m ago", generatedAt. All
+computed client-side from `model.nodes` + vault `detail.notes` (§7).
 
 ### 5.5 Health
 
-A dedicated surface for the maintenance problems a knowledge workspace actually
-has — all derivable from `model.edges`, zero server change:
+A dedicated surface for the maintenance problems a knowledge workspace actually has — all derivable from `model.edges`, zero server change:
 
 - **Orphans:** notes with no incoming links.
 - **Dangling:** notes whose wiki-links point to non-existent targets.
 - **Hubs:** most-connected notes (sort by link count).
-- **Coverage:** human vs agent vs generated split, and per-module summarized-vs-
-  not (from repo summaries).
-- **Export snapshot:** one-click serialize of the current graph/notes to JSON or
-  Markdown (read-only, client-side).
+- **Coverage:** human vs agent vs generated split, and per-module summarized-vs- not (from repo summaries).
+- **Export snapshot:** one-click serialize of the current graph/notes to JSON or Markdown (read-only, client-side).
 
 ---
 
@@ -290,19 +251,16 @@ has — all derivable from `model.edges`, zero server change:
 | `Esc` | Precedence: search focused → clear search; else panel open → close panel; else focus mode → exit focus |
 | `Enter` / `Space` | Activate focused node / list row |
 
-Graph nodes get `tabindex="0" role="button"` + Enter/Space; List rows get arrow
-up/down + Enter. All surfaces reachable via keyboard.
+Graph nodes get `tabindex="0" role="button"` + Enter/Space; List rows get arrow up/down + Enter. All surfaces reachable via keyboard.
 
-**Loading / empty / error states:** first-load skeleton; empty state ("no notes
-yet — write one in pi"); error state with retry (polling errors are no longer
-silently swallowed).
+**Loading / empty / error states:** first-load skeleton; empty state ("no notes yet — write one in pi"); error state with retry (polling
+errors are no longer silently swallowed).
 
 ---
 
 ## 7. Data model implications — client-side, zero core change
 
-The `overview` field is **cut** (R6). Everything the new UI needs is derivable
-client-side from the existing `GraphModel`:
+The `overview` field is **cut** (R6). Everything the new UI needs is derivable client-side from the existing `GraphModel`:
 
 - Counts / provenance split → `model.nodes` + vault node `detail.notes`.
 - Backlinks → `model.edges` (`links-to`).
@@ -310,38 +268,32 @@ client-side from the existing `GraphModel`:
 - Recency → `node.detail.updated`.
 - Focus neighborhood → `model.edges` (1-hop).
 
-This protects the identical-JSON invariant (no-op polling + snapshot tests) and
-keeps core untouched. The only server addition is the `/open/<slug>` endpoint
-(§5.3, §11).
+This protects the identical-JSON invariant (no-op polling + snapshot tests) and keeps core untouched. The only server addition is the
+`/open/<slug>` endpoint (§5.3, §11).
 
 ---
 
 ## 8. Architecture & maintainability
 
-- The page stays a **single self-contained HTML string** behind the `page.ts`
-  seam; server and core unchanged except the `/open` endpoint.
-- Keep the `<script>` block as **one contiguous template constant** so the
-  existing regex-extraction tests (`extractScript`, physics test) keep working.
-- **New pure functions** live inside the page script and are extract-and-run
-  tested (§13): `focusNeighborhood(id, edges)`, `deriveBacklinks(edges)`,
-  `applyFilter(nodes, kind, prov)`, `sortRows(rows, key)`, `counts(nodes)`,
-  `linksOf(id, edges)`, and `listTree(model, state)` (the expandable index
-  tree).
-- **CI guard:** assert the rendered page contains no backtick and no `${` —
-  protects the single-file invariant from silently breaking.
-- Acknowledge the **doubled-escaping tax**: every regex/string escape in the
-  page script must be `\\`-escaped. Pure-function extraction is the mitigation.
+- The page stays a **single self-contained HTML string** behind the `page.ts` seam; server and core unchanged except the `/open` endpoint.
+- Keep the `<script>` block as **one contiguous template constant** so the existing regex-extraction tests (`extractScript`, physics test)
+  keep working.
+- **New pure functions** live inside the page script and are extract-and-run tested (§13): `focusNeighborhood(id, edges)`,
+  `deriveBacklinks(edges)`, `applyFilter(nodes, kind, prov)`, `sortRows(rows, key)`, `counts(nodes)`, `linksOf(id, edges)`, and
+  `listTree(model, state)` (the expandable index tree).
+- **CI guard:** assert the rendered page contains no backtick and no `${` — protects the single-file invariant from silently breaking.
+- Acknowledge the **doubled-escaping tax**: every regex/string escape in the page script must be `\\`-escaped. Pure-function extraction is
+  the mitigation.
 
 ---
 
 ## 9. Performance & scope
 
-- **Notes capped at 500** (`DEFAULT_MAX_NOTES`, `build.ts:17`); repo side
-  bounded by structure. (Corrected from the draft's "~2k containment cap".)
-- Force layout is O(n²); focus mode reduces visible nodes, which speeds the sim
-  — but focus enter/exit is visibility-only (no reheat).
-- List: cap + "show more"; **true virtualization deferred** (hand-rolled
-  windowing is a real cost and testing liability in a no-dependency single file).
+- **Notes capped at 500** (`DEFAULT_MAX_NOTES`, `build.ts:17`); repo side bounded by structure. (Corrected from the draft's "~2k containment
+  cap".)
+- Force layout is O(n²); focus mode reduces visible nodes, which speeds the sim — but focus enter/exit is visibility-only (no reheat).
+- List: cap + "show more"; **true virtualization deferred** (hand-rolled windowing is a real cost and testing liability in a no-dependency
+  single file).
 
 ---
 
@@ -358,12 +310,10 @@ keeps core untouched. The only server addition is the `/open/<slug>` endpoint
 
 ## 11. Security
 
-- Keep: escape-first markdown, `javascript:` URL refusal, loopback-only server,
-  tight CSP, traversal-proof `/note/<slug>`.
+- Keep: escape-first markdown, `javascript:` URL refusal, loopback-only server, tight CSP, traversal-proof `/note/<slug>`.
 - New wiki-link navigation resolves through the same safe path.
-- **`/open/<slug>` endpoint** shells out to the OS editor; must validate the
-  slug against the vault (no path traversal), and is the only new server
-  surface. Raw `file://` links are blocked by browser/CSP — acknowledged.
+- **`/open/<slug>` endpoint** shells out to the OS editor; must validate the slug against the vault (no path traversal), and is the only new
+  server surface. Raw `file://` links are blocked by browser/CSP — acknowledged.
 
 ---
 
@@ -384,13 +334,10 @@ Light theme ships with M1 tokens but is **not** a gating milestone.
 ## 13. Testing
 
 - **Core:** unchanged (no model change). Existing L1–L3 stay green.
-- **Page:** the inline JS is **invisible to the 95% coverage gate** (vitest
-  covers `src/**/*.ts`; the page script is a string). This is stated explicitly.
-  Mitigation: **extract-and-run unit tests** for the pure functions (§8) using
-  the existing pattern (`tests/pi/viewer.test.ts:241-279` regex-extracts and
-  executes `tick()`/`renderMd`). Add behavior tests for `focusNeighborhood`,
-  `deriveBacklinks`, `applyFilter`, `sortRows`, `counts` — not just string
-  markers.
+- **Page:** the inline JS is **invisible to the 95% coverage gate** (vitest covers `src/**/*.ts`; the page script is a string). This is
+  stated explicitly. Mitigation: **extract-and-run unit tests** for the pure functions (§8) using the existing pattern
+  (`tests/pi/viewer.test.ts:241-279` regex-extracts and executes `tick()`/`renderMd`). Add behavior tests for `focusNeighborhood`,
+  `deriveBacklinks`, `applyFilter`, `sortRows`, `counts` — not just string markers.
 - **Server:** `/open/<slug>` endpoint tests (valid slug, traversal refusal).
 - **Guard:** CI asserts no backtick / no `${` in the rendered page.
 
@@ -409,10 +356,8 @@ Light theme ships with M1 tokens but is **not** a gating milestone.
 
 ## 15. Open questions
 
-1. `/open/<slug>`: which editor? Respect `$EDITOR` / `VISUAL`, fall back to
-   `open`/`xdg-open`? Should it be opt-in (a setting) given it shells out?
-2. Should the status strip's provenance split be clickable (drill into a
-   filtered List)? Likely yes — cheap and useful.
+1. `/open/<slug>`: which editor? Respect `$EDITOR` / `VISUAL`, fall back to `open`/`xdg-open`? Should it be opt-in (a setting) given it
+   shells out?
+2. Should the status strip's provenance split be clickable (drill into a filtered List)? Likely yes — cheap and useful.
 3. Export format: JSON (raw graph) vs Markdown (readable) vs both? Default?
-4. Should "recent" be a fixed window (7d) or a "since last visit" marker
-   (needs a small client-side localStorage cursor)?
+4. Should "recent" be a fixed window (7d) or a "since last visit" marker (needs a small client-side localStorage cursor)?

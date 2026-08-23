@@ -1,39 +1,29 @@
 # Notepad Skill — Product & Design Specification
 
-> Status: **product & design spec**. The skill skeleton exists at
-> [`skills/weave-notepad/SKILL.md`](../skills/weave-notepad/SKILL.md); the
-> experience described here is largely roadmap. **Implemented so far:**
-> explicit capture, verbatim scribbles under a `## Raw notes` tail, and
-> on-request finalization that restructures the body above the tail while
-> preserving it verbatim (`weave_note` action=finalize, `finalizeNote` in
-> `src/core/vault.ts`). The graph/visualization layers remain roadmap.
+> Status: **product & design spec**. The skill skeleton exists at [`skills/weave-notepad/SKILL.md`](../skills/weave-notepad/SKILL.md); the
+> experience described here is largely roadmap. **Implemented so far:** explicit capture, verbatim scribbles under a `## Raw notes` tail,
+> and finalization that restructures the body above the tail while preserving it verbatim (`weave_note` action=finalize, `finalizeNote` in
+> `src/core/vault.ts`). During **dictation mode** (live interview note-taking), finalization is continuous: the body is recompiled after
+> every interactive append so the note reads as a living document, not just an accumulating raw tail. The graph/visualization layers remain
+> roadmap.
 >
-> Related: [design.md](design.md) (overall architecture, provenance §13,
-> scopes §17), [weave-view.md](weave-view.md) (the viewer this spec drives),
-> [testing.md](testing.md). Appendix A maps each concept to the current
-> codebase and lists the deltas this spec implies.
+> Related: [design.md](design.md) (overall architecture, provenance §13, scopes §17), [weave-view.md](weave-view.md) (the viewer this spec
+> drives), [testing.md](testing.md). Appendix A maps each concept to the current codebase and lists the deltas this spec implies.
 
 *****
-> Eran's directive (2026-08) is incorporated: capture is **explicit** (the
-> user asks for a note to exist), Pi **finalizes** scribbles on request, and
-> the raw notes are preserved at the end of the document. See §3 and
-> Appendix A.
+> Eran's directive (2026-08) is incorporated: capture is **explicit** (the user asks for a note to exist), Pi **finalizes** scribbles on
+> request, and the raw notes are preserved at the end of the document. See §3 and Appendix A.
 *****
 
-The Notepad Skill is the primary human-facing interaction model: it gives Pi
-the ability to behave like an intelligent meeting/notetaking assistant while
-continuously connecting notes to the user's existing knowledge, repositories,
-and OKF data.
+The Notepad Skill is the primary human-facing interaction model: it gives Pi the ability to behave like an intelligent meeting/notetaking
+assistant while continuously connecting notes to the user's existing knowledge, repositories, and OKF data.
 
-The experience should feel closer to **Granola** than to a traditional
-markdown editor:
+The experience should feel closer to **Granola** than to a traditional markdown editor:
 
-> **The user talks/thinks naturally. Pi captures, structures, connects, and
-> remembers.**
+> **The user talks/thinks naturally. Pi captures, structures, connects, and remembers.**
 
-But unlike a traditional AI notetaking application, Pi-Weave maintains a
-persistent, explorable knowledge graph and connects notes directly to code
-and repositories.
+But unlike a traditional AI notetaking application, Pi-Weave maintains a persistent, explorable knowledge graph and connects notes directly
+to code and repositories.
 
 ---
 
@@ -41,10 +31,8 @@ and repositories.
 
 **Pi-Weave** is a visual, local-first knowledge workspace for Pi.
 
-The **Notepad Skill** is the primary human-facing interaction model: it gives
-Pi the ability to behave like an intelligent meeting/notetaking assistant
-while continuously connecting notes to the user's existing knowledge,
-repositories, and OKF data.
+The **Notepad Skill** is the primary human-facing interaction model: it gives Pi the ability to behave like an intelligent
+meeting/notetaking assistant while continuously connecting notes to the user's existing knowledge, repositories, and OKF data.
 
 ---
 
@@ -84,15 +72,13 @@ The skill should make all of these feel like **one workspace**.
 
 # 3. The Granola-inspired experience
 
-Capture is **explicit**. Pi never promotes conversation into notes on its own
-initiative. A note exists only because the user asked for it to exist:
+Capture is **explicit**. Pi never promotes conversation into notes on its own initiative. A note exists only because the user asked for it
+to exist:
 
-> "Start a note on the authentication migration."
-> "Add this to the OIDC note."
-> "Jot that down."
+> "Start a note on the authentication migration." "Add this to the OIDC note." "Jot that down."
 
-The user drives *what* becomes a note and *when*. Pi's job is to make capture
-effortless and the result useful — not to decide on the user's behalf.
+The user drives *what* becomes a note and *when*. Pi's job is to make capture effortless and the result useful — not to decide on the user's
+behalf.
 
 For example:
 
@@ -105,8 +91,7 @@ We're probably going to migrate the authentication
 service to OIDC next quarter.
 ```
 
-Pi appends the user's words as a rough, verbatim scribble to the note. It may
-internally recognize the shape of the knowledge:
+Pi appends the user's words as a rough, verbatim scribble to the note. It may internally recognize the shape of the knowledge:
 
 ```text
 Topic:
@@ -128,8 +113,8 @@ OAuth
 Security architecture
 ```
 
-But it should **not automatically promote every statement into authoritative
-knowledge**, and it should **not** create notes the user didn't ask for.
+But it should **not automatically promote every statement into authoritative knowledge**, and it should **not** create notes the user didn't
+ask for.
 
 This distinction is critical.
 
@@ -141,9 +126,8 @@ The Notepad Skill has two layers.
 
 ## Raw notes
 
-What was actually said, kept verbatim. Scribbles are appended to a `## Raw
-notes` tail at the end of the note. This section is **append-only and never
-rewritten** — it is the literal record of the user's words.
+What was actually said, kept verbatim. Scribbles are appended to a `## Raw notes` tail at the end of the note. This section is **append-only
+and never rewritten** — it is the literal record of the user's words.
 
 ```text
 ## Raw notes
@@ -235,8 +219,7 @@ The underlying system sees a graph.
 
 # 6. Natural-language commands
 
-The skill should support natural language rather than requiring rigid
-commands.
+The skill should support natural language rather than requiring rigid commands.
 
 Examples:
 
@@ -284,11 +267,10 @@ Later:
 
 > Clean this note up.
 
-Pi restructures the top of the note — front-loaded summary, sections,
-entities, links — while leaving the `## Raw notes` tail untouched. The
-principle is scoped **within a note**: capture is explicit (the user asked
-for the note to exist), but *organization* is deferred until the user asks
-to finalize.
+Pi restructures the top of the note — front-loaded summary, sections, entities, links — while leaving the `## Raw notes` tail untouched. The
+principle is scoped **within a note**: capture is explicit (the user asked for the note to exist), but *organization* is deferred until the
+user asks to finalize — **except in dictation mode** (see below), where organization runs continuously alongside capture so the compiled
+body never lags behind the raw tail.
 
 ---
 
@@ -378,8 +360,7 @@ The user can immediately understand **what Pi found**.
 
 # 11. Repository-aware notes
 
-When Pi is running inside a repository, the Notepad Skill automatically
-recognizes the repository.
+When Pi is running inside a repository, the Notepad Skill automatically recognizes the repository.
 
 Example:
 
@@ -501,8 +482,8 @@ Security Review
 Incident #421
 ```
 
-This creates a structured session summary — but only for notes the user
-asked to exist, and only when the user asks to finalize them.
+This creates a structured session summary — but only for notes the user asked to exist, and only when the user asks to finalize them (or, in
+dictation mode, after every interactive append — see §7).
 
 ---
 
@@ -542,9 +523,9 @@ But the important part is that these aren't merely generated Markdown.
 
 They are backed by structured knowledge and provenance.
 
-Finalization is **editorial, not generative**: the summary is built from the
-user's own words, and the `## Raw notes` tail is preserved verbatim beneath
-it. Pi only summarizes notes the user asked to exist.
+Finalization is **editorial, not generative**: the summary is built from the user's own words, and the `## Raw notes` tail is preserved
+verbatim beneath it. Pi only summarizes notes the user asked to exist. In dictation mode this editorial compile runs after every append, so
+the summary above the tail stays current throughout the session rather than only at the end.
 
 ---
 
@@ -617,8 +598,7 @@ Observation ──→ Proposal ──→ Decision
                           → Rejected
 ```
 
-The exact visual language can evolve, but the semantic distinction must
-remain.
+The exact visual language can evolve, but the semantic distinction must remain.
 
 ---
 
@@ -674,8 +654,7 @@ Pi
 
 This directly addresses the original motivation for building this project:
 
-> **The agent should have access to a large knowledge space without paying
-> the token cost of loading the entire knowledge space.**
+> **The agent should have access to a large knowledge space without paying the token cost of loading the entire knowledge space.**
 
 ---
 
@@ -728,8 +707,7 @@ Note
  └── Incident #312
 ```
 
-Opening a note can therefore open a **graph neighborhood**, rather than just
-a text file.
+Opening a note can therefore open a **graph neighborhood**, rather than just a text file.
 
 ---
 
@@ -855,8 +833,7 @@ Those belong to Pi-Weave's underlying tools.
 
 # 25. Proposed skill commands
 
-Natural language should be primary, but power users can have explicit
-commands.
+Natural language should be primary, but power users can have explicit commands.
 
 Potential commands:
 
@@ -871,8 +848,7 @@ Potential commands:
 /notepad promote
 ```
 
-These are optional convenience commands, not the fundamental interaction
-model.
+These are optional convenience commands, not the fundamental interaction model.
 
 ---
 
@@ -941,15 +917,13 @@ User:
 
 > Add a note that we should investigate replacing the GatewayAdapter.
 
-Pi creates the note (explicit request) and appends the user's words as a
-verbatim scribble.
+Pi creates the note (explicit request) and appends the user's words as a verbatim scribble.
 
 Later:
 
 > Summarize this investigation.
 
-Pi finalizes the note: restructures the body above, preserves the raw
-scribbles under a `## Raw notes` tail.
+Pi finalizes the note: restructures the body above, preserves the raw scribbles under a `## Raw notes` tail.
 
 The knowledge graph remains updated.
 
@@ -1066,13 +1040,11 @@ Conversation
 
 ## The product promise
 
-> **Pi remembers the conversation. Pi-Weave shows you how it connects to
-> everything else.**
+> **Pi remembers the conversation. Pi-Weave shows you how it connects to everything else.**
 
 And the most important interaction remains:
 
-> **Ask Pi → find knowledge → watch the relevant part of your world light
-> up.**
+> **Ask Pi → find knowledge → watch the relevant part of your world light up.**
 
 ---
 
@@ -1082,7 +1054,7 @@ Grounding the spec in what exists today:
 
 | Spec concept | Current primitive | Gap |
 | --- | --- | --- |
-| Capture (§4, §7) | `weave_note` add/append via the skill | Explicit by design (redesign 2026-08): capture only on request; finalization is editorial, raw tail preserved. **Implemented:** `finalizeNote` in `src/core/vault.ts` + `weave_note` action=finalize restructure the body above the `## Raw notes` tail and preserve it verbatim. |
+| Capture (§4, §7) | `weave_note` add/append via the skill | Explicit by design (redesign 2026-08): capture only on request; finalization is editorial, raw tail preserved. **Implemented:** `finalizeNote` in `src/core/vault.ts` + `weave_note` action=finalize restructure the body above the `## Raw notes` tail and preserve it verbatim. **Dictation mode:** finalize is called after every interactive append so the body stays continuously compiled (see §7). |
 | Retrieval (§17, §18) | `weave_note` search/get with snippets; exact + body search | Semantic/graph/temporal/provenance retrieval variants are future work |
 | Repository scope (§11, §12) | `weave_repo` status/scan/overview; auto-detect on session start | Repo *entity* references inside notes (clickable) need the viewer + richer index levels (design §9) |
 | Visualization (§9, §10, §20) | none | [weave-view.md](weave-view.md) is the planned layer |
@@ -1091,23 +1063,18 @@ Grounding the spec in what exists today:
 
 ## Deltas this spec implies (for the next core iteration)
 
-1. **Richer note status.** The promotion lifecycle and epistemic states
-   (§15–16) don't fit in today's three-value `NoteSource`. Proposal: keep
-   `source` for *who wrote it* and add an optional front-matter `status:`
-   (default undefined) for the *epistemic* axis, so `human/proposed` and
-   `agent/confirmed` are both representable.
-2. **A viewer focus channel.** "Ask → light up" (§10) and §23's semantic
-   instructions need the agent to influence the *already-open* viewer. To
-   stay inside the file-based, pull-only viewer model: pi writes
-   `<workspace>/.okf/focus.json` (node ids + intent), the viewer merges it
-   into `/graph.json` responses, and the page highlights on change. No
-   websockets, no second writer — the viewer still only reads disk.
-3. **Structured entities as note sections.** Decisions/questions/tasks (§13)
-   are MVP-feasible as conventional Markdown headers with checklist syntax —
-   no schema migration needed; extraction/promotion becomes a V2 parser over
-   existing notes.
-4. **Command naming.** Spec proposes `/notepad*`; current surface uses the
-   `weave-` prefix (`/weave`, `/weave-scan`, planned `/weave-view`).
-   Decision pending; one namespace, consistently applied. A future
-   `finalize` convenience command stays under the `weave-` namespace
-   (e.g. `/weave-note finalize`) — **not implemented in this sprint**.
+1. **Richer note status.** The promotion lifecycle and epistemic states (§15–16) don't fit in today's three-value `NoteSource`. Proposal:
+   keep `source` for *who wrote it* and add an optional front-matter `status:` (default undefined) for the *epistemic* axis, so
+   `human/proposed` and `agent/confirmed` are both representable.
+2. **A viewer focus channel.** "Ask → light up" (§10) and §23's semantic instructions need the agent to influence the *already-open* viewer.
+   To stay inside the file-based, pull-only viewer model: pi writes `<workspace>/.okf/focus.json` (node ids + intent), the viewer merges it
+   into `/graph.json` responses, and the page highlights on change. No websockets, no second writer — the viewer still only reads disk.
+3. **Structured entities as note sections.** Decisions/questions/tasks (§13) are MVP-feasible as conventional Markdown headers with
+   checklist syntax — no schema migration needed; extraction/promotion becomes a V2 parser over existing notes.
+4. **Command naming.** Spec proposes `/notepad*`; current surface uses the `weave-` prefix (`/weave`, `/weave-scan`, planned `/weave-view`).
+   Decision pending; one namespace, consistently applied. A future `finalize` convenience command stays under the `weave-` namespace (e.g.
+   `/weave-note finalize`) — **not implemented in this sprint**.
+5. **Continuous dictation compile.** The skill now teaches Pi to finalize
+after every interactive append while live-dictating (§7, §13, §14), so the compiled body above the `## Raw notes` tail stays current instead
+of waiting for an end-of-session "finalize". This is behavior in the skill/instructions only — `finalizeNote` already supports it and is
+used as-is; no core change required.

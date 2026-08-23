@@ -4,29 +4,25 @@
 
 pi-weave is **two products that are secretly one**:
 
-1. **A smart notepad with AI skills.** A persistent, local-first vault of human
-   knowledge — decisions, ideas, people, meetings — that the agent can read,
-   write, search, and maintain *for* you, and that you can read and edit
-   yourself, because it is plain Markdown on disk.
+1. **A smart notepad with AI skills.** A persistent, local-first vault of human knowledge — decisions, ideas, people, meetings — that the
+   agent can read, write, search, and maintain *for* you, and that you can read and edit yourself, because it is plain Markdown on disk.
 
-2. **A repository exploration engine.** A derived, machine-generated knowledge
-   index of the codebase you are standing in (`./.okf/`), built up
-   progressively, git-aware, rebuildable, disposable.
+2. **A repository exploration engine.** A derived, machine-generated knowledge index of the codebase you are standing in (`./.okf/`), built
+   up progressively, git-aware, rebuildable, disposable.
 
 And one rule that holds across both:
 
 > **Everything pi-weave produces must be equally usable by humans and by agents.**
 
-Humans and agents read the same files, write the same formats, and traverse the
-same graph. The agent is a first-class author (with provenance marking), and
-the human is a first-class reader (plain text, no opaque database). Neither is
-a second-class consumer of the other's output.
+Humans and agents read the same files, write the same formats, and traverse the same graph. The agent is a first-class author (with
+provenance marking), and the human is a first-class reader (plain text, no opaque database). Neither is a second-class consumer of the
+other's output.
 
-This duality is the product. A notepad alone is Obsidian. A repo index alone
-is a code-search tool. **A notepad and a repo index that humans and agents
-share — that is pi-weave.**
+This duality is the product. A notepad alone is Obsidian. A repo index alone is a code-search tool. **A notepad and a repo index that humans
+and agents share — that is pi-weave.**
 
-Yes. This makes the architecture substantially more interesting. The **repository itself becomes a first-class knowledge source**, and `.okf` becomes the local, derived knowledge index for that repository.
+Yes. This makes the architecture substantially more interesting. The **repository itself becomes a first-class knowledge source**, and
+`.okf` becomes the local, derived knowledge index for that repository.
 
 I would change the model from "personal OKF vault" to a **knowledge workspace with multiple scopes**.
 
@@ -810,7 +806,8 @@ and describe it as:
 
 Or more technically:
 
-> **A local-first knowledge graph for Pi that unifies human knowledge, repository knowledge, and agent context — with a live visual interface.**
+> **A local-first knowledge graph for Pi that unifies human knowledge, repository knowledge, and agent context — with a live visual
+> interface.**
 
 The key UX:
 
@@ -818,16 +815,15 @@ The key UX:
 
 That is a substantially stronger product.
 
-And `.okf` being automatically discovered in `cwd` is exactly the right convention: **when you're inside a repository, Pi should automatically know that there is a local semantic model of the codebase available.**
+And `.okf` being automatically discovered in `cwd` is exactly the right convention: **when you're inside a repository, Pi should
+automatically know that there is a local semantic model of the codebase available.**
 
 ---
 
 # 21. Multi-agent portability: pi first, then Claude Code and opencode
 
-pi-weave is built for pi. But the duality makes one thing obvious: **the
-artifacts must not be pi-specific.** A vault your next agent harness cannot
-read is a lock-in trap, and a `.okf` index that only pi understands defeats
-the team-sharing story from §16.
+pi-weave is built for pi. But the duality makes one thing obvious: **the artifacts must not be pi-specific.** A vault your next agent
+harness cannot read is a lock-in trap, and a `.okf` index that only pi understands defeats the team-sharing story from §16.
 
 So the architecture is split into **portable core** and **thin adapters**:
 
@@ -850,25 +846,19 @@ So the architecture is split into **portable core** and **thin adapters**:
 
 ### What is portable, concretely
 
-1. **The vault.** Plain Markdown files with YAML front matter. Any agent,
-   any editor, Obsidian included. An agent that can read files can use the
-   vault; no API, no database, no lock.
+1. **The vault.** Plain Markdown files with YAML front matter. Any agent, any editor, Obsidian included. An agent that can read files can
+   use the vault; no API, no database, no lock.
 
-2. **The `.okf` repository index.** JSON documents in a documented layout
-   (see Appendix A). Any harness — pi, Claude Code, opencode, CI — can read
-   it, regenerate it, or check its staleness with plain `git` commands.
+2. **The `.okf` repository index.** JSON documents in a documented layout (see Appendix A). Any harness — pi, Claude Code, opencode, CI —
+   can read it, regenerate it, or check its staleness with plain `git` commands.
 
-3. **The skills.** pi-weave's workflows ("how to take a good note", "how to
-   explore a repo with weave") are authored to the [Agent Skills
-   standard](https://agentskills.io/specification) (`SKILL.md` + frontmatter).
-   pi loads them natively; Claude Code loads the same directories from its
-   skills paths; opencode supports the same convention. One skill, three
-   harnesses.
+3. **The skills.** pi-weave's workflows ("how to take a good note", "how to explore a repo with weave") are authored to the [Agent Skills
+   standard](https://agentskills.io/specification) (`SKILL.md` + frontmatter). pi loads them natively; Claude Code loads the same
+   directories from its skills paths; opencode supports the same convention. One skill, three harnesses.
 
-4. **The core library.** `src/core` contains every interesting behavior —
-   vault store, repo scanner, staleness logic, search — and imports **nothing**
-   from `@earendil-works/*`. Adapters (`src/pi`, future `src/claude-code`,
-   `src/opencode`) only translate harness events/tool-calls into core calls.
+4. **The core library.** `src/core` contains every interesting behavior — vault store, repo scanner, staleness logic, search — and imports
+   **nothing** from `@earendil-works/*`. Adapters (`src/pi`, future `src/claude-code`, `src/opencode`) only translate harness
+   events/tool-calls into core calls.
 
 ### Adapter roadmap
 
@@ -879,12 +869,11 @@ So the architecture is split into **portable core** and **thin adapters**:
 | opencode    | Plugin (tool registrations)                      | Planned |
 | Any         | MCP server wrapping the core                     | Future  |
 
-The rule for all adapters: **no logic in adapters**. Adapters wire events to
-the core; the core owns behavior; the artifacts stay readable everywhere.
+The rule for all adapters: **no logic in adapters**. Adapters wire events to the core; the core owns behavior; the artifacts stay readable
+everywhere.
 
-That is what keeps the §16 team workflow honest: developer A may use pi,
-developer B Claude Code, CI a plain script — all three consume and produce
-the same `.okf`.
+That is what keeps the §16 team workflow honest: developer A may use pi, developer B Claude Code, CI a plain script — all three consume and
+produce the same `.okf`.
 
 ---
 
@@ -892,10 +881,8 @@ the same `.okf`.
 
 ### Phase 1 — Walking skeleton (this repository, today)
 
-- Core: vault store (Markdown + frontmatter), repo scanner (Level 0 +
-  light Level 1), git-aware staleness, workspace status across scopes
-- pi adapter: `weave_note` tool (the notepad), `weave_repo` tool
-  (explore/status), `/weave` command, `session_start` auto-discovery
+- Core: vault store (Markdown + frontmatter), repo scanner (Level 0 + light Level 1), git-aware staleness, workspace status across scopes
+- pi adapter: `weave_note` tool (the notepad), `weave_repo` tool (explore/status), `/weave` command, `session_start` auto-discovery
 - Skills: `weave-notepad`, `weave-explore`
 - ≥95% test coverage on all shipped code
 
@@ -961,8 +948,6 @@ Markdown body, free-form. Wiki-links later, plain text today.
 
 Rules:
 
-- `.okf` is **derived**. `rm -rf .okf` loses nothing (§4). Default:
-  gitignored (§15 Model A); committing is an explicit opt-in (Model B).
-- Everything machine-written carries provenance. The vault notes
-  written by agents say `source: agent`; analysis says `source: generated`.
+- `.okf` is **derived**. `rm -rf .okf` loses nothing (§4). Default: gitignored (§15 Model A); committing is an explicit opt-in (Model B).
+- Everything machine-written carries provenance. The vault notes written by agents say `source: agent`; analysis says `source: generated`.
 - Unknown fields are ignored, so older agents can read newer indexes.
