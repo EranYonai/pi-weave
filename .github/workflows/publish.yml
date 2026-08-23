@@ -40,6 +40,8 @@ jobs:
 
       - name: Bump patch version
         run: |
+          LATEST=$(npm view pi-weave version 2>/dev/null || echo "0.1.0")
+          npm version "$LATEST" --no-git-tag-version --allow-same-version
           VERSION=$(npm version patch --no-git-tag-version)
           echo "VERSION=$VERSION" >> "$GITHUB_ENV"
           git tag "$VERSION" -f
