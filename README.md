@@ -4,6 +4,13 @@
   <img src="https://raw.githubusercontent.com/EranYonai/pi-weave/main/docs/logo-high-res.jpg" alt="pi-weave — an agent-native knowledge workspace" width="220"/>
 </p>
 
+<p align="center">
+  <a href="https://www.npmjs.com/package/pi-weave"><img alt="npm version" src="https://img.shields.io/npm/v/pi-weave?color=blue&logo=npm"></a>
+  <a href="https://github.com/EranYonai/pi-weave/actions/workflows/ci.yml"><img alt="CI" src="https://github.com/EranYonai/pi-weave/actions/workflows/ci.yml/badge.svg"></a>
+  <a href="https://github.com/EranYonai/pi-weave/releases"><img alt="release" src="https://img.shields.io/github/v/release/EranYonai/pi-weave?color=blue&logo=github"></a>
+  <a href="./LICENSE"><img alt="license: MIT" src="https://img.shields.io/npm/l/pi-weave?color=green"></a>
+</p>
+
 **An agent-native knowledge workspace for your life and your code.**
 
 pi-weave is a [pi](https://github.com/earendil-works/pi)
@@ -29,12 +36,16 @@ agents.** No opaque databases. No lock-in formats.
 ## Install
 
 ```bash
-pi install npm:pi-weave             # from npm
+pi install npm:pi-weave             # from npm (recommended)
 pi install git:github.com/EranYonai/pi-weave   # from git
 pi install /path/to/pi-weave       # local path
 ```
 
 Or for development: `pi -e ./src/pi/index.ts`.
+
+The package is [published on npm](https://www.npmjs.com/package/pi-weave);
+releases are cut from `main` and auto-published with provenance attestation
+([Publish workflow](.github/workflows/publish.yml)).
 
 ## What you get
 
