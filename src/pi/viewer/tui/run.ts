@@ -18,7 +18,9 @@ import {
   type GraphModel,
 } from "../../../core";
 import { openNoteInEditor } from "../server";
-import { WeaveExplorer, type WeaveLoaders, type WeaveTheme, type WeaveTui } from "./explorer";
+import { bundledLogoImage, logoTier, renderMark } from "./branding";
+import { WeaveWorkspace } from "./workspaceRoot";
+import type { WeaveLoaders, WeaveTheme, WeaveTui } from "./explorer";
 import { getWorkspaceStatus, formatStatusLine } from "../../../core";
 
 /** Open the in-terminal knowledge explorer. Returns when the explorer closes. */
@@ -45,13 +47,20 @@ export async function runWeaveViewTui(ctx: ExtensionCommandContext): Promise<voi
 
   await ctx.ui.custom(
     (tui, theme, _keybindings, done) => {
-      const explorer = new WeaveExplorer({
+      const tier = logoTier();
+      const logo = renderMark(tier, theme as unknown as WeaveTheme, 20);
+      // bundledLogoImage gates on Kitty support itself and returns null (glyph
+      // header) when unavailable.
+      const logoImage = bundledLogoImage(theme as unknown as WeaveTheme);
+      const explorer = new WeaveWorkspace({
         model,
         theme: theme as unknown as WeaveTheme,
         tui: tui as unknown as WeaveTui,
         loaders,
         done,
         rows: tui.terminal.rows,
+        logo,
+        logoImage,
       });
       return explorer;
     },

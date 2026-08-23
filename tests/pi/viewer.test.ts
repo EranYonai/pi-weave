@@ -248,6 +248,14 @@ describe("page pure functions (extract-and-run)", () => {
     listLabel: (node: { kind: string; label: string; detail: Record<string, string> }) => string;
     listTree: (model: { nodes: { id: string; kind: string; label: string; provenance: string | null; detail: Record<string, string> }[]; edges: { source: string; target: string; kind: string }[] }, state: { kindFilter: string; provFilter: string; recentDays: number; query: string; listSort: string; listExpanded: Record<string, number>; showInternals?: boolean }) => { id: string; depth: number; hasKids: boolean; expanded: boolean }[];
     parseFrontMatter: (text: string) => { body: string; meta: [string, string][]; tags: string[] };
+    seedPositions: (existing: Record<string, { x: number; y: number }>, ids: string[], W: number, H: number) => Record<string, { x: number; y: number; vx: number; vy: number }>;
+    collideRadius: (degree: number) => number;
+    degreeRepulsion: (deg1: number, deg2: number) => number;
+    localSpeed: (prev: { x: number; y: number } | null, force: { x: number; y: number }) => number;
+    deltaAlpha: (prev: string, next: string) => number;
+    radialLayout: (nodes: { id: string }[], degreeOf: (n: { id: string }) => number) => Record<string, { x: number; y: number }>;
+    treeLayout: (nodes: { id: string }[], edges: { source: string; target: string; kind: string }[]) => Record<string, { x: number; y: number }>;
+    labelVisible: (zoom: number, degree: number) => boolean;
   }
   function extractScript(html: string): string {
     const m = /<script>([\s\S]*)<\/script>/.exec(html);
@@ -261,7 +269,10 @@ describe("page pure functions (extract-and-run)", () => {
       m[1] +
         "; return { focusNeighborhood: focusNeighborhood, deriveBacklinks: deriveBacklinks, " +
         "applyFilter: applyFilter, sortRows: sortRows, counts: counts, relTime: relTime, " +
-        "linksOf: linksOf, listLabel: listLabel, listTree: listTree, parseFrontMatter: parseFrontMatter };",
+        "linksOf: linksOf, listLabel: listLabel, listTree: listTree, parseFrontMatter: parseFrontMatter, " +
+        "seedPositions: seedPositions, collideRadius: collideRadius, degreeRepulsion: degreeRepulsion, " +
+        "localSpeed: localSpeed, deltaAlpha: deltaAlpha, radialLayout: radialLayout, treeLayout: treeLayout," +
+        " labelVisible: labelVisible };",
     );
     return make() as PureFns;
   }
@@ -561,6 +572,96 @@ describe("page pure functions (extract-and-run)", () => {
     expect(rows.find((r) => r.id === "okf:repository/git.json")?.depth).toBe(3);
     expect(rows.find((r) => r.id === "okf:repository/summaries/a.md")?.depth).toBe(4);
   });
+
+  it("seedPositions reuses survivors and seeds only new ids on a deterministic spiral", () => {
+    // same input -> same coords (determinism)
+    const a = fns.seedPositions({ x: { x: 10, y: 20 } }, ["x", "y", "z"], 800, 600);
+    const b = fns.seedPositions({ x: { x: 10, y: 20 } }, ["x", "y", "z"], 800, 600);
+    expect(a).toEqual(b);
+    // survivor keeps its coordinates; new ids get fresh (non-overlapping origin) coords
+    expect(a.x).toEqual({ x: 10, y: 20, vx: 0, vy: 0 });
+    expect(a.y).toBeDefined();
+    expect(a.z).toBeDefined();
+    expect(a.y).not.toEqual({ x: 10, y: 20, vx: 0, vy: 0 });
+    // removed ids are dropped
+    const c = fns.seedPositions({ x: { x: 10, y: 20 } }, ["y"], 800, 600);
+    expect(c.x).toBeUndefined();
+  });
+
+  it("collideRadius grows with degree and is capped", () => {
+    expect(fns.collideRadius(0)).toBe(7);
+    expect(fns.collideRadius(1)).toBeGreaterThan(7);
+    // sqrt(30)*1.2 ~ 6.57 -> capped at +6
+    expect(fns.collideRadius(30)).toBe(13);
+    expect(fns.collideRadius(100)).toBe(13);
+    expect(fns.collideRadius(4)).toBeGreaterThan(fns.collideRadius(1));
+  });
+
+  it("degreeRepulsion scales by (deg+1)(deg+1)/4 and is minimal for leaves", () => {
+    expect(fns.degreeRepulsion(1, 1)).toBe(1); // leaf-leaf: neutral
+    expect(fns.degreeRepulsion(0, 0)).toBe(0.25);
+    // hubs repel leaves far more than leaves repel each other -> leaves pack near hubs
+    expect(fns.degreeRepulsion(10, 1)).toBeGreaterThan(fns.degreeRepulsion(1, 1));
+    expect(fns.degreeRepulsion(10, 10)).toBeGreaterThan(fns.degreeRepulsion(10, 1));
+  });
+
+  it("localSpeed damps oscillators more than steady movers", () => {
+    // steady mover: force unchanged between ticks -> no damping
+    expect(fns.localSpeed({ x: 5, y: 0 }, { x: 5, y: 0 })).toBe(1);
+    // oscillator: force flips sign -> big swing -> smaller step
+    const steady = fns.localSpeed({ x: 5, y: 0 }, { x: 5, y: 0 });
+    const swinging = fns.localSpeed({ x: 5, y: 0 }, { x: -5, y: 0 });
+    expect(swinging).toBeGreaterThan(0);
+    expect(swinging).toBeLessThan(steady);
+    // no previous force (first tick) is handled without throwing
+    expect(fns.localSpeed(null, { x: 3, y: 4 })).toBeGreaterThan(0);
+    expect(fns.localSpeed(null, { x: 3, y: 4 })).toBeLessThanOrEqual(1);
+  });
+
+  it("deltaAlpha encodes the reheat policy: no-op -> 0, small -> <=0.05, large -> 0.5", () => {
+    const mk = (ids: string[]) => JSON.stringify({ nodes: ids.map((id) => ({ id })) });
+    expect(fns.deltaAlpha(mk(["a", "b"]), mk(["a", "b"]))).toBe(0); // identical structure: no reheat
+    expect(fns.deltaAlpha(mk(["a", "b"]), mk(["a", "b", "c"]))).toBe(0.05); // small delta: gentle nudge
+    expect(fns.deltaAlpha(mk(["a", "b"]), mk(["a", "b", "c", "d", "e", "f"]))).toBe(0.5); // larger delta: re-simulate
+    // non-JSON inputs fall back to a full reheat
+    expect(fns.deltaAlpha("", "not json")).toBe(0.5);
+  });
+
+  it("radialLayout is deterministic and concentric by degree (hubs center)", () => {
+    const nodes = [{ id: "hub" }, { id: "leaf1" }, { id: "leaf2" }];
+    const degreeOf = (n: { id: string }) => (n.id === "hub" ? 10 : 1);
+    const a = fns.radialLayout(nodes, degreeOf);
+    const b = fns.radialLayout(nodes, degreeOf);
+    expect(a).toEqual(b); // deterministic
+    // hub sits at the innermost ring (smaller radius than any leaf)
+    const hubR = Math.hypot(a.hub!.x, a.hub!.y);
+    expect(hubR).toBeLessThan(Math.hypot(a.leaf1!.x, a.leaf1!.y));
+    expect(hubR).toBeLessThan(Math.hypot(a.leaf2!.x, a.leaf2!.y));
+  });
+
+  it("treeLayout is deterministic, places children a row below parents, and centers the tree", () => {
+    const nodes = [{ id: "root" }, { id: "a" }, { id: "b" }];
+    const edges = [
+      { source: "root", target: "a", kind: "contains" },
+      { source: "root", target: "b", kind: "contains" },
+      { source: "a", target: "b", kind: "links-to" }, // cross-link: not a tree edge
+    ];
+    const a = fns.treeLayout(nodes, edges);
+    const b = fns.treeLayout(nodes, edges);
+    expect(a).toEqual(b); // deterministic
+    // children on the next row down (root at row 0, children at row 1)
+    expect(a.a!.y).toBeCloseTo(70);
+    expect(a.b!.y).toBeCloseTo(70);
+    expect(a.root!.y).toBeCloseTo(0);
+    // leaves spread horizontally so the tree is not a single pile
+    expect(Math.abs(a.a!.x - a.b!.x)).toBeGreaterThan(0);
+  });
+
+  it("labelVisible hides low-degree labels until zoomed in, and always shows hubs", () => {
+    expect(fns.labelVisible(0.4, 2)).toBe(false); // low zoom + low degree -> hidden
+    expect(fns.labelVisible(0.4, 10)).toBe(true); // hub label shown even at low zoom
+    expect(fns.labelVisible(0.9, 0)).toBe(true); // zoomed in -> shown regardless of degree
+  });
 });
 
 describe("openNoteCommand", () => {
@@ -720,6 +821,10 @@ describe("physics (real tick loop, extracted from the page)", () => {
     if (!js) throw new Error("no script");
     const tickSrc = (/function tick\(\) \{[\s\S]*?\n  \}\n(?=\n  var edgeLines)/.exec(js) ?? [])[0];
     if (!tickSrc) throw new Error("tick() not found in page script");
+    // tick() now depends on the pure helpers (collideRadius, degreeRepulsion,
+    // localSpeed), so inject the whole pure block into scope alongside it.
+    const pureSrc = (/\/\/ ===== pure =====([\s\S]*?)\/\/ ===== end pure =====/.exec(js) ?? [])[1];
+    if (!pureSrc) throw new Error("pure block not found in page script");
 
     const W = 1440, H = 900;
     const model = { edges: [] as { source: string; target: string; kind: string }[] };
@@ -733,13 +838,13 @@ describe("physics (real tick loop, extracted from the page)", () => {
     const run = new Function(
       "sim", "model", "W", "H",
       `var REST = { contains: 105, "anchored-at": 130, "links-to": 160, mentions: 160 };
-       var alpha = 0.6; ${tickSrc}
+       var alpha = 0.6; ${pureSrc}\n${tickSrc}
        for (var i = 0; i < 1100; i++) tick();
        return { alpha: alpha, sim: sim };`,
     ) as (s: typeof sim, m: typeof model, w: number, h: number) => { alpha: number; sim: typeof sim };
 
     const { alpha, sim: out } = run(sim, model, W, H);
-    expect(alpha).toBeLessThan(0.008); // settles at/below the relaxation pin floor: loop would stop
+    expect(alpha).toBeLessThan(0.008); // settles below the loop floor: loop would stop
     const xs = Object.values(out).map((n) => n.x);
     const ys = Object.values(out).map((n) => n.y);
     for (const v of [...xs, ...ys]) expect(Number.isFinite(v)).toBe(true);
