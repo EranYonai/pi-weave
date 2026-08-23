@@ -60,7 +60,7 @@ export async function runWeaveViewTui(ctx: ExtensionCommandContext): Promise<voi
 
   // Refresh the status line after close (a /weave-scan may have landed meanwhile).
   const status = await getWorkspaceStatus(ctx.cwd);
-  ctx.ui.setStatus("weave", formatStatusLine(status));
+  ctx.ui.setWidget("weave", [formatStatusLine(status)], { placement: "belowEditor" });
 }
 
 /** Test seam: build the model the explorer opens with, without a terminal. */

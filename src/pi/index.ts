@@ -1,4 +1,4 @@
-import type { ExtensionAPI, ExtensionCommandContext } from "@earendil-works/pi-coding-agent";
+import type { ExtensionAPI, ExtensionCommandContext, ExtensionContext } from "@earendil-works/pi-coding-agent";
 import {
   buildRepoIndex,
   findGitRoot,
@@ -41,7 +41,7 @@ export default function piWeave(pi: ExtensionAPI): void {
 
   pi.on("session_start", async (_event, ctx) => {
     const status = await getWorkspaceStatus(ctx.cwd);
-    ctx.ui.setStatus("weave", formatStatusLine(status));
+    updateStatusWidget(ctx, formatStatusLine(status));
 
     if (!ctx.hasUI) return;
     const repo = status.repository;
@@ -111,7 +111,7 @@ export default function piWeave(pi: ExtensionAPI): void {
       }
 
       const status = await getWorkspaceStatus(ctx.cwd);
-      ctx.ui.setStatus("weave", formatStatusLine(status));
+      updateStatusWidget(ctx, formatStatusLine(status));
     },
   });
 
@@ -160,11 +160,11 @@ function startDeepScan(root: string, ctx: ExtensionCommandContext, baseStatus: W
   const controller = new AbortController();
   const done = (async () => {
     try {
-      ctx.ui.setStatus("weave", "🧵 deep scan: starting…");
+      updateStatusWidget(ctx, "🧵 deep scan: starting…");
       const outcome = await deepScanRepository(root, ctx, {
         onProgress: ({ current, total, path }) => {
           const pct = total > 0 ? Math.round((current / total) * 100) : 100;
-          ctx.ui.setStatus("weave", `🧵 deep scan: ${current}/${total} (${pct}%) — ${path}`);
+          updateStatusWidget(ctx, `🧵 deep scan: ${current}/${total} (${pct}%) — ${path}`);
         },
         signal: controller.signal,
       });
@@ -183,9 +183,13 @@ function startDeepScan(root: string, ctx: ExtensionCommandContext, baseStatus: W
     } finally {
       // Restore the settled status before removing the map entry, so a caller
       // awaiting deepScanDone() observes the settled status line.
-      ctx.ui.setStatus("weave", formatStatusLine(baseStatus));
+      updateStatusWidget(ctx, formatStatusLine(baseStatus));
       inFlightDeepScans.delete(root);
     }
   })();
   inFlightDeepScans.set(root, { controller, done });
+}
+
+function updateStatusWidget(ctx: ExtensionContext | ExtensionCommandContext, text: string | undefined): void {
+  ctx.ui.setWidget("weave", text ? [text] : undefined, { placement: "belowEditor" });
 }
