@@ -32,6 +32,32 @@ export default function piWeave(pi: ExtensionAPI): void {
   // Session-scoped viewer: lazy start on first /weave-view, never from the
   // factory (extension rules); idempotent stop on session_shutdown.
   let viewer: ViewerServer | null = null;
+  let lastCtx: ExtensionContext | ExtensionCommandContext | null = null;
+  let lastStatusText: string | undefined = undefined;
+  let isActive = false;
+
+  function updateStatus(ctx?: ExtensionContext | ExtensionCommandContext, text?: string): void {
+    if (ctx) lastCtx = ctx;
+    const c = ctx || lastCtx;
+    if (!c?.ui?.setStatus) return;
+    if (text !== undefined) {
+      lastStatusText = text;
+    }
+    if (!lastStatusText) {
+      c.ui.setStatus("weave", undefined);
+      return;
+    }
+    let theme: { fg?: (slot: string, text: string) => string } | undefined;
+    try {
+      theme = (c.ui as unknown as { theme?: { fg?: (slot: string, text: string) => string } })?.theme;
+    } catch {
+      // ignore
+    }
+    const indicator = (isActive || inFlightDeepScans.size > 0)
+      ? (theme?.fg ? theme.fg("accent", "●") : "●")
+      : (theme?.fg ? theme.fg("dim", "○") : "○");
+    c.ui.setStatus("weave", `${indicator} ${lastStatusText}`);
+  }
 
   pi.on("session_shutdown", async () => {
     const server = viewer;
@@ -39,9 +65,19 @@ export default function piWeave(pi: ExtensionAPI): void {
     await server?.stop();
   });
 
+  pi.on("agent_start", async (_event, ctx) => {
+    isActive = true;
+    updateStatus(ctx);
+  });
+
+  pi.on("agent_end", async (_event, ctx) => {
+    isActive = false;
+    updateStatus(ctx);
+  });
+
   pi.on("session_start", async (_event, ctx) => {
     const status = await getWorkspaceStatus(ctx.cwd);
-    updateStatusWidget(ctx, formatStatusLine(status));
+    updateStatus(ctx, formatStatusLine(status));
 
     if (!ctx.hasUI) return;
     const repo = status.repository;
@@ -105,13 +141,13 @@ export default function piWeave(pi: ExtensionAPI): void {
           // Compute the settled status here (no git-lock contention) and let
           // the background scan restore it when it finishes.
           const status = await getWorkspaceStatus(ctx.cwd);
-          startDeepScan(root, ctx, status);
+          startDeepScan(root, ctx, status, updateStatus);
         }
         return; // the background scan owns the status line until it settles
       }
 
       const status = await getWorkspaceStatus(ctx.cwd);
-      updateStatusWidget(ctx, formatStatusLine(status));
+      updateStatus(ctx, formatStatusLine(status));
     },
   });
 
@@ -156,15 +192,26 @@ export async function deepScanDone(root: string): Promise<void | undefined> {
  * cancellation is reported via a notification. `baseStatus` is the workspace
  * status captured before the scan and restored when it settles.
  */
-function startDeepScan(root: string, ctx: ExtensionCommandContext, baseStatus: WorkspaceStatus): void {
+function startDeepScan(
+  root: string,
+  ctx: ExtensionCommandContext,
+  baseStatus: WorkspaceStatus,
+  updateStatus: (ctx?: ExtensionContext | ExtensionCommandContext, text?: string) => void,
+): void {
   const controller = new AbortController();
-  const done = (async () => {
+  let doneResolve: () => void;
+  const done = new Promise<void>((resolve) => {
+    doneResolve = resolve;
+  });
+  inFlightDeepScans.set(root, { controller, done });
+
+  void (async () => {
     try {
-      updateStatusWidget(ctx, "🧵 deep scan: starting…");
+      updateStatus(ctx, "🧵 deep scan: starting…");
       const outcome = await deepScanRepository(root, ctx, {
         onProgress: ({ current, total, path }) => {
           const pct = total > 0 ? Math.round((current / total) * 100) : 100;
-          updateStatusWidget(ctx, `🧵 deep scan: ${current}/${total} (${pct}%) — ${path}`);
+          updateStatus(ctx, `🧵 deep scan: ${current}/${total} (${pct}%) — ${path}`);
         },
         signal: controller.signal,
       });
@@ -183,13 +230,9 @@ function startDeepScan(root: string, ctx: ExtensionCommandContext, baseStatus: W
     } finally {
       // Restore the settled status before removing the map entry, so a caller
       // awaiting deepScanDone() observes the settled status line.
-      updateStatusWidget(ctx, formatStatusLine(baseStatus));
       inFlightDeepScans.delete(root);
+      updateStatus(ctx, formatStatusLine(baseStatus));
+      doneResolve!();
     }
   })();
-  inFlightDeepScans.set(root, { controller, done });
-}
-
-function updateStatusWidget(ctx: ExtensionContext | ExtensionCommandContext, text: string | undefined): void {
-  ctx.ui.setWidget("weave", text ? [text] : undefined, { placement: "belowEditor" });
 }
