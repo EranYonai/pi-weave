@@ -381,3 +381,57 @@ describe("WeaveExplorer with real readers", () => {
     });
   });
 });
+describe("WeaveExplorer body rendering by kind", () => {
+  it("a module node has no body — no (loading…) placeholder, links still render", async () => {
+    const model = graph(
+      [
+        node("repository", "repository", "repo", null, { files: "2" }),
+        node("module:.okf", "module", ".okf", null, { path: ".okf", files: "64" }),
+        node("okf:okf.json", "file", "okf.json", null, { path: "okf.json" }),
+        node("module:.okf/repository", "module", "repository", null, { path: ".okf/repository" }),
+      ],
+      [
+        { source: "repository", target: "module:.okf", kind: "contains" },
+        { source: "module:.okf", target: "okf:okf.json", kind: "contains" },
+        { source: "module:.okf", target: "module:.okf/repository", kind: "contains" },
+      ],
+    );
+    const { ex } = explorer(model, { rows: 30 });
+    // open detail for the .okf module
+    ex.state = { ...ex.state, surface: "detail", detailId: "module:.okf", selectedId: "module:.okf" };
+    ex.invalidate();
+    await new Promise((r) => setTimeout(r, 10)); // let any microtask load attempt run
+    ex.invalidate();
+    const lines = ex.render(80).join("\n");
+    expect(lines).not.toContain("(loading…)");
+    expect(lines).toContain("Links");
+    expect(lines).toContain("okf.json"); // an outgoing link label
+  });
+
+  it("the repository node (no body) renders meta without a loading placeholder", async () => {
+    const model = graph(
+      [node("repository", "repository", "pi-weave", null, { files: "2", state: "stale" })],
+      [],
+      { state: "stale", reasons: ["x"] },
+    );
+    const { ex } = explorer(model);
+    ex.state = { ...ex.state, surface: "detail", detailId: "repository", selectedId: "repository" };
+    ex.invalidate();
+    await new Promise((r) => setTimeout(r, 10));
+    ex.invalidate();
+    const lines = ex.render(80).join("\n");
+    expect(lines).not.toContain("(loading…)");
+  });
+
+  it("header repo part uses the repo name and staleness state, not a duplicated state", () => {
+    const model = graph(
+      [node("repository", "repository", "pi-weave", null, { files: "2", state: "stale" })],
+      [],
+      { state: "stale", reasons: ["x"] },
+    );
+    const { ex } = explorer(model);
+    const header = ex.render(80).slice(0, 2).join("\n");
+    expect(header).toContain("repo pi-weave:stale");
+    expect(header).not.toContain("repo stale: stale");
+  });
+});

@@ -259,9 +259,8 @@ export class WeaveExplorer implements Component {
     const line1 = t.bold(`🧵 weave view — data as of ${this.model.generatedAt || "now"}`) + `  ${this.surfaceName()}`;
     const counts = this.countNotes();
     const repo = this.model.nodes.find((n) => n.kind === "repository");
-    const repoPart = repo
-      ? ` · repo ${repo.detail.state || this.model.staleness?.state || "?"}: ${this.model.staleness?.state ?? "missing"}`
-      : "";
+    const repoState = this.model.staleness?.state ?? (repo ? "fresh" : "missing");
+    const repoPart = repo ? ` · repo ${repo.label}:${repoState}` : "";
     const line2 = `notes ${counts.total} (● ${counts.human} / ◐ ${counts.agent} / ○ ${counts.generated})${repoPart}`;
     const lines = [line1, line2];
     // conditional filter/focus banner (line 3)
@@ -534,6 +533,12 @@ export class WeaveExplorer implements Component {
   }
 
   private bodyLinesFor(id: string, width: number): string[] {
+    // Only notes and .okf file nodes carry a body; every other kind (vault,
+    // repository, module, package, entryPoint, gitState, external) has meta +
+    // links only. Rendering a placeholder for them would queue a load that
+    // never completes (maybeLoadBody skips non-note/file kinds).
+    const node = this.model.nodes.find((n) => n.id === id);
+    if (!node || (node.kind !== "note" && node.kind !== "file")) return [];
     if (this.bodyLoading.has(id)) return [this.theme.fg("dim", "(loading…)")];
     const body = this.bodyCache.get(id);
     if (body === undefined) {
