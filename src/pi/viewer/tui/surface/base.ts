@@ -114,7 +114,14 @@ export class Pane implements Component {
   focused = false;
   private cacheKey = "";
 
-  constructor(surface: Surface, theme: PaneTheme, borderFn: (slot: ThemeSlot, text: string) => string = theme.fg) {
+  constructor(
+    surface: Surface,
+    theme: PaneTheme,
+    // Bind through the theme object: a bare `theme.fg` default would detach
+    // `this`, so the real pi theme's `fg` (which reads `this.fgColors.get(...)`)
+    // would crash with "Cannot read properties of undefined (reading 'get')".
+    borderFn: (slot: ThemeSlot, text: string) => string = (slot, text) => theme.fg(slot, text),
+  ) {
     this.surface = surface;
     this.theme = theme;
     this.borderFn = borderFn;

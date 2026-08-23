@@ -289,4 +289,37 @@ describe("Pane", () => {
     const b = p.render(40);
     expect(a).not.toBe(b);
   });
+
+  // Regression guard: the real pi Theme stores `fg` as a METHOD that reads
+  // `this.fgColors.get(slot)`. Pane's default `borderFn` must keep the theme
+  // binding — a bare `theme.fg` default detaches `this` and crashes at runtime
+  // ("Cannot read properties of undefined (reading 'get')"), which the
+  // arrow-based fake theme above does NOT catch. This test uses a method-based
+  // theme and constructs Pane WITHOUT a custom borderFn.
+  it("default borderFn preserves the theme `this` binding (no detached-method crash)", () => {
+    class RealishTheme {
+      private readonly colors: Record<string, string> = {
+        accent: "\x1b[35m",
+        dim: "\x1b[2m",
+        muted: "\x1b[2m",
+      };
+      fg(slot: string, text: string): string {
+        const ansi = this.colors[slot] ?? "";
+        return `${ansi}${text}\x1b[39m`;
+      }
+      bold(text: string): string {
+        return `\x1b[1m${text}\x1b[22m`;
+      }
+    }
+    const s = new ExploreSurface({ context: ctx(model) });
+    // No custom borderFn -> exercises the default that must bind through theme.
+    const p = new Pane(s, new RealishTheme() as unknown as import("../../src/pi/viewer/tui/surface/base").PaneTheme);
+    p.setFocused(true);
+    const lines = p.render(40);
+    expect(lines.length).toBeGreaterThan(0);
+    // The active border uses the accent color from the theme's own map (proves
+    // `this` was bound, not the Pane).
+    expect(lines[0]).toContain("\x1b[35m");
+    expect(lines[0]).toContain("┌");
+  });
 });
