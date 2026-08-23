@@ -41,12 +41,53 @@ describe("session_start", () => {
     await withVaultEnv(await makeTempDir(), async () => {
       const ctx = createMockCtx(cwd);
       await mock.emit("session_start", {}, ctx);
-      expect(ctx.ui.statuses.weave).toBe("🧵 vault:0");
-      expect(ctx.ui.widgets.weave).toEqual({
-        content: ["🧵 vault:0"],
-        options: { placement: "belowEditor" },
-      });
+      expect(ctx.ui.statuses.weave).toBe("○ 🧵 vault:0");
       expect(ctx.ui.notifications).toEqual([]);
+    });
+  });
+
+  it("updates status indicator on agent_start and agent_end", async () => {
+    const mock = buildExtension();
+    const cwd = await makeTempDir();
+    await withVaultEnv(await makeTempDir(), async () => {
+      const ctx = createMockCtx(cwd);
+      await mock.emit("session_start", {}, ctx);
+      expect(ctx.ui.statuses.weave).toBe("○ 🧵 vault:0");
+
+      await mock.emit("agent_start", {}, ctx);
+      expect(ctx.ui.statuses.weave).toBe("● 🧵 vault:0");
+
+      await mock.emit("agent_end", {}, ctx);
+      expect(ctx.ui.statuses.weave).toBe("○ 🧵 vault:0");
+
+      // Uses lastCtx when event ctx is undefined
+      await mock.emit("agent_start", {}, undefined as unknown as typeof ctx);
+      expect(ctx.ui.statuses.weave).toBe("● 🧵 vault:0");
+      await mock.emit("agent_end", {}, undefined as unknown as typeof ctx);
+      expect(ctx.ui.statuses.weave).toBe("○ 🧵 vault:0");
+    });
+  });
+
+  it("handles ctx without theme or when theme property access throws", async () => {
+    const mock = buildExtension();
+    const cwd = await makeTempDir();
+    await withVaultEnv(await makeTempDir(), async () => {
+      const ctx = createMockCtx(cwd);
+      delete (ctx.ui as { theme?: unknown }).theme;
+      await mock.emit("session_start", {}, ctx);
+      expect(ctx.ui.statuses.weave).toBe("○ 🧵 vault:0");
+
+      const throwingCtx = createMockCtx(cwd);
+      Object.defineProperty(throwingCtx.ui, "theme", {
+        get() {
+          throw new Error("theme access failed");
+        },
+      });
+      await mock.emit("agent_start", {}, throwingCtx);
+      expect(throwingCtx.ui.statuses.weave).toBe("● 🧵 vault:0");
+
+      const noUiCtx = { cwd, hasUI: false, mode: "print", ui: {} } as unknown as typeof ctx;
+      await mock.emit("agent_start", {}, noUiCtx);
     });
   });
 
@@ -56,7 +97,7 @@ describe("session_start", () => {
     await withVaultEnv(await makeTempDir(), async () => {
       const ctx = createMockCtx(repo);
       await mock.emit("session_start", {}, ctx);
-      expect(ctx.ui.statuses.weave).toBe("🧵 vault:0 · repo:unindexed");
+      expect(ctx.ui.statuses.weave).toBe("○ 🧵 vault:0 · repo:unindexed");
       expect(ctx.ui.notifications).toHaveLength(1);
       expect(ctx.ui.notifications[0]?.level).toBe("info");
       expect(ctx.ui.notifications[0]?.message).toContain("no knowledge index");
@@ -200,7 +241,7 @@ describe("/weave-scan deep", () => {
       });
       await mock.commands.get("weave-scan")!.handler("deep", ctx);
       // wait for the background scan to emit its first progress line
-      for (let i = 0; i < 50 && ctx.ui.statuses.weave === "🧵 deep scan: starting…"; i++) {
+      for (let i = 0; i < 50 && ctx.ui.statuses.weave === "● 🧵 deep scan: starting…"; i++) {
         await new Promise((r) => setTimeout(r, 10));
       }
       const progress = ctx.ui.statuses.weave ?? "";

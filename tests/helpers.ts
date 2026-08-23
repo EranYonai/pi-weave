@@ -70,6 +70,11 @@ export interface MockUi {
   notifications: { message: string; level: string }[];
   statuses: Record<string, string | undefined>;
   widgets: Record<string, { content: string[] | undefined; options?: unknown } | undefined>;
+  theme?: {
+    fg: (slot: string, text: string) => string;
+    bg?: (slot: string, text: string) => string;
+    bold?: (text: string) => string;
+  };
   customCalls: MockCustomCall[];
   /** Resolves the most recent `custom()` promise (simulates the user closing the explorer). */
   resolveCustom(result: unknown): void;
@@ -117,6 +122,11 @@ export function createMockCtx(cwd: string, hasUI = true, modeOrOptions: string |
       notifications,
       statuses,
       widgets,
+      theme: {
+        fg: (_s: string, t: string) => t,
+        bg: (_s: string, t: string) => t,
+        bold: (t: string) => t,
+      },
       customCalls,
       notify(message: string, level: string) {
         notifications.push({ message, level });
