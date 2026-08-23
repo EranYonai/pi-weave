@@ -1,6 +1,6 @@
 {
   "name": "pi-weave",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "An agent-native knowledge workspace for your life and your code. Smart notepad + repository exploration, readable by humans and agents alike.",
   "type": "module",
   "sideEffects": false,
