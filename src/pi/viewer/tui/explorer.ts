@@ -13,6 +13,7 @@
  */
 
 import { matchesKey, parseKey, truncateToWidth, visibleWidth, type Component } from "@earendil-works/pi-tui";
+import { BodyStore } from "./bodyStore";
 
 import type { GraphModel, GraphNode, NodeKind } from "../../../core/graph/model";
 import type { NoteSource } from "../../../core/types";
@@ -141,10 +142,8 @@ export class WeaveExplorer implements Component {
   private readonly nowFn: () => number;
 
   state: ExplorerState;
-  /** Cached note/okf bodies keyed by node id; null = not yet loaded. */
-  private bodyCache = new Map<string, string | null>();
-  /** In-flight body loads, keyed by node id. */
-  private bodyLoading = new Set<string>();
+  /** Shared note/okf body cache (dedup by node id, bust-on-refresh). */
+  private readonly bodies: BodyStore;
   /** Render cache keyed by `${width}:${version}`. */
   private renderCache = new Map<string, string[]>();
   wantsKeyRelease = false;
@@ -157,14 +156,21 @@ export class WeaveExplorer implements Component {
     this.done = opts.done;
     this.rows = opts.rows ?? 24;
     this.nowFn = opts.now ?? Date.now;
+    this.bodies = new BodyStore({
+      loaders: opts.loaders,
+      onChange: () => {
+        this.state = { ...this.state, version: this.state.version + 1 };
+        this.invalidate();
+        this.tui.requestRender();
+      },
+    });
     this.state = initialState(graphRoots(this.model));
   }
 
   /** Replace the graph (used by the `r` refresh). Preserves selection by id. */
   setModel(model: GraphModel): void {
     this.model = model;
-    this.bodyCache.clear();
-    this.bodyLoading.clear();
+    this.bodies.clear();
     this.state = reduce(this.state, { type: "refreshDone" });
     // Re-resolve selection: keep id if still present, else first root.
     if (this.state.selectedId && !this.nodeExists(this.state.selectedId)) {
@@ -504,31 +510,12 @@ export class WeaveExplorer implements Component {
   }
 
   private maybeLoadBody(id: string): void {
-    if (this.bodyCache.has(id) || this.bodyLoading.has(id)) return;
     const node = this.model.nodes.find((n) => n.id === id);
     if (!node) return;
     if (node.kind === "note") {
-      const slug = node.detail.slug;
-      if (!slug) return;
-      this.bodyLoading.add(id);
-      void this.loaders.loadNote(slug).then((note) => {
-        this.bodyCache.set(id, note?.body ?? null);
-        this.bodyLoading.delete(id);
-        this.state = { ...this.state, version: this.state.version + 1 };
-        this.invalidate();
-        this.tui.requestRender();
-      });
+      this.bodies.load(id, "note", node.detail.slug);
     } else if (node.kind === "file") {
-      const rel = node.detail.path;
-      if (!rel) return;
-      this.bodyLoading.add(id);
-      void this.loaders.loadOkf(rel).then((file) => {
-        this.bodyCache.set(id, file?.body ?? null);
-        this.bodyLoading.delete(id);
-        this.state = { ...this.state, version: this.state.version + 1 };
-        this.invalidate();
-        this.tui.requestRender();
-      });
+      this.bodies.load(id, "file", node.detail.path);
     }
   }
 
@@ -539,8 +526,8 @@ export class WeaveExplorer implements Component {
     // never completes (maybeLoadBody skips non-note/file kinds).
     const node = this.model.nodes.find((n) => n.id === id);
     if (!node || (node.kind !== "note" && node.kind !== "file")) return [];
-    if (this.bodyLoading.has(id)) return [this.theme.fg("dim", "(loading…)")];
-    const body = this.bodyCache.get(id);
+    if (this.bodies.isLoading(id)) return [this.theme.fg("dim", "(loading…)")];
+    const body = this.bodies.get(id);
     if (body === undefined) {
       // not yet requested — trigger a load (render is sync, so show placeholder)
       queueMicrotask(() => this.maybeLoadBody(id));
