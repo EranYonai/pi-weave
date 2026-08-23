@@ -48,6 +48,25 @@ Every note maintains a verbatim, append-only raw section at the bottom separated
    - `finalize` replaces or structures content only above the `---` and `## Raw` section.
    - The `## Raw` block and all verbatim code blocks are never modified or removed.
 
+## Dictation mode (continuous compile)
+
+During live dictation / interview note-taking (see the skill description),
+Pi does **not** wait until the end to organize the note. Every interactive
+append is immediately compiled into the body:
+
+1. **Append the raw words verbatim** to the `## Raw` tail as usual (a dated
+   `<!-- appended YYYY-MM-DD HH:MM -->` code block).
+2. **Then immediately finalize** (`weave_note` action=finalize): rewrite the
+   body *above* the `## Raw` tail — front-loaded summary, sections,
+   decisions, questions, tasks, entities, links — so the compiled document
+   reflects everything said so far.
+3. **Never rewrite or remove the `## Raw` tail.** It stays append-only and
+   verbatim; only the body above it changes.
+
+The result is a continuously-updated compiled document that stays current
+throughout the session — not just a raw tail that gets organized once at the
+end.
+
 ## When to take a note
 
 Create a note **only when the user explicitly asks** for one to exist:
@@ -70,13 +89,17 @@ explicit by design.
 3. **Scribble in, verbatim.** When the user is dictating, append their words
    to the note as rough, verbatim scribbles — no silent rewording. Keep them
    under the `## Raw` tail format at the end of the note.
-4. **Finalize on request.** When the user says "finalize this" / "clean this
+4. **Compile continuously during dictation.** After *every* interactive
+   append in dictation mode, immediately finalize the body *above* the raw
+   tail so the compiled doc stays current (see [Dictation mode](#dictation-mode-continuous-compile)).
+   Outside dictation mode, compilation stays on request.
+5. **Finalize on request.** When the user says "finalize this" / "clean this
    up", restructure the body *above* the raw tail: front-loaded summary,
    sections, entities, links. Use `weave_note` action=finalize (or edit the
    file directly in other harnesses). Move nothing out of `## Raw` — it
    is append-only and never rewritten.
-5. Tags: 1–4 lowercase tags; reuse existing tags when possible.
-6. Provenance: notes the user scribbled stay `source: human` (finalization is
+6. Tags: 1–4 lowercase tags; reuse existing tags when possible.
+7. Provenance: notes the user scribbled stay `source: human` (finalization is
    editorial, not authorship) — pass `source: "human"` to `add` for
    user-scribbled notes. Notes you draft from scratch are `source: agent`
    (the default). Never overwrite a `source: human` note's meaning; append

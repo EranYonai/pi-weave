@@ -4,9 +4,12 @@
 > [`skills/weave-notepad/SKILL.md`](../skills/weave-notepad/SKILL.md); the
 > experience described here is largely roadmap. **Implemented so far:**
 > explicit capture, verbatim scribbles under a `## Raw notes` tail, and
-> on-request finalization that restructures the body above the tail while
-> preserving it verbatim (`weave_note` action=finalize, `finalizeNote` in
-> `src/core/vault.ts`). The graph/visualization layers remain roadmap.
+> finalization that restructures the body above the tail while preserving it
+> verbatim (`weave_note` action=finalize, `finalizeNote` in
+> `src/core/vault.ts`). During **dictation mode** (live interview
+> note-taking), finalization is continuous: the body is recompiled after
+> every interactive append so the note reads as a living document, not just
+> an accumulating raw tail. The graph/visualization layers remain roadmap.
 >
 > Related: [design.md](design.md) (overall architecture, provenance §13,
 > scopes §17), [weave-view.md](weave-view.md) (the viewer this spec drives),
@@ -288,7 +291,9 @@ Pi restructures the top of the note — front-loaded summary, sections,
 entities, links — while leaving the `## Raw notes` tail untouched. The
 principle is scoped **within a note**: capture is explicit (the user asked
 for the note to exist), but *organization* is deferred until the user asks
-to finalize.
+to finalize — **except in dictation mode** (see below), where organization
+runs continuously alongside capture so the compiled body never lags behind
+the raw tail.
 
 ---
 
@@ -502,7 +507,8 @@ Incident #421
 ```
 
 This creates a structured session summary — but only for notes the user
-asked to exist, and only when the user asks to finalize them.
+asked to exist, and only when the user asks to finalize them (or, in
+dictation mode, after every interactive append — see §7).
 
 ---
 
@@ -544,7 +550,9 @@ They are backed by structured knowledge and provenance.
 
 Finalization is **editorial, not generative**: the summary is built from the
 user's own words, and the `## Raw notes` tail is preserved verbatim beneath
-it. Pi only summarizes notes the user asked to exist.
+it. Pi only summarizes notes the user asked to exist. In dictation mode this
+editorial compile runs after every append, so the summary above the tail
+stays current throughout the session rather than only at the end.
 
 ---
 
@@ -1082,7 +1090,7 @@ Grounding the spec in what exists today:
 
 | Spec concept | Current primitive | Gap |
 | --- | --- | --- |
-| Capture (§4, §7) | `weave_note` add/append via the skill | Explicit by design (redesign 2026-08): capture only on request; finalization is editorial, raw tail preserved. **Implemented:** `finalizeNote` in `src/core/vault.ts` + `weave_note` action=finalize restructure the body above the `## Raw notes` tail and preserve it verbatim. |
+| Capture (§4, §7) | `weave_note` add/append via the skill | Explicit by design (redesign 2026-08): capture only on request; finalization is editorial, raw tail preserved. **Implemented:** `finalizeNote` in `src/core/vault.ts` + `weave_note` action=finalize restructure the body above the `## Raw notes` tail and preserve it verbatim. **Dictation mode:** finalize is called after every interactive append so the body stays continuously compiled (see §7). |
 | Retrieval (§17, §18) | `weave_note` search/get with snippets; exact + body search | Semantic/graph/temporal/provenance retrieval variants are future work |
 | Repository scope (§11, §12) | `weave_repo` status/scan/overview; auto-detect on session start | Repo *entity* references inside notes (clickable) need the viewer + richer index levels (design §9) |
 | Visualization (§9, §10, §20) | none | [weave-view.md](weave-view.md) is the planned layer |
@@ -1111,3 +1119,9 @@ Grounding the spec in what exists today:
    Decision pending; one namespace, consistently applied. A future
    `finalize` convenience command stays under the `weave-` namespace
    (e.g. `/weave-note finalize`) — **not implemented in this sprint**.
+5. **Continuous dictation compile.** The skill now teaches Pi to finalize
+after every interactive append while live-dictating (§7, §13, §14), so the
+compiled body above the `## Raw notes` tail stays current instead of waiting
+for an end-of-session "finalize". This is behavior in the skill/instructions
+only — `finalizeNote` already supports it and is used as-is; no core change
+required.
