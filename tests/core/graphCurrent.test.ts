@@ -33,7 +33,7 @@ describe("buildCurrentGraph (core)", () => {
     await withVaultEnv(vault, async () => {
       const repo = await makeTempDir();
       gitInit(repo);
-      writeFixture(repo, "src/index.ts", "export const x = 1;\n");
+      await writeFixture(repo, "src/index.ts", "export const x = 1;\n");
       commitAll(repo, "init");
       const index = await buildRepoIndex(repo);
       expect(index).not.toBeNull();
@@ -62,7 +62,7 @@ describe("buildCurrentGraph (core)", () => {
     await withVaultEnv(vault, async () => {
       const repo = await makeTempDir();
       gitInit(repo);
-      writeFixture(repo, "src/index.ts", "x\n");
+      await writeFixture(repo, "src/index.ts", "x\n");
       commitAll(repo, "init");
       await mkdir(join(repo, ".okf", "repository"), { recursive: true });
       await writeFile(join(repo, ".okf", "repository", "structure.json"), "{not json", "utf8");
@@ -84,7 +84,7 @@ describe("buildCurrentGraph (core)", () => {
     await withVaultEnv(vault, async () => {
       const repo = await makeTempDir();
       gitInit(repo);
-      writeFixture(repo, "src/index.ts", "export const x = 1;\n");
+      await writeFixture(repo, "src/index.ts", "export const x = 1;\n");
       commitAll(repo, "init");
       const index = await buildRepoIndex(repo);
       await writeRepoIndex(repo, index!);

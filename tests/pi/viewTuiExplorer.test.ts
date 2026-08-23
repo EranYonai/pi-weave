@@ -356,7 +356,7 @@ describe("WeaveExplorer with real readers", () => {
     await withVaultEnv(vault, async () => {
       const repo = await makeTempDir();
       gitInit(repo);
-      writeFixture(repo, "src/index.ts", "export const x = 1;\n");
+      await writeFixture(repo, "src/index.ts", "export const x = 1;\n");
       commitAll(repo, "init");
       const index = await buildRepoIndex(repo);
       expect(index).not.toBeNull();
