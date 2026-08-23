@@ -44,11 +44,12 @@ attestation ([Publish workflow](.github/workflows/publish.yml)).
 
 | Surface | Name | Purpose |
 |---|---|---|
-| Tool | `weave_note` | list / get / add / append / search vault notes |
+| Tool | `weave_note` | list / get / add / append / finalize / search vault notes |
 | Tool | `weave_repo` | status / scan / overview of the `.okf` repo index |
 | Command | `/weave` | workspace dashboard (vault + repository) |
 | Command | `/weave-scan` | build/refresh the repository index (light) |
 | Command | `/weave-scan deep` | light index + model-summarized sidecars (opt-in, incremental) |
+| Command | `/weave-scan-cancel` | stop an in-flight `/weave-scan deep` run |
 | Command | `/weave-view` | open the local graph viewer in your browser |
 | Command | `/weave-view tui` | explore the same graph in-terminal (keyboard) |
 | Skill | `weave-notepad` | how the agent should take good notes |
@@ -64,11 +65,12 @@ notes open in a rendered markdown side panel.
 Same data as the browser viewer (the `GraphModel` assembled from vault + repo index); a pure, harness-free view-model
 (`src/pi/viewer/tui/model.ts`) backs the `WeaveExplorer` component. See `docs/weave-view-tui-design.md`.
 
-On session start, pi-weave detects the repository you're in, checks whether `.okf` exists and is fresh, and says so in the status line.
+On session start, pi-weave detects the repository you're in, checks whether `.okf` exists and is fresh, and says so in the status footer — a
+filled `●` marks weave as active (a deep scan spins it while running).
 
 **`/weave-scan deep`** is the opt-in, incremental deep pass: it refreshes the light index and then writes a short model summary per file to
 `.okf/repository/summaries/`, skipping files whose content hash is unchanged since their last summary. It costs tokens, so it never runs
-implicitly.
+implicitly — and it runs in the background, so `/weave-scan-cancel` can stop it mid-flight.
 
 ## The formats (why everything is portable)
 
