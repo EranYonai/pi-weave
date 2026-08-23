@@ -69,11 +69,13 @@ export interface MockCustomCall {
 export interface MockUi {
   notifications: { message: string; level: string }[];
   statuses: Record<string, string | undefined>;
+  widgets: Record<string, { content: string[] | undefined; options?: unknown } | undefined>;
   customCalls: MockCustomCall[];
   /** Resolves the most recent `custom()` promise (simulates the user closing the explorer). */
   resolveCustom(result: unknown): void;
   notify(message: string, level: string): void;
   setStatus(key: string, value: string | undefined): void;
+  setWidget(key: string, content: string[] | undefined, options?: unknown): void;
   /** Stub for `ctx.ui.custom`. Invokes the factory with a fake tui/theme and a
    *  `done` that resolves the returned promise. Configurable via `customResult`. */
   custom<T>(factory: (tui: unknown, theme: unknown, keybindings: unknown, done: (result: T) => void) => unknown, options?: unknown): Promise<T>;
@@ -100,6 +102,7 @@ export function createMockCtx(cwd: string, hasUI = true, modeOrOptions: string |
   const opts: MockCtxOptions = typeof modeOrOptions === "string" ? { mode: modeOrOptions } : modeOrOptions;
   const notifications: { message: string; level: string }[] = [];
   const statuses: Record<string, string | undefined> = {};
+  const widgets: Record<string, { content: string[] | undefined; options?: unknown } | undefined> = {};
   const customCalls: MockCustomCall[] = [];
   // Resolves the custom() promise when the explorer calls done().
   let resolveCustom: ((value: unknown) => void) | undefined;
@@ -113,12 +116,17 @@ export function createMockCtx(cwd: string, hasUI = true, modeOrOptions: string |
     ui: {
       notifications,
       statuses,
+      widgets,
       customCalls,
       notify(message: string, level: string) {
         notifications.push({ message, level });
       },
       setStatus(key: string, value: string | undefined) {
         statuses[key] = value;
+      },
+      setWidget(key: string, content: string[] | undefined, options?: unknown) {
+        widgets[key] = content !== undefined ? { content, options } : undefined;
+        statuses[key] = content?.[0];
       },
       custom<T>(factory: (tui: unknown, theme: unknown, keybindings: unknown, done: (result: T) => void) => unknown, options?: unknown): Promise<T> {
         customCalls.push({ factory: factory as MockCustomCall["factory"], options });

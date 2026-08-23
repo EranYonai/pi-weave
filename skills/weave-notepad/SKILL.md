@@ -1,6 +1,6 @@
 ---
 name: weave-notepad
-description: Take and retrieve durable notes in the pi-weave vault. Use when the user asks to remember something or to start/add to a note (aliases: notes, ai note, note-taking, note-taker), or when answering questions about past decisions, people, or projects. Also handles interview note-taking where raw dictations are appended AND expanded.
+description: "Take and retrieve durable notes in the pi-weave vault. Use when the user asks to remember something or to start/add to a note (aliases: notes, ai note, note-taking, note-taker), or when answering questions about past decisions, people, or projects. Also handles interview note-taking where raw dictations are appended AND expanded."
 ---
 
 # Weave Notepad

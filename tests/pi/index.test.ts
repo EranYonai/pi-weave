@@ -42,6 +42,10 @@ describe("session_start", () => {
       const ctx = createMockCtx(cwd);
       await mock.emit("session_start", {}, ctx);
       expect(ctx.ui.statuses.weave).toBe("🧵 vault:0");
+      expect(ctx.ui.widgets.weave).toEqual({
+        content: ["🧵 vault:0"],
+        options: { placement: "belowEditor" },
+      });
       expect(ctx.ui.notifications).toEqual([]);
     });
   });
