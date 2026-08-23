@@ -195,8 +195,10 @@ describe("/weave-scan deep", () => {
         },
       });
       await mock.commands.get("weave-scan")!.handler("deep", ctx);
-      // give the background scan a tick to emit its first progress line
-      await new Promise((r) => setTimeout(r, 20));
+      // wait for the background scan to emit its first progress line
+      for (let i = 0; i < 50 && ctx.ui.statuses.weave === "🧵 deep scan: starting…"; i++) {
+        await new Promise((r) => setTimeout(r, 10));
+      }
       const progress = ctx.ui.statuses.weave ?? "";
       expect(progress).toMatch(/\d+\/\d+ \(\d+%\)/);
       expect(progress).toContain("src/");
@@ -411,13 +413,13 @@ describe("weave_note tool", () => {
     const mock = buildExtension();
     const ctx = createMockCtx(await makeTempDir());
     await withVaultEnv(await makeTempDir(), async () => {
-      await mock.runTool("weave_note", { action: "add", title: "Auth migration", text: "## Raw notes\n\n\"We should move to OIDC.\"", source: "human" }, ctx);
+      await mock.runTool("weave_note", { action: "add", title: "Auth migration", text: "---\n\n## Raw\n<!-- NEVER edit below this line. Verbatim user input preserved here. -->\n\n```\n\"We should move to OIDC.\"\n```", source: "human" }, ctx);
       const res = await mock.runTool("weave_note", { action: "finalize", slug: "auth-migration", text: "**Decision:** move toward OIDC." }, ctx);
       expect(res.content[0]?.text).toContain("Finalized auth-migration");
       expect(res.content[0]?.text).toContain("Raw notes tail preserved");
       const got = await mock.runTool("weave_note", { action: "get", slug: "auth-migration" }, ctx);
       expect(got.content[0]?.text).toContain("**Decision:** move toward OIDC.");
-      expect(got.content[0]?.text).toContain("## Raw notes");
+      expect(got.content[0]?.text).toContain("## Raw");
       expect(got.content[0]?.text).toContain("\"We should move to OIDC.\"");
     });
   });

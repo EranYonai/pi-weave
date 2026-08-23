@@ -124,15 +124,38 @@ export async function appendToNote(
   return { slug, ...meta, body };
 }
 
-/** The append-only tail where verbatim user scribbles live (docs/notepad.md §4). */
-export const RAW_NOTES_HEADING = "## Raw notes";
+/** Format a verbatim user scribble as an append-only raw block with a timestamp. */
+export function formatRawAppend(rawText: string, date: Date = new Date()): string {
+  const pad = (n: number) => String(n).padStart(2, "0");
+  const yyyy = date.getFullYear();
+  const mm = pad(date.getMonth() + 1);
+  const dd = pad(date.getDate());
+  const hh = pad(date.getHours());
+  const min = pad(date.getMinutes());
+  const timestamp = `${yyyy}-${mm}-${dd} ${hh}:${min}`;
+
+  return `<!-- appended ${timestamp} -->\n\`\`\`\n${rawText.trim()}\n\`\`\``;
+}
+
+/** The append-only tail where verbatim user scribbles live. */
+export const RAW_NOTES_HEADING = "## Raw";
 
 /**
- * Extract the `## Raw notes` tail (heading + everything after) verbatim, or
- * "" when the note has no raw tail. Used by finalization so the literal
- * record of the user's words is never rewritten.
+ * Extract the raw tail (including separator line, heading, and everything after) verbatim.
  */
 export function extractRawTail(body: string): string {
+  // Check for '---' preceding ## Raw or ## Raw directly
+  const sepIdx = body.indexOf("\n---\n\n## Raw");
+  if (sepIdx !== -1) {
+    return body.slice(sepIdx + 1).trimEnd();
+  }
+  if (body.startsWith("---\n\n## Raw") || body.startsWith("---\n## Raw")) {
+    return body.trimEnd();
+  }
+  const sepIdx2 = body.indexOf("\n---\n## Raw");
+  if (sepIdx2 !== -1) {
+    return body.slice(sepIdx2 + 1).trimEnd();
+  }
   const idx = body.indexOf(RAW_NOTES_HEADING);
   if (idx === -1) return "";
   return body.slice(idx).trimEnd();
@@ -141,7 +164,7 @@ export function extractRawTail(body: string): string {
 export interface FinalizeNoteInput {
   /**
    * The restructured body ABOVE the raw tail (front-loaded summary, sections,
-   * entities, links). The `## Raw notes` tail is preserved verbatim beneath it.
+   * entities, links). The `## Raw` tail is preserved verbatim beneath it.
    */
   body: string;
   /** Injectable clock for tests. */
@@ -149,7 +172,7 @@ export interface FinalizeNoteInput {
 }
 
 /**
- * Finalize a note: replace the body above the `## Raw notes` tail with a
+ * Finalize a note: replace the body above the `## Raw` tail with a
  * restructured version, preserving the raw tail verbatim (append-only).
  * Returns null when the note is missing or the slug is unsafe.
  */

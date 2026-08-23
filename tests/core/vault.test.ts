@@ -8,9 +8,11 @@ import {
   extractRawTail,
   finalizeNote,
   formatNote,
+  formatRawAppend,
   getNote,
   listNotes,
   noteCount,
+  RAW_NOTES_HEADING,
   resolveNotePath,
   searchNotes,
   vaultExists,
@@ -96,10 +98,41 @@ describe("appendToNote", () => {
   });
 });
 
+describe("formatRawAppend", () => {
+  it("formats verbatim text with timestamp and backticks", () => {
+    const fixed = new Date(2026, 7, 23, 8, 45, 0); // August 23 2026, 08:45
+    const result = formatRawAppend("User input line", fixed);
+    expect(result).toBe("<!-- appended 2026-08-23 08:45 -->\n```\nUser input line\n```");
+  });
+
+  it("defaults to current date when omitted", () => {
+    const result = formatRawAppend("test");
+    expect(result).toMatch(/^<!-- appended \d{4}-\d{2}-\d{2} \d{2}:\d{2} -->\n```\ntest\n```$/);
+  });
+});
+
 describe("extractRawTail", () => {
-  it("returns the raw tail verbatim when present", () => {
-    const body = "# Summary\n\nWe decided X.\n\n## Raw notes\n\n\"We should do X.\"\n";
-    expect(extractRawTail(body)).toBe("## Raw notes\n\n\"We should do X.\"");
+  it("returns the raw tail verbatim when preceded by separator and heading", () => {
+    const body = "# Summary\n\nWe decided X.\n\n---\n\n## Raw\n<!-- NEVER edit below this line. Verbatim user input preserved here. -->\n\n```\n\"We should do X.\"\n```";
+    expect(extractRawTail(body)).toBe("---\n\n## Raw\n<!-- NEVER edit below this line. Verbatim user input preserved here. -->\n\n```\n\"We should do X.\"\n```");
+  });
+
+  it("returns the raw tail when body starts directly with separator or heading", () => {
+    const body1 = "---\n\n## Raw\n```\nraw\n```";
+    expect(extractRawTail(body1)).toBe("---\n\n## Raw\n```\nraw\n```");
+
+    const body2 = "---\n## Raw\n```\nraw\n```";
+    expect(extractRawTail(body2)).toBe("---\n## Raw\n```\nraw\n```");
+
+    const body3 = "text\n---\n## Raw\n```\nraw\n```";
+    expect(extractRawTail(body3)).toBe("---\n## Raw\n```\nraw\n```");
+
+    const body4 = "## Raw\n```\nraw\n```";
+    expect(extractRawTail(body4)).toBe("## Raw\n```\nraw\n```");
+  });
+
+  it("exports RAW_NOTES_HEADING as ## Raw", () => {
+    expect(RAW_NOTES_HEADING).toBe("## Raw");
   });
 
   it("returns '' when there is no raw tail", () => {
@@ -109,9 +142,10 @@ describe("extractRawTail", () => {
 
 describe("finalizeNote", () => {
   it("restructures the body above the raw tail and preserves it verbatim", async () => {
+    const rawSection = "---\n\n## Raw\n<!-- NEVER edit below this line. Verbatim user input preserved here. -->\n\n```\n\"We should move to OIDC next quarter.\"\n```";
     const note = await addNote(vault, {
       title: "Auth migration",
-      body: "## Raw notes\n\n\"We should move to OIDC next quarter.\"\n",
+      body: `# Draft\n\n${rawSection}\n`,
       source: "human",
       now: new Date("2026-08-22T10:00:00Z"),
     });
@@ -122,17 +156,18 @@ describe("finalizeNote", () => {
     expect(finalized?.updated).toBe("2026-08-23T10:00:00.000Z");
     expect(finalized?.created).toBe(note.created);
     expect(finalized?.body).toContain("**Decision:** move toward OIDC.");
-    expect(finalized?.body).toContain("## Raw notes");
+    expect(finalized?.body).toContain("## Raw");
+    expect(finalized?.body).toContain("<!-- NEVER edit below this line. Verbatim user input preserved here. -->");
     expect(finalized?.body).toContain("\"We should move to OIDC next quarter.\"");
     // the raw tail sits at the end, after the restructured body
-    expect(finalized!.body.indexOf("**Decision:**")).toBeLessThan(finalized!.body.indexOf("## Raw notes"));
+    expect(finalized!.body.indexOf("**Decision:**")).toBeLessThan(finalized!.body.indexOf("## Raw"));
   });
 
   it("finalizing a note with no raw tail just replaces the body", async () => {
     const note = await addNote(vault, { title: "Plain", body: "old body" });
     const finalized = await finalizeNote(vault, note.slug, { body: "new body" });
     expect(finalized?.body).toBe("new body");
-    expect(finalized?.body).not.toContain("## Raw notes");
+    expect(finalized?.body).not.toContain("## Raw");
   });
 
   it("returns null for unknown or unsafe slugs", async () => {
