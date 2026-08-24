@@ -148,15 +148,128 @@ describe("DetailSurface", () => {
     expect(lines).toContain("Alpha");
     expect(lines).toContain("Links");
   });
-  it("renders meta rows and navigates (enter on a link rebinds the pane)", () => {
+  it("renders meta rows and navigates (enter on the active link rebinds the pane)", () => {
     const s = bindDetail({ context: ctx(model) }, "note:a");
     const d = s.render(60).join("\n");
     expect(d).toContain("Links");
-    // down twice to reach the link row then enter rebinds to note:b
+    // The link row is the selectable row nearest the viewport center, so Enter
+    // rebinds the pane to note:b (arrows scroll; with a short note the content
+    // fits the viewport so down is a no-op, but the active row is still the link).
     s.handleInput("\x1b[B");
     s.handleInput("\x1b[B");
     s.handleInput("\r");
     expect(s.state.nodeId).toBe("note:b");
+  });
+  it("arrow keys scroll a long note body and clamp at top/bottom", async () => {
+    const longBody = "# Title\n\n" + Array.from({ length: 60 }, (_, i) => `line ${i + 1}`).join("\n");
+    const loaders: WeaveLoaders = {
+      loadNote: async () => ({ slug: "alpha", title: "Alpha", body: longBody, created: "", updated: "", tags: [], source: "human" as const }),
+      loadOkf: async () => null,
+      openNote: async () => true,
+      rebuild: async () => model,
+    };
+    const bodies = new BodyStore({ loaders });
+    const surfaceCtx: SurfaceContext = { ...ctx(model), loaders, bodies };
+    const s = bindDetail({ context: surfaceCtx }, "note:a");
+    s.paneRows = 8;
+    s.render(60); // trigger the async body load
+    await new Promise((r) => setTimeout(r, 0)); // let loadNote resolve
+    s.render(60); // rebuild the cached line layout with the real body
+    expect(s.state.scrollOffset).toBe(0);
+    s.handleInput("\x1b[B"); // down one
+    expect(s.state.scrollOffset).toBe(1);
+    s.handleInput("\x1b[6~"); // pageDown (paneRows = 8) -> 1 + 8
+    expect(s.state.scrollOffset).toBe(9);
+    s.handleInput("\x1b[F"); // end -> bottom
+    const bottom = s.state.scrollOffset;
+    expect(bottom).toBeGreaterThan(8);
+    s.handleInput("\x1b[B"); // down past bottom -> clamp
+    expect(s.state.scrollOffset).toBe(bottom);
+    s.handleInput("\x1b[H"); // home -> top
+    expect(s.state.scrollOffset).toBe(0);
+    s.handleInput("\x1b[A"); // up past top -> clamp
+    expect(s.state.scrollOffset).toBe(0);
+  });
+  it("/ enters goto-line mode; digits + Enter jump; Esc cancels", async () => {
+    const longBody = "# Title\n\n" + Array.from({ length: 60 }, (_, i) => `line ${i + 1}`).join("\n");
+    const loaders: WeaveLoaders = {
+      loadNote: async () => ({ slug: "alpha", title: "Alpha", body: longBody, created: "", updated: "", tags: [], source: "human" as const }),
+      loadOkf: async () => null,
+      openNote: async () => true,
+      rebuild: async () => model,
+    };
+    const bodies = new BodyStore({ loaders });
+    const surfaceCtx: SurfaceContext = { ...ctx(model), loaders, bodies };
+    const s = bindDetail({ context: surfaceCtx }, "note:a");
+    s.paneRows = 8;
+    s.render(60);
+    await new Promise((r) => setTimeout(r, 0));
+    s.render(60);
+    s.handleInput("/"); // enter goto mode
+    expect(s.state.gotoBuf).toBe("");
+    expect(s.render(60).join("\n")).toContain("/");
+    s.handleInput("1");
+    s.handleInput("2");
+    expect(s.state.gotoBuf).toBe("12");
+    s.handleInput("\r"); // Enter -> jump to line 12 (1-indexed -> offset 11)
+    expect(s.state.scrollOffset).toBe(11);
+    expect(s.state.gotoBuf).toBeNull();
+    // Esc cancels without changing the offset.
+    s.handleInput("/");
+    s.handleInput("5");
+    expect(s.state.gotoBuf).toBe("5");
+    s.handleInput("\x1b"); // escape
+    expect(s.state.gotoBuf).toBeNull();
+    expect(s.state.scrollOffset).toBe(11);
+  });
+  it("goto-line mode: backspace deletes and unmapped keys are ignored", async () => {
+    const longBody = "# Title\n\n" + Array.from({ length: 60 }, (_, i) => `line ${i + 1}`).join("\n");
+    const loaders: WeaveLoaders = {
+      loadNote: async () => ({ slug: "alpha", title: "Alpha", body: longBody, created: "", updated: "", tags: [], source: "human" as const }),
+      loadOkf: async () => null,
+      openNote: async () => true,
+      rebuild: async () => model,
+    };
+    const bodies = new BodyStore({ loaders });
+    const surfaceCtx: SurfaceContext = { ...ctx(model), loaders, bodies };
+    const s = bindDetail({ context: surfaceCtx }, "note:a");
+    s.paneRows = 8;
+    s.render(60);
+    await new Promise((r) => setTimeout(r, 0));
+    s.render(60);
+    s.handleInput("/");
+    s.handleInput("1");
+    s.handleInput("2");
+    expect(s.state.gotoBuf).toBe("12");
+    s.handleInput("\x7f"); // backspace -> drop last digit
+    expect(s.state.gotoBuf).toBe("1");
+    s.handleInput("x"); // unmapped key -> ignored, still in goto mode
+    expect(s.state.gotoBuf).toBe("1");
+    s.handleInput("\x7f"); // backspace on single digit -> exit goto mode
+    expect(s.state.gotoBuf).toBeNull();
+  });
+  it("render clamps an out-of-range scrollOffset back into the viewport", async () => {
+    const longBody = "# Title\n\n" + Array.from({ length: 60 }, (_, i) => `line ${i + 1}`).join("\n");
+    const loaders: WeaveLoaders = {
+      loadNote: async () => ({ slug: "alpha", title: "Alpha", body: longBody, created: "", updated: "", tags: [], source: "human" as const }),
+      loadOkf: async () => null,
+      openNote: async () => true,
+      rebuild: async () => model,
+    };
+    const bodies = new BodyStore({ loaders });
+    const surfaceCtx: SurfaceContext = { ...ctx(model), loaders, bodies };
+    const s = bindDetail({ context: surfaceCtx }, "note:a");
+    s.paneRows = 8;
+    s.render(60);
+    await new Promise((r) => setTimeout(r, 0));
+    s.render(60);
+    s.state = { ...s.state, scrollOffset: 99999 };
+    s.render(60);
+    expect(s.state.scrollOffset).toBeGreaterThan(0);
+    expect(s.state.scrollOffset).toBeLessThan(99999); // clamped down to the bottom
+    s.state = { ...s.state, scrollOffset: -5 };
+    s.render(60);
+    expect(s.state.scrollOffset).toBe(0); // clamped up to the top
   });
   it("renders '(no selection)' / '(node not found)' states", () => {
     const s = new DetailSurface({ context: ctx(model) });

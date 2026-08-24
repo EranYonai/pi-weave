@@ -54,6 +54,12 @@ export interface Surface extends Component {
   setFocused(focused: boolean): void;
   /** The pane title (surface name), shown in the border. */
   title(): string;
+  /**
+   * Called after a refresh rebuilds the model, so a surface bound to a node
+   * that no longer exists can rebind to a survivor instead of showing
+   * "(not found)". Optional — surfaces with no node binding omit it.
+   */
+  rebind?(model: GraphModel): void;
 }
 
 /** Minimal theme surface the pane chrome needs. */

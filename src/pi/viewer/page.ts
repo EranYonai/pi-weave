@@ -30,18 +30,26 @@ const PAGE = `<!DOCTYPE html>
 <title>pi-weave · knowledge view</title>
 <style>
   :root[data-theme="dark"] {
-    --bg:#0b1020; --surface:#131a2e; --raised:#1a2340; --line:#26324d;
-    --line-strong:#33415f; --text:#e8ecf6; --muted:#93a0bd; --faint:#64748b;
-    --accent:#a78bfa; --ok:#34d399; --warn:#f59e0b; --danger:#f87171;
+    --font-sans:"Avenir Next","Avenir","Segoe UI",system-ui,sans-serif;
+    --font-mono:"SF Mono","JetBrains Mono","Menlo","Consolas",monospace;
+    --bg:#0a0e16; --surface:#10151f; --raised:#171e2b; --line:#222c3d;
+    --line-strong:#33425c; --text:#e7ebf3; --muted:#8a96ad; --faint:#5a6577;
+    --grid:#171e2c;
+    --accent:#e8a33d; --ok:#5fc99c; --warn:#f47067; --danger:#f47067;
+    --human:#5fc99c; --agent:#56cfe1; --generated:#8b96a3;
   }
   :root[data-theme="light"] {
-    --bg:#f8fafc; --surface:#ffffff; --raised:#f1f5f9; --line:#e2e8f0;
-    --line-strong:#cbd5e1; --text:#0f172a; --muted:#64748b; --faint:#94a3b8;
-    --accent:#7c3aed; --ok:#059669; --warn:#d97706; --danger:#dc2626;
+    --font-sans:"Avenir Next","Avenir","Segoe UI",system-ui,sans-serif;
+    --font-mono:"SF Mono","JetBrains Mono","Menlo","Consolas",monospace;
+    --bg:#eceef3; --surface:#ffffff; --raised:#e4e8ef; --line:#d6dce5;
+    --line-strong:#b9c2cf; --text:#11151f; --muted:#5a6577; --faint:#8b96a3;
+    --grid:#dde2ea;
+    --accent:#b45e0a; --ok:#0f7a55; --warn:#c2410c; --danger:#c2410c;
+    --human:#0f7a55; --agent:#0369a1; --generated:#5a6577;
   }
   * { box-sizing: border-box; }
   html, body { height: 100%; }
-  body { margin: 0; font: 13px/1.5 -apple-system, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+  body { margin: 0; font: 13px/1.5 var(--font-sans);
          background: var(--bg); color: var(--text); overflow: hidden; }
   button, select, input { font: inherit; color: inherit; }
   button { background: var(--raised); color: var(--text); border: 1px solid var(--line);
@@ -55,39 +63,49 @@ const PAGE = `<!DOCTYPE html>
   header { position: fixed; inset: 0 0 auto 0; padding: 8px 14px; display: flex; gap: 10px;
            align-items: center; flex-wrap: wrap; background: var(--surface);
            border-bottom: 1px solid var(--line); z-index: 10; }
-  header h1 { font-size: 15px; margin: 0; font-weight: 600; letter-spacing: -0.01em; }
-  header h1 span { color: var(--accent); }
+  header h1 { font-size: 15px; margin: 0; font-weight: 600; letter-spacing: -0.01em;
+              display: flex; align-items: center; gap: 8px; }
+  header h1 .mark { color: var(--accent); flex: none; }
+  header h1 .word { font-family: var(--font-mono); font-weight: 600; letter-spacing: -0.02em; }
+  header h1 span.label { color: var(--muted); font-family: var(--font-sans); font-weight: 500;
+              font-size: 12px; letter-spacing: 0; }
   .tabs { display: flex; gap: 2px; background: var(--raised); border: 1px solid var(--line);
           border-radius: 8px; padding: 2px; }
   .tabs button { border: none; background: none; padding: 3px 10px; font-size: 12px; font-weight: 600;
                  text-transform: uppercase; letter-spacing: .08em; color: var(--muted); border-radius: 6px; }
-  .tabs button.active { background: var(--accent); color: #0b1020; }
+  .tabs button.active { background: var(--accent); color: var(--bg); }
   #search { background: var(--raised); border: 1px solid var(--line); color: var(--text);
             border-radius: 7px; padding: 5px 10px; width: 200px; }
   #search:focus { outline: none; border-color: var(--accent); }
-  #layout { background: var(--raised); border: 1px solid var(--line); border-radius: 7px;
-            padding: 4px 8px; font-size: 12px; }
   .zoomgrp button { width: 30px; }
   #status { display: flex; align-items: center; gap: 8px; margin-left: auto; font-size: 12px;
-            font-feature-settings: "tnum"; color: var(--muted); }
+            font-family: var(--font-mono); font-feature-settings: "tnum"; color: var(--muted); }
   #status .stat { white-space: nowrap; }
   #status .stat.stale { color: var(--warn); font-weight: 600; }
   #stamp { color: var(--faint); font-size: 11px; white-space: nowrap; }
   .provbar { display: inline-flex; width: 64px; height: 8px; border-radius: 4px; overflow: hidden;
              background: var(--line); vertical-align: middle; }
   .provbar i { display: block; height: 100%; }
-  .provbar .p-human { background: var(--ok); }
-  .provbar .p-agent { background: var(--accent); }
-  .provbar .p-generated { background: var(--faint); }
+  .provbar .p-human { background: var(--human); }
+  .provbar .p-agent { background: var(--agent); }
+  .provbar .p-generated { background: var(--generated); }
   .provbar.big { width: 100%; height: 12px; }
 
   /* ---------- graph ---------- */
   #graph { display: block; width: 100vw; height: 100vh; touch-action: none;
-           background: radial-gradient(1200px 800px at 50% 40%, var(--surface) 0%, var(--bg) 70%); }
-  text.label { fill: var(--text); font-size: 12px; pointer-events: none;
+           background-color: var(--bg);
+           background-image:
+             radial-gradient(1200px 820px at 50% 38%, var(--surface) 0%, transparent 72%),
+             linear-gradient(var(--grid) 1px, transparent 1px),
+             linear-gradient(90deg, var(--grid) 1px, transparent 1px);
+           background-size: 100% 100%, 46px 46px, 46px 46px; }
+  text.label { fill: var(--text); font-family: var(--font-mono); font-size: 11px;
+               letter-spacing: -0.01em; pointer-events: none;
                paint-order: stroke; stroke: var(--bg); stroke-width: 3px; stroke-linejoin: round; }
   text.glyph { font-size: 7px; fill: var(--bg); pointer-events: none; text-anchor: middle; }
-  text.badge { font-size: 9px; fill: var(--muted); pointer-events: none; text-anchor: end; font-weight: 700; }
+  text.badge { font-size: 9px; font-family: var(--font-mono); fill: var(--text);
+               pointer-events: none; text-anchor: end; font-weight: 700;
+               font-feature-settings: "tnum"; }
   g.node { cursor: pointer; }
   g.node .shape { transition: transform 120ms ease; }
   g.node.hovered .shape { transform: scale(1.06); }
@@ -99,7 +117,7 @@ const PAGE = `<!DOCTYPE html>
   .surface { position: fixed; top: 48px; bottom: 0; overflow-y: auto; background: var(--bg); }
   #list { left: 0; width: 340px; border-right: 1px solid var(--line); display: none; padding: 12px; }
   body.list-open #list { display: block; }
-  #list-toggle[aria-pressed="true"] { background: var(--accent); color: #0b1020; }
+  #list-toggle[aria-pressed="true"] { background: var(--accent); color: var(--bg); }
   #health { left: 0; right: 0; display: none; padding: 20px 24px; max-width: 760px; }
   #health h2 { font-size: 18px; line-height: 1.3; font-weight: 650; margin: 0 0 4px; }
   #health h3 { font-size: 13px; text-transform: uppercase; letter-spacing: .08em; color: var(--muted);
@@ -159,9 +177,9 @@ const PAGE = `<!DOCTYPE html>
               cursor: pointer; }
   .link-row:hover { background: var(--raised); }
   .prov { font-size: 11px; border-radius: 999px; padding: 1px 8px; margin-left: 7px; }
-  .prov.human { background: var(--ok); color: #0b1020; }
-  .prov.agent { background: var(--accent); color: #0b1020; }
-  .prov.generated { background: var(--faint); color: #0b1020; }
+  .prov.human { background: var(--human); color: var(--bg); }
+  .prov.agent { background: var(--agent); color: var(--bg); }
+  .prov.generated { background: var(--generated); color: var(--bg); }
   .cluster-meta { border-bottom: 1px solid var(--line); margin-bottom: 10px; padding-bottom: 10px; font-size: 12px; }
   .cluster-meta .k { color: var(--muted); display: inline-block; min-width: 88px; }
   #pexpand { margin-bottom: 12px; }
@@ -179,9 +197,9 @@ const PAGE = `<!DOCTYPE html>
   #legend .row { display: flex; align-items: center; gap: 7px; margin: 2px 0; white-space: nowrap; }
   #legend .dot { width: 10px; height: 10px; border-radius: 50%; display: inline-block; }
   #legend .ring { width: 12px; height: 12px; border-radius: 50%; display: inline-block; }
-  #legend .ring.human { border: 2px solid var(--ok); }
-  #legend .ring.agent { border: 2px dashed var(--accent); }
-  #legend .ring.generated { border: 2px dotted var(--faint); }
+  #legend .ring.human { border: 2px solid var(--human); }
+  #legend .ring.agent { border: 2px dashed var(--agent); }
+  #legend .ring.generated { border: 2px dotted var(--generated); }
 
   /* ---------- controls panel (v3 5.2) ---------- */
   #controls-open { position: fixed; left: 12px; top: 58px; z-index: 11; width: 32px; height: 32px;
@@ -201,14 +219,9 @@ const PAGE = `<!DOCTYPE html>
   #controls label { display: flex; align-items: center; gap: 6px; font-size: 12px; margin: 4px 0; color: var(--muted); }
   #controls input[type="range"], #controls select { flex: 1; min-width: 0; }
   #controls input[type=text], #controls input:not([type]) { flex: 1; min-width: 0; background: var(--raised); border: 1px solid var(--line); border-radius: 6px; padding: 4px 6px; color: var(--text); }
-  .seg { display: flex; gap: 2px; background: var(--raised); border: 1px solid var(--line); border-radius: 8px; padding: 2px; }
-  .seg button { border: none; background: none; padding: 3px 6px; font-size: 11px; font-weight: 600; color: var(--muted); border-radius: 6px; flex: 1; }
-  .seg button.active { background: var(--accent); color: #0b1020; }
-  #force-sliders { margin-top: 8px; }
-  #force-sliders.hidden { display: none; }
   .chips { display: flex; flex-wrap: wrap; gap: 4px; margin: 4px 0; }
   .chips .chip { background: var(--raised); border: 1px solid var(--line); border-radius: 999px; padding: 2px 9px; font-size: 11px; cursor: pointer; color: var(--muted); }
-  .chips .chip.active { background: var(--accent); border-color: var(--accent); color: #0b1020; }
+  .chips .chip.active { background: var(--accent); border-color: var(--accent); color: var(--bg); }
   .ctoggle input { accent-color: var(--accent); }
   .cbtns { display: flex; gap: 6px; }
   .cbtns button { flex: 1; }
@@ -240,6 +253,10 @@ const PAGE = `<!DOCTYPE html>
            padding: 8px 14px; border-radius: 8px; z-index: 40; opacity: 0; transition: opacity 200ms; }
   #toast.show { opacity: 1; }
 
+  /* first-paint reveal: one orchestrated staggered fade-in of the cluster map */
+  g.node.enter { animation: nodeIn 380ms cubic-bezier(.2,.7,.2,1) both; }
+  @keyframes nodeIn { from { opacity: 0; } to { opacity: 1; } }
+
   @media (prefers-reduced-motion: reduce) {
     * { animation: none !important; transition: none !important; }
   }
@@ -247,20 +264,14 @@ const PAGE = `<!DOCTYPE html>
 </head>
 <body class="list-open">
 <header>
-  <h1>pi-weave <span>knowledge view</span></h1>
+  <h1><svg class="mark" width="20" height="20" viewBox="0 0 24 24" aria-hidden="true"><rect x="3.5" y="3.5" width="17" height="17" rx="5" fill="none" stroke="currentColor" stroke-width="1.6"/><path d="M4 4 L20 20 M20 4 L4 20" stroke="currentColor" stroke-width="1.1" stroke-dasharray="2.6 2.8" opacity="0.6"/><circle cx="12" cy="12" r="2.6" fill="currentColor"/></svg><span class="word">pi-weave</span> <span class="label">knowledge view</span></h1>
   <nav class="tabs" aria-label="surface">
     <button data-surface="graph" class="tab active">Explore</button>
     <button data-surface="health" class="tab">Health</button>
     <button id="list-toggle" title="Toggle list sidebar" aria-pressed="true">▤</button>
   </nav>
   <input id="search" placeholder="search…" aria-label="search">
-  <select id="layout" aria-label="layout" title="Layout">
-    <option value="cluster" selected>cluster</option>
-    <option value="tree">tree</option>
-    <option value="radial">radial</option>
-    <option value="force">physics</option>
-  </select>
-  <button id="layout-reset" title="Reset layout">⟲</button>
+  <button id="layout-reset" title="Re-seed layout">⟲</button>
   <span class="zoomgrp">
     <button id="zoom-in" title="Zoom in">+</button><button id="zoom-out" title="Zoom out">−</button><button id="zoom-reset" title="Reset view">⌂</button>
   </span>
@@ -320,21 +331,6 @@ const PAGE = `<!DOCTYPE html>
   <div id="controls-grip"></div>
   <div id="controls-head"><strong>View</strong><button id="controls-close" title="Close (c)">✕</button></div>
   <div class="cgroup">
-    <div class="ct-label">Layout</div>
-    <div class="seg" id="ctl-layout">
-      <button data-layout="cluster" class="active">Cluster</button>
-      <button data-layout="tree">Tree</button>
-      <button data-layout="radial">Radial</button>
-      <button data-layout="force">Force</button>
-    </div>
-    <div id="force-sliders" class="hidden">
-      <label>Repel <input type="range" id="f-repel" min="0" max="200" value="100"></label>
-      <label>Link <input type="range" id="f-link" min="40" max="260" value="150"></label>
-      <label>Center <input type="range" id="f-center" min="0" max="100" value="30"></label>
-      <label>Collide <input type="range" id="f-collide" min="0" max="100" value="70"></label>
-    </div>
-  </div>
-  <div class="cgroup">
     <div class="ct-label">Filter</div>
     <div class="chips" id="kind-chips"></div>
     <div class="chips" id="prov-chips"></div>
@@ -366,7 +362,7 @@ const PAGE = `<!DOCTYPE html>
   <div class="card">
     <h2>Shortcuts</h2>
     <table>
-      <tr><td>1 2 3 4</td><td>Cluster / Tree / Radial / Force layout</td></tr>
+      <tr><td>⟲</td><td>Re-seed layout (physics)</td></tr>
       <tr><td>c</td><td>Toggle controls panel</td></tr>
       <tr><td>/</td><td>Focus search</td></tr>
       <tr><td>p</td><td>Cycle provenance filter</td></tr>
@@ -616,6 +612,16 @@ const PAGE = `<!DOCTYPE html>
   function degreeRepulsion(deg1, deg2) {
     return (deg1 + 1) * (deg2 + 1) / 4;
   }
+  // Edge spring rest length, scaled by the source's fanout for containment so a
+  // hub with many children gets a wider ring (otherwise 60 leaves on a 105px
+  // spring sit ~11px apart and repulsion can't separate them -> hairball).
+  // Self-contained (no outer REST) so it extracts into the pure-fn test harness.
+  function restLength(kind, fanout) {
+    var base = kind === "contains" ? 105 : kind === "anchored-at" ? 130
+      : kind === "links-to" ? 160 : kind === "mentions" ? 160 : 120;
+    if (kind === "contains") return base + 30 * Math.sqrt(fanout || 1);
+    return base;
+  }
   // ForceAtlas2 swinging/traction local speed: scale a node's displacement by
   // 1/(1+k*sqrt(swing)) where swing is the change in its force between ticks.
   // Oscillators (large swing) take smaller steps than steady movers.
@@ -639,49 +645,6 @@ const PAGE = `<!DOCTYPE html>
     for (k in idsA) if (!idsB[k]) removed++;
     if (added === 0 && removed === 0) return 0; // identical structure (no-op)
     return (added + removed <= 3) ? 0.05 : 0.5;
-  }
-  // Deterministic concentric-by-degree layout: hubs in the center, leaves outward.
-  function radialLayout(nodes, degreeOf) {
-    var deg = {}, groups = {};
-    nodes.forEach(function (n) { deg[n.id] = degreeOf(n); });
-    nodes.forEach(function (n) { (groups[deg[n.id]] = groups[deg[n.id]] || []).push(n.id); });
-    var degs = Object.keys(groups).map(Number).sort(function (a, b) { return b - a; });
-    var out = {}, ring = 0;
-    for (var g = 0; g < degs.length; g++) {
-      var ids = groups[degs[g]];
-      var radius = 30 + ring * 60;
-      for (var i = 0; i < ids.length; i++) {
-        var angle = (2 * Math.PI * i) / ids.length + ring * 0.618;
-        out[ids[i]] = { x: Math.cos(angle) * radius, y: Math.sin(angle) * radius };
-      }
-      ring++;
-    }
-    return out;
-  }
-  // Deterministic layered tree over the containment DAG (contains + anchored-at).
-  // Cross-links are not drawn by this helper; it only places nodes on depth rows.
-  function treeLayout(nodes, edges) {
-    var children = {}, incoming = {};
-    edges.forEach(function (e) {
-      if (e.kind !== "contains" && e.kind !== "anchored-at") return;
-      (children[e.source] = children[e.source] || []).push(e.target);
-      incoming[e.target] = 1;
-    });
-    var roots = nodes.filter(function (n) { return !incoming[n.id]; }).map(function (n) { return n.id; });
-    var out = {}, x = 0;
-    function place(id, depth) {
-      out[id] = { x: x, y: depth * 70 };
-      var kids = children[id] || [];
-      if (kids.length === 0) x += 50;
-      else kids.forEach(function (k) { place(k, depth + 1); });
-    }
-    roots.forEach(function (r) { place(r, 0); });
-    var minX = Infinity, maxX = -Infinity;
-    Object.keys(out).forEach(function (id) {
-      minX = Math.min(minX, out[id].x); maxX = Math.max(maxX, out[id].x);
-    });
-    Object.keys(out).forEach(function (id) { out[id].x -= (minX + maxX) / 2; });
-    return out;
   }
   // Label discipline (section 16 Tier C): show a label only above a camera zoom
   // threshold or for high-degree nodes; hover/selection reveal it regardless.
@@ -814,7 +777,13 @@ const PAGE = `<!DOCTYPE html>
         var a = -Math.PI / 2 + (2 * Math.PI * idx) / Math.max(1, shown);
         out[k] = { x: out[id].x + Math.cos(a) * r, y: out[id].y + Math.sin(a) * r };
         idx++;
-        if (isCluster && expanded[k]) placeChildren(k);
+        // Nested clusters are always visible (aggregate.reveal recurses into
+        // every cluster, not just expanded ones), so their positions must
+        // cascade too — otherwise a grandchild cluster falls back to a
+        // phyllotaxis seed at the centre, disconnected from its parent. Leaves
+        // stay gated: placeChildren returns early for an unexpanded parent
+        // whose children are all leaves, so only the expand state reveals them.
+        if (isCluster) placeChildren(k);
       });
     }
     roots.forEach(function (id) { placeChildren(id); });
@@ -828,29 +797,6 @@ const PAGE = `<!DOCTYPE html>
       h = Math.imul(h, 16777619);
     }
     return (h >>> 0).toString(16);
-  }
-  // Cubic-bezier easing (.2,.7,.2,1) — Newton solve on the x curve, then
-  // evaluate y. t is normalised progress in [0,1].
-  function cubicBezierEase(progress, x1, y1, x2, y2) {
-    var p = Math.max(0, Math.min(1, progress));
-    var t = p;
-    for (var i = 0; i < 8; i++) {
-      var x = 3 * (1 - t) * (1 - t) * t * x1 + 3 * (1 - t) * t * t * x2 + t * t * t;
-      var dx = 3 * (1 - t) * (1 - t) * x1 + 6 * (1 - t) * t * (x2 - x1) + 3 * t * t * (1 - x2);
-      t -= (x - p) / (dx || 1e-9);
-    }
-    return 3 * (1 - t) * (1 - t) * t * y1 + 3 * (1 - t) * t * t * y2 + t * t * t;
-  }
-  // Interpolate node positions from [from] to [to] by progress t (reduced-motion
-  // callers pass t=1 for an instant cut). New nodes (no [from]) jump to target.
-  function tweenPositions(from, to, t) {
-    var u = cubicBezierEase(t, 0.2, 0.7, 0.2, 1);
-    var out = {};
-    for (var id in to) {
-      var f = from[id], end = to[id];
-      out[id] = f ? { x: f.x + (end.x - f.x) * u, y: f.y + (end.y - f.y) * u } : { x: end.x, y: end.y };
-    }
-    return out;
   }
   // Restore persisted node positions for [ids] from a per-repo localStorage
   // store (keyed by cwd hash). Drops ids that no longer exist and ignores
@@ -1061,11 +1007,10 @@ const PAGE = `<!DOCTYPE html>
   var COLORS = { vault: "#8b5cf6", note: "#c4b5fd", repository: "#3b82f6",
     module: "#22c55e", "package": "#14b8a6", entryPoint: "#a3e635",
     gitState: "#facc15", external: "#fb923c", file: "#6ee7b7" };
-  var PROV_COLOR = { human: "#a7f3d0", agent: "#e9d5ff", generated: "#94a3b8" };
+  var PROV_COLOR = { human: "#5fc99c", agent: "#56cfe1", generated: "#8b96a3" };
   var PROV_GLYPH = { human: "●", agent: "◐", generated: "○" };
   var EDGE_COLORS = { contains: "#2e3a55", "anchored-at": "#a16207", "links-to": "#7c3aed", mentions: "#525252" };
   var EDGE_DASH = { "links-to": "4 3", "mentions": "2 3" };
-  var REST = { contains: 105, "anchored-at": 130, "links-to": 160, mentions: 160 };
   var svgNS = "http://www.w3.org/2000/svg";
   var svg = document.getElementById("graph");
   var panel = document.getElementById("panel");
@@ -1076,10 +1021,12 @@ const PAGE = `<!DOCTYPE html>
   var listLimit = 100;
   var listExpanded = { vault: 1, repository: 1 };
   var showInternals = false;
-  var sim = {}, alpha = 0, posMap = {}, layoutMode = "cluster";
+  var sim = {}, alpha = 0, posMap = {};
   var expanded = {}, aggregate = null;
-  // Force-layout tunables surfaced in the controls panel force sliders (M4).
-  var REPEL_K = 1, CENTER_K = 1, COLLIDE_K = 1;
+  // Force-layout tunables — auto-tuned (no sliders). Physics is the only
+  // layout; these scale repulsion / gravity / collision. Tuned + verified
+  // headlessly so the graph spreads beyond one viewport without a hairball.
+  var REPEL_K = 1.4, CENTER_K = 1, COLLIDE_K = 1;
   // cwd is injected by the server (renderPage(cwd)) so per-repo positions are
   // keyed by a stable cwd hash, not by the volatile loopback port.
   var PAGE_CWD = __VIEWER_CWD_JSON__;
@@ -1221,29 +1168,34 @@ const PAGE = `<!DOCTYPE html>
     var ids = Object.keys(sim).filter(function (id) { return sim[id].visible; });
     var i, j, a, b, dx, dy, d2, d, f, id, iter;
     var deg = {};
+    var fanout = {}; // containment child count per source, for spring rest scaling
     model.edges.forEach(function (e) {
       if (sim[e.source]) deg[e.source] = (deg[e.source] || 0) + 1;
       if (sim[e.target]) deg[e.target] = (deg[e.target] || 0) + 1;
+      if (e.kind === "contains" && sim[e.source]) fanout[e.source] = (fanout[e.source] || 0) + 1;
     });
     // degree-weighted gravity (ForceAtlas2): hubs held central, islands (low
     // degree) pulled gently so they pack without imploding into the center.
+    // Gentler than v2 (0.0006 -> 0.0004) so the graph can spread beyond one
+    // viewport now that the hard clamp is gone.
     for (i = 0; i < ids.length; i++) {
       id = ids[i]; a = sim[id];
-      var g = 0.0006 * alpha * (1 + (deg[id] || 0) * 0.12) * CENTER_K;
+      var g = 0.0004 * alpha * (1 + (deg[id] || 0) * 0.12) * CENTER_K;
       a.vx += (W / 2 - a.x) * g;
       a.vy += (H / 2 - a.y) * g;
     }
     // repulsion-by-degree (ForceAtlas2): weak between leaves (so they pack near
-    // hubs), strong around hubs. Normalized so a leaf-leaf pair ~original.
+    // hubs), strong around hubs. Longer range + stronger than v2 (260px/380 ->
+    // 400px/520) so high-fanout children on wide springs actually separate.
     for (i = 0; i < ids.length; i++) {
       id = ids[i]; a = sim[id];
       for (j = i + 1; j < ids.length; j++) {
         b = sim[ids[j]];
         dx = a.x - b.x; dy = a.y - b.y;
         d2 = dx * dx + dy * dy;
-        if (d2 > 67600) continue; // 260px repulsion cutoff
+        if (d2 > 160000) continue; // 400px repulsion cutoff
         d = Math.sqrt(d2) || 0.001;
-        f = 380 * alpha * degreeRepulsion(deg[id] || 0, deg[ids[j]] || 0) / d2 * REPEL_K;
+        f = 520 * alpha * degreeRepulsion(deg[id] || 0, deg[ids[j]] || 0) / d2 * REPEL_K;
         a.vx += dx / d * f; a.vy += dy / d * f;
         b.vx -= dx / d * f; b.vy -= dy / d * f;
       }
@@ -1253,7 +1205,9 @@ const PAGE = `<!DOCTYPE html>
       if (!s || !t || !s.visible || !t.visible) return;
       var ddx = t.x - s.x, ddy = t.y - s.y;
       var dd = Math.sqrt(ddx * ddx + ddy * ddy) || 1;
-      var k = (dd - (REST[e.kind] || 120)) * 0.018 * alpha;
+      // Spring rest scales with the source's containment fanout so a hub with
+      // many children pulls them onto a wide ring instead of a tight hairball.
+      var k = (dd - restLength(e.kind, fanout[e.source] || 0)) * 0.018 * alpha;
       s.vx += ddx * k; s.vy += ddy * k;
       t.vx -= ddx * k; t.vy -= ddy * k;
     });
@@ -1288,10 +1242,19 @@ const PAGE = `<!DOCTYPE html>
       n.vx *= 0.82 * speed; n.vy *= 0.82 * speed;
       n.x += n.vx; n.y += n.vy;
     });
+    // Soft boundary (replaces the hard one-screen clamp that crammed the whole
+    // graph into a single viewport): let the graph spread several viewports,
+    // but pull back anything beyond ~1.6x the larger viewport dim from centre so
+    // it never flies off. Pan/zoom is how you find what spread off-screen.
+    var bound = 1.6 * Math.max(W, H), b2 = bound * bound;
     ids.forEach(function (id) {
       var n = sim[id];
-      n.x = Math.max(20, Math.min(W - 20, n.x));
-      n.y = Math.max(60, Math.min(H - 20, n.y));
+      if (n.fixed) return;
+      var ox = n.x - W / 2, oy = n.y - H / 2, r2 = ox * ox + oy * oy;
+      if (r2 > b2) {
+        var r = Math.sqrt(r2) || 1, pull = (r - bound) * 0.02 * alpha;
+        n.vx -= (ox / r) * pull; n.vy -= (oy / r) * pull;
+      }
     });
     alpha *= 0.995;
   }
@@ -1348,7 +1311,11 @@ const PAGE = `<!DOCTYPE html>
         var filtered = filterActive() && !matchSet[id];
         var dimmed = (query.length > 0 && n.node.label.toLowerCase().indexOf(query) < 0) ||
           (focusSet && !focusSet[id]) || filtered;
-        n.g.setAttribute("class", dimmed ? "node dim" : "node");
+        // Toggle only 'dim' — never rewrite the whole class attribute, or the
+        // first-paint 'enter' (staggered reveal) and runtime 'hovered' classes
+        // get stripped on every paint() (which fires at the end of buildScene
+        // and on each force tick), killing the reveal animation mid-flight.
+        n.g.classList.toggle("dim", dimmed);
         n.g.setAttribute("transform", "translate(" + n.x + "," + n.y + ")");
         if (n.selRing) n.selRing.style.display = selectedId === id ? "" : "none";
         // keep the drawn label text in sync (mid-ellipsis + chevron).
@@ -1752,7 +1719,7 @@ const PAGE = `<!DOCTYPE html>
     paint();
   }
 
-  // ---------- scene (weave-view v3: aggregation + deterministic layouts) ----------
+  // ---------- scene (weave-view v3: aggregation + force layout) ----------
   function loadPersisted() {
     var out = {};
     try {
@@ -1761,42 +1728,6 @@ const PAGE = `<!DOCTYPE html>
       Object.keys(p).forEach(function (id) { out[id] = { x: p[id].x, y: p[id].y }; });
     } catch (e) { /* storage unavailable */ }
     return out;
-  }
-  function deterministicPositions() {
-    var pos;
-    if (layoutMode === "cluster") pos = clusterLayout(aggregate, expanded);
-    else if (layoutMode === "tree") pos = treeLayout(model.nodes, model.edges);
-    else pos = radialLayout(model.nodes, function (n) { return degreeOf(n.id, model.edges); });
-    var out = {};
-    Object.keys(pos).forEach(function (id) { out[id] = { x: W / 2 + pos[id].x, y: H / 2 + pos[id].y }; });
-    return out;
-  }
-  function applyPositions(pos) {
-    Object.keys(pos).forEach(function (id) {
-      var n = sim[id]; if (!n) return;
-      n.x = pos[id].x; n.y = pos[id].y; n.vx = 0; n.vy = 0;
-    });
-  }
-  var tweenAnim = null;
-  // Layout-switch / expand-collapse tween (~250ms, cubic-bezier .2,.7,.2,1);
-  // prefers-reduced-motion cuts straight to the target.
-  function tweenTo(targetPos) {
-    if (tweenAnim) { cancelAnimationFrame(tweenAnim); tweenAnim = null; }
-    var from = {};
-    Object.keys(targetPos).forEach(function (id) { var n = sim[id]; if (n) from[id] = { x: n.x, y: n.y }; });
-    var reduced = false;
-    try { reduced = !!window.matchMedia && window.matchMedia("(prefers-reduced-motion: reduce)").matches; } catch (e) { reduced = false; }
-    if (reduced) { applyPositions(targetPos); paint(); return; }
-    var start = null;
-    function step(ts) {
-      if (start === null) start = ts;
-      var t = Math.min(1, (ts - start) / 250);
-      applyPositions(tweenPositions(from, targetPos, t));
-      paint();
-      if (t < 1) { tweenAnim = requestAnimationFrame(step); }
-      else { applyPositions(targetPos); paint(); tweenAnim = null; }
-    }
-    tweenAnim = requestAnimationFrame(step);
   }
   // Cluster node sizing: log(childCount) so a big cluster reads big.
   function clusterRadius(count) { return 22 + Math.log(count + 1) * 9; }
@@ -1823,12 +1754,30 @@ const PAGE = `<!DOCTYPE html>
     world = el("g", {});
     svg.appendChild(world);
     // Position persistence (v3): restore saved positions from localStorage
-    // (per repo, keyed by cwd hash), then reuse in-session survivors; seed only
-    // new ids on a deterministic phyllotaxis spiral; drop removed ids.
+    // (per repo, keyed by cwd hash), then reuse in-session survivors/pins.
+    // NEW ids are seeded from the cluster hierarchy (clusters on the root
+    // ring, expanded leaves ringing their parent) instead of a flat phyllotaxis
+    // spiral, so the force sim starts attached and organised. Hidden leaves
+    // (no clusterLayout position) inherit their parent's seed so they are
+    // co-located until expansion reveals them; true orphans fall back to the
+    // deterministic phyllotaxis spiral in seedPositions.
     var persisted = loadPersisted();
     var merged = {};
     Object.keys(persisted).forEach(function (pid) { merged[pid] = { x: persisted[pid].x, y: persisted[pid].y }; });
     Object.keys(posMap).forEach(function (pid) { merged[pid] = posMap[pid]; });
+    var seed = clusterLayout(aggregate, expanded);
+    var parentOf = {};
+    model.edges.forEach(function (e) {
+      if (e.kind === "contains" || e.kind === "anchored-at") parentOf[e.target] = e.source;
+    });
+    model.nodes.forEach(function (node) {
+      if (merged[node.id]) return;
+      if (seed[node.id]) { merged[node.id] = { x: W / 2 + seed[node.id].x, y: H / 2 + seed[node.id].y }; return; }
+      var pid = parentOf[node.id];
+      if (pid && merged[pid]) merged[node.id] = { x: merged[pid].x, y: merged[pid].y };
+      else if (pid && seed[pid]) merged[node.id] = { x: W / 2 + seed[pid].x, y: H / 2 + seed[pid].y };
+      // else: no parent + no seed -> seedPositions phyllotaxis fallback
+    });
     var seeded = seedPositions(merged, model.nodes.map(function (n) { return n.id; }), W, H);
     model.nodes.forEach(function (node) {
       var was = posMap[node.id];
@@ -1855,6 +1804,7 @@ const PAGE = `<!DOCTYPE html>
       var base = isLink ? (be.count > 2 ? 0.1 : 0.12) : 0.35;
       edgeLines.push({ e: be, line: line, base: base });
     });
+    var revealIdx = 0;
     model.nodes.forEach(function (node) {
       var n = sim[node.id];
       var isCluster = !!aggregate.clusters[node.id];
@@ -1903,7 +1853,7 @@ const PAGE = `<!DOCTYPE html>
         shape.setAttribute("stroke-width", "1.2");
       }
       if (node.id === "repository" && model.staleness && model.staleness.state === "stale") {
-        shape.setAttribute("stroke", "#f59e0b"); shape.setAttribute("stroke-width", "3");
+        shape.setAttribute("stroke", "#f47067"); shape.setAttribute("stroke-width", "3");
       }
       g.appendChild(shape);
       if (isCluster) {
@@ -1933,7 +1883,7 @@ const PAGE = `<!DOCTYPE html>
         var p = toWorld(ev);
         n.x = p.x; n.y = p.y; n.vx = 0; n.vy = 0; moved = true;
         posMap[node.id] = { x: n.x, y: n.y, fixed: true };
-        if (layoutMode === "force") alpha = Math.max(alpha, .08);
+        alpha = Math.max(alpha, .08);
         paint(); scheduleSave();
       });
       shape.addEventListener("pointerup", function (ev) {
@@ -1968,20 +1918,22 @@ const PAGE = `<!DOCTYPE html>
       });
       nodeLayer.appendChild(g);
       n.g = g;
+      // First-paint reveal: stagger the cluster map in (capped so big graphs
+      // don't trail; reduced-motion cuts to instant via the media query).
+      if (first) { g.classList.add("enter"); g.style.animationDelay = (Math.min(revealIdx, 24) * 16) + "ms"; }
+      revealIdx++;
     });
     camApply();
-    if (layoutMode === "force") {
-      if (first) {
-        alpha = .6;
-        for (var i = 0; i < 140; i++) { tick(); if (i % 20 === 19) paint(); }
-        alpha = .06;
-      } else {
-        // delta-aware reheat (section 16 Tier A): no-op -> none, small -> gentle.
-        alpha = Math.max(alpha, deltaAlpha(prevJson, lastJson));
-      }
+    // Physics is the only layout. On a first build, warm the simulation from
+    // the seeded positions so the graph opens settled (not mid-flight). On a
+    // rebuild, reheat by the structural delta so a no-op poll does nothing and
+    // a small change gently re-settles (section 16 Tier A).
+    if (first) {
+      alpha = .6;
+      for (var i = 0; i < 140; i++) { tick(); if (i % 20 === 19) paint(); }
+      alpha = .06;
     } else {
-      applyPositions(deterministicPositions()); // deterministic: no physics
-      alpha = 0;
+      alpha = Math.max(alpha, deltaAlpha(prevJson, lastJson));
     }
     paint();
     // persist settled positions + pins so the next rebuild does not jump.
@@ -1995,6 +1947,8 @@ const PAGE = `<!DOCTYPE html>
   // ---------- layout toggle (weave-view v3): cluster (default) / tree / radial / force ----------
   function toggleExpand(id, recursive) {
     if (!aggregate || !aggregate.clusters[id]) return;
+    var prevVisible = {};
+    Object.keys(sim).forEach(function (nid) { if (sim[nid] && sim[nid].visible) prevVisible[nid] = 1; });
     if (expanded[id]) {
       var out = collapseChildren(model, id);
       out.forEach(function (k) { delete expanded[k]; });
@@ -2003,27 +1957,46 @@ const PAGE = `<!DOCTYPE html>
       set.forEach(function (k) { expanded[k] = 1; });
     }
     aggregate = clusterAggregate(model, expanded);
-    Object.keys(sim).forEach(function (nid) { if (sim[nid]) sim[nid].visible = !!aggregate.visible[nid]; });
-    if (layoutMode === "force") { alpha = Math.max(alpha, 0.5); paint(); }
-    else tweenTo(deterministicPositions());
+    // Seed positions for nodes that just became visible so expanded children
+    // appear arranged around their parent (not stacked on it): take the cluster
+    // hierarchy seed and translate it so each parent sits at its CURRENT sim
+    // position. Pinned nodes keep their pin; already-visible nodes don't move.
+    var seed = clusterLayout(aggregate, expanded);
+    var parentOf = {};
+    model.edges.forEach(function (e) {
+      if (e.kind === "contains" || e.kind === "anchored-at") parentOf[e.target] = e.source;
+    });
+    Object.keys(sim).forEach(function (nid) {
+      var n = sim[nid]; if (!n) return;
+      n.visible = !!aggregate.visible[nid];
+      if (!n.visible || prevVisible[nid] || n.fixed || !seed[nid]) return;
+      var sx = W / 2 + seed[nid].x, sy = H / 2 + seed[nid].y;
+      var pid = parentOf[nid];
+      if (pid && sim[pid] && seed[pid]) {
+        // anchor the seed arrangement to the parent's actual current position
+        n.x = sx + (sim[pid].x - (W / 2 + seed[pid].x));
+        n.y = sy + (sim[pid].y - (H / 2 + seed[pid].y));
+      } else {
+        n.x = sx; n.y = sy;
+      }
+      n.vx = 0; n.vy = 0;
+    });
+    alpha = Math.max(alpha, 0.5);
+    paint();
     scheduleSave();
   }
   function applyLayout() {
-    if (layoutMode === "force") { alpha = Math.max(alpha, 0.5); return; } // re-simulate
-    if (!aggregate) return;
-    tweenTo(deterministicPositions());
+    // Physics is the only layout: a "layout apply" is just a reheat so the
+    // graph re-settles from its current positions.
+    alpha = Math.max(alpha, 0.5);
     scheduleSave();
   }
-  document.getElementById("layout").addEventListener("change", function () {
-    layoutMode = this.value;
-    applyLayout();
-  });
   document.getElementById("layout-reset").addEventListener("click", function () {
+    // Re-seed: drop persisted positions + pins + expand state, then rebuild
+    // from the cluster hierarchy and re-simulate.
     try { localStorage.removeItem(storeKey()); } catch (e) { /* ignore */ }
     posMap = {};
     expanded = {};
-    layoutMode = "cluster";
-    document.getElementById("layout").value = "cluster";
     buildScene(true, "");
     scheduleSave();
   });
@@ -2113,11 +2086,7 @@ const PAGE = `<!DOCTYPE html>
   // ---------- keyboard (v3 6): every control is also a key ----------
   document.addEventListener("keydown", function (ev) {
     var k = ev.key;
-    if (k === "1") { layoutMode = "cluster"; setLayoutUI(); applyLayout(); }
-    else if (k === "2") { layoutMode = "tree"; setLayoutUI(); applyLayout(); }
-    else if (k === "3") { layoutMode = "radial"; setLayoutUI(); applyLayout(); }
-    else if (k === "4") { layoutMode = "force"; setLayoutUI(); applyLayout(); }
-    else if (k === "c") toggleControls();
+    if (k === "c") toggleControls();
     else if (k === "o") { toggleChip("orphans"); }
     else if (k === "i") { toggleChip("internals"); }
     else if (k === "p") cycleProvenance();
@@ -2176,36 +2145,6 @@ const PAGE = `<!DOCTYPE html>
     });
     grip.addEventListener("pointerup", function () { start = null; });
   })();
-  // Layout segmented control + force sliders (reuse the 16 sim tunables).
-  function setLayoutUI() {
-    document.querySelectorAll("#ctl-layout button").forEach(function (b) {
-      b.classList.toggle("active", b.getAttribute("data-layout") === layoutMode);
-    });
-    document.getElementById("force-sliders").classList.toggle("hidden", layoutMode !== "force");
-  }
-  document.querySelectorAll("#ctl-layout button").forEach(function (b) {
-    b.addEventListener("click", function () {
-      layoutMode = b.getAttribute("data-layout");
-      setLayoutUI(); applyLayout();
-    });
-  });
-  document.getElementById("f-repel").addEventListener("input", function () {
-    // repel slider tunes the repulsion scale factor.
-    REPEL_K = Number(this.value) / 100;
-    if (layoutMode === "force") alpha = Math.max(alpha, 0.5);
-  });
-  document.getElementById("f-link").addEventListener("input", function () {
-    REST["links-to"] = Number(this.value); REST.contains = Number(this.value) * 0.7;
-    if (layoutMode === "force") alpha = Math.max(alpha, 0.5);
-  });
-  document.getElementById("f-center").addEventListener("input", function () {
-    CENTER_K = Number(this.value) / 100;
-    if (layoutMode === "force") alpha = Math.max(alpha, 0.5);
-  });
-  document.getElementById("f-collide").addEventListener("input", function () {
-    COLLIDE_K = Number(this.value) / 100;
-    if (layoutMode === "force") alpha = Math.max(alpha, 0.5);
-  });
   // ---- filter chips ----
   function buildKindChips() {
     var kinds = [];
@@ -2286,8 +2225,8 @@ const PAGE = `<!DOCTYPE html>
     if (!model || !aggregate) return;
     aggregate = clusterAggregate(model, expanded);
     Object.keys(sim).forEach(function (id) { if (sim[id]) sim[id].visible = !!aggregate.visible[id]; });
-    if (layoutMode === "force") { alpha = Math.max(alpha, 0.5); paint(); }
-    else tweenTo(deterministicPositions());
+    alpha = Math.max(alpha, 0.5);
+    paint();
     scheduleSave();
   }
   document.getElementById("ctl-expand-all").addEventListener("click", expandAll);

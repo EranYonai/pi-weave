@@ -78,6 +78,13 @@ export class ExploreSurface implements Surface {
 
   /** Navigate the tree with a key sequence (delegates to v1 decodeAction + reduce). */
   handleInput(data: string): void {
+    // o opens the selected node in the external editor (parity with v1's
+    // WeaveExplorer and the Detail surface; the workspace root resolves the
+    // event into loaders.openNote/openFile).
+    if (data === "o" && !this.state.searching) {
+      if (this.state.selectedId) this.onEvent?.({ type: "openEditor", id: this.state.selectedId });
+      return;
+    }
     const action = decodeAction(data, toExplorerState(this.state));
     if (!action) return;
     this.applyAction(action);

@@ -32,6 +32,30 @@ describe("renderPage", () => {
     expect(page).not.toContain("`");
     expect(page).not.toContain("${");
   });
+
+  it("paint toggles the dim class instead of rewriting the node class attribute", () => {
+    // The dimmed state must toggle a single class, not overwrite the whole class
+    // attribute — otherwise the first-paint 'enter' reveal and runtime 'hovered'
+    // classes get stripped on every paint() (which fires at the end of buildScene
+    // and on each force tick), and the staggered reveal never plays.
+    const page = renderPage();
+    expect(page).toContain('classList.toggle("dim"');
+    expect(page).not.toContain('setAttribute("class", dimmed ? "node dim" : "node")');
+  });
+
+  it("exposes no layout-mode choice — physics is the only layout", () => {
+    // The cluster/tree/radial/force selector, segmented control, and force
+    // sliders are gone (user decision: physics only, auto-tuned). The re-seed
+    // button stays. Locks the removal so a layout switcher can't sneak back.
+    const page = renderPage();
+    expect(page).not.toContain('id="layout"');
+    expect(page).not.toContain("data-layout");
+    expect(page).not.toContain('id="force-sliders"');
+    expect(page).not.toContain('id="ctl-layout"');
+    expect(page).not.toContain("layoutMode");
+    expect(page).toContain("restLength");
+    expect(page).toContain("Re-seed layout");
+  });
 });
 
 describe("browserCommand", () => {
@@ -253,8 +277,7 @@ describe("page pure functions (extract-and-run)", () => {
     degreeRepulsion: (deg1: number, deg2: number) => number;
     localSpeed: (prev: { x: number; y: number } | null, force: { x: number; y: number }) => number;
     deltaAlpha: (prev: string, next: string) => number;
-    radialLayout: (nodes: { id: string }[], degreeOf: (n: { id: string }) => number) => Record<string, { x: number; y: number }>;
-    treeLayout: (nodes: { id: string }[], edges: { source: string; target: string; kind: string }[]) => Record<string, { x: number; y: number }>;
+    restLength: (kind: string, fanout: number) => number;
     labelVisible: (zoom: number, degree: number) => boolean;
     clusterAggregate: (model: { nodes: { id: string; kind: string; label: string; provenance: string | null; detail: Record<string, string> }[]; edges: { source: string; target: string; kind: string }[] }, expanded: Record<string, number>) => {
       clusters: Record<string, { child: string[]; count: number }>;
@@ -268,8 +291,6 @@ describe("page pure functions (extract-and-run)", () => {
     collapseChildren: (model: { nodes: { id: string }[]; edges: { source: string; target: string; kind: string }[] }, clusterId: string) => Set<string>;
     clusterLayout: (agg: { clusters: Record<string, { child: string[]; count: number }>; counts: Record<string, number>; roots: string[] }, expanded: Record<string, number>) => Record<string, { x: number; y: number }>;
     hashCwd: (s: string) => string;
-    cubicBezierEase: (progress: number, x1: number, y1: number, x2: number, y2: number) => number;
-    tweenPositions: (from: Record<string, { x: number; y: number }>, to: Record<string, { x: number; y: number }>, t: number) => Record<string, { x: number; y: number }>;
     persistedPositions: (cwdHash: string, store: Record<string, string>, ids: string[]) => Record<string, { x: number; y: number }>;
     semanticZoomBand: (scale: number) => string;
     clusterLabelPolicy: (zoom: number, degree: number, selection: boolean) => boolean;
@@ -294,10 +315,10 @@ describe("page pure functions (extract-and-run)", () => {
         "applyFilter: applyFilter, sortRows: sortRows, counts: counts, relTime: relTime, " +
         "linksOf: linksOf, listLabel: listLabel, listTree: listTree, parseFrontMatter: parseFrontMatter, " +
         "seedPositions: seedPositions, collideRadius: collideRadius, degreeRepulsion: degreeRepulsion, " +
-        "localSpeed: localSpeed, deltaAlpha: deltaAlpha, radialLayout: radialLayout, treeLayout: treeLayout," +
+        "localSpeed: localSpeed, deltaAlpha: deltaAlpha, restLength: restLength," +
         " labelVisible: labelVisible, clusterAggregate: clusterAggregate, expandChildren: expandChildren," +
         "collapseChildren: collapseChildren, clusterLayout: clusterLayout, hashCwd: hashCwd," +
-        "cubicBezierEase: cubicBezierEase, tweenPositions: tweenPositions, persistedPositions: persistedPositions," +
+        "persistedPositions: persistedPositions," +
         "semanticZoomBand: semanticZoomBand, clusterLabelPolicy: clusterLabelPolicy, midEllipsis: midEllipsis," +
         "labelCollision: labelCollision, bundledEdges: bundledEdges, scoredSearch: scoredSearch," +
         "nodeMatchesFilter: nodeMatchesFilter, ancestorClusters: ancestorClusters };",
@@ -679,34 +700,18 @@ describe("page pure functions (extract-and-run)", () => {
     expect(fns.deltaAlpha("", "not json")).toBe(0.5);
   });
 
-  it("radialLayout is deterministic and concentric by degree (hubs center)", () => {
-    const nodes = [{ id: "hub" }, { id: "leaf1" }, { id: "leaf2" }];
-    const degreeOf = (n: { id: string }) => (n.id === "hub" ? 10 : 1);
-    const a = fns.radialLayout(nodes, degreeOf);
-    const b = fns.radialLayout(nodes, degreeOf);
-    expect(a).toEqual(b); // deterministic
-    // hub sits at the innermost ring (smaller radius than any leaf)
-    const hubR = Math.hypot(a.hub!.x, a.hub!.y);
-    expect(hubR).toBeLessThan(Math.hypot(a.leaf1!.x, a.leaf1!.y));
-    expect(hubR).toBeLessThan(Math.hypot(a.leaf2!.x, a.leaf2!.y));
-  });
-
-  it("treeLayout is deterministic, places children a row below parents, and centers the tree", () => {
-    const nodes = [{ id: "root" }, { id: "a" }, { id: "b" }];
-    const edges = [
-      { source: "root", target: "a", kind: "contains" },
-      { source: "root", target: "b", kind: "contains" },
-      { source: "a", target: "b", kind: "links-to" }, // cross-link: not a tree edge
-    ];
-    const a = fns.treeLayout(nodes, edges);
-    const b = fns.treeLayout(nodes, edges);
-    expect(a).toEqual(b); // deterministic
-    // children on the next row down (root at row 0, children at row 1)
-    expect(a.a!.y).toBeCloseTo(70);
-    expect(a.b!.y).toBeCloseTo(70);
-    expect(a.root!.y).toBeCloseTo(0);
-    // leaves spread horizontally so the tree is not a single pile
-    expect(Math.abs(a.a!.x - a.b!.x)).toBeGreaterThan(0);
+  it("restLength scales containment springs by source fanout so hubs get wide rings", () => {
+    // base rest for a lone contains edge
+    expect(fns.restLength("contains", 1)).toBeCloseTo(105 + 30 * Math.sqrt(1));
+    // a 60-child hub gets a much wider ring than a 2-child parent
+    expect(fns.restLength("contains", 60)).toBeGreaterThan(fns.restLength("contains", 2));
+    expect(fns.restLength("contains", 60)).toBeCloseTo(105 + 30 * Math.sqrt(60));
+    // non-containment edges ignore fanout (fixed base)
+    expect(fns.restLength("links-to", 60)).toBe(fns.restLength("links-to", 0));
+    expect(fns.restLength("links-to", 1)).toBe(160);
+    expect(fns.restLength("anchored-at", 0)).toBe(130);
+    // unknown kind falls back to a safe default, never NaN
+    expect(fns.restLength("nope", 5)).toBe(120);
   });
 
   it("labelVisible hides low-degree labels until zoomed in, and always shows hubs", () => {
@@ -777,26 +782,40 @@ describe("page pure functions (extract-and-run)", () => {
     expect(a.gitState).toBeUndefined();
   });
 
-  it("tweenPositions interpolates with cubic-bezier easing and honors endpoints", () => {
-    const from = { a: { x: 0, y: 0 } };
-    const to = { a: { x: 100, y: 50 } };
-    expect(fns.tweenPositions(from, to, 0).a).toEqual({ x: 0, y: 0 });
-    expect(fns.tweenPositions(from, to, 1).a).toEqual({ x: 100, y: 50 });
-    const mid = fns.tweenPositions(from, to, 0.5).a!;
-    expect(mid.x).toBeGreaterThan(0);
-    expect(mid.x).toBeLessThan(100);
-    // new nodes (no from entry) jump straight to target even at t=0
-    expect(fns.tweenPositions({}, to, 0).a).toEqual({ x: 100, y: 50 });
-  });
-
-  it("cubicBezierEase eases for the (.2,.7,.2,1) curve, clamped to [0,1]", () => {
-    expect(fns.cubicBezierEase(0, 0.2, 0.7, 0.2, 1)).toBeCloseTo(0);
-    expect(fns.cubicBezierEase(1, 0.2, 0.7, 0.2, 1)).toBeCloseTo(1);
-    const e = fns.cubicBezierEase(0.5, 0.2, 0.7, 0.2, 1);
-    expect(e).toBeGreaterThan(0);
-    expect(e).toBeLessThan(1);
-    expect(fns.cubicBezierEase(-1, 0.2, 0.7, 0.2, 1)).toBeGreaterThanOrEqual(0);
-    expect(fns.cubicBezierEase(2, 0.2, 0.7, 0.2, 1)).toBeLessThanOrEqual(1);
+  it("clusterLayout positions nested (unexpanded) clusters near their parent, not at the centre seed", () => {
+    // 3-level containment: repository -> module:a -> module:b, all clusters,
+    // nothing expanded. module:b is a grandchild cluster that is always
+    // visible, so it must get a deterministic position cascaded from module:a
+    // (not fall back to the phyllotaxis centre seed).
+    const model = {
+      nodes: [
+        { id: "repository", kind: "repository", label: "repo", provenance: null, detail: {} },
+        { id: "module:a", kind: "module", label: "a", provenance: null, detail: { path: "a" } },
+        { id: "module:b", kind: "module", label: "b", provenance: null, detail: { path: "a/b" } },
+        { id: "file:c", kind: "file", label: "c.ts", provenance: null, detail: {} },
+        { id: "vault", kind: "vault", label: "Vault", provenance: null, detail: {} },
+      ],
+      edges: [
+        { source: "repository", target: "module:a", kind: "contains" },
+        { source: "module:a", target: "module:b", kind: "contains" },
+        { source: "module:b", target: "file:c", kind: "contains" },
+        { source: "vault", target: "note:x", kind: "contains" },
+      ],
+    };
+    const agg = fns.clusterAggregate(model, {});
+    const pos = fns.clusterLayout(agg, {});
+    // every visible cluster is positioned, including the grandchild
+    expect(pos.repository).toBeDefined();
+    expect(pos["module:a"]).toBeDefined();
+    expect(pos["module:b"]).toBeDefined();
+    // the collapsed leaf stays hidden (no position)
+    expect(pos["file:c"]).toBeUndefined();
+    // module:b sits in a ring around module:a, not at the origin (centre seed)
+    const a = pos["module:a"]!, b = pos["module:b"]!;
+    const dist = Math.hypot(b.x - a.x, b.y - a.y);
+    expect(dist).toBeGreaterThan(40);
+    // deterministic across runs (zero jumpiness)
+    expect(fns.clusterLayout(agg, {})).toEqual(pos);
   });
 
   it("hashCwd is deterministic and distinct for distinct inputs", () => {

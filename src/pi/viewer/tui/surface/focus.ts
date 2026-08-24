@@ -11,6 +11,7 @@ import { focusModel, sanitizeTerminalText } from "../model";
 import { kindStyle, provenanceStyle, type ThemeSlot } from "../theme";
 import { windowLines, type Surface, type SurfaceEvent, type SurfaceInit } from "./base";
 import type { NoteSource } from "../../../../core/types";
+import type { GraphModel } from "../../../../core/graph/model";
 
 export interface FocusSurfaceState {
   focusId: string | null;
@@ -43,6 +44,14 @@ export class FocusSurface implements Surface {
   }
 
   invalidate(): void {}
+
+  rebind(model: GraphModel): void {
+    // After a refresh, drop a focus node that no longer exists rather than
+    // rendering an empty "(no focus node)" pane.
+    if (this.state.focusId && !model.nodes.some((n) => n.id === this.state.focusId)) {
+      this.state = { focusId: null, selectedId: null, scrollOffset: 0 };
+    }
+  }
 
   handleInput(data: string): void {
     if (matchesKey(data, "up")) return this.move(-1);

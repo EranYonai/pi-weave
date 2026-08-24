@@ -130,6 +130,12 @@ export class WeaveWorkspace implements Component {
 
   setModel(model: GraphModel): void {
     this.model = model;
+    // Surfaces read the model through the shared context (this.ctx.model), not
+    // this.model — so a refresh that only swaps this.model leaves every pane
+    // showing the pre-refresh graph. Propagate to the context so `r` actually
+    // re-renders the body, then drop stale pane selections that no longer exist.
+    this.ctx.model = model;
+    for (const s of this.panes.values()) s.rebind?.(model);
     this.bodies.clear();
     this.refreshing = false;
     this.invalidateAndRender();
@@ -168,10 +174,11 @@ export class WeaveWorkspace implements Component {
     if (matchesKey(data, "tab")) return this.cycleFocus(1);
     if (matchesKey(data, "shift+tab")) return this.cycleFocus(-1);
     if (matchesKey(data, "escape")) {
-      // Esc precedence (mirrors v1): if the active pane is in a search/filter
-      // sub-mode, Esc clears it; otherwise Esc quits the explorer.
+      // Esc precedence (mirrors v1): if the active pane is in a sub-mode
+      // (Explore search OR Detail goto-line), Esc clears it; otherwise Esc
+      // quits the explorer.
       const active = this.activePane();
-      if (active && isSearching(active)) {
+      if (active && inSubMode(active)) {
         active.handleInput?.(data);
         this.invalidate();
         this.tui.requestRender();
@@ -456,8 +463,18 @@ export class WeaveWorkspace implements Component {
     }
     const StackCtor = node.direction === "row" ? HStack : VStack;
     const stack = new StackCtor();
+    // VStack stacks panes vertically, so each child's height must be its share
+    // of the available rows (by grow weight) — otherwise every child renders at
+    // full height, the stack overflows, and the render clamp leaves only the
+    // first pane visible (the "split hides the new pane" bug). HStack shares
+    // width, so its children keep the full height.
+    const vertical = node.direction !== "row";
+    const sizes = node.sizes.length ? node.sizes : node.children.map(() => 1);
+    const total = sizes.reduce((a, b) => a + b, 0) || node.children.length;
     node.children.forEach((c, i) => {
-      stack.addChild(this.buildSplit(c, rows), { grow: node.sizes[i] ?? 1 });
+      const grow = sizes[i] ?? 1;
+      const childRows = vertical ? Math.max(1, Math.round((rows * grow) / total)) : rows;
+      stack.addChild(this.buildSplit(c, childRows), { grow });
     });
     return stack;
   }
@@ -492,12 +509,13 @@ function charCode(data: string): number | undefined {
   return c >= 0 && c < 0x20 ? c : undefined;
 }
 
-/** True when the active surface is in a search/filter sub-mode (Esc clears it
- *  instead of quitting). Surfaces own their own state; read `state.searching`
- *  defensively so surfaces without a search mode simply return false. */
-function isSearching(s: Surface | undefined): boolean {
-  const st = (s as { state?: { searching?: boolean } }).state;
-  return !!st && st.searching === true;
+/** True when the active surface is in a sub-mode that Esc should clear instead
+ *  of quitting — Explore's search (`state.searching`) or Detail's goto-line
+ *  (`state.gotoBuf`). Surfaces own their own state; read defensively so a
+ *  surface without either field simply returns false. */
+function inSubMode(s: Surface | undefined): boolean {
+  const st = (s as { state?: { searching?: boolean; gotoBuf?: string | null } }).state;
+  return !!st && (st.searching === true || st.gotoBuf != null);
 }
 
 function repoStaleness(model: GraphModel, repo: GraphNode | undefined): string {

@@ -2,7 +2,7 @@ import { describe, expect, it, vi, afterEach } from "vitest";
 import { resetCapabilitiesCache, setCapabilities } from "@earendil-works/pi-tui";
 import { WeaveWorkspace, decodeWorkspaceKey } from "../../src/pi/viewer/tui/workspaceRoot";
 import type { WeaveTheme, WeaveTui, WeaveLoaders } from "../../src/pi/viewer/tui/explorer";
-import { workspacePanes } from "../../src/pi/viewer/tui/workspace";
+import { collectPanes, paneNode, resetWorkspaceIds, splitNode, workspacePanes } from "../../src/pi/viewer/tui/workspace";
 import type { GraphModel, GraphNode } from "../../src/core/graph/model";
 import type { NoteSource } from "../../src/core/types";
 import { visibleWidth } from "@earendil-works/pi-tui";
@@ -211,6 +211,46 @@ describe("WeaveWorkspace cross-pane navigation", () => {
     await new Promise((r) => setTimeout(r, 0));
     expect(openNote).toHaveBeenCalledWith("alpha");
   });
+  it("o in an explore pane opens the selected note in the editor", async () => {
+    const openNote = vi.fn(async () => true);
+    const { w } = ws({ loaders: fakeLoaders({ openNote }) });
+    w.handleInput("\x1b[B"); // down to note:a (the default root is vault)
+    w.handleInput("o");
+    await new Promise((r) => setTimeout(r, 0));
+    expect(openNote).toHaveBeenCalledWith("alpha");
+  });
+  it("Esc cancels a Detail pane's goto-line mode instead of quitting", async () => {
+    const { w, done } = ws({
+      loaders: fakeLoaders({ loadNote: async () => ({ slug: "alpha", title: "Alpha", body: "x".repeat(200), created: "", updated: "", tags: [], source: "human" as const }) }),
+    });
+    w.handleInput("\x1b[B"); // down to note:a
+    w.handleInput("\r"); // open detail (active pane -> detail)
+    w.handleInput("/"); // enter goto-line mode in the detail pane
+    const active = workspacePanes(w.workspace).find((p) => p.id === w.workspace.activePaneId);
+    expect(active?.surface).toBe("detail");
+    w.handleInput("\x1b"); // Esc -> should cancel goto, NOT quit
+    expect(done).not.toHaveBeenCalled();
+    // A second Esc, now that no sub-mode is active, quits.
+    w.handleInput("\x1b");
+    expect(done).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe("WeaveWorkspace split rendering", () => {
+  it("a vertical split renders both panes (rows are partitioned, not overflowed)", () => {
+    resetWorkspaceIds();
+    // A workspace that is JUST a vertical (column) split of two panes.
+    const root = splitNode("column", [paneNode("explore"), paneNode("explore")]);
+    const panes = collectPanes(root);
+    const { w } = ws({ workspace: { name: "test", root, activePaneId: panes[0]!.id } });
+    expect(workspacePanes(w.workspace).length).toBe(2);
+    const lines = w.render(100).join("\n");
+    // Each Pane draws one bottom-left corner char; both must be present. The
+    // pre-fix VStack gave every child full body height, the stack overflowed,
+    // and the row clamp left only the first pane visible (one corner).
+    const corners = lines.split("└").length - 1;
+    expect(corners).toBe(2);
+  });
 });
 
 describe("WeaveWorkspace setModel", () => {
@@ -218,6 +258,30 @@ describe("WeaveWorkspace setModel", () => {
     const { w } = ws();
     w.setModel(model());
     expect(w.model.nodes.length).toBeGreaterThan(0);
+  });
+  it("setModel propagates the model to the shared context so open panes re-render the new graph", () => {
+    const { w } = ws();
+    // Open a detail pane bound to note:a (label "Alpha").
+    w.handleInput("\x1b[B"); // down to note:a
+    w.handleInput("\r"); // open detail on note:a
+    expect(w.render(100).join("\n")).toContain("Alpha");
+    // Rebuild the model with note:a renamed. Before the fix, setModel only
+    // swapped this.model and left this.ctx.model (what every surface reads)
+    // pointing at the old graph — so the panes kept rendering "Alpha".
+    const m2 = graph(
+      [
+        node("vault", "vault", "Vault", null),
+        node("repository", "repository", "pi-weave", null, { files: "2" }),
+        node("note:a", "note", "Alpha-NEW", "human", { slug: "alpha" }),
+        node("note:b", "note", "Beta", "agent", { slug: "beta" }),
+      ],
+      [
+        { source: "vault", target: "note:a", kind: "contains" },
+        { source: "vault", target: "note:b", kind: "contains" },
+      ],
+    );
+    w.setModel(m2);
+    expect(w.render(100).join("\n")).toContain("Alpha-NEW");
   });
 });
 
