@@ -50,20 +50,17 @@ attestation ([Publish workflow](.github/workflows/publish.yml)).
 | Command | `/weave-scan` | build/refresh the repository index (light) |
 | Command | `/weave-scan deep` | light index + model-summarized sidecars (opt-in, incremental) |
 | Command | `/weave-scan-cancel` | stop an in-flight `/weave-scan deep` run |
-| Command | `/weave-view` | open the local graph viewer in your browser |
-| Command | `/weave-view tui` | explore the same graph in-terminal (keyboard) |
+| Command | `/weave-view` | explore the local knowledge graph in-terminal (keyboard) |
 | Skill | `weave-notepad` | how the agent should take good notes |
 | Skill | `weave-explore` | how the agent should explore repositories |
 
-**`/weave-view`** starts a loopback-only server (`127.0.0.1`, random port) and opens an interactive graph of your knowledge space: vault
-notes with trust provenance (solid = human, dashed = agent, dimmed = generated), wiki-link edges between notes, and the repository's
-structure anchored to git state. It reads disk live on every refresh — never a stale cache. Zoom/scroll, drag to pan, click nodes to expand;
-notes open in a rendered markdown side panel.
-
-**`/weave-view tui`** explores the same knowledge graph in the terminal: an expandable containment tree (Explore), a 1-hop neighborhood
+**`/weave-view`** explores the knowledge graph in the terminal: an expandable containment tree (Explore), a 1-hop neighborhood
 (Focus), a selected-node detail view with note/`.okf` bodies, and a staleness + link health surface — all keyboard-driven and read-only.
-Same data as the browser viewer (the `GraphModel` assembled from vault + repo index); a pure, harness-free view-model
+It reads disk live (never a stale cache) over the `GraphModel` assembled from the vault + repository index; a pure, harness-free view-model
 (`src/pi/viewer/tui/model.ts`) backs the `WeaveExplorer` component. See `docs/weave-view-tui-design.md`.
+
+> The earlier in-browser graph viewer (`/weave-view` in a browser) has been retired and is being rebuilt on pixi.js; until then
+> `/weave-view` opens the in-terminal explorer.
 
 On session start, pi-weave detects the repository you're in, checks whether `.okf` exists and is fresh, and says so in the status footer — a
 filled `●` marks weave as active (a deep scan spins it while running).

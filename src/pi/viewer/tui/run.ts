@@ -17,7 +17,7 @@ import {
   resolveVaultRoot,
   type GraphModel,
 } from "../../../core";
-import { openNoteInEditor } from "../server";
+import { openNoteInEditor } from "./openNote";
 import { bundledLogoImage, logoTier, renderMark } from "./branding";
 import { WeaveWorkspace } from "./workspaceRoot";
 import type { WeaveLoaders, WeaveTheme, WeaveTui } from "./explorer";
@@ -28,7 +28,7 @@ export async function runWeaveViewTui(ctx: ExtensionCommandContext): Promise<voi
   // Guard: the TUI needs an interactive terminal (design §2).
   if (!ctx.hasUI || ctx.mode !== "tui") {
     ctx.ui.notify(
-      "pi-weave: '/weave-view tui' needs an interactive terminal — run /weave-view for the browser viewer.",
+      "pi-weave: '/weave-view' needs an interactive terminal to open the in-terminal explorer.",
       "warning",
     );
     return;
