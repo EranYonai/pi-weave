@@ -17,8 +17,10 @@ import {
   resolveVaultRoot,
   type GraphModel,
 } from "../../../core";
-import { openNoteInEditor } from "../server";
-import { WeaveExplorer, type WeaveLoaders, type WeaveTheme, type WeaveTui } from "./explorer";
+import { openNoteInEditor } from "./openNote";
+import { bundledLogoImage, logoTier, renderMark } from "./branding";
+import { WeaveWorkspace } from "./workspaceRoot";
+import type { WeaveLoaders, WeaveTheme, WeaveTui } from "./explorer";
 import { getWorkspaceStatus, formatStatusLine } from "../../../core";
 
 /** Open the in-terminal knowledge explorer. Returns when the explorer closes. */
@@ -26,7 +28,7 @@ export async function runWeaveViewTui(ctx: ExtensionCommandContext): Promise<voi
   // Guard: the TUI needs an interactive terminal (design §2).
   if (!ctx.hasUI || ctx.mode !== "tui") {
     ctx.ui.notify(
-      "pi-weave: '/weave-view tui' needs an interactive terminal — run /weave-view for the browser viewer.",
+      "pi-weave: '/weave-view' needs an interactive terminal to open the in-terminal explorer.",
       "warning",
     );
     return;
@@ -45,13 +47,20 @@ export async function runWeaveViewTui(ctx: ExtensionCommandContext): Promise<voi
 
   await ctx.ui.custom(
     (tui, theme, _keybindings, done) => {
-      const explorer = new WeaveExplorer({
+      const tier = logoTier();
+      const logo = renderMark(tier, theme as unknown as WeaveTheme, 20);
+      // bundledLogoImage gates on Kitty support itself and returns null (glyph
+      // header) when unavailable.
+      const logoImage = bundledLogoImage(theme as unknown as WeaveTheme);
+      const explorer = new WeaveWorkspace({
         model,
         theme: theme as unknown as WeaveTheme,
         tui: tui as unknown as WeaveTui,
         loaders,
         done,
         rows: tui.terminal.rows,
+        logo,
+        logoImage,
       });
       return explorer;
     },

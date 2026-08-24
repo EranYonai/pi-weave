@@ -12,8 +12,6 @@ import {
 import { registerNoteTool } from "./tools/noteTool";
 import { registerRepoTool } from "./tools/repoTool";
 import { deepScanRepository, formatDeepScanResult } from "./summarize";
-import { openInBrowser } from "./viewer/browser";
-import { startViewer, type ViewerServer } from "./viewer/server";
 import { runWeaveViewTui } from "./viewer/tui/run";
 
 /**
@@ -29,9 +27,9 @@ export default function piWeave(pi: ExtensionAPI): void {
   registerNoteTool(pi);
   registerRepoTool(pi);
 
-  // Session-scoped viewer: lazy start on first /weave-view, never from the
-  // factory (extension rules); idempotent stop on session_shutdown.
-  let viewer: ViewerServer | null = null;
+  // /weave-view is the in-terminal explorer (the old browser viewer was
+  // retired for a pixi.js rewrite); it holds no session resources, so there
+  // is no per-session lifecycle to tear down.
   let lastCtx: ExtensionContext | ExtensionCommandContext | null = null;
   let lastStatusText: string | undefined = undefined;
   let isActive = false;
@@ -60,9 +58,7 @@ export default function piWeave(pi: ExtensionAPI): void {
   }
 
   pi.on("session_shutdown", async () => {
-    const server = viewer;
-    viewer = null;
-    await server?.stop();
+    // The TUI explorer owns no session-scoped resources; nothing to stop.
   });
 
   pi.on("agent_start", async (_event, ctx) => {
@@ -101,20 +97,14 @@ export default function piWeave(pi: ExtensionAPI): void {
   });
 
   pi.registerCommand("weave-view", {
-    description: "Open the local knowledge-graph viewer in your browser (vault + repository); '/weave-view tui' explores in-terminal",
+    description: "Open the in-terminal knowledge-graph explorer (vault + repository); reads from disk live",
     handler: async (args, ctx) => {
       const arg = args.trim().toLowerCase();
-      if (arg === "tui") {
-        await runWeaveViewTui(ctx);
-        return;
-      }
-      if (arg !== "") {
+      if (arg !== "" && arg !== "tui") {
         ctx.ui.notify("usage: /weave-view [tui]", "warning");
         return;
       }
-      viewer ??= await startViewer({ cwd: ctx.cwd });
-      ctx.ui.notify(`pi-weave viewer: ${viewer.url} (reads from disk live; refresh the page any time)`, "info");
-      await openInBrowser(pi, ctx, viewer.url);
+      await runWeaveViewTui(ctx);
     },
   });
 

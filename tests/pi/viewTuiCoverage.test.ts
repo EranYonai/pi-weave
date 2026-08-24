@@ -389,6 +389,18 @@ describe("reduce arm coverage", () => {
     s = reduce({ ...s, selectedId: "vault" }, { type: "left" }, { rows: treeRowsList, window: 24 });
     expect(s.expanded.has("vault")).toBe(false);
   });
+  it("right on a collapsed node with kids expands it, then right moves to the first child", () => {
+    const treeRowsList = [
+      { id: "vault", depth: 0, hasKids: true, expanded: false, label: "Vault", kind: "vault" as const, provenance: null, meta: "" },
+      { id: "note:a", depth: 1, hasKids: false, expanded: false, label: "A", kind: "note" as const, provenance: "human", meta: "" },
+    ];
+    // right on collapsed-with-kids vault → expand
+    let s = reduce(st({ selectedId: "vault", expanded: new Set() }), { type: "right" }, { rows: treeRowsList, window: 24 });
+    expect(s.expanded.has("vault")).toBe(true);
+    // right again → now expanded → move to the first child note:a
+    s = reduce(st({ selectedId: "vault", expanded: new Set(["vault"]) }), { type: "right" }, { rows: treeRowsList, window: 24 });
+    expect(s.selectedId).toBe("note:a");
+  });
   it("enter on health row with target opens detail; enter on health row without target no-op", () => {
     const r1 = { rows: [{ id: "h", target: "note:a" }], window: 24 };
     let s = reduce(st({ surface: "health", selectedId: "h" }), { type: "enter" }, r1);
@@ -656,6 +668,32 @@ describe("run.ts", () => {
       ctx.ui.resolveCustom(null);
       await p;
       expect(ctx.ui.statuses["weave"]).toBeTruthy();
+    });
+  });
+  it("runWeaveViewTui falls back to a plain indicator when the session theme is missing", async () => {
+    const vault = await makeTempDir();
+    await withVaultEnv(vault, async () => {
+      const ctx = createMockCtx(await makeTempDir(), true, "tui");
+      ctx.ui.theme = undefined as never;
+      const p = runWeaveViewTui(ctx as never);
+      for (let i = 0; i < 50 && ctx.ui.customCalls.length === 0; i++) await new Promise((r) => setTimeout(r, 5));
+      expect(ctx.ui.customCalls).toHaveLength(1);
+      ctx.ui.resolveCustom(null);
+      await p;
+      expect(ctx.ui.statuses["weave"]).toContain("○");
+    });
+  });
+  it("runWeaveViewTui falls back to a plain indicator when the theme lacks fg", async () => {
+    const vault = await makeTempDir();
+    await withVaultEnv(vault, async () => {
+      const ctx = createMockCtx(await makeTempDir(), true, "tui");
+      ctx.ui.theme = {} as never;
+      const p = runWeaveViewTui(ctx as never);
+      for (let i = 0; i < 50 && ctx.ui.customCalls.length === 0; i++) await new Promise((r) => setTimeout(r, 5));
+      expect(ctx.ui.customCalls).toHaveLength(1);
+      ctx.ui.resolveCustom(null);
+      await p;
+      expect(ctx.ui.statuses["weave"]).toContain("○");
     });
   });
 });
