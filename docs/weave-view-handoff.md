@@ -168,3 +168,587 @@ things). Use that as the fixture for the dynamics smoke test in §improve #3.
 - Graph model: `src/core/graph/model.ts`, `src/core/graph/current.ts` (`buildCurrentGraph`,
   `readNoteForView`, `readOkfFileForView`).
 - OpenNote (editor-open helper, moved out of the retired server): `src/pi/viewer/tui/openNote.ts`.
+
+
+------
+GPT input:
+Yes — that changes the product direction substantially.
+
+I would make **the notes workspace the product**, and treat the graph canvas as one of several views that can be embedded alongside notes. The `.okf` knowledge graph is the underlying model, but the user's primary interaction is **reading, writing, connecting, and navigating knowledge**.
+
+The existing handoff already points toward shared view-models and reusable graph knowledge; I think we should push that philosophy much further. 
+
+## The mental model
+
+Think:
+
+**Obsidian + IDE + Granola + spatial canvas**
+
+but with one important principle:
+
+> **Everything useful should be visible without opening another screen.**
+
+Not:
+
+> click note → open note → click relationship → go back → open file.
+
+Instead:
+
+```text
+┌──────────────────────────────────────────────────────────────────────────────┐
+│ 🕸 PI-WEAVE       Search ⌘K       + New note       ⌘P Command       ⋯        │
+├───────────────┬──────────────────────────────────────┬───────────────────────┤
+│               │                                      │                       │
+│ NOTES         │             WORKSPACE                │   CONTEXT             │
+│               │                                      │                       │
+│ ▾ Architecture│  ┌────────────────┐ ┌────────────┐ │  model.ts             │
+│   Graph model │  │                │ │            │ │  ─────────────────    │
+│   Viewer      │  │  Markdown      │ │   Graph    │ │                       │
+│   TUI         │  │  Preview       │ │            │ │  Dependencies         │
+│               │  │                │ │     ●      │ │  → current.ts         │
+│ ▾ Decisions   │  │                │ │   ╱ │ ╲    │ │  → types.ts           │
+│   Layout      │  │                │ │  ●──●──●   │ │                       │
+│   Pixi        │  │                │ │            │ │  Dependents            │
+│               │  └────────────────┘ └────────────┘ │  ← tui/model.ts       │
+│ ▾ TODO        │                                      │                       │
+│   Scan        │  ┌────────────────────────────────┐ │  📝 Notes             │
+│               │  │ Related notes                  │ │  3 related            │
+│ 🔍 Filter     │  │ Graph architecture             │ │                       │
+│               │  │ Rendering decisions             │ │  [Open in editor]     │
+├───────────────┴──────────────────────────────────────┴───────────────────────┤
+│ 12 notes · 127 nodes · 438 relations                  ⌘K Search   ⌘Enter Open │
+└──────────────────────────────────────────────────────────────────────────────┘
+```
+
+But crucially, **those panels are not fixed**.
+
+---
+
+# 1. Everything is a panel
+
+I'd make the entire UI based on a **tilable / dockable panel system**.
+
+Panels could be:
+
+* 📝 Note
+* 📚 Notes
+* 🕸 Graph
+* 📁 Repository
+* 🔗 Relations
+* 🧠 Summary
+* 📜 Git history
+* 💻 Source
+* 🔍 Search
+* 🗺 Overview
+* 🏷 Tags
+* 📝 Backlinks
+
+And the user can arrange them.
+
+For example:
+
+### Notes-centric
+
+```text
+┌───────────────┬──────────────────────────────────────────────┐
+│ NOTES         │ NOTE                                         │
+│               │                                              │
+│ Architecture  │ # Graph Architecture                         │
+│ Decisions     │                                              │
+│ TODO          │ The graph model represents...                │
+│ Ideas         │                                              │
+│               │ ## Design                                    │
+│               │ ...                                          │
+│               │                                              │
+└───────────────┴──────────────────────────────────────────────┘
+```
+
+### Investigation
+
+```text
+┌──────────────┬───────────────────────┬────────────────────────┐
+│ NOTES        │ SOURCE                │ RELATIONS              │
+│              │                       │                        │
+│ Graph model  │ model.ts              │ imports                │
+│              │                       │ current.ts             │
+│ TODO         │ class GraphModel      │ types.ts               │
+│              │                       │                        │
+│              │                       │ used by                │
+│              │                       │ tui/model.ts            │
+├──────────────┴───────────────────────┴────────────────────────┤
+│ GRAPH                                                        │
+│                                                              │
+└──────────────────────────────────────────────────────────────┘
+```
+
+### Architecture exploration
+
+```text
+┌───────────────┬───────────────────────────────────────────────┐
+│ NOTES         │                                               │
+│               │                  GRAPH                         │
+│ Architecture  │                                               │
+│ Viewer        │                    ●                           │
+│ TUI           │                 ╱  │  ╲                        │
+│               │              ●────●────●                      │
+│               │                                               │
+│               │                                               │
+├───────────────┼───────────────────────────────────────────────┤
+│ REPOSITORY    │ NOTE                                           │
+│ src/          │ # Viewer architecture                          │
+│ core/         │ ...                                            │
+└───────────────┴───────────────────────────────────────────────┘
+```
+
+Same application. Different workspace.
+
+---
+
+# 2. Notes should behave like documents, not list items
+
+This is important.
+
+The left panel isn't merely:
+
+> list of markdown files
+
+It should be a **live knowledge navigator**.
+
+Something like:
+
+```text
+NOTES
+
+⌕ Search notes...
+
+RECENT
+  📝 Graph architecture
+     updated 2m ago
+
+  📝 Pixi renderer
+     updated yesterday
+
+PINNED
+  📌 Product vision
+
+ARCHITECTURE
+  📝 Graph model
+  📝 Viewer
+  📝 TUI
+
+DECISIONS
+  📝 Use d3-force
+  📝 Pixi rendering
+
+TODO
+  ☐ Expensive repository scan
+  ☐ Notepad skill
+```
+
+And importantly, **preview on hover/selection**.
+
+No need to open a new page.
+
+---
+
+# 3. Markdown preview should be immediate
+
+I agree strongly with your "glance" principle.
+
+A note panel should support:
+
+```text
+┌─────────────────────────────────────────────┐
+│ Graph Architecture             ✎ Edit       │
+├─────────────────────────────────────────────┤
+│                                             │
+│ # Graph Architecture                        │
+│                                             │
+│ The graph represents the repository as a   │
+│ knowledge model rather than a file tree.   │
+│                                             │
+│ ## Principles                               │
+│                                             │
+│ • semantic zoom                             │
+│ • cluster aggregation                       │
+│ • persistent positions                      │
+│                                             │
+│ ┌─────────────────────────────────────────┐ │
+│ │ Related                                 │ │
+│ │ 🕸 Graph model                           │ │
+│ │ 📝 Viewer architecture                  │ │
+│ │ 💻 src/core/graph/model.ts              │ │
+│ └─────────────────────────────────────────┘ │
+└─────────────────────────────────────────────┘
+```
+
+Markdown isn't just formatting.
+
+**Links in Markdown become navigation primitives.**
+
+If a note says:
+
+```markdown
+The graph is built by [buildCurrentGraph](...)
+```
+
+clicking it should reveal the relevant source / graph node **without destroying the current workspace**.
+
+---
+
+# 4. Split view should be trivial
+
+Every panel should have:
+
+```text
+┌───────────────────────────────────────┐
+│ Graph Architecture       ⋯  ⛶  ×     │
+```
+
+`⋯`:
+
+```text
+Move
+Split right
+Split down
+Float
+Pin
+Duplicate
+Close
+```
+
+But also keyboard shortcuts.
+
+For example:
+
+* `⌘\` split
+* `⌘⇧\` split vertically
+* `⌘W` close panel
+* `⌘⇧[` / `]` move focus
+* `⌘1..9` switch panel
+* `⌘P` panel picker
+
+This is where the IDE influence becomes useful.
+
+---
+
+# 5. Panels should be persistent
+
+This is particularly important for Pi-Weave.
+
+The workspace itself becomes part of the knowledge model.
+
+For example:
+
+```text
+pi-weave
+└── workspace
+    ├── notes panel
+    ├── graph panel
+    ├── source panel
+    └── relations panel
+```
+
+When I return tomorrow, Pi-Weave should remember:
+
+> "I was investigating the viewer architecture."
+
+Not reset me to the default graph.
+
+Store workspace state keyed by repository:
+
+```text
+.okf/
+  knowledge.okf
+  workspace.json
+```
+
+Or equivalent.
+
+---
+
+# 6. “Glance” means information density
+
+I'd deliberately avoid huge cards and excessive whitespace.
+
+You want **dense but calm**.
+
+For a selected note:
+
+```text
+Graph Architecture
+
+Architecture / Viewer
+Updated 12 min ago
+
+The browser viewer is a spatial representation
+of the repository knowledge graph.
+
+TAGS
+#architecture #viewer #pixi
+
+LINKS
+→ Graph Model
+→ Cluster Aggregation
+→ Layout
+
+MENTIONS
+src/core/graph/model.ts
+src/pi/viewer/
+
+RELATED
+📝 Pixi renderer
+📝 Layout decisions
+📝 Repository scanning
+
+GRAPH
+  14 related nodes
+```
+
+That's the whole knowledge context **in one glance**.
+
+The user shouldn't have to ask:
+
+> "What else is related to this?"
+
+Pi-Weave should already show it.
+
+---
+
+# 7. The graph becomes another panel
+
+This is the conceptual change I'd make from my previous answer.
+
+I previously treated:
+
+> graph = world
+
+I'd now make:
+
+> **workspace = world**
+
+and:
+
+> **graph = one lens into the world**
+
+You could have:
+
+```text
+             WORKSPACE
+                 │
+     ┌───────────┼────────────┐
+     │           │            │
+   Notes       Graph        Source
+     │           │            │
+     └───────────┼────────────┘
+                 │
+             Relations
+```
+
+All of these are views over the **same underlying knowledge model**.
+
+That aligns very nicely with your existing idea of sharing `GraphModel` / view-model logic between interfaces. 
+
+---
+
+# 8. And this gives you a very powerful interaction
+
+Suppose I click a note:
+
+**Graph Architecture**
+
+The application can automatically show:
+
+```text
+NOTE
+Graph Architecture
+      │
+      ├── related notes
+      │
+      ├── referenced files
+      │
+      ├── referenced symbols
+      │
+      └── graph neighborhood
+```
+
+The graph panel automatically highlights the relevant nodes.
+
+The source panel automatically shows the relevant file.
+
+The relations panel shows the relationships.
+
+**One click changes the context of the whole workspace.**
+
+That's the "glance" experience I think you're describing.
+
+---
+
+# 9. I would also make the UI configurable by “workspace presets”
+
+Rather than expecting users to manually build their perfect layout immediately:
+
+### Default
+
+```text
+Notes | Note | Graph
+```
+
+### Writing
+
+```text
+Notes | Markdown editor
+```
+
+### Exploring
+
+```text
+Repository | Graph | Relations
+```
+
+### Investigating
+
+```text
+Notes | Source | Graph
+```
+
+### Reviewing
+
+```text
+Note | Source | Git
+```
+
+And:
+
+**Save workspace**
+
+```text
+My investigation
+My architecture view
+My notes
+```
+
+These are essentially **saved layouts + panel state**.
+
+---
+
+# 10. The left side should feel like the “home”
+
+I would visually communicate that notes are primary.
+
+Not:
+
+```text
+PI-WEAVE
+   Graph
+   Notes
+   Repository
+```
+
+but:
+
+```text
+PI-WEAVE
+
+NOTES
+  Recent
+  Pinned
+  All notes
+  Tags
+
+KNOWLEDGE
+  Graph
+  Repository
+  Relations
+
+TOOLS
+  Search
+  Git
+```
+
+Notes are first.
+
+Graph is under **Knowledge**.
+
+That subtle hierarchy communicates the product philosophy.
+
+---
+
+# 11. The most important architectural requirement
+
+I'd design the frontend around a generic:
+
+```ts
+Panel
+```
+
+rather than:
+
+```ts
+GraphPanel
+NotePanel
+RepositoryPanel
+```
+
+conceptually.
+
+Each panel has:
+
+```ts
+type Panel = {
+    id: string
+    type: PanelType
+    title: string
+    state: unknown
+}
+```
+
+And:
+
+```ts
+type Workspace = {
+    layout: LayoutTree
+    panels: Panel[]
+}
+```
+
+So the workspace engine knows nothing about graphs or Markdown.
+
+Then:
+
+```text
+Workspace
+   │
+   ├── Panel: Notes
+   │      └── NotesView
+   │
+   ├── Panel: Markdown
+   │      └── MarkdownView
+   │
+   ├── Panel: Graph
+   │      └── PixiView
+   │
+   ├── Panel: Source
+   │      └── SourceView
+   │
+   └── Panel: Relations
+          └── RelationsView
+```
+
+This will make the UI **far easier to extend**.
+
+---
+
+## So I'd revise the product definition to:
+
+> **Pi-Weave is a visual knowledge workspace for a codebase.**
+>
+> Notes are the primary interface. The repository graph, source code, relationships, Git state, and generated summaries are contextual views that can be arranged around the user's current knowledge task.
+
+And the key UX principle:
+
+> **Don't make the user navigate to information. Bring related information into the current workspace.**
+
+That, IMO, is the direction that makes Pi-Weave substantially more interesting than "a nice PixiJS code graph."
+
+And it fits your `.okf` concept extremely well: the `.okf` isn't just storing a graph — it becomes the **persistent knowledge layer from which all these panels derive their views**.
