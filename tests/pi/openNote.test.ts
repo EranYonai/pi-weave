@@ -7,7 +7,12 @@ describe("openNoteCommand", () => {
   it("respects $EDITOR and $VISUAL, splitting args", () => {
     expect(openNoteCommand("/v/n.md", { EDITOR: "code --wait" })).toEqual({ command: "code", args: ["--wait", "/v/n.md"] });
     expect(openNoteCommand("/v/n.md", { VISUAL: "vim" })).toEqual({ command: "vim", args: ["/v/n.md"] });
-    expect(openNoteCommand("/v/n.md", {})).toHaveProperty("command"); // platform fallback
+  });
+
+  it("falls back to the platform default opener (darwin / win32 / linux)", () => {
+    expect(openNoteCommand("/v/n.md", {}, "darwin")).toEqual({ command: "open", args: ["/v/n.md"] });
+    expect(openNoteCommand("/v/n.md", {}, "win32")).toEqual({ command: "cmd", args: ["/c", "start", "", "/v/n.md"] });
+    expect(openNoteCommand("/v/n.md", {}, "linux")).toEqual({ command: "xdg-open", args: ["/v/n.md"] });
   });
 });
 
@@ -35,5 +40,12 @@ describe("openNoteInEditor", () => {
     expect(await openNoteInEditor(vault, "open-me", spy)).toBe(true);
     expect(opened).toHaveLength(1);
     expect(opened[0]).toContain("open-me.md");
+  });
+
+  it("returns false when the resolved editor command is empty (no shell-out)", async () => {
+    const vault = await makeTempDir();
+    await addNote(vault, { title: "Empty Cmd", body: "x", tags: [], source: "human" });
+    const spy = () => ({ command: "", args: [] });
+    expect(await openNoteInEditor(vault, "empty-cmd", spy)).toBe(false);
   });
 });

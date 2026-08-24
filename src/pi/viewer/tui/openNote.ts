@@ -18,21 +18,24 @@ const execFileAsync = promisify(execFile);
 /**
  * The OS command used to open a note file in the user's editor. Respects
  * $EDITOR / $VISUAL (which may carry args, e.g. "code --wait"); falls back
- * to the platform default opener. Kept separate from the caller so the
- * mapping is unit-testable without stubbing globals.
+ * to the platform default opener. `env` and `os` are injectable so the
+ * mapping is unit-testable on any host without stubbing globals.
  */
 export function openNoteCommand(
   notePath: string,
   env: NodeJS.ProcessEnv = process.env,
+  os: NodeJS.Platform = platform(),
 ): { command: string; args: string[] } {
   const editor = (env.EDITOR || env.VISUAL || "").trim();
   if (editor) {
+    // editor is a trimmed non-empty string, so split+filter always yields a
+    // first segment — assert it rather than leave a dead `?? ""` branch.
     const parts = editor.split(/\s+/).filter(Boolean);
-    const command = parts[0] ?? "";
+    const command = parts[0] as string;
     return { command, args: [...parts.slice(1), notePath] };
   }
-  if (platform() === "darwin") return { command: "open", args: [notePath] };
-  if (platform() === "win32") return { command: "cmd", args: ["/c", "start", "", notePath] };
+  if (os === "darwin") return { command: "open", args: [notePath] };
+  if (os === "win32") return { command: "cmd", args: ["/c", "start", "", notePath] };
   return { command: "xdg-open", args: [notePath] };
 }
 
