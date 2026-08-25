@@ -8,6 +8,7 @@ import {
   defaultBranch,
   excludeOkfLocally,
   findGitRoot,
+  gitSpawnCount,
   hashWorktreeFiles,
   headSha,
   listFiles,
@@ -194,5 +195,30 @@ describe("hashWorktreeFiles", () => {
     const state = await snapshotGitState(dir);
     expect(state?.changedFiles).toEqual(["dirty.ts"]);
     expect(state?.changedHashes["dirty.ts"]).toBe(createHash("sha1").update("v1").digest("hex"));
+  });
+});
+
+// The spawn counter is what makes WorkspaceCache's "zero git spawns" claim
+// (weave-workspace §4.1) an assertion about real subprocesses.
+describe("gitSpawnCount", () => {
+  it("counts one spawn per git invocation and never decreases", async () => {
+    const dir = await makeTempDir();
+    gitInit(dir);
+    commitAll(dir, "init");
+
+    const before = gitSpawnCount();
+    await headSha(dir);
+    expect(gitSpawnCount()).toBe(before + 1);
+
+    await currentBranch(dir);
+    await changedFiles(dir);
+    expect(gitSpawnCount()).toBe(before + 3);
+  });
+
+  it("counts failed invocations too — they still spawned a process", async () => {
+    const notARepo = await makeTempDir();
+    const before = gitSpawnCount();
+    expect(await headSha(notARepo)).toBeNull();
+    expect(gitSpawnCount()).toBe(before + 1);
   });
 });

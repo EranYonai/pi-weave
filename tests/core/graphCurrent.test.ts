@@ -3,6 +3,7 @@ import {
   buildCurrentGraph,
   readNoteForView,
   readOkfFileForView,
+  readRepositorySide,
   type ViewNote,
 } from "../../src/core/graph/current";
 import { buildRepoIndex, writeRepoIndex } from "../../src/core/repoIndex";
@@ -167,5 +168,33 @@ describe("buildCurrentGraph ⇄ GraphModel invariants", () => {
       // a note links to the other
       expect(a.edges.some((e) => e.kind === "links-to")).toBe(true);
     });
+  });
+});
+
+// Shared by the cached and uncached graph paths, so it gets its own coverage.
+describe("readRepositorySide (core)", () => {
+  it("returns the index, staleness, and summaries for an indexed repo", async () => {
+    const repo = await makeTempDir();
+    gitInit(repo);
+    await writeFixture(repo, "src/index.ts", "export const x = 1;\n");
+    commitAll(repo, "init");
+    await writeRepoIndex(repo, (await buildRepoIndex(repo))!);
+
+    const side = await readRepositorySide(repo);
+    expect(side).not.toBeNull();
+    expect(side!.repository?.index.scope).toBe("repository");
+    expect(side!.repository?.staleness.state).toBe("fresh");
+    expect(side!.summaries).toBeInstanceOf(Map);
+  });
+
+  it("returns null outside a git repository", async () => {
+    expect(await readRepositorySide(await makeTempDir())).toBeNull();
+  });
+
+  it("returns null for a git repo with no .okf index", async () => {
+    const repo = await makeTempDir();
+    gitInit(repo);
+    commitAll(repo, "init");
+    expect(await readRepositorySide(repo)).toBeNull();
   });
 });

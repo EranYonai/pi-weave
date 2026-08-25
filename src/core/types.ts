@@ -22,11 +22,51 @@ export interface NoteMeta {
   source: NoteSource;
 }
 
+/**
+ * The verbatim lines of a note's front-matter block, in file order, without
+ * the enclosing `---` fences.
+ *
+ * This is how pi-weave keeps front matter **lossless**. `NoteMeta` names the
+ * five fields the engine understands; a vault is a directory of files a human
+ * also edits, so real notes carry keys the engine has never heard of —
+ * Obsidian's `aliases`, `cssclass`, `publish`, whatever the user invented last
+ * Tuesday. Modelling those as parsed values would mean re-emitting them, and
+ * re-emitting a value the parser only half-understands is how formatting (and
+ * then content) gets destroyed.
+ *
+ * So they are not parsed at all: the raw lines are carried through, and
+ * `serializeNote` replays them, substituting a freshly rendered line only for
+ * the keys `NoteMeta` actually owns. Unknown keys — including ones using
+ * syntax the subset parser cannot represent, such as block lists or folded
+ * scalars — come back out byte-identical, in their original order.
+ *
+ * Deliberately `readonly string[]` rather than a parsed record: a second
+ * representation of a line is a second thing that can disagree with the file.
+ * The key of a line is derived with the same rule the parser uses, at the one
+ * place that needs it.
+ */
+export type NoteFrontMatter = readonly string[];
+
 /** A vault note: metadata plus its Markdown body. */
 export interface Note extends NoteMeta {
   /** File-name slug (no extension). Stable identity of the note. */
   slug: string;
   body: string;
+  /**
+   * The note's front-matter block as it appeared on disk, so a read → write
+   * round trip preserves keys outside {@link NoteMeta} (see
+   * {@link NoteFrontMatter}).
+   *
+   * Optional because a `Note` need not have come from a file: graph fixtures
+   * and in-memory projections construct one directly. Absent means "no layout
+   * to preserve", and `serializeNote` then emits the canonical five fields.
+   *
+   * Not carried on {@link NoteSummary}, and deliberately not on the wire: the
+   * browser never needs to see a user's unknown keys in order for them to
+   * survive, because every write path re-reads the file it is about to
+   * overwrite.
+   */
+  frontMatter?: NoteFrontMatter;
 }
 
 /** Summary of one note for list/search output. */

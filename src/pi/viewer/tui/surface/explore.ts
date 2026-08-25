@@ -11,6 +11,7 @@
 import { truncateToWidth } from "@earendil-works/pi-tui";
 import { decodeAction } from "../explorer";
 import {
+  formatTreeMeta,
   graphRoots,
   initialState,
   reduce,
@@ -126,8 +127,8 @@ export class ExploreSurface implements Surface {
       showInternals: this.state.showInternals,
       provFilter: this.state.provFilter,
       query: this.state.query,
-      now: this.ctx.now(),
     });
+    const now = this.ctx.now();
     const hint = treeEmptyHint(this.ctx.model);
     if (rows.length === 0 && hint) {
       return { lines: [t.fg("dim", hint)], rows: [] };
@@ -136,7 +137,8 @@ export class ExploreSurface implements Surface {
       const chev = chevron(r.expanded, r.hasKids);
       const marker = this.rowMarker(r.kind, r.provenance);
       const label = sanitize(r.label);
-      const meta = r.meta ? t.fg("dim", `  ${sanitize(r.meta)}`) : "";
+      const metaText = formatTreeMeta(r.meta, now);
+      const meta = metaText ? t.fg("dim", `  ${sanitize(metaText)}`) : "";
       const indent = "  ".repeat(r.depth);
       const body = `${indent}${chev} ${marker}${label}`;
       return { text: meta ? `${body}${meta}` : body, id: r.id };

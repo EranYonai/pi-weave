@@ -13,6 +13,7 @@ import { registerNoteTool } from "./tools/noteTool";
 import { registerRepoTool } from "./tools/repoTool";
 import { deepScanRepository, formatDeepScanResult } from "./summarize";
 import { runWeaveViewTui } from "./viewer/tui/run";
+import { WebWorkspaceController } from "./viewer/web/run";
 
 /**
  * pi-weave — an agent-native knowledge workspace (docs/design.md):
@@ -27,12 +28,20 @@ export default function piWeave(pi: ExtensionAPI): void {
   registerNoteTool(pi);
   registerRepoTool(pi);
 
-  // /weave-view is the in-terminal explorer (the old browser viewer was
-  // retired for a pixi.js rewrite); it holds no session resources, so there
-  // is no per-session lifecycle to tear down.
+  // /weave-view opens the browser workspace by default (weave-workspace §13);
+  // `tui` selects the in-terminal explorer. The browser workspace owns a
+  // server, a file watcher and live SSE streams for the rest of the session,
+  // so unlike the TUI it has a real teardown — see `session_shutdown` below.
   let lastCtx: ExtensionContext | ExtensionCommandContext | null = null;
   let lastStatusText: string | undefined = undefined;
   let isActive = false;
+
+  const web = new WebWorkspaceController({
+    exec: (command, args) => pi.exec(command, args),
+    // A boot or an idle shutdown changes what the status line should say, and
+    // neither happens inside a command handler that could refresh it itself.
+    onStateChange: () => updateStatus(),
+  });
 
   function updateStatus(ctx?: ExtensionContext | ExtensionCommandContext, text?: string): void {
     if (ctx) lastCtx = ctx;
@@ -41,10 +50,28 @@ export default function piWeave(pi: ExtensionAPI): void {
     if (text !== undefined) {
       lastStatusText = text;
     }
-    if (!lastStatusText) {
+
+    // A running browser workspace is a background process the user cannot
+    // otherwise see — an open port on their machine — so it always gets a
+    // marker. Resolved *before* the "nothing to show" test, because the port
+    // is itself something to show.
+    //
+    // This ordering is the fix for a real bug: the early return used to sit
+    // above this lookup, so a workspace started in a session that never
+    // emitted `session_start` (no seeded `lastStatusText`) did not merely
+    // fail to gain the marker — it actively cleared the status line while a
+    // server was listening. The browser-launch-failure path is exactly that
+    // shape, which is why it was the case that caught it.
+    const port = web.port();
+    const suffix = port === null ? "" : ` · web:${port}`;
+
+    // Clear only when there is genuinely nothing to say: no base text *and*
+    // no server.
+    if (!lastStatusText && port === null) {
       c.ui.setStatus("weave", undefined);
       return;
     }
+
     let theme: { fg?: (slot: string, text: string) => string } | undefined;
     try {
       theme = (c.ui as unknown as { theme?: { fg?: (slot: string, text: string) => string } })?.theme;
@@ -54,11 +81,19 @@ export default function piWeave(pi: ExtensionAPI): void {
     const indicator = (isActive || inFlightDeepScans.size > 0)
       ? (theme?.fg ? theme.fg("accent", "●") : "●")
       : (theme?.fg ? theme.fg("dim", "○") : "○");
-    c.ui.setStatus("weave", `${indicator} ${lastStatusText}`);
+    // With no base text the marker stands alone (`○ web:51234`) rather than
+    // rendering a leading ` · ` separator against nothing.
+    const body = lastStatusText ? `${lastStatusText}${suffix}` : `web:${port}`;
+    c.ui.setStatus("weave", `${indicator} ${body}`);
   }
 
   pi.on("session_shutdown", async () => {
-    // The TUI explorer owns no session-scoped resources; nothing to stop.
+    // The TUI explorer owns nothing session-scoped, but the browser workspace
+    // owns an HTTP server, a recursive file watcher and any number of open SSE
+    // streams. `close()` releases all three (server.ts closes the hub and
+    // awaits the watcher); a leaked listener outliving the pi session is a
+    // real bug, not a tidiness concern.
+    await web.close();
   });
 
   pi.on("agent_start", async (_event, ctx) => {
@@ -97,14 +132,26 @@ export default function piWeave(pi: ExtensionAPI): void {
   });
 
   pi.registerCommand("weave-view", {
-    description: "Open the in-terminal knowledge-graph explorer (vault + repository); reads from disk live",
+    description: "Open the knowledge workspace in your browser ('tui' for the in-terminal explorer, '--no-open' to just print the URL)",
     handler: async (args, ctx) => {
-      const arg = args.trim().toLowerCase();
-      if (arg !== "" && arg !== "tui") {
-        ctx.ui.notify("usage: /weave-view [tui]", "warning");
+      const parsed = parseWeaveViewArgs(args);
+      if (parsed === null) {
+        ctx.ui.notify(WEAVE_VIEW_USAGE, "warning");
         return;
       }
-      await runWeaveViewTui(ctx);
+      if (parsed.surface === "tui") {
+        await runWeaveViewTui(ctx);
+        return;
+      }
+      const outcome = await web.run(ctx, { open: parsed.open });
+      // A browser that would not launch on a machine that has a terminal
+      // still leaves the user somewhere to go. The server stays up — the URL
+      // in the notification remains valid — and the TUI opens on top of it.
+      if (outcome.fallbackToTui && ctx.mode === "tui") await runWeaveViewTui(ctx);
+      // Unconditionally, and last: the TUI writes its own status line on
+      // close, which would otherwise drop the `· web:PORT` marker for a
+      // server that is still running.
+      updateStatus(ctx);
     },
   });
 
@@ -154,6 +201,52 @@ export default function piWeave(pi: ExtensionAPI): void {
       ctx.ui.notify("pi-weave: deep scan cancellation requested.", "info");
     },
   });
+}
+
+/* ------------------------------------------------------------------ */
+/* /weave-view argument parsing                                        */
+/* ------------------------------------------------------------------ */
+
+export const WEAVE_VIEW_USAGE = "usage: /weave-view [tui|web] [--no-open]";
+
+/** Which explorer `/weave-view` was asked for. */
+export interface WeaveViewArgs {
+  surface: "tui" | "web";
+  /** `false` for `--no-open`. Meaningless for `tui`, which never opens one. */
+  open: boolean;
+}
+
+/**
+ * Parse `/weave-view`'s argument string, or `null` for "print the usage".
+ *
+ * Bare `/weave-view` is the **browser** workspace (weave-workspace §13):
+ * the default is the thing most people want most of the time, and `tui` is
+ * one word away for the SSH case. `--no-open` is accepted on the web
+ * surface only — silently ignoring it after `tui` would be a lie about what
+ * happened.
+ *
+ * Exported because a parser is exactly the kind of thing that should be
+ * tested as a table rather than through eight command invocations.
+ */
+export function parseWeaveViewArgs(args: string): WeaveViewArgs | null {
+  const tokens = args.trim().toLowerCase().split(/\s+/).filter(Boolean);
+  let surface: "tui" | "web" = "web";
+  let open = true;
+  let sawSurface = false;
+  for (const token of tokens) {
+    if (token === "--no-open") {
+      // Rejecting the repeat costs nothing and keeps "did I typo?" honest.
+      if (!open) return null;
+      open = false;
+      continue;
+    }
+    if (sawSurface) return null;
+    if (token !== "tui" && token !== "web") return null;
+    surface = token;
+    sawSurface = true;
+  }
+  if (surface === "tui" && !open) return null;
+  return { surface, open };
 }
 
 /* ------------------------------------------------------------------ */

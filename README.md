@@ -15,61 +15,110 @@
 
 pi-weave is a [pi](https://github.com/earendil-works/pi) extension with two faces that are secretly one:
 
-1. **A smart notepad with AI skills.** A persistent vault of knowledge — decisions, ideas, people, meetings — stored as plain Markdown notes
-   with front matter under `~/.okf/notes/`. Your agent reads and writes it *with* you; everything is editable by hand in any editor.
+1. **A smart notepad.** A persistent vault of knowledge — decisions, ideas, people, meetings — stored as plain Markdown notes with YAML
+   front matter under `~/.okf/notes/`. Your agent reads and writes it *with* you through the `weave_note` tool; everything stays editable by
+   hand in any editor.
 
-2. **A repository exploration engine.** A derived, git-aware knowledge index of the repo you're in, living at `<repo>/.okf/` — structure,
-   languages, packages, modules, entry points, and staleness state. Rebuildable, disposable, never the source of truth.
+2. **A repository exploration engine.** A derived, git-aware knowledge index of the repo you are standing in, living at `<repo>/.okf/` —
+   structure, languages, packages, modules, entry points, and staleness state. Built and read through the `weave_repo` tool. Rebuildable,
+   disposable, never the source of truth.
 
-And one rule across both: **everything is equally usable by humans and agents.** No opaque databases. No lock-in formats.
+One rule spans both: **everything is equally readable by humans and agents.** Markdown and JSON on disk, no opaque database, no lock-in
+format. Every generated artefact carries provenance (`human`, `agent` or `generated`), so agent-written content never masquerades as
+something you wrote.
 
 ```
 🧵 vault:12 · my-project:ok      ← pi's status line when weave is active
 ```
 
+See [docs/design.md](docs/design.md) for the reasoning behind all of it.
+
 ## Install
 
 ```bash
-pi install npm:pi-weave             # from npm (recommended)
+pi install npm:pi-weave                        # from npm (recommended)
 pi install git:github.com/EranYonai/pi-weave   # from git
-pi install /path/to/pi-weave       # local path
+pi install /path/to/pi-weave                   # local path
 ```
 
-Or for development: `pi -e ./src/pi/index.ts`.
+Requires Node **>= 20.13.0**. For development against a checkout: `pi -e ./src/pi/index.ts`.
 
-The package is [published on npm](https://www.npmjs.com/package/pi-weave); releases are cut from `main` and auto-published with provenance
-attestation ([Publish workflow](.github/workflows/publish.yml)).
+On session start pi-weave detects the repository you are in, checks whether `.okf` exists and is fresh, and reports it in the status footer
+— a filled `●` marks weave as active. An unindexed repository gets a one-line nudge; a stale one gets a warning.
 
-## What you get
+## Tools and commands
 
 | Surface | Name | Purpose |
 |---|---|---|
-| Tool | `weave_note` | list / get / add / append / finalize / search vault notes |
-| Tool | `weave_repo` | status / scan / overview of the `.okf` repo index |
+| Tool | `weave_note` | `list` / `get` / `add` / `append` / `finalize` / `search` over vault notes |
+| Tool | `weave_repo` | `status` / `scan` / `overview` of the `.okf` repository index |
 | Command | `/weave` | workspace dashboard (vault + repository) |
-| Command | `/weave-scan` | build/refresh the repository index (light) |
-| Command | `/weave-scan deep` | light index + model-summarized sidecars (opt-in, incremental) |
+| Command | `/weave-view` | open the knowledge workspace in your browser |
+| Command | `/weave-scan` | build or refresh the repository index (light) |
+| Command | `/weave-scan deep` | light index plus model-written per-file summaries (opt-in, incremental, background) |
 | Command | `/weave-scan-cancel` | stop an in-flight `/weave-scan deep` run |
-| Command | `/weave-view` | explore the local knowledge graph in-terminal (keyboard) |
 | Skill | `weave-notepad` | how the agent should take good notes |
 | Skill | `weave-explore` | how the agent should explore repositories |
 
-**`/weave-view`** explores the knowledge graph in the terminal: an expandable containment tree (Explore), a 1-hop neighborhood
-(Focus), a selected-node detail view with note/`.okf` bodies, and a staleness + link health surface — all keyboard-driven and read-only.
-It reads disk live (never a stale cache) over the `GraphModel` assembled from the vault + repository index; a pure, harness-free view-model
-(`src/pi/viewer/tui/model.ts`) backs the `WeaveExplorer` component. See `docs/weave-view-tui-design.md`.
+`/weave-scan deep` refreshes the light index and then writes a short model summary per file to `.okf/repository/summaries/`, skipping files
+whose content hash has not changed since their last summary. It costs tokens, so it never runs implicitly — and it runs in the background,
+so `/weave-scan-cancel` can stop it mid-flight.
 
-> The earlier in-browser graph viewer (`/weave-view` in a browser) has been retired and is being rebuilt on pixi.js; until then
-> `/weave-view` opens the in-terminal explorer.
+## The workspace
 
-On session start, pi-weave detects the repository you're in, checks whether `.okf` exists and is fresh, and says so in the status footer — a
-filled `●` marks weave as active (a deep scan spins it while running).
+`/weave-view` opens a browser knowledge workspace over the same graph the tools see — the vault and the repository index as one model.
 
-**`/weave-scan deep`** is the opt-in, incremental deep pass: it refreshes the light index and then writes a short model summary per file to
-`.okf/repository/summaries/`, skipping files whose content hash is unchanged since their last summary. It costs tokens, so it never runs
-implicitly — and it runs in the background, so `/weave-scan-cancel` can stop it mid-flight.
+```bash
+/weave-view              # browser workspace (default), opens a tab
+/weave-view --no-open    # same server, just prints the URL
+/weave-view tui          # the in-terminal explorer instead
+```
 
-## The formats (why everything is portable)
+Three resizable columns and a context rail:
+
+- **Tree** — an expandable containment tree over notes and repository structure, with a filter box and provenance cycling.
+- **Note** — the selected note rendered with [marked](https://marked.js.org) and sanitised with DOMPurify. `[[wikilinks]]` navigate inside
+  the workspace; links with no target render as ghosts rather than dead text.
+- **Graph** — [sigma.js](https://www.sigmajs.org) v3 on WebGL with a [d3-force](https://d3js.org/d3-force) layout: neighbourhood highlight
+  on selection, semantic zoom that reveals labels as you go in, and cluster collapse as real graph reduction rather than hiding.
+- **Context rail** — links, backlinks, tags and mentions for whatever is selected, every entry clickable.
+
+Selecting anywhere highlights everywhere: the tree, the note body, the graph and the rail are lenses onto one selection. Updates arrive live
+over SSE as files change on disk, so an agent writing a note shows up without a refresh.
+
+`⌘K` opens a search palette spanning both faces (notes ranked with snippets, repository nodes by label). The whole workspace is keyboard
+drivable — `⌘1/2/3` focus a column, `/` filters the tree, `g` fits the graph, `Esc` clears, and `?` lists the rest. Column widths persist.
+
+The workspace is **read-first**, but no longer read-only. `⌘E` toggles the note column between read and edit, `⌘S` saves, and every save
+carries the revision read at load — a stale one gets a `409` and a choice of reload, overwrite or keep editing. The draft is never silently
+discarded or clobbered: a remote change arriving over SSE for the note you are editing is recorded rather than applied, and comes back as
+that same `409` when you save.
+
+Front matter the engine does not own survives a browser save **byte-identically** — `aliases`, `cssclass` and a `tags:` block list all come
+back unchanged and in place, with `updated:` the only line a save moves. That is the P5 exit criterion, and
+`tests/web/editor.roundtrip.test.ts` drives it through the real client, over a real socket, into a real vault — it is what makes editing
+here safe alongside Obsidian.
+
+Rename and delete have routes, client functions and tests but **no UI**, deliberately: the vault has no trash, so the confirmation flow
+around a destructive button is a design decision rather than a wiring task. Notes are still authorable through the `weave_note` tool or by
+hand, and the note toolbar's "Open in $EDITOR" hands the file to yours. `/weave-view tui` is the read-only in-terminal explorer — the same
+model, a containment tree, a 1-hop focus view, node detail and a link-health surface, for when you are on the far end of an SSH session.
+
+### The local server
+
+The workspace server is deliberately small and deliberately paranoid, because loopback is not an authorisation boundary — any local process
+can reach the port, and any website you visit can try to via DNS rebinding. Four layers:
+
+1. Binds `127.0.0.1` on an ephemeral port. Never `0.0.0.0`.
+2. A `Host` header allowlist (`127.0.0.1:PORT`, `localhost:PORT`, `[::1]:PORT`), which is what actually stops rebinding.
+3. A 256-bit per-session token, handed off once in the URL and exchanged for an `HttpOnly; SameSite=Strict` cookie via a redirect that drops
+   it from the address bar. Compared in constant time.
+4. `Origin` validated when present, and required on anything that is not a `GET` or `HEAD`.
+
+The page is served under a nonce-only CSP — `default-src 'none'`, no `unsafe-inline`, no `unsafe-eval`, no CORS headers at all. The server
+shuts itself down after 30 minutes with no client attached, and always at the end of the pi session.
+
+## The formats
 
 Vault note (`~/.okf/notes/auth-boundary.md`):
 
@@ -96,19 +145,50 @@ Repository index (`<repo>/.okf/`):
     └── structure.json  # languages, packages, modules, entry points
 ```
 
-The `.okf` index is **derived**: delete it, rescan, lose nothing. By default it's excluded from git locally (`.git/info/exclude`);
-committing it for team sharing is a deliberate opt-in.
+The `.okf` index is **derived**: delete it, rescan, lose nothing. By default it is excluded from git locally (`.git/info/exclude`);
+committing it to share with a team is a deliberate opt-in. The vault location can be overridden with `PI_WEAVE_VAULT`.
+
+## Zero runtime dependencies
+
+`package.json` declares no `dependencies`. The four peers (`@earendil-works/pi-ai`, `@earendil-works/pi-coding-agent`,
+`@earendil-works/pi-tui`, `typebox`) are supplied by the pi harness, which loads `src/pi/index.ts` as TypeScript directly — installing
+pi-weave runs no build step.
+
+The browser client cannot work that way, so preact, sigma, graphology, d3-force, marked and DOMPurify are **devDependencies** bundled into a
+committed artifact at `src/web/client/dist/app.js`. They are inputs to a build, not runtime requirements of the package.
 
 ## For other agent harnesses
 
-The on-disk artifacts and `src/core` are harness-agnostic by design — Claude Code and opencode adapters are on the roadmap (docs/design.md
-§21), and the skills follow the [Agent Skills standard](https://agentskills.io/specification).
+The skills follow the [Agent Skills standard](https://agentskills.io/specification), and the on-disk artefacts and `src/core` are
+harness-agnostic by design: `src/core` may not import anything pi-specific. Claude Code and opencode adapters are on the roadmap
+([docs/design.md](docs/design.md) §21).
+
+## Documentation
+
+| Where | What |
+|---|---|
+| [docs/design.md](docs/design.md) | the design document — *why* pi-weave is shaped this way |
+| [docs/weave-workspace.md](docs/weave-workspace.md) | the browser workspace: library choices with measurements, security model, phases |
+| [docs/weave-view-tui-design.md](docs/weave-view-tui-design.md) | the in-terminal explorer |
+| [AGENTS.md](AGENTS.md) | contributor and agent rules — read before changing anything |
 
 ## Development
 
 ```bash
 npm install
-npm run check     # typecheck + tests with coverage gate (≥95%)
+npm run typecheck   # tsc --noEmit, strict, both projects
+npm test            # vitest run
+npm run coverage    # the 95% gate (lines, branches, functions, statements)
+npm run build:web   # rebuild the committed browser bundle
+npm run check       # typecheck + bundle drift check + coverage — run this before committing
 ```
 
-See [AGENTS.md](AGENTS.md) for contributor/agent rules and [docs/design.md](docs/design.md) for the full design.
+Two rules worth knowing before you send a patch. Coverage must stay at or above **95%** on every metric; the gate is enforced by vitest
+thresholds and `npm run check` fails below it. And the committed web bundle must match its source — `npm run check` rebuilds it in memory
+and byte-compares, so run `npm run build:web` and commit the result whenever you touch `src/web/`.
+
+Never commit to `main`; branch, then open a PR. See [AGENTS.md](AGENTS.md) for the rest.
+
+## Licence
+
+[MIT](LICENSE).

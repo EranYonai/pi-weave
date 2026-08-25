@@ -13,8 +13,11 @@ import {
   listNotes,
   noteCount,
   RAW_NOTES_HEADING,
+  readVault,
   resolveNotePath,
   searchNotes,
+  statNotes,
+  summarizeNote,
   vaultExists,
 } from "../../src/core/vault";
 import { makeTempDir } from "../helpers";
@@ -198,6 +201,112 @@ describe("listNotes / noteCount", () => {
 
   it("returns an empty list for a missing notes dir", async () => {
     expect(await listNotes(join(vault, "nowhere"))).toEqual([]);
+  });
+});
+
+// One pass over the vault — the primitive that removed the double read
+// from buildCurrentGraph (weave-workspace §4.1).
+describe("readVault", () => {
+  it("returns bodies and the on-disk file count in one pass", async () => {
+    await addNote(vault, { title: "Old", body: "old body", now: new Date("2026-08-20T10:00:00Z") });
+    await addNote(vault, { title: "New", body: "new body", now: new Date("2026-08-21T10:00:00Z") });
+
+    const snapshot = await readVault(vault);
+    expect(snapshot.notes.map((n) => n.slug)).toEqual(["new", "old"]);
+    expect(snapshot.notes[0]?.body).toBe("new body");
+    expect(snapshot.fileCount).toBe(2);
+  });
+
+  it("counts malformed files but omits them from notes", async () => {
+    await addNote(vault, { title: "Good", body: "x" });
+    await fs.writeFile(join(vault, "notes", "broken.md"), "no front matter here", "utf8");
+
+    const snapshot = await readVault(vault);
+    expect(snapshot.notes.map((n) => n.slug)).toEqual(["good"]);
+    expect(snapshot.fileCount).toBe(2);
+  });
+
+  it("is empty for a missing notes dir", async () => {
+    expect(await readVault(join(vault, "nowhere"))).toEqual({ notes: [], fileCount: 0 });
+  });
+
+  it("breaks ties on equal timestamps by slug ascending", async () => {
+    const at = new Date("2026-08-20T10:00:00Z");
+    for (const title of ["Zulu", "Alpha", "Mike"]) {
+      await addNote(vault, { title, body: "same instant", now: at });
+    }
+    expect((await readVault(vault)).notes.map((n) => n.slug)).toEqual(["alpha", "mike", "zulu"]);
+  });
+
+  it("agrees with listNotes, which is now derived from it", async () => {
+    await addNote(vault, { title: "One", body: "aaa" });
+    await addNote(vault, { title: "Two", body: "bbbb" });
+    const snapshot = await readVault(vault);
+    expect(await listNotes(vault)).toEqual(snapshot.notes.map(summarizeNote));
+  });
+});
+
+describe("summarizeNote", () => {
+  it("drops the body and records its length", async () => {
+    const note = await addNote(vault, { title: "Sized", body: "12345", tags: ["t"] });
+    const summary = summarizeNote(note);
+    expect(summary).toEqual({
+      slug: note.slug,
+      title: "Sized",
+      created: note.created,
+      updated: note.updated,
+      tags: ["t"],
+      source: note.source,
+      bodyLength: 5,
+    });
+    expect("body" in summary).toBe(false);
+  });
+});
+
+// The stat-only pass behind the WorkspaceCache: change detection with no reads.
+describe("statNotes", () => {
+  it("returns slug, path, mtime and size per note without parsing", async () => {
+    await addNote(vault, { title: "Alpha", body: "a" });
+    await addNote(vault, { title: "Beta", body: "b" });
+
+    const stats = await statNotes(vault);
+    expect(stats.map((s) => s.slug)).toEqual(["alpha", "beta"]);
+    expect(stats[0]?.path).toBe(join(vault, "notes", "alpha.md"));
+    expect(stats[0]?.size).toBeGreaterThan(0);
+    expect(stats[0]?.mtimeMs).toBeGreaterThan(0);
+  });
+
+  it("includes malformed files — it never parses, so it cannot reject them", async () => {
+    await addNote(vault, { title: "Good", body: "x" });
+    await fs.writeFile(join(vault, "notes", "broken.md"), "no front matter", "utf8");
+    expect((await statNotes(vault)).map((s) => s.slug)).toEqual(["broken", "good"]);
+  });
+
+  it("is empty for a missing notes dir", async () => {
+    expect(await statNotes(join(vault, "nowhere"))).toEqual([]);
+  });
+
+  it("reports a larger size after a note grows", async () => {
+    await addNote(vault, { title: "Alpha", body: "small" });
+    const before = (await statNotes(vault))[0]!;
+    await appendToNote(vault, "alpha", "a much longer addition to the body");
+    const after = (await statNotes(vault))[0]!;
+    expect(after.size).toBeGreaterThan(before.size);
+  });
+
+  it("drops entries that vanish between the readdir and the stat", async () => {
+    await addNote(vault, { title: "Ghost", body: "x" });
+    const realStat = fs.stat;
+    // Simulate the delete-mid-pass race the filter exists for.
+    (fs as unknown as { stat: unknown }).stat = async (path: string) => {
+      if (String(path).endsWith("ghost.md")) throw new Error("ENOENT");
+      return (realStat as (p: string) => unknown)(path);
+    };
+    try {
+      expect(await statNotes(vault)).toEqual([]);
+    } finally {
+      (fs as unknown as { stat: unknown }).stat = realStat;
+    }
   });
 });
 

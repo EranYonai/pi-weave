@@ -11,6 +11,7 @@
 import type { Note, RepoIndex, StalenessReport, VaultStatus } from "../types";
 import type { SummaryRecord } from "../summaries";
 import type { EdgeKind, GraphEdge, GraphModel, GraphNode } from "./model";
+import { buildPathIndex, resolveMentions, type PathIndex } from "./mentions";
 import { extractWikilinks } from "./wikilinks";
 
 /** Hard cap on note nodes (docs/weave-view.md M3 guard). */
@@ -85,7 +86,14 @@ function parseRemote(raw: string): { label: string; url: string } {
   return { label: tail.replace(/\.git$/, ""), url: s };
 }
 
-function buildVaultSide(input: BuildGraphInput, maxNotes: number, nodes: GraphNode[], edges: GraphEdge[]): string[] {
+function buildVaultSide(
+  input: BuildGraphInput,
+  maxNotes: number,
+  nodes: GraphNode[],
+  edges: GraphEdge[],
+  danglingLinks: Record<string, string[]>,
+  paths: PathIndex,
+): string[] {
   const truncated = input.notes.length > maxNotes;
   const kept = input.notes.slice(0, maxNotes);
 
@@ -108,14 +116,28 @@ function buildVaultSide(input: BuildGraphInput, maxNotes: number, nodes: GraphNo
       updated: note.updated,
     };
     if (note.tags.length > 0) detail.tags = note.tags.join(", ");
-    const dangling = links.length - resolved.length;
-    if (dangling > 0) detail["dangling links"] = String(dangling);
+    // The names, not just the count (§4.2). `detail` keeps carrying the count
+    // because it is what the TUI's side panel prints; the structured targets
+    // go on the model, where a UI can turn them into ghost nodes.
+    const dangling = links.filter((slug) => !keptSlugs.has(slug));
+    if (dangling.length > 0) {
+      detail["dangling links"] = String(dangling.length);
+      danglingLinks[note.slug] = dangling;
+    }
     detail.preview = preview(note.body);
 
     nodes.push({ id: `note:${note.slug}`, kind: "note", label: note.title, provenance: note.source, detail });
     edges.push({ source: "vault", target: `note:${note.slug}`, kind: "contains" });
     for (const target of resolved) {
       edges.push({ source: `note:${note.slug}`, target: `note:${target}`, kind: "links-to" });
+    }
+    // A note body naming a repo path → `mentions` (§4.4). Emitted after the
+    // wiki-links so a note's edges read vault-ward first, then code-ward, and
+    // only for paths that are already nodes — `paths` is built from the repo
+    // index, so a mention of an unindexed file resolves to its enclosing
+    // module or to nothing at all. Never to a phantom node.
+    for (const target of resolveMentions(note.body, paths)) {
+      edges.push({ source: `note:${note.slug}`, target, kind: "mentions" });
     }
   }
   return [...keptSlugs];
@@ -243,7 +265,16 @@ export function buildGraph(input: BuildGraphInput, options: { maxNotes?: number 
   const maxNotes = options.maxNotes ?? DEFAULT_MAX_NOTES;
   const nodes: GraphNode[] = [];
   const edges: GraphEdge[] = [];
-  buildVaultSide(input, maxNotes, nodes, edges);
+  const danglingLinks: Record<string, string[]> = {};
+  // Built before the vault side, because that is where `mentions` edges are
+  // emitted and they need to know which repo paths are real nodes. Derived
+  // from the same `structure` arrays `buildRepositorySide` walks, so the two
+  // cannot disagree about which ids exist. Empty when there is no repository:
+  // a vault-only graph has nothing to mention.
+  const paths = input.repository === null
+    ? (new Map<string, string>() as PathIndex)
+    : buildPathIndex(input.repository.index.structure);
+  buildVaultSide(input, maxNotes, nodes, edges, danglingLinks, paths);
   if (input.repository !== null) {
     buildRepositorySide(input.repository, input.summaries, nodes, edges);
   }
@@ -252,7 +283,9 @@ export function buildGraph(input: BuildGraphInput, options: { maxNotes?: number 
     staleness: input.repository?.staleness ?? null,
     nodes,
     edges,
+    danglingLinks,
   };
 }
 
 export type { EdgeKind, GraphEdge, GraphModel, GraphNode, NodeKind } from "./model";
+export { buildPathIndex, extractPathMentions, resolveMentions, type PathIndex } from "./mentions";

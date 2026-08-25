@@ -152,6 +152,55 @@ describe("buildGraph", () => {
     expect(one?.detail["dangling links"]).toBe("1");
   });
 
+  // --- §4.2: the *targets*, not just the count -----------------------------
+  //
+  // The count alone is a display string. A ghost node the user can click to
+  // create the missing note needs the name, which the builder used to throw
+  // away.
+
+  it("keeps unresolved wiki-link targets on the model, keyed by slug", () => {
+    const model = buildGraph(input({
+      vault: { root: "/v", exists: true, noteCount: 2 },
+      notes: [
+        note("one", "human", "links [[two]] plus [[missing]] and [[Also Gone|alias]]"),
+        note("two", "agent", "no links here"),
+      ],
+    }));
+    // First-appearance order, slugified the same way `links-to` targets are.
+    expect(model.danglingLinks).toEqual({ one: ["missing", "also-gone"] });
+    // A note with nothing unresolved is absent, not present-and-empty.
+    expect("two" in model.danglingLinks).toBe(false);
+  });
+
+  it("counts and names the same set (detail and danglingLinks cannot disagree)", () => {
+    const model = buildGraph(input({
+      notes: [note("solo", "human", "[[a]] [[b]] [[a]] [[c]]")],
+    }));
+    const detailCount = model.nodes.find((n) => n.id === "note:solo")?.detail["dangling links"];
+    // `[[a]]` twice dedupes in `extractWikilinks`, so three targets, not four.
+    expect(model.danglingLinks.solo).toEqual(["a", "b", "c"]);
+    expect(detailCount).toBe(String(model.danglingLinks.solo?.length));
+  });
+
+  it("is an empty object when nothing dangles, and for an empty vault", () => {
+    const linked = buildGraph(input({
+      notes: [note("a", "human", "[[b]]"), note("b", "human", "[[a]]")],
+    }));
+    expect(linked.danglingLinks).toEqual({});
+    expect(buildGraph(input()).danglingLinks).toEqual({});
+  });
+
+  it("treats links to notes elided by the cap as dangling", () => {
+    // The cap is a *view* over the vault, so a link to a real-but-elided note
+    // is unresolved from the graph's point of view. Reporting it as dangling
+    // is honest about what this graph can show; reporting it as a link would
+    // point at a node that is not there.
+    const notes: Note[] = [note("keep", "human", "[[elided0]]")];
+    for (let i = 0; i < 3; i++) notes.push(note(`elided${i}`, "agent", "x"));
+    const model = buildGraph(input({ vault: { root: "/v", exists: true, noteCount: 4 }, notes }), { maxNotes: 1 });
+    expect(model.danglingLinks).toEqual({ keep: ["elided0"] });
+  });
+
   it("works for an empty vault without a repository", () => {
     const model = buildGraph(input());
     expect(model.nodes).toHaveLength(1);
@@ -171,7 +220,9 @@ describe("buildGraph", () => {
   it("is byte-identical for identical inputs (polling contract)", () => {
     const build = () =>
       JSON.stringify(buildGraph(input({
-        notes: [note("a", "human", "[[b]]"), note("b", "human", "[[a]]")],
+        // Includes a dangling target, so the §4.2 map is part of what the
+        // byte-stability claim covers rather than being tested around.
+        notes: [note("a", "human", "[[b]] [[ghost]]"), note("b", "human", "[[a]]")],
         repository: { index: makeIndex(), staleness: FRESH },
       })));
     expect(build()).toBe(build());
