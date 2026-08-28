@@ -14,6 +14,13 @@ import { join } from "node:path";
 export const OKF_DIR = ".okf";
 export const OKF_MANIFEST = "okf.json";
 export const NOTES_DIR = "notes";
+/**
+ * Vault collection for generated session memory (docs/session-scan.md).
+ * A sibling of `notes/` rather than a subdirectory of it: session notes are
+ * machine-derived memory, not hand-curated knowledge, so they stay out of
+ * the note graph's flat listing — and out of its slug namespace.
+ */
+export const SESSIONS_DIR = "sessions";
 export const REPOSITORY_DIR = "repository";
 export const VAULT_ENV_VAR = "PI_WEAVE_VAULT";
 

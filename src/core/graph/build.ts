@@ -132,6 +132,37 @@ function buildVaultSide(
   nodes.push({ id: "vault", kind: "vault", label: "Vault", provenance: null, detail: vaultDetail });
 
   const keptSlugs = new Set(kept.map((n) => n.slug));
+
+  // Nested notes (`sessions/foo` — session memory, docs/session-scan.md) nest
+  // under synthesized folder nodes so the vault tree groups them the way the
+  // repository tree groups directories. Ids are prefixed `vfolder:` because a
+  // repository module could legitimately share the path (`module:sessions`);
+  // the tree renders any `contains` chain, so the kind reuse needs no client
+  // change. Deterministic: dirs sorted, parents before children.
+  const folderIds = new Map<string, string>();
+  const noteDirs = [...new Set(kept.map((n) => n.slug.split("/").slice(0, -1).join("/")))]
+    .filter((d) => d.length > 0)
+    .sort();
+  const notesIn = (dir: string): number => kept.filter((n) => n.slug.startsWith(`${dir}/`)).length;
+  for (const dir of noteDirs) {
+    const id = `vfolder:${dir}`;
+    folderIds.set(dir, id);
+    nodes.push({
+      id,
+      kind: "module",
+      label: dir.split("/").pop() ?? dir,
+      provenance: null,
+      detail: { path: dir, notes: String(notesIn(dir)) },
+    });
+    const parentDir = dir.split("/").slice(0, -1).join("/");
+    const parent = folderIds.get(parentDir) ?? "vault";
+    edges.push({ source: parent, target: id, kind: "contains" });
+  }
+  const parentOf = (slug: string): string => {
+    const dir = slug.split("/").slice(0, -1).join("/");
+    return (dir.length > 0 && folderIds.get(dir)) || "vault";
+  };
+
   for (const note of kept) {
     const links = extractWikilinks(note.body);
     const resolved = links.filter((slug) => keptSlugs.has(slug));
@@ -152,7 +183,7 @@ function buildVaultSide(
     detail.preview = preview(note.body);
 
     nodes.push({ id: `note:${note.slug}`, kind: "note", label: note.title, provenance: note.source, detail });
-    edges.push({ source: "vault", target: `note:${note.slug}`, kind: "contains" });
+    edges.push({ source: parentOf(note.slug), target: `note:${note.slug}`, kind: "contains" });
     for (const target of resolved) {
       edges.push({ source: `note:${note.slug}`, target: `note:${target}`, kind: "links-to" });
     }

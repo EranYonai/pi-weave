@@ -44,9 +44,21 @@ const SYSTEM_PROMPT = [
 const MAX_OUTPUT_TOKENS = 220;
 const REQUEST_TIMEOUT_MS = 30_000;
 
-/** Create the model-backed summarizer, or null when the session has no active model. */
-export function createLlmSummarizer(
+/**
+ * The shared session-model wiring behind every pi-weave summarizer (deep
+ * scan, session scan): resolve the session's already-configured model — no
+ * extra keys or providers (docs/scan-modes.md) — drive completion through
+ * `ctx.modelRegistry`, which owns auth, and reject empty outputs so a
+ * degraded model cannot silently blank a note.
+ *
+ * Returns null when the session has no active model (headless runs without a
+ * provider, etc.) — callers fall back or notify. `deps.complete` is the test
+ * seam: unit tests inject a fake and never touch a network.
+ */
+export function createModelSummarizer(
   ctx: Pick<ExtensionContext, "model" | "modelRegistry">,
+  systemPrompt: string,
+  maxOutputTokens: number,
   deps: SummarizerDeps = {},
 ): LlmSummarizer | null {
   const model = ctx.model;
@@ -58,7 +70,7 @@ export function createLlmSummarizer(
     const message = await complete(
       model,
       {
-        systemPrompt: SYSTEM_PROMPT,
+        systemPrompt,
         messages: [
           {
             role: "user",
@@ -67,7 +79,7 @@ export function createLlmSummarizer(
           },
         ],
       },
-      { maxTokens: MAX_OUTPUT_TOKENS, signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS) },
+      { maxTokens: maxOutputTokens, signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS) },
     );
     const text = contentText(message.content).trim();
     if (text.length === 0) {
@@ -76,6 +88,14 @@ export function createLlmSummarizer(
     return text;
   };
   return { summarize, label };
+}
+
+/** Create the file summarizer for deep scans, or null when no model is active. */
+export function createLlmSummarizer(
+  ctx: Pick<ExtensionContext, "model" | "modelRegistry">,
+  deps: SummarizerDeps = {},
+): LlmSummarizer | null {
+  return createModelSummarizer(ctx, SYSTEM_PROMPT, MAX_OUTPUT_TOKENS, deps);
 }
 
 export type DeepScanOutcome =

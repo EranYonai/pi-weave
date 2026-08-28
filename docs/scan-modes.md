@@ -1,6 +1,8 @@
 # scan-modes.md — light and deep repository scanning
 
 > Status: **implemented** (folds `docs/TODO.md` items **Todo 1** and **Todo 3** — the codebase-memory-mcp study — into one design).
+> The repo-agnostic sibling mode — `/weave-scan sessions`, pi's memory in the vault — is specified in `docs/session-scan.md` and reuses this
+> document's incremental-hash pattern.
 
 ## As-built deltas
 

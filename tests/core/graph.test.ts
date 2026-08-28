@@ -456,3 +456,74 @@ describe("buildGraph — .okf subtree", () => {
     expect(c.nodes.some((n) => n.id === "okf:okf.json")).toBe(true);
   });
 });
+
+describe("extractWikilinks — nested targets", () => {
+  it("keeps path separators and slugifies each segment", async () => {
+    const { extractWikilinks } = await import("../../src/core/graph/wikilinks");
+    expect(extractWikilinks("see [[sessions/my-session]] and [[Release Plan|the plan]]")).toEqual([
+      "sessions/my-session",
+      "release-plan",
+    ]);
+    // duplicate handling still applies per resolved slug
+    expect(extractWikilinks("[[sessions/a]] [[sessions/a|again]] [[sessions/b]]")).toEqual([
+      "sessions/a",
+      "sessions/b",
+    ]);
+  });
+});
+
+describe("buildGraph — nested vault notes", () => {
+  it("groups notes sharing a slug directory under a folder node", async () => {
+    const { buildGraph } = await import("../../src/core/graph/build");
+    const note = (slug: string, updated: string): import("../../src/core/graph/build").BuildGraphInput["notes"][number] => ({
+      slug, title: slug, body: "", created: "", updated, tags: [], source: "generated",
+    });
+    const model = buildGraph({
+      vault: { root: "/v", exists: true, noteCount: 3 },
+      notes: [note("sessions/a", "2026-01-01"), note("sessions/b", "2026-01-02"), note("flat", "2026-01-03")],
+      repository: null,
+    });
+    const byId = new Map(model.nodes.map((n) => [n.id, n]));
+    const folder = byId.get("vfolder:sessions");
+    expect(folder?.kind).toBe("module");
+    expect(folder?.label).toBe("sessions");
+    expect(folder?.detail.notes).toBe("2");
+    // contains edges: vault → folder → both nested notes; flat note direct
+    const contains = model.edges.filter((e) => e.kind === "contains");
+    expect(contains).toContainEqual({ source: "vault", target: "vfolder:sessions", kind: "contains" });
+    expect(contains).toContainEqual({ source: "vfolder:sessions", target: "note:sessions/a", kind: "contains" });
+    expect(contains).toContainEqual({ source: "vfolder:sessions", target: "note:sessions/b", kind: "contains" });
+    expect(contains).toContainEqual({ source: "vault", target: "note:flat", kind: "contains" });
+    // the folder is not a dangling-link target and the tree nests two levels deep
+    const treeRowsMod = await import("../../src/core/view/tree");
+    const rows = treeRowsMod.treeRows(model, {
+      expanded: new Set(["vault", "vfolder:sessions"]),
+      query: "",
+      provFilter: null,
+      showInternals: true,
+    });
+    const ids = rows.map((r) => r.id);
+    const folderIdx = ids.indexOf("vfolder:sessions");
+    expect(folderIdx).toBeGreaterThan(ids.indexOf("vault"));
+    expect(ids.indexOf("note:sessions/a")).toBeGreaterThan(folderIdx);
+  });
+
+  it("supports multi-level nesting with parents before children", async () => {
+    const { buildGraph } = await import("../../src/core/graph/build");
+    const note = (slug: string): import("../../src/core/graph/build").BuildGraphInput["notes"][number] => ({
+      slug, title: slug, body: "", created: "", updated: "2026-01-01", tags: [], source: "generated",
+    });
+    const model = buildGraph({
+      vault: { root: "/v", exists: true, noteCount: 2 },
+      notes: [note("a/b/deep"), note("a/shallow")],
+      repository: null,
+    });
+    const ids = model.nodes.map((n) => n.id);
+    expect(ids.indexOf("vfolder:a")).toBeLessThan(ids.indexOf("vfolder:a/b"));
+    const contains = model.edges.filter((e) => e.kind === "contains");
+    expect(contains).toContainEqual({ source: "vault", target: "vfolder:a", kind: "contains" });
+    expect(contains).toContainEqual({ source: "vfolder:a", target: "vfolder:a/b", kind: "contains" });
+    expect(contains).toContainEqual({ source: "vfolder:a/b", target: "note:a/b/deep", kind: "contains" });
+    expect(contains).toContainEqual({ source: "vfolder:a", target: "note:a/shallow", kind: "contains" });
+  });
+});

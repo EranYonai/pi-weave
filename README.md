@@ -56,13 +56,19 @@ On session start pi-weave detects the repository you are in, checks whether `.ok
 | Command | `/weave-view` | open the knowledge workspace in your browser |
 | Command | `/weave-scan` | build or refresh the repository index (light) |
 | Command | `/weave-scan deep` | light index plus model-written per-file summaries (opt-in, incremental, background) |
-| Command | `/weave-scan-cancel` | stop an in-flight `/weave-scan deep` run |
+| Command | `/weave-scan sessions` | summarize pi session history into the vault as memory notes (incremental, background) |
+| Command | `/weave-scan-cancel` | stop an in-flight `/weave-scan deep` or `sessions` run |
 | Skill | `weave-notepad` | how the agent should take good notes |
 | Skill | `weave-explore` | how the agent should explore repositories |
 
 `/weave-scan deep` refreshes the light index and then writes a short model summary per file to `.okf/repository/summaries/`, skipping files
 whose content hash has not changed since their last summary. It costs tokens, so it never runs implicitly — and it runs in the background,
 so `/weave-scan-cancel` can stop it mid-flight.
+
+`/weave-scan sessions` is the repo-agnostic sibling (docs/session-scan.md): it reads every pi session transcript under
+`~/.pi/agent/sessions/`, hashes each file while reading it, and writes one generated vault note per changed session under
+`~/.okf/notes/sessions/` — pi's memory as first-class, wikilinked notes in an inner folder of the vault graph. Unchanged transcripts cost no
+LLM calls at all, and older layouts migrate automatically on the next scan.
 
 ## The workspace
 
