@@ -642,7 +642,7 @@ describe("recent arrivals (tree flash)", () => {
     expect(recentIds.value.has("file:new.ts")).toBe(true);
     expect(recentIds.value.has("note:alpha")).toBe(false);
 
-    deferred[0].fn();
+    deferred[0]?.fn();
     expect(recentIds.value.size).toBe(0);
     handle.stop();
   });
