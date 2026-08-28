@@ -29,7 +29,7 @@
  * `Shell.tsx` uses for its drag handlers, for the same reason.
  */
 
-import { useEffect, useMemo, useRef, useState } from "preact/hooks";
+import { useEffect, useMemo, useRef, useState, useCallback } from "preact/hooks";
 import type { GraphPayload } from "../../shared/wire";
 import type { GraphViewState } from "./column.model";
 import {
@@ -54,6 +54,8 @@ import type { PositionStorage } from "./positions";
 import type { GraphRenderer, RendererFactory } from "./renderer";
 import { schemeOf } from "./scheme";
 import type { SchemeHost } from "./scheme";
+import { createGraphSimulation } from "./dynamics";
+import type { GraphSimulation } from "./dynamics";
 
 export interface GraphProps {
   graph: GraphPayload | null;
@@ -81,6 +83,34 @@ export interface GraphProps {
 export function Graph(props: GraphProps) {
   const canvas = useRef<HTMLDivElement | null>(null);
   const renderer = useRef<GraphRenderer | null>(null);
+  const dynamics = useRef<GraphSimulation | null>(null);
+  const [running, setRunning] = useState(true);
+  // Mirror for the mount-time drag handlers, which must arm the clock without
+  // re-registering when `running` changes.
+  const runningRef = useRef(running);
+  runningRef.current = running;
+  const clock = useRef<number | null>(null);
+  /**
+   * Arm the simulation clock — idempotent, and a no-op while paused.
+   *
+   * The clock sleeps whenever the engine's alpha reaches its floor: a graph
+   * that is holding still costs zero frames. It re-arms when a drag pins a
+   * node (the engine re-heats) and after a re-layout hands over a new engine.
+   */
+  const armClock = useCallback(() => {
+    if (!runningRef.current || clock.current !== null) return;
+    const step = () => {
+      clock.current = null;
+      const engine = dynamics.current;
+      if (engine === null) return;
+      engine.tick();
+      // Asleep: let the clock die. The next pin re-arms it.
+      if (!engine.awake()) return;
+      renderer.current?.setPositions(engine.positions());
+      clock.current = requestAnimationFrame(step);
+    };
+    clock.current = requestAnimationFrame(step);
+  }, []);
   // `null` means "the user has not touched the expansion" — not "nothing is
   // expanded". `effectiveView` resolves the difference; see its doc comment.
   const [state, setState] = useState<GraphViewState | null>(null);
@@ -101,6 +131,20 @@ export function Graph(props: GraphProps) {
       setState(next.state);
       live.current.onSelect(next.selectedId);
     });
+    instance.onDragStart((id) => {
+      const at = renderer.current?.positions().get(id);
+      if (at) {
+        dynamics.current?.pin(id, at);
+        // The pin re-heats the engine; if the clock was asleep, wake it.
+        armClock();
+      }
+    });
+    instance.onDragMove((id, at) => {
+      dynamics.current?.pin(id, at);
+    });
+    instance.onDragEnd((id) => {
+      dynamics.current?.release(id);
+    });
     instance.mount(canvas.current ?? { clientWidth: 0, clientHeight: 0 });
     renderer.current = instance;
     props.fit.current = () => instance.fit();
@@ -117,6 +161,38 @@ export function Graph(props: GraphProps) {
     renderer.current?.setGraph(model.graph);
   }, [model.key]);
 
+  // Live layout, in two effects so pause/resume and re-layout are independent.
+  //
+  // Effect 1 (keyed on `model.key`) owns the *simulation*: it is created once
+  // per graph shape, warm-started from the renderer's current positions so a
+  // drag or an expand does not make the graph jump, and disposed when the shape
+  // changes. A fresh engine starts at settle alpha — the "alive" answer to an
+  // expand — so the clock must arm here if it had gone to sleep.
+  useEffect(() => {
+    const engine = createGraphSimulation(model.graph, renderer.current?.positions());
+    dynamics.current = engine;
+    if (engine !== null) armClock();
+    return () => {
+      dynamics.current = null;
+    };
+  }, [model.key, armClock]);
+
+  // Effect 2 (keyed on `running`) owns the *clock*: armed while running, torn
+  // down while paused. The step itself puts the clock to sleep the moment the
+  // engine settles — `armClock` is what brings it back — so pausing merely
+  // freezes the picture at the last simulated positions, and resuming picks
+  // up where it left off.
+  useEffect(() => {
+    if (!running) return;
+    armClock();
+    return () => {
+      if (clock.current !== null) {
+        cancelAnimationFrame(clock.current);
+        clock.current = null;
+      }
+    };
+  }, [running, armClock]);
+
   useEffect(() => {
     renderer.current?.setHighlight(model.highlight);
   }, [model.highlight]);
@@ -130,6 +206,14 @@ export function Graph(props: GraphProps) {
       <div class="weave-graph-controls">
         <button type="button" class="weave-chip" title={FIT_HINT} onClick={() => renderer.current?.fit()}>
           {FIT_LABEL}
+        </button>
+        <button
+          type="button"
+          class="weave-chip"
+          title={running ? "pause the live layout" : "resume the live layout"}
+          onClick={() => setRunning((value) => !value)}
+        >
+          {running ? "pause" : "play"}
         </button>
         <button type="button" class="weave-chip" title={expandHint(everything)} onClick={() => setState(toggleExpandAll(view, model.clusters))}>
           {expandLabel(everything)}

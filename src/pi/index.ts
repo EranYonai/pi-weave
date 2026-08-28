@@ -290,11 +290,11 @@ function startDeepScan(
 
   void (async () => {
     try {
-      updateStatus(ctx, "🧵 deep scan: starting…");
+      updateStatus(ctx, "🕸️ deep scan: starting…");
       const outcome = await deepScanRepository(root, ctx, {
         onProgress: ({ current, total, path }) => {
           const pct = total > 0 ? Math.round((current / total) * 100) : 100;
-          updateStatus(ctx, `🧵 deep scan: ${current}/${total} (${pct}%) — ${path}`);
+          updateStatus(ctx, `🕸️ deep scan: ${current}/${total} (${pct}%) — ${path}`);
         },
         signal: controller.signal,
       });

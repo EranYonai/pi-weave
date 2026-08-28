@@ -86,7 +86,8 @@ body{font-size:13px}
   display:flex;align-items:center;gap:14px;padding:0 var(--weave-gutter);
   height:34px;border-bottom:1px solid var(--weave-line);background:var(--weave-panel);
 }
-.weave-brand{font-weight:600;letter-spacing:.01em;white-space:nowrap}
+.weave-brand{display:inline-flex;align-items:center;gap:6px;font-size:14px;font-weight:600;letter-spacing:.01em;white-space:nowrap}
+.weave-brand-mark{height:20px;width:20px;border-radius:5px}
 /* A button styled as a search field: the palette owns the only text input,
    so this opens it rather than pretending to accept a query. */
 .weave-search{

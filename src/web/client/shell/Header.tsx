@@ -13,6 +13,7 @@
  * opened would be a worse lie than the disabled version it replaced.
  */
 
+import { LOGO_MARK_B64, LOGO_MARK_MIME } from "../../shared/logo";
 import type { ConnectionView, HeaderSummary } from "./shell.model";
 import { SEARCH_PLACEHOLDER, searchHint, summaryParts } from "./shell.model";
 
@@ -28,7 +29,16 @@ export interface HeaderProps {
 export function Header(props: HeaderProps) {
   return (
     <header class="weave-header">
-      <span class="weave-brand">🧵 pi-weave</span>
+      <span class="weave-brand">
+        <img
+          class="weave-brand-mark"
+          src={`data:${LOGO_MARK_MIME};base64,${LOGO_MARK_B64}`}
+          alt=""
+          width={18}
+          height={18}
+        />
+        pi-weave
+      </span>
       <button type="button" class="weave-search" title={searchHint(props.shortcut)} onClick={props.onSearch}>
         <span class="weave-search-text">{SEARCH_PLACEHOLDER}</span>
         <kbd>{props.shortcut}</kbd>

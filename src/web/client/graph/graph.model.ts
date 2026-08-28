@@ -455,6 +455,7 @@ export function edgeReducer(
  */
 export interface GraphSettings {
   readonly hideEdgesOnMove: boolean;
+  readonly enableCameraPanning: boolean;
   readonly renderEdgeLabels: boolean;
   readonly labelDensity: number;
   readonly labelGridCellSize: number;
@@ -505,6 +506,9 @@ export function graphSettings(scheme: ColorScheme): GraphSettings {
     // §7.4. A pan over a few thousand edges is the one interaction that drops
     // frames, and the edges are the part nobody is reading mid-gesture.
     hideEdgesOnMove: true,
+    // The renderer toggles this off while a node is being dragged, so the
+    // gesture pins the node to the cursor instead of panning the camera.
+    enableCameraPanning: true,
     renderEdgeLabels: false,
     labelDensity: LABEL_DENSITY,
     labelGridCellSize: LABEL_GRID_CELL_SIZE,

@@ -263,7 +263,7 @@ export class WeaveExplorer implements Component {
 
   private renderHeader(width: number): string[] {
     const t = this.theme;
-    const line1 = t.bold(`🧵 weave view — data as of ${this.model.generatedAt || "now"}`) + `  ${this.surfaceName()}`;
+    const line1 = t.bold(`🕸️ weave view — data as of ${this.model.generatedAt || "now"}`) + `  ${this.surfaceName()}`;
     const counts = this.countNotes();
     const repo = this.model.nodes.find((n) => n.kind === "repository");
     const repoState = this.model.staleness?.state ?? (repo ? "fresh" : "missing");

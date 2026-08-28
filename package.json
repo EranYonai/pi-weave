@@ -41,7 +41,7 @@
     "skills": [
       "./skills"
     ],
-    "image": "https://raw.githubusercontent.com/EranYonai/pi-weave/main/docs/pi-weave-logo.jpg"
+    "image": "https://raw.githubusercontent.com/EranYonai/pi-weave/main/docs/pi-weave-logo.png"
   },
   "scripts": {
     "test": "vitest run",

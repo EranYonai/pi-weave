@@ -49,10 +49,10 @@ export async function getWorkspaceStatus(cwd: string, options: WorkspaceOptions 
 /** One-line status string for footers/status bars. */
 export function formatStatusLine(status: WorkspaceStatus): string {
   const vault = `vault:${status.vault.noteCount}`;
-  if (!status.repository) return `🧵 ${vault}`;
-  if (!status.repository.indexed) return `🧵 ${vault} · repo:unindexed`;
+  if (!status.repository) return `🕸️ ${vault}`;
+  if (!status.repository.indexed) return `🕸️ ${vault} · repo:unindexed`;
   const mark = status.repository.staleness.state === "fresh" ? "ok" : status.repository.staleness.state;
-  return `🧵 ${vault} · ${status.repository.name}:${mark}`;
+  return `🕸️ ${vault} · ${status.repository.name}:${mark}`;
 }
 
 /** Multi-line dashboard used by the /weave command and notifications. */

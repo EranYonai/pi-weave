@@ -46,7 +46,7 @@
  */
 
 import { forceCollide, forceLink, forceManyBody, forceSimulation, forceX, forceY } from "d3-force";
-import type { SimulationLinkDatum, SimulationNodeDatum } from "d3-force";
+import type { Simulation, SimulationLinkDatum, SimulationNodeDatum } from "d3-force";
 import type { WireEdgeKind as EdgeKind, WireGraphEdge as GraphEdge, WireGraphModel as GraphModel } from "./graph";
 import type { Point } from "./metrics";
 
@@ -173,7 +173,7 @@ interface SimLink extends SimulationLinkDatum<SimNode> {
 }
 
 /** Containment edges define the hierarchy; everything else is an association. */
-function isContainment(kind: EdgeKind): boolean {
+export function isContainment(kind: EdgeKind): boolean {
   return kind === "contains" || kind === "anchored-at";
 }
 
@@ -217,10 +217,30 @@ export function lcg(seed: number): () => number {
   return () => (s = (1664525 * s + 1013904223) % 4294967296) / 4294967296;
 }
 
-/** Radius that fits `k` siblings `RING_SPACING` apart — see the module header. */
+/**
+ * Radius that fits `k` siblings `RING_SPACING` apart — see the module header.
+ *
+ * Capped at {@link RING_CAP}: past {@link RING_MAX_FAN} siblings one ring is
+ * full, so the distance stops growing and surplus children shell-pack (the
+ * collide force spreads them into a disc). Without the cap a 189-child
+ * directory asked for a ~1200-unit ring — the whole graph became that ring,
+ * and fit-zoom shrank every node to a few pixels. The cap preserves the
+ * documented 60-child-hub case exactly: `ringRadius(60)` is unchanged.
+ */
 export function ringRadius(k: number): number {
-  return Math.max(CONTAINS_DISTANCE, (RING_SPACING * k) / TAU);
+  return Math.max(CONTAINS_DISTANCE, Math.min((RING_SPACING * k) / TAU, RING_CAP));
 }
+
+/**
+ * The largest fan a *single* ring can hold at `RING_SPACING` while staying in
+ * the regime the §8 fixture designed for — beyond it, children pack into
+ * shells instead of pushing the ring (and with it the whole graph's scale)
+ * outward without bound.
+ */
+export const RING_MAX_FAN = 64;
+
+/** Link-distance ceiling for one hub — `ringRadius(RING_MAX_FAN)`, ~407. */
+export const RING_CAP = (RING_SPACING * RING_MAX_FAN) / TAU;
 
 interface Structure {
   /** Ids in `model.nodes` order, deduped. */
@@ -395,9 +415,6 @@ export function seedPositions(model: GraphModel, width = DEFAULT_WIDTH, height =
  * *pre-initialize* state, so narrowing it at call time would add a branch that
  * can never be taken.
  */
-function endpointId(endpoint: string | SimNode): string {
-  return (endpoint as SimNode).id;
-}
 
 /**
  * Lay a graph out. Deterministic: the same model with the same `seed` produces
@@ -448,6 +465,73 @@ function finiteOr(candidate: Point | undefined, fallback: Point): Point {
   };
 }
 
+export interface ForceSimulationOptions<N> {
+  nodes: N[];
+  /** String endpoints are resolved by node id; dangling ids must be filtered out by the caller. */
+  links: Array<{ source: string | N; target: string | N; kind: EdgeKind }>;
+  /** Containment children per id — drives the ring-sized link distances. */
+  children: ReadonlyMap<string, readonly string[]>;
+  /** Degree over the caller's link set, both directions. */
+  degree: ReadonlyMap<string, number>;
+  /**
+   * `forceX`/`forceY` targets by node id. **Re-read every tick**, so a live
+   * driver can retarget a released drag without rebuilding the simulation.
+   */
+  anchors: ReadonlyMap<string, Point>;
+  /** Ids anchored at the stronger root strength (§7.3's seed anchoring). */
+  rootIds: ReadonlySet<string>;
+  /** Seeds d3's jiggle LCG. Default 1 — deterministic in Node and browser. */
+  seed?: number;
+}
+
+/**
+ * The force configuration, as ONE definition shared by the static layout
+ * ({@link computeLayout}) and the live driver (`dynamics.ts`).
+ *
+ * Both used to configure two independent physics. The live one drifted to its
+ * own equilibrium — a flat-90-unit link distance versus the ring-sized one —
+ * so every graph visibly re-laid itself after mount, and never stopped moving.
+ * The forces live here now, once, so their equilibria cannot diverge: whatever
+ * the static layout settles to is exactly what the live sim holds.
+ *
+ * The simulation is returned stopped; the driver owns the alpha policy —
+ * the static path decays to {@link ALPHA_MIN} over its tick budget, the live
+ * path re-heats on interaction and sleeps when the alpha floor is reached.
+ */
+export function createForceSimulation<
+  N extends SimulationNodeDatum & { id: string },
+>(opts: ForceSimulationOptions<N>): Simulation<N, undefined> {
+  const childCount = (id: string): number => opts.children.get(id)?.length ?? 0;
+  /** Ring geometry is set by whichever endpoint is the fan-out parent. */
+  const fanOut = (l: { source: string | N; target: string | N }): number =>
+    Math.max(childCount(typeof l.source === "string" ? l.source : l.source.id), childCount(typeof l.target === "string" ? l.target : l.target.id));
+  // Every link endpoint is a node with at least this link incident on it, so
+  // `degree` always has it and the floor of 1 is arithmetic, not a fallback.
+  const deg = (endpoint: string | N): number =>
+    opts.degree.get(typeof endpoint === "string" ? endpoint : endpoint.id) as number;
+  const anchor = (n: N): number => (opts.rootIds.has(n.id) ? ANCHOR_ROOT : ANCHOR_CHILD);
+
+  const link = forceLink<N, { source: string | N; target: string | N; kind: EdgeKind }>(opts.links)
+    .id((n) => n.id)
+    .distance((l) => (isContainment(l.kind) ? ringRadius(fanOut(l)) : RELATION_DISTANCE))
+    // d3's default `1 / min(degree)` is what stops a degree-60 hub being
+    // yanked 60 times a tick. Keep that shape; scale relations down from it.
+    .strength((l) => {
+      const base = 1 / Math.min(deg(l.source), deg(l.target));
+      return isContainment(l.kind) ? base : base * RELATION_STRENGTH_SCALE;
+    })
+    .iterations(2);
+
+  return forceSimulation<N>(opts.nodes)
+    .randomSource(lcg(opts.seed ?? DEFAULT_SEED))
+    .force("charge", forceManyBody<N>().strength(CHARGE_STRENGTH))
+    .force("link", link)
+    .force("collide", forceCollide<N>(COLLIDE_RADIUS).strength(1).iterations(3))
+    .force("x", forceX<N>((n) => opts.anchors.get(n.id)!.x).strength(anchor))
+    .force("y", forceY<N>((n) => opts.anchors.get(n.id)!.y).strength(anchor))
+    .stop();
+}
+
 /** Configure and step the d3 simulation in place. Mutates `nodes`. */
 function runSimulation(
   nodes: SimNode[],
@@ -459,39 +543,13 @@ function runSimulation(
   opts: { ticks: number; seed: number },
 ): void {
   const links: SimLink[] = edges.map((e) => ({ source: e.source, target: e.target, kind: e.kind }));
-
-  const childCount = (id: string): number => children.get(id)?.length ?? 0;
-  /** Ring geometry is set by whichever endpoint is the fan-out parent. */
-  const fanOut = (l: SimLink): number => Math.max(childCount(endpointId(l.source)), childCount(endpointId(l.target)));
-  // Every link endpoint is a node with at least this link incident on it, so
-  // `degree` always has it and the floor of 1 is arithmetic, not a fallback.
-  const deg = (endpoint: string | SimNode): number => degree.get(endpointId(endpoint)) as number;
-  const anchor = (n: SimNode): number => (roots.has(n.id) ? ANCHOR_ROOT : ANCHOR_CHILD);
-
-  const link = forceLink<SimNode, SimLink>(links)
-    .id((n) => n.id)
-    .distance((l) => (isContainment(l.kind) ? ringRadius(fanOut(l)) : RELATION_DISTANCE))
-    // d3's default `1 / min(degree)` is what stops a degree-60 hub being
-    // yanked 60 times a tick. Keep that shape; scale relations down from it.
-    .strength((l) => {
-      const base = 1 / Math.min(deg(l.source), deg(l.target));
-      return isContainment(l.kind) ? base : base * RELATION_STRENGTH_SCALE;
-    })
-    .iterations(2);
-
-  const sim = forceSimulation<SimNode>(nodes)
-    .randomSource(lcg(opts.seed))
-    .force("charge", forceManyBody<SimNode>().strength(CHARGE_STRENGTH))
-    .force("link", link)
-    .force("collide", forceCollide<SimNode>(COLLIDE_RADIUS).strength(1).iterations(3))
-    .force("x", forceX<SimNode>((n) => seeds.get(n.id)!.x).strength(anchor))
-    .force("y", forceY<SimNode>((n) => seeds.get(n.id)!.y).strength(anchor))
+  const sim = createForceSimulation({ nodes, links, children, degree, anchors: seeds, rootIds: roots, seed: opts.seed });
+  sim
     .alpha(1)
     .alphaMin(ALPHA_MIN)
     // Reach the same convergence at whatever tick budget the caller asked for.
     .alphaDecay(opts.ticks > 0 ? 1 - Math.pow(ALPHA_MIN, 1 / opts.ticks) : 0)
     .velocityDecay(VELOCITY_DECAY);
 
-  sim.stop();
   for (let i = 0; i < opts.ticks; i++) sim.tick();
 }

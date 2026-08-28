@@ -91,6 +91,7 @@ describe("THEME_CSS", () => {
     const classes = [
       "weave-header",
       "weave-brand",
+      "weave-brand-mark",
       "weave-search",
       "weave-summary",
       "weave-summary-part",

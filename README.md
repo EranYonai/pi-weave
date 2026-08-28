@@ -1,7 +1,7 @@
 # pi-weave
 
 <p align="center">
-  <img src="https://raw.githubusercontent.com/EranYonai/pi-weave/main/docs/pi-weave-logo.jpg" alt="pi-weave — an agent-native knowledge workspace" width="220"/>
+  <img src="https://raw.githubusercontent.com/EranYonai/pi-weave/main/docs/pi-weave-logo.png" alt="pi-weave — an agent-native knowledge workspace" width="220"/>
 </p>
 
 <p align="center">
@@ -28,7 +28,7 @@ format. Every generated artefact carries provenance (`human`, `agent` or `genera
 something you wrote.
 
 ```
-🧵 vault:12 · my-project:ok      ← pi's status line when weave is active
+🕸️ vault:12 · my-project:ok      ← pi's status line when weave is active
 ```
 
 See [docs/design.md](docs/design.md) for the reasoning behind all of it.

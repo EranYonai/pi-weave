@@ -662,21 +662,34 @@ function fakeSigma() {
   const calls: string[] = [];
   let nodes: ((id: string, data: RenderNode) => NodeDisplayOverride) | null = null;
   let edges: ((key: string, data: RenderEdge) => EdgeDisplayOverride) | null = null;
-  const handlers: { node?: (payload: { node: string }) => void; stage?: () => void } = {};
+  const handlers: {
+    node?: (payload: { node: string }) => void;
+    stage?: () => void;
+    downNode?: (payload: { node: string }) => void;
+    moveBody?: (payload: { event: { x: number; y: number } }) => void;
+    upNode?: () => void;
+    upStage?: () => void;
+  } = {};
   let graph: ReturnType<typeof project> | null = null;
   let resets = 0;
+  const panning: boolean[] = [];
 
   const instance: SigmaLike = {
     on(event: string, handler: unknown) {
       calls.push(`on:${event}`);
       if (event === "clickNode") handlers.node = handler as (payload: { node: string }) => void;
       if (event === "clickStage") handlers.stage = handler as () => void;
+      if (event === "downNode") handlers.downNode = handler as (payload: { node: string }) => void;
+      if (event === "moveBody") handlers.moveBody = handler as (payload: { event: { x: number; y: number } }) => void;
+      if (event === "upNode") handlers.upNode = handler as () => void;
+      if (event === "upStage") handlers.upStage = handler as () => void;
       return instance;
     },
     setSetting(key: string, value: unknown) {
       calls.push(`setSetting:${key}`);
       if (key === "nodeReducer") nodes = value as (id: string, data: RenderNode) => NodeDisplayOverride;
       if (key === "edgeReducer") edges = value as (key: string, data: RenderEdge) => EdgeDisplayOverride;
+      if (key === "enableCameraPanning") panning.push(value as boolean);
       return instance;
     },
     setGraph(next) {
@@ -687,6 +700,9 @@ function fakeSigma() {
     refresh() {
       calls.push("refresh");
       return instance;
+    },
+    viewportToGraph(position) {
+      return position;
     },
     getCamera() {
       calls.push("getCamera");
@@ -715,10 +731,17 @@ function fakeSigma() {
     created,
     resets: () => resets,
     graph: () => graph,
+    panning: () => panning,
     nodeReducer: () => nodes,
     edgeReducer: () => edges,
     clickNode: (id: string) => handlers.node?.({ node: id }),
     clickStage: () => handlers.stage?.(),
+    downNode: (id: string) => handlers.downNode?.({ node: id }),
+    // The renderer derives the dragged id from its own `downNode` state, so
+    // the id argument here is ignored; only the coordinates reach `moveBody`.
+    moveBody: (_id: string, x: number, y: number) => handlers.moveBody?.({ event: { x, y } }),
+    upNode: () => handlers.upNode?.(),
+    upStage: () => handlers.upStage?.(),
   };
 }
 
@@ -793,6 +816,54 @@ describe("sigmaRenderer over the injected constructor (§7.5)", () => {
     sigmaRenderer(fake.factory, "dark").mount(container);
     expect(() => fake.clickNode("a")).not.toThrow();
     expect(() => fake.clickStage()).not.toThrow();
+  });
+
+  it("routes drag events through the renderer's own callbacks", () => {
+    const fake = fakeSigma();
+    const renderer = sigmaRenderer(fake.factory, "dark");
+    const seen: Array<{ id: string; at: Point | null; ended: boolean }> = [];
+    renderer.onDragStart((id) => seen.push({ id, at: null, ended: false }));
+    renderer.onDragMove((id, at) => seen.push({ id, at, ended: false }));
+    renderer.onDragEnd((id) => seen.push({ id, at: null, ended: true }));
+    renderer.setGraph(model);
+    renderer.mount(container);
+    fake.downNode("a");
+    fake.moveBody("a", 10, 20);
+    fake.upNode();
+    expect(seen).toEqual([
+      { id: "a", at: null, ended: false },
+      { id: "a", at: { x: 10, y: 20 }, ended: false },
+      { id: "a", at: null, ended: true },
+    ]);
+  });
+
+  it("holds the camera still while dragging a node, then releases it", () => {
+    // A node drag is a pin, not a pan: if sigma's captor moved the camera on
+    // the same gesture that is moving the node, the node would slide away
+    // from the cursor. Panning is disabled on `downNode` and restored on
+    // release — the Obsidian feel of a node staying under your pointer.
+    const fake = fakeSigma();
+    const renderer = sigmaRenderer(fake.factory, "dark");
+    renderer.setGraph(model);
+    renderer.mount(container);
+    fake.downNode("a");
+    fake.moveBody("a", 5, 6);
+    fake.upNode();
+    expect(fake.panning()).toEqual([false, true]);
+  });
+
+  it("treats a release with no active drag as a no-op", () => {
+    // A stray `upStage` / `upNode` without a matching `downNode` must not
+    // toggle panning or fire a drag-end — the renderer is in no drag state.
+    const fake = fakeSigma();
+    const renderer = sigmaRenderer(fake.factory, "dark");
+    renderer.setGraph(model);
+    renderer.mount(container);
+    expect(() => {
+      fake.upNode();
+      fake.upStage();
+    }).not.toThrow();
+    expect(fake.panning()).toEqual([]);
   });
 
   it("installs reducers that carry the model's own attributes through", () => {

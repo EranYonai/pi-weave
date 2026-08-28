@@ -117,7 +117,7 @@ There is exactly one layout. No presets, no dockable panel engine, no saved arra
 
 ```text
 ┌──────────────────────────────────────────────────────────────────────────────────────────────┐
-│ 🧵 pi-weave        ⌘K search…                    vault:34 · repo:fresh · 127 nodes      ⟳ ●  │
+│ 🕸️ pi-weave        ⌘K search…                    vault:34 · repo:fresh · 127 nodes      ⟳ ●  │
 ├────────────────────┬──────────────────────────────────┬──────────────────────────────────────┤
 │ TREE               │ NOTE                             │ GRAPH                                │
 │                    │                                  │                                      │
