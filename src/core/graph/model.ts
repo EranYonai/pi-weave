@@ -60,4 +60,28 @@ export interface GraphModel {
   staleness: StalenessReport | null;
   nodes: GraphNode[];
   edges: GraphEdge[];
+  /**
+   * slug → wiki-link targets that resolved to no note in the graph
+   * (weave-workspace §4.2).
+   *
+   * A `[[target]]` that matches nothing is not an error — it is Obsidian's
+   * ghost node, the affordance that offers to create the missing note. The
+   * builder used to count these and throw the names away, leaving
+   * `detail["dangling links"] = "3"` as the only trace; a display string is
+   * not something a UI can navigate.
+   *
+   * Lives here rather than on {@link GraphNode} because `detail` is
+   * display-only by contract and must not grow structure (§4.2 is explicit
+   * about preferring the model-level map). Notes with nothing unresolved are
+   * absent rather than present-and-empty, so the common case costs no bytes.
+   *
+   * Keyed by **slug**, not by node id: the consumers of this map (the note
+   * column, the wire payload's `dangling` field) speak slugs, and `note:` is
+   * a graph-internal prefix.
+   *
+   * Insertion order follows note order and each target list follows
+   * first-appearance order in the body, so the JSON stays byte-stable for
+   * unchanged inputs.
+   */
+  danglingLinks: Record<string, string[]>;
 }

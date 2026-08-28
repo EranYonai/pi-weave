@@ -21,6 +21,7 @@ import type { ViewNote } from "../../../core/graph/current";
 import {
   detailModel,
   focusModel,
+  formatTreeMeta,
   graphRoots,
   healthModel,
   initialState,
@@ -359,8 +360,8 @@ export class WeaveExplorer implements Component {
       showInternals: this.state.showInternals,
       provFilter: this.state.provFilter,
       query: this.state.query,
-      now: this.nowFn(),
     });
+    const now = this.nowFn();
     const hint = treeEmptyHint(this.model);
     if (rows.length === 0 && hint) {
       return { lines: [{ text: t.fg("dim", hint) }], rows: [] };
@@ -369,7 +370,8 @@ export class WeaveExplorer implements Component {
       const chev = chevron(r.expanded, r.hasKids);
       const marker = this.rowMarker(r.kind, r.provenance);
       const label = sanitizeTerminalText(r.label);
-      const meta = r.meta ? t.fg("dim", `  ${sanitizeTerminalText(r.meta)}`) : "";
+      const metaText = formatTreeMeta(r.meta, now);
+      const meta = metaText ? t.fg("dim", `  ${sanitizeTerminalText(metaText)}`) : "";
       const indent = "  ".repeat(r.depth);
       const body = `${indent}${chev} ${marker}${label}`;
       const text = meta ? `${body}${meta}` : body;

@@ -1,36 +1,26 @@
 /**
- * Targeted branch-coverage suite for the weave-view TUI view-model, component,
- * theme, and run wiring (weave-view-tui-design §10). Fills the branches the
- * primary suites don't reach: degenerate surfaces, defensive guards, every
- * reduce switch arm, health/detail edge states, and the run guard paths.
+ * Targeted branch-coverage suite for the weave-view TUI component, theme,
+ * reduce state machine, and run wiring (weave-view-tui-design §10). Fills the
+ * branches the primary suites don't reach: degenerate surfaces, defensive
+ * guards, every reduce switch arm, and the run guard paths.
+ *
+ * Branch coverage for the portable view-models lives in `tests/core/view/`
+ * since they moved to `src/core/view` (weave-workspace §3).
  */
 
 import { describe, expect, it, vi } from "vitest";
 import { WeaveExplorer, decodeAction, type WeaveTheme, type WeaveTui, type WeaveLoaders } from "../../src/pi/viewer/tui/explorer";
 import {
-  treeRows,
-  treeEmptyHint,
-  focusModel,
-  detailModel,
-  healthModel,
   reduce,
   initialState,
   graphRoots,
   mergeAfterRefresh,
-  countProvenance,
-  listLabel,
-  relTime,
-  degreeOf,
-  deriveBacklinks,
-  focusNeighborhood,
   sanitizeTerminalText,
-  type TreeState,
   type ExplorerState,
 } from "../../src/pi/viewer/tui/model";
 import { provenanceStyle, kindStyle, chevron, PROVENANCE_CYCLE } from "../../src/pi/viewer/tui/theme";
 import type { GraphModel, GraphNode, NodeKind } from "../../src/core/graph/model";
 import type { NoteSource } from "../../src/core/types";
-import { buildCurrentGraph } from "../../src/core";
 import { addNote } from "../../src/core/vault";
 import { buildRepoIndex, writeRepoIndex } from "../../src/core/repoIndex";
 import { commitAll, gitInit, makeTempDir, withVaultEnv, writeFixture, createMockCtx } from "../helpers";
@@ -45,12 +35,9 @@ function node(id: string, kind: NodeKind, label: string, prov: NoteSource | null
   return { id, kind, label, provenance: prov, detail };
 }
 function graph(nodes: GraphNode[], edges: GraphModel["edges"], staleness: GraphModel["staleness"] = null): GraphModel {
-  return { generatedAt: "2026-06-01T00:00:00.000Z", staleness, nodes, edges };
+  return { generatedAt: "2026-06-01T00:00:00.000Z", staleness, nodes, edges, danglingLinks: {} };
 }
 const NOW = Date.parse("2026-06-01T00:00:00.000Z");
-function treeState(over: Partial<TreeState> = {}): TreeState {
-  return { expanded: new Set(["vault", "repository"]), showInternals: false, provFilter: null, query: "", now: NOW, ...over };
-}
 function fakeTheme(): WeaveTheme {
   return {
     fg: (_s, t) => t,
@@ -66,7 +53,7 @@ function fakeLoaders(over: Partial<WeaveLoaders> = {}): WeaveLoaders {
     loadNote: async () => null,
     loadOkf: async () => null,
     openNote: async () => true,
-    rebuild: async () => ({ generatedAt: "", staleness: null, nodes: [], edges: [] }),
+    rebuild: async () => ({ generatedAt: "", staleness: null, nodes: [], edges: [], danglingLinks: {} }),
     ...over,
   };
 }
@@ -120,235 +107,10 @@ describe("theme branches", () => {
   });
 });
 
-// ---------------------------------------------------------------------------
-// model.ts: listLabel / relTime / helpers branches
-// ---------------------------------------------------------------------------
 
-describe("model helper branches", () => {
-  it("listLabel external with empty url falls back to label", () => {
-    expect(listLabel(node("external:x", "external", "fallback", null, { url: "" }))).toBe("fallback");
-  });
-  it("listLabel package without manifest keeps label", () => {
-    expect(listLabel(node("package:y", "package", "demo", null))).toBe("demo");
-  });
-  it("relTime handles just-now, h, d, mo, y and invalid", () => {
-    const now = Date.parse("2026-06-01T00:00:00Z");
-    expect(relTime("2026-06-01T00:00:30Z", now)).toBe("just now");
-    expect(relTime("2026-05-31T20:00:00Z", now)).toBe("4h ago");
-    expect(relTime("2026-05-29T00:00:00Z", now)).toBe("3d ago");
-    expect(relTime("2026-04-01T00:00:00Z", now)).toBe("2mo ago");
-    expect(relTime("2023-06-01T00:00:00Z", now)).toBe("3y ago");
-  });
-  it("degreeOf/deriveBacklinks/focusNeighborhood on empty edges", () => {
-    expect(degreeOf("x", [])).toBe(0);
-    expect(deriveBacklinks([]).size).toBe(0);
-    expect(focusNeighborhood("x", []).has("x")).toBe(true);
-  });
-  it("countProvenance on mixed nodes", () => {
-    const c = countProvenance([node("a", "note", "A", "human"), node("b", "module", "B", null)]);
-    expect(c.structural).toBe(1);
-  });
-});
 
-// ---------------------------------------------------------------------------
-// model.ts: treeRows edge states
-// ---------------------------------------------------------------------------
 
-describe("treeRows edge states", () => {
-  it("empty graph yields no rows", () => {
-    expect(treeRows(graph([], []), treeState())).toEqual([]);
-  });
-  it("vault-only with no notes/repo: empty hint", () => {
-    expect(treeEmptyHint(graph([node("vault", "vault", "Vault", null)], []))).toBe("no notes yet — add one with the weave_note tool");
-  });
-  it("has notes: no empty hint", () => {
-    const m = graph([node("vault", "vault", "Vault", null), node("note:a", "note", "A", "human")], [{ source: "vault", target: "note:a", kind: "contains" }]);
-    expect(treeEmptyHint(m)).toBeNull();
-  });
-  it("query that matches nothing still shows roots with no descendants", () => {
-    const m = graph(
-      [node("vault", "vault", "Vault", null), node("note:a", "note", "A", "human")],
-      [{ source: "vault", target: "note:a", kind: "contains" }],
-    );
-    const rows = treeRows(m, treeState({ query: "zzz" }));
-    // vault label "Vault" doesn't match zzz, but it's a root ancestor with a matching descendant? no descendant matches → vault hidden
-    expect(rows.map((r) => r.id)).not.toContain("note:a");
-  });
-  it("module without path/files produces empty meta", () => {
-    const m = graph(
-      [node("repository", "repository", "repo", null), node("module:src", "module", "src", null, {})],
-      [{ source: "repository", target: "module:src", kind: "contains" }],
-    );
-    const row = treeRows(m, treeState({ showInternals: true })).find((r) => r.id === "module:src");
-    expect(row?.meta).toBe("");
-  });
-  it("entryPoint without path doesn't nest and shows summary meta when present", () => {
-    const m = graph(
-      [node("repository", "repository", "repo", null), node("entryPoint:x", "entryPoint", "x", null, { summary: "s" })],
-      [{ source: "repository", target: "entryPoint:x", kind: "contains" }],
-    );
-    const rows = treeRows(m, treeState({ showInternals: true }));
-    const row = rows.find((r) => r.id === "entryPoint:x");
-    expect(row?.meta).toBe("summary");
-  });
-  it("gitState meta shows short sha, package shows kind, repository shows files", () => {
-    const m = graph(
-      [
-        node("repository", "repository", "repo", null, { files: "5" }),
-        node("gitState", "gitState", "main @ ab", null, { commit: "abcdef1234567890" }),
-        node("package:p", "package", "p", null, { kind: "npm" }),
-      ],
-      [
-        { source: "repository", target: "gitState", kind: "anchored-at" },
-        { source: "repository", target: "package:p", kind: "contains" },
-      ],
-    );
-    const rows = treeRows(m, treeState({ showInternals: true }));
-    expect(rows.find((r) => r.id === "gitState")?.meta).toBe("abcdef1");
-    expect(rows.find((r) => r.id === "package:p")?.meta).toBe("npm");
-    expect(rows.find((r) => r.id === "repository")?.meta).toBe("5 files");
-  });
-  it("combined query + provenance filter", () => {
-    const m = graph(
-      [node("vault", "vault", "Vault", null), node("note:alpha", "note", "Alpha", "human"), node("note:beta", "note", "Beta", "agent")],
-      [
-        { source: "vault", target: "note:alpha", kind: "contains" },
-        { source: "vault", target: "note:beta", kind: "contains" },
-      ],
-    );
-    const rows = treeRows(m, treeState({ query: "alph", provFilter: "agent" }));
-    // Alpha matches query "alph" but not prov(agent); Beta matches prov but not query → neither shows
-    expect(rows.map((r) => r.id)).not.toContain("note:alpha");
-    expect(rows.map((r) => r.id)).not.toContain("note:beta");
-  });
-});
 
-// ---------------------------------------------------------------------------
-// model.ts: focusModel edge states
-// ---------------------------------------------------------------------------
-
-describe("focusModel branches", () => {
-  it("outgoing contains + anchored-at headings appear; contained-by via anchored-at", () => {
-    const m = graph(
-      [
-        node("repository", "repository", "repo", null),
-        node("module:src", "module", "src", null, { path: "src" }),
-        node("gitState", "gitState", "main", null),
-      ],
-      [
-        { source: "repository", target: "module:src", kind: "contains" },
-        { source: "repository", target: "gitState", kind: "anchored-at" },
-      ],
-    );
-    const f = focusModel(m, "repository");
-    const headings = f.groups.map((g) => g.heading);
-    expect(headings).toContain("contains");
-    expect(headings).toContain("anchored at");
-  });
-  it("focus on a node only contained (no links) shows contained-by", () => {
-    const m = graph(
-      [node("vault", "vault", "Vault", null), node("note:a", "note", "A", "human")],
-      [{ source: "vault", target: "note:a", kind: "contains" }],
-    );
-    const f = focusModel(m, "note:a");
-    expect(f.groups.map((g) => g.heading)).toContain("contained by");
-  });
-  it("focus on unknown id still returns a center", () => {
-    const f = focusModel(graph([], []), "note:ghost");
-    expect(f.center.id).toBe("note:ghost");
-    expect(f.groups).toHaveLength(0);
-  });
-});
-
-// ---------------------------------------------------------------------------
-// model.ts: detailModel edge states
-// ---------------------------------------------------------------------------
-
-describe("detailModel branches", () => {
-  it("renders many meta keys in order and outgoing links of all kinds", () => {
-    const m = graph(
-      [
-        node("vault", "vault", "Vault", null, { root: "/v", notes: "1" }),
-        node("note:a", "note", "A", "human", {
-          slug: "a", source: "human", updated: "2026-01-01", created: "2026-01-01", tags: "x",
-          "dangling links": "1", preview: "p", path: "p", files: "1", languages: "TS",
-          branch: "main", commit: "abc", "uncommitted changes": "0", captured: "now",
-          manifest: "m", kind: "npm", url: "u", "summarized files": "1", "summarized by": "x",
-          "summarized at": "now", summary: "s", warning: "w", stale: "yes", state: "fresh",
-        }),
-        node("note:b", "note", "B", "agent"),
-        node("module:src", "module", "src", null),
-      ],
-      [
-        { source: "vault", target: "note:a", kind: "contains" },
-        { source: "note:a", target: "note:b", kind: "links-to" },
-        { source: "note:a", target: "module:src", kind: "contains" },
-      ],
-    );
-    const d = detailModel(m, "note:a")!;
-    const keys = d.meta.map((m2) => m2.label);
-    expect(keys[0]).toBe("path");
-    expect(keys.indexOf("slug")).toBeLessThan(keys.indexOf("source"));
-    expect(d.links.length).toBe(2); // links-to + contains
-    // backlinks: none
-    expect(d.backlinks).toHaveLength(0);
-  });
-  it("drops links to unknown targets and unknown source backlinks", () => {
-    const m = graph(
-      [node("note:a", "note", "A", "human")],
-      [
-        { source: "note:a", target: "note:missing", kind: "links-to" },
-        { source: "note:ghost", target: "note:a", kind: "links-to" },
-      ],
-    );
-    const d = detailModel(m, "note:a")!;
-    expect(d.links).toHaveLength(0);
-    expect(d.backlinks).toHaveLength(0);
-  });
-});
-
-// ---------------------------------------------------------------------------
-// model.ts: healthModel edge states
-// ---------------------------------------------------------------------------
-
-describe("healthModel branches", () => {
-  it("vault-only graph: no repository section, vault section present, link health shows no orphans/dangling", () => {
-    const m = graph([node("vault", "vault", "Vault", null, { notes: "0" })], []);
-    const h = healthModel(m);
-    expect(h.sections.find((s) => s.heading === "Repository")).toBeUndefined();
-    const vault = h.sections.find((s) => s.heading === "Vault")!;
-    expect(vault.rows.some((r) => r.text.includes("notes: 0"))).toBe(true);
-    const link = h.sections.find((s) => s.heading === "Link health")!;
-    expect(link.rows.some((r) => r.text.includes("orphans: none"))).toBe(true);
-  });
-  it("fresh repository with no staleness reasons omits reason rows", () => {
-    const m = graph(
-      [node("repository", "repository", "repo", null, { files: "1", state: "fresh" })],
-      [],
-      { state: "fresh", reasons: [] },
-    );
-    const h = healthModel(m);
-    const repo = h.sections.find((s) => s.heading === "Repository")!;
-    expect(repo.rows.some((r) => r.text.includes("state: fresh"))).toBe(true);
-    expect(repo.rows.some((r) => r.text.includes("files: 1"))).toBe(true);
-  });
-  it("many orphans cap at 10 with overflow line", () => {
-    const nodes: GraphNode[] = [node("vault", "vault", "Vault", null, { notes: "15" })];
-    for (let i = 0; i < 15; i++) nodes.push(node(`note:n${i}`, "note", `N${i}`, "human"));
-    const edges = nodes.slice(1).map((n) => ({ source: "vault", target: n.id, kind: "contains" as const }));
-    const m = graph(nodes, edges);
-    const link = healthModel(m).sections.find((s) => s.heading === "Link health")!;
-    expect(link.rows.some((r) => r.text.includes("… and 5 more"))).toBe(true);
-  });
-  it("dangling links cap with overflow", () => {
-    const nodes: GraphNode[] = [node("vault", "vault", "Vault", null, { notes: "1" })];
-    for (let i = 0; i < 12; i++) nodes.push(node(`note:n${i}`, "note", `N${i}`, "human", { "dangling links": "1" }));
-    const edges = nodes.slice(1).map((n) => ({ source: "vault", target: n.id, kind: "contains" as const }));
-    const m = graph(nodes, edges);
-    const link = healthModel(m).sections.find((s) => s.heading === "Link health")!;
-    expect(link.rows.some((r) => r.text.includes("… and 2 more"))).toBe(true);
-  });
-});
 
 // ---------------------------------------------------------------------------
 // model.ts: reduce — every switch arm
@@ -897,93 +659,9 @@ describe("explorer maybeLoadBody / openSelectedInEditor branches", () => {
   });
 });
 
-describe("model: mark/walk handle edges to missing nodes", () => {
-  it("an edge pointing to a non-existent child is skipped (no crash)", () => {
-    const m = graph(
-      [node("vault", "vault", "Vault", null), node("note:a", "note", "A", "human")],
-      [
-        { source: "vault", target: "note:a", kind: "contains" },
-        { source: "vault", target: "note:ghost", kind: "contains" }, // ghost not a node
-      ],
-    );
-    const rows = treeRows(m, treeState());
-    expect(rows.map((r) => r.id)).toContain("note:a");
-  });
-  it("a root id not in byId is skipped by mark", () => {
-    // Build a graph whose roots include a missing id by having no nodes but roots derived from edges;
-    // roots come from nodes with no incoming edge, so a missing id can't be a root. Instead test walk
-    // via a visible child that is missing — covered above. Sanity: empty graph roots = [].
-    expect(graphRoots(graph([], []))).toEqual([]);
-  });
-});
 
-describe("model: focusModel with all edge kinds both directions", () => {
-  it("outgoing links-to/contains/anchored-at and incoming contains/anchored-at/backlinks all group", () => {
-    const m = graph(
-      [
-        node("repository", "repository", "repo", null),
-        node("module:src", "module", "src", null, { path: "src" }),
-        node("gitState", "gitState", "main", null),
-        node("note:a", "note", "A", "human"),
-        node("note:b", "note", "B", "human"),
-      ],
-      [
-        { source: "repository", target: "module:src", kind: "contains" },
-        { source: "repository", target: "gitState", kind: "anchored-at" },
-        { source: "repository", target: "note:a", kind: "links-to" },
-        { source: "note:b", target: "repository", kind: "contains" }, // incoming contains
-        { source: "note:a", target: "repository", kind: "anchored-at" }, // incoming anchored-at
-        { source: "note:a", target: "repository", kind: "links-to" }, // backlink
-      ],
-    );
-    const f = focusModel(m, "repository");
-    const headings = f.groups.map((g) => g.heading);
-    expect(headings).toContain("links to →");
-    expect(headings).toContain("contains");
-    expect(headings).toContain("anchored at");
-    expect(headings).toContain("← linked from");
-    expect(headings).toContain("contained by");
-  });
-});
 
-describe("model: detailModel with edges to missing endpoints", () => {
-  it("drops outgoing links to unknown targets and backlinks from unknown sources", () => {
-    const m = graph(
-      [node("note:a", "note", "A", "human", { slug: "a" })],
-      [
-        { source: "note:a", target: "note:ghost", kind: "links-to" },
-        { source: "note:phantom", target: "note:a", kind: "links-to" },
-        { source: "note:a", target: "note:ghost2", kind: "contains" },
-      ],
-    );
-    const d = detailModel(m, "note:a")!;
-    expect(d.links).toHaveLength(0);
-    expect(d.backlinks).toHaveLength(0);
-  });
-});
 
-describe("model: healthModel more branches", () => {
-  it("repository with languages + summarized files rows", () => {
-    const m = graph(
-      [
-        node("repository", "repository", "repo", null, { files: "5", languages: "TypeScript (5)", state: "fresh" }),
-        node("module:src", "module", "src", null, { path: "src", files: "3", "summarized files": "2" }),
-      ],
-      [{ source: "repository", target: "module:src", kind: "contains" }],
-      { state: "fresh", reasons: [] },
-    );
-    const h = healthModel(m);
-    const repo = h.sections.find((s) => s.heading === "Repository")!;
-    expect(repo.rows.some((r) => r.text.includes("languages: TypeScript"))).toBe(true);
-    expect(repo.rows.some((r) => r.text.includes("summarized files: 2"))).toBe(true);
-  });
-  it("repository with staleness=null omits the staleness rows", () => {
-    const m = graph([node("repository", "repository", "repo", null, { files: "1" })], [], null);
-    const h = healthModel(m);
-    const repo = h.sections.find((s) => s.heading === "Repository")!;
-    expect(repo.rows.some((r) => r.text.includes("state:"))).toBe(false);
-  });
-});
 
 describe("reduce: movement with currentIdx < 0 (selectedId not in rows)", () => {
   const rows = { rows: [{ id: "a" }, { id: "b" }, { id: "c" }], window: 2 };
@@ -1082,50 +760,7 @@ describe("mergeAfterRefresh: selectedId present in roots is kept", () => {
 // Third pass: remaining model/explorer branches
 // ===========================================================================
 
-describe("model: moduleFor edge cases", () => {
-  it("orphan entryPoint (no repository contains) hits the empty repoKids fallback", () => {
-    const m = graph(
-      [node("entryPoint:src/index.ts", "entryPoint", "src/index.ts", null, { path: "src/index.ts" })],
-      [],
-    );
-    const rows = treeRows(m, treeState({ showInternals: true }));
-    expect(rows.map((r) => r.id)).toEqual(["entryPoint:src/index.ts"]);
-  });
-  it("entryPoint without a path detail is not nested under a module", () => {
-    const m = graph(
-      [node("repository", "repository", "repo", null), node("entryPoint:main", "entryPoint", "main", null, {})],
-      [{ source: "repository", target: "entryPoint:main", kind: "contains" }],
-    );
-    const rows = treeRows(m, treeState({ showInternals: true }));
-    expect(rows.map((r) => r.id)).toContain("entryPoint:main");
-  });
-});
 
-describe("model: focusModel multiple same-kind edges (push arms)", () => {
-  it("two outgoing links-to and two incoming contains use the list.push path", () => {
-    const m = graph(
-      [
-        node("note:hub", "note", "Hub", "human"),
-        node("note:a", "note", "A", "human"),
-        node("note:b", "note", "B", "human"),
-        node("vault", "vault", "Vault", null),
-        node("repository", "repository", "repo", null),
-      ],
-      [
-        { source: "note:hub", target: "note:a", kind: "links-to" },
-        { source: "note:hub", target: "note:b", kind: "links-to" },
-        { source: "vault", target: "note:hub", kind: "contains" },
-        { source: "repository", target: "note:hub", kind: "contains" },
-        { source: "repository", target: "note:hub", kind: "anchored-at" },
-      ],
-    );
-    const f = focusModel(m, "note:hub");
-    const links = f.groups.find((g) => g.heading === "links to →")!.rows;
-    expect(links.map((r) => r.id).sort()).toEqual(["note:a", "note:b"]);
-    const contained = f.groups.find((g) => g.heading === "contained by")!.rows.map((r) => r.id).sort();
-    expect(contained).toEqual(["repository", "vault"]);
-  });
-});
 
 describe("model: clampIndex/scrollForSelection via reduce", () => {
   const rows = { rows: [{ id: "a" }, { id: "b" }, { id: "c" }, { id: "d" }], window: 2 };
@@ -1152,15 +787,6 @@ describe("model: clampIndex/scrollForSelection via reduce", () => {
   });
 });
 
-describe("model: healthModel staleness=null and stale repo.state", () => {
-  it("repository with staleness=null and state=stale detail", () => {
-    const m = graph([node("repository", "repository", "repo", null, { files: "2", state: "stale" })], [], null);
-    const h = healthModel(m);
-    const repo = h.sections.find((s) => s.heading === "Repository")!;
-    // no staleness rows (staleness null), but files row present
-    expect(repo.rows.some((r) => r.text.includes("files: 2"))).toBe(true);
-  });
-});
 
 describe("explorer: render with banner refresh and no search", () => {
   it("refreshing banner shrinks the window without search", () => {

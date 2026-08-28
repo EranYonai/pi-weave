@@ -23,7 +23,7 @@
   "homepage": "https://github.com/EranYonai/pi-weave#readme",
   "bugs": "https://github.com/EranYonai/pi-weave/issues",
   "engines": {
-    "node": ">=20"
+    "node": ">=20.13.0"
   },
   "exports": {
     "./core": "./src/core/index.ts"
@@ -46,8 +46,10 @@
   "scripts": {
     "test": "vitest run",
     "coverage": "vitest run --coverage",
-    "typecheck": "tsc --noEmit",
-    "check": "npm run typecheck && npm run coverage",
+    "typecheck": "tsc --noEmit && tsc --noEmit -p tsconfig.web.json",
+    "build:web": "node scripts/build-web.mjs",
+    "build:web:check": "node scripts/build-web.mjs --check",
+    "check": "npm run typecheck && npm run build:web:check && npm run coverage",
     "rewrap:md": "node scripts/rewrap-md.mjs",
     "rewrap:md:check": "node scripts/rewrap-md.mjs --check",
     "prepublishOnly": "npm run check"
@@ -62,8 +64,18 @@
     "@earendil-works/pi-ai": "^0.84.2",
     "@earendil-works/pi-coding-agent": "^0.84.2",
     "@earendil-works/pi-tui": "^0.84.2",
+    "@preact/signals": "^2.11.1",
+    "@types/d3-force": "^3.0.10",
     "@types/node": "^24.0.0",
     "@vitest/coverage-v8": "^3.2.4",
+    "d3-force": "^3.0.0",
+    "dompurify": "^3.4.14",
+    "esbuild": "^0.28.2",
+    "graphology": "^0.26.0",
+    "graphology-types": "^0.24.8",
+    "marked": "^18.0.10",
+    "preact": "^10.29.8",
+    "sigma": "^3.0.3",
     "typebox": "1.3.7",
     "typescript": "^5.8.0",
     "vitest": "^3.2.4"

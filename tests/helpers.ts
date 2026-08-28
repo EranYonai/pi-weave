@@ -15,9 +15,27 @@ export async function writeFixture(root: string, relPath: string, content: strin
   await fs.writeFile(abs, content, "utf8");
 }
 
+/**
+ * Environment that makes fixture git hermetic: the developer's global and
+ * system config must not leak in. A machine with `commit.gpgsign = true`
+ * would otherwise fail every `commitAll` ("gpg failed to sign the data"),
+ * and a stray `core.hooksPath` or `init.templateDir` would be just as
+ * contagious. Identity is pinned here too, so commits work on a box with no
+ * `user.email` configured at all.
+ */
+const HERMETIC_GIT_ENV: NodeJS.ProcessEnv = {
+  ...process.env,
+  GIT_CONFIG_GLOBAL: "/dev/null",
+  GIT_CONFIG_SYSTEM: "/dev/null",
+  GIT_AUTHOR_NAME: "Weave Test",
+  GIT_AUTHOR_EMAIL: "weave@test.dev",
+  GIT_COMMITTER_NAME: "Weave Test",
+  GIT_COMMITTER_EMAIL: "weave@test.dev",
+};
+
 /** Run a git command synchronously inside a fixture repo (setup-only). */
 export function gitExec(cwd: string, args: string[]): string {
-  return execFileSync("git", args, { cwd, encoding: "utf8" });
+  return execFileSync("git", args, { cwd, encoding: "utf8", env: HERMETIC_GIT_ENV });
 }
 
 /** git init with a deterministic default branch. */
@@ -28,7 +46,7 @@ export function gitInit(dir: string): void {
 /** Stage everything and commit with a fixed identity. Returns the sha. */
 export function commitAll(dir: string, message = "commit"): string {
   gitExec(dir, ["add", "-A"]);
-  gitExec(dir, ["-c", "user.name=Weave Test", "-c", "user.email=weave@test.dev", "commit", "--allow-empty", "-m", message]);
+  gitExec(dir, ["commit", "--no-gpg-sign", "--allow-empty", "-m", message]);
   return gitExec(dir, ["rev-parse", "HEAD"]).trim();
 }
 

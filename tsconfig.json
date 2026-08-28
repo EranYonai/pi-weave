@@ -13,5 +13,10 @@
     "types": ["node"],
     "verbatimModuleSyntax": true
   },
-  "include": ["src/**/*.ts", "tests/**/*.ts", "vitest.config.ts"]
+  // `src/web/client/**` is browser code: it needs the DOM lib and preact's JSX
+  // factory, and must *not* see `@types/node`. It has its own project,
+  // `tsconfig.web.json`; `npm run typecheck` runs both, so coverage of the
+  // source tree is still total.
+  "include": ["src/**/*.ts", "tests/**/*.ts", "vitest.config.ts"],
+  "exclude": ["src/web/client/**"]
 }

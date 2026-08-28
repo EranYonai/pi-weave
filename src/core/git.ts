@@ -18,7 +18,26 @@ export interface GitExecOptions {
 
 const DEFAULT_TIMEOUT_MS = 5_000;
 
+/**
+ * Process-wide count of `git` subprocesses spawned by this module.
+ *
+ * Every git call in core funnels through the `git()` helper below, so this
+ * is an exact spawn count rather than a model of one. `src/core/cache/
+ * workspace` samples it around its own work to report `CacheStats.gitCalls`,
+ * which is what makes "a no-change rebuild spawns zero git processes"
+ * (weave-workspace §4.1) an assertion about observed behaviour.
+ *
+ * Monotonic and never reset: callers take deltas.
+ */
+let spawnCount = 0;
+
+/** Number of git subprocesses spawned so far in this process. Monotonic. */
+export function gitSpawnCount(): number {
+  return spawnCount;
+}
+
 async function git(args: string[], cwd: string, timeoutMs: number): Promise<string | null> {
+  spawnCount += 1;
   return new Promise((resolve) => {
     execFile("git", args, { cwd, timeout: timeoutMs, maxBuffer: 16 * 1024 * 1024 }, (err, stdout) => {
       if (err) resolve(null);

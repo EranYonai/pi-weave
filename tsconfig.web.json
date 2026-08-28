@@ -1,0 +1,28 @@
+{
+  // Browser tier (weave-workspace §2): `src/web/client/**` may import
+  // `src/web/shared` and browser deps, and must never import `src/core` or
+  // `node:*`. Two settings enforce the tail of that rule mechanically —
+  // `"lib"` has no node types and `"types": []` keeps `@types/node` out — so
+  // a stray `import { readFileSync } from "node:fs"` fails typecheck, not
+  // review.
+  //
+  // Kept separate from the root project because the two tiers disagree on
+  // exactly those settings. `npm run typecheck` runs both.
+  "compilerOptions": {
+    "target": "ES2022",
+    "module": "ESNext",
+    "moduleResolution": "bundler",
+    "lib": ["ES2022", "DOM", "DOM.Iterable"],
+    "jsx": "react-jsx",
+    "jsxImportSource": "preact",
+    "strict": true,
+    "noUncheckedIndexedAccess": true,
+    "exactOptionalPropertyTypes": true,
+    "forceConsistentCasingInFileNames": true,
+    "skipLibCheck": true,
+    "noEmit": true,
+    "types": [],
+    "verbatimModuleSyntax": true
+  },
+  "include": ["src/web/client/**/*.ts", "src/web/client/**/*.tsx", "src/web/shared/**/*.ts"]
+}

@@ -4,6 +4,12 @@ dist/
 *.log
 .DS_Store
 
+# ...except the web client bundle, which is a committed artifact
+# (docs/weave-workspace.md §9). Git cannot re-include a file whose parent
+# directory is excluded, so the directory must be unignored first.
+!src/web/client/dist/
+!src/web/client/dist/app.js
+
 # pi-weave: local derived knowledge index (see docs/design.md §15)
 .okf/
 

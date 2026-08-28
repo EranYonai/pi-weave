@@ -11,22 +11,17 @@
 
 import { readFile } from "node:fs/promises";
 import { join, resolve, sep } from "node:path";
-import {
-  assessStaleness,
-  buildGraph,
-  DEFAULT_MAX_NOTES,
-  findGitRoot,
-  getNote,
-  listNotes,
-  noteCount,
-  readRepoIndex,
-  readSummaryMap,
-  resolveNotePath,
-  resolveVaultRoot,
-  type BuildGraphInput,
-  type GraphModel,
-  type Note,
-} from "../index";
+// Imported from the individual modules rather than the `../index` barrel:
+// `src/core/cache/workspace` imports this file, and the barrel re-exports
+// that cache, so going through the barrel would close an import cycle.
+import { findGitRoot } from "../git";
+import { resolveVaultRoot } from "../paths";
+import { assessStaleness, readRepoIndex } from "../repoIndex";
+import { readSummaryMap } from "../summaries";
+import type { Note } from "../types";
+import { getNote, readVault, resolveNotePath } from "../vault";
+import { buildGraph, DEFAULT_MAX_NOTES, type BuildGraphInput } from "./build";
+import type { GraphModel } from "./model";
 
 /** A note read for the viewers (read-only; never cached). Mirrors the vault `Note` shape. */
 export interface ViewNote {
@@ -77,30 +72,48 @@ export async function readOkfFileForView(cwd: string, rel: string): Promise<{ pa
 }
 
 /**
+ * Assemble the repository half of the graph input for `cwd`, or null when
+ * cwd is not inside a git repository with a readable `.okf` index. Shared
+ * with `src/core/cache/workspace` so the cached and uncached paths cannot
+ * drift in what they read.
+ */
+export async function readRepositorySide(
+  cwd: string,
+): Promise<Pick<BuildGraphInput, "repository" | "summaries"> | null> {
+  const repoRoot = await findGitRoot(cwd);
+  if (repoRoot === null) return null;
+  const index = await readRepoIndex(repoRoot);
+  if (index === null) return null;
+  return {
+    repository: { index, staleness: await assessStaleness(repoRoot) },
+    summaries: await readSummaryMap(repoRoot), // deep-scan sidecars, read live
+  };
+}
+
+/**
  * Assemble the fresh graph from disk. Called on every viewer fetch
  * (no caching — docs/weave-view.md §2). Reads the vault (capped at
  * DEFAULT_MAX_NOTES) and, when cwd is an indexed git repository, the repo
  * index + deep-scan summary sidecars. Degrades to a vault-only graph when
  * the repo has no index or the index is corrupt.
+ *
+ * One read per note: `readVault` returns bodies *and* the file count, so the
+ * old `listNotes` → `getNote`-per-slug → `noteCount` sequence (2N reads plus
+ * a third readdir) is now N reads and one readdir (weave-workspace §4.1).
  */
 export async function buildCurrentGraph(cwd: string, vaultRoot: string = resolveVaultRoot()): Promise<GraphModel> {
-  const noteSummaries = (await listNotes(vaultRoot)).slice(0, DEFAULT_MAX_NOTES);
-  const loaded = await Promise.all(noteSummaries.map((s) => getNote(vaultRoot, s.slug)));
-  const notes = loaded.filter((n): n is Note => n !== null);
+  const { notes, fileCount } = await readVault(vaultRoot);
 
   const input: BuildGraphInput = {
-    vault: { root: vaultRoot, exists: true, noteCount: await noteCount(vaultRoot) },
-    notes,
+    vault: { root: vaultRoot, exists: true, noteCount: fileCount },
+    notes: notes.slice(0, DEFAULT_MAX_NOTES),
     repository: null,
   };
 
-  const repoRoot = await findGitRoot(cwd);
-  if (repoRoot !== null) {
-    const index = await readRepoIndex(repoRoot);
-    if (index !== null) {
-      input.repository = { index, staleness: await assessStaleness(repoRoot) };
-      input.summaries = await readSummaryMap(repoRoot); // deep-scan sidecars, read live
-    }
+  const repo = await readRepositorySide(cwd);
+  if (repo !== null) {
+    input.repository = repo.repository;
+    if (repo.summaries !== undefined) input.summaries = repo.summaries;
   }
   return buildGraph(input);
 }
