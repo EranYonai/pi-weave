@@ -44,10 +44,10 @@ import type { RenderGraph } from "./graph.model";
 
 interface SimNode {
   id: string;
-  x: number;
-  y: number;
-  vx: number;
-  vy: number;
+  x?: number;
+  y?: number;
+  vx?: number;
+  vy?: number;
   index?: number;
   fx?: number | null;
   fy?: number | null;
@@ -69,13 +69,17 @@ export interface GraphSimulation {
 }
 
 /** Re-heat on creation (mount, expand, collapse): brief and local, never a re-layout. */
-const SETTLE_ALPHA = 0.15;
-/** d3's own drag pattern: the alpha target holds while a node is pinned. */
-const DRAG_ALPHA_TARGET = 0.3;
+const SETTLE_ALPHA = 0.06;
+/**
+ * The drag alpha target. The balance the user feels: too low and the
+ * neighbours read as stiff and lazy while the node moves; too high and the
+ * whole tree thrashes (measured: the hub drag peaks at ~950px/s of per-node
+ * ripple at 0.3 with rigid links, ~174px/s at 0.2 with the soft springs —
+ * lively, and an order of magnitude inside the crazy regime).
+ */
+const DRAG_ALPHA_TARGET = 0.2;
 /** d3-force's alpha floor. */
 const ALPHA_MIN = 0.001;
-/** Alpha decay per tick — ~3 s from {@link SETTLE_ALPHA} at 60 fps. */
-const ALPHA_DECAY = 0.03;
 
 /**
  * Build a live simulation over a {@link RenderGraph}.
@@ -109,9 +113,6 @@ export function createGraphSimulation(graph: RenderGraph, initial?: ReadonlyMap<
   // `pathologicalGraph` fixture remains the gate for degenerate *outputs*.
   const seen = new Set<string>();
   const links: SimLink[] = [];
-  const children = new Map<string, string[]>();
-  const degree = new Map<string, number>();
-  const parentOf = new Set<string>();
   for (const edge of graph.edges) {
     if (edge.source === edge.target) continue;
     if (!byId.has(edge.source) || !byId.has(edge.target)) continue;
@@ -119,24 +120,17 @@ export function createGraphSimulation(graph: RenderGraph, initial?: ReadonlyMap<
     if (seen.has(key)) continue;
     seen.add(key);
     links.push({ source: edge.source, target: edge.target, kind: edge.kind });
-    degree.set(edge.source, (degree.get(edge.source) ?? 0) + 1);
-    degree.set(edge.target, (degree.get(edge.target) ?? 0) + 1);
-    if (!isContainment(edge.kind) || parentOf.has(edge.target)) continue;
-    parentOf.add(edge.target);
-    const kids = children.get(edge.source);
-    if (kids) kids.push(edge.target);
-    else children.set(edge.source, [edge.target]);
   }
 
-  // Anchors start at the warm positions — the layout's own equilibrium — and
-  // are re-read every tick, so `release` can retarget a drag without a rebuild.
-  const anchors = new Map<string, Point>(nodes.map((node) => [node.id, { x: node.x, y: node.y }]));
-  const rootIds = new Set(nodes.filter((node) => !parentOf.has(node.id)).map((node) => node.id));
-
-  const sim = createForceSimulation({ nodes, links, children, degree, anchors, rootIds, seed: 1 })
+  // No invented seeding; centre gravity lives in the factory (`forceX()`/
+  // `forceY()`). `anchors` starts empty — every node targets the origin — and
+  // grows on release: a dropped node's anchor is retargeted to its drop point,
+  // so placement sticks (the anchor is five times stronger than the leaf
+  // spring, so the node rests where the user left it).
+  const anchors = new Map<string, Point>();
+  const sim = createForceSimulation({ nodes, links, anchors, seed: 1 })
     .alpha(SETTLE_ALPHA)
-    .alphaMin(ALPHA_MIN)
-    .alphaDecay(ALPHA_DECAY);
+    .alphaMin(ALPHA_MIN);
 
   return {
     tick() {
@@ -144,32 +138,36 @@ export function createGraphSimulation(graph: RenderGraph, initial?: ReadonlyMap<
     },
 
     awake() {
-      return sim.alpha() > ALPHA_MIN;
+      // A held alpha target is motion about to happen — the clock must stay
+      // armed even while alpha itself is still converging up to the target.
+      return sim.alphaTarget() > ALPHA_MIN || sim.alpha() > ALPHA_MIN;
     },
 
     positions() {
-      return new Map(nodes.map((node) => [node.id, { x: node.x, y: node.y }]));
+      return new Map(nodes.map((node) => [node.id, { x: node.x ?? 0, y: node.y ?? 0 }]));
     },
 
     pin(id, at) {
       const node = byId.get(id);
       if (!node) return;
-      // A pinned (dragged) node is held exactly where the user put it and is
-      // immune to every force — the drag must not fight the sim, or the node
-      // would shudder under its own neighbours. d3's fx/fy contract.
+      // d3's canonical drag, from the force-directed graph example: fix the
+      // subject at the pointer and hold the alpha target up so the neighbours
+      // make room, then cool on release. A pinned node is immune to every
+      // force — the drag must not fight the sim, or the node would shudder
+      // under its own neighbours.
       node.fx = at.x;
       node.fy = at.y;
-      // The drag target keeps alpha pinned up so neighbours rearrange live.
       sim.alphaTarget(DRAG_ALPHA_TARGET);
-      if (sim.alpha() < DRAG_ALPHA_TARGET) sim.alpha(DRAG_ALPHA_TARGET);
     },
 
     release(id) {
       const node = byId.get(id);
       if (!node) return;
-      // Retarget the anchor to the drop point: the node stays where the user
-      // left it instead of springing back to where the layout had it.
-      anchors.set(id, { x: node.x, y: node.y });
+      // Unfix, like d3's `dragended` — and retarget the node's centre-gravity
+      // anchor to the drop point, so the graph reads the drop as a placement:
+      // the node rests where the user left it instead of gliding back into
+      // the tree.
+      anchors.set(id, { x: node.x ?? 0, y: node.y ?? 0 });
       node.fx = null;
       node.fy = null;
       sim.alphaTarget(0);

@@ -34,9 +34,33 @@
  * the root `tsconfig.json` project compiles the tests.
  */
 
-import { computeLayout, hashId } from "../../shared/layout";
+import { computeLayout } from "../../shared/layout";
 import type { LayoutOptions, Point } from "../../shared/layout";
 import type { WireGraphEdge, WireGraphNode } from "../../shared/wire";
+
+/**
+ * FNV-1a (32-bit) followed by MurmurHash3's `fmix32` avalanche.
+ *
+ * The finalizer is not optional: FNV-1a mixes its *low* bits well but its high
+ * bits poorly for short, near-identical inputs — and the digest folds the hash
+ * into a bounded key, so the high bits are the significant part. Raw FNV-1a
+ * over `leaf001…leaf199` put 199 ids into six of twelve sectors; `fmix32`
+ * costs four lines and makes every bit depend on every input bit.
+ */
+export function hashId(id: string): number {
+  let h = 0x811c9dc5;
+  for (let i = 0; i < id.length; i++) {
+    h ^= id.charCodeAt(i);
+    h = Math.imul(h, 0x01000193);
+  }
+  h ^= h >>> 16;
+  h = Math.imul(h, 0x85ebca6b);
+  h ^= h >>> 13;
+  h = Math.imul(h, 0xc2b2ae35);
+  h ^= h >>> 16;
+  return h >>> 0;
+}
+
 
 // --- computing ----------------------------------------------------------------------
 
@@ -64,22 +88,39 @@ export const LAYOUT_SEED = 1;
  * re-running from a settled state is a near-fixed-point, which is the property
  * that makes an expand feel like an expand.
  *
- * The viewport is **not** a parameter, deliberately. `computeLayout` centres
- * its output on the width and height it is given, and sigma's camera fits
- * whatever extent it is handed — so feeding the real column width in would
- * re-run the simulation on every divider drag to produce a picture the camera
- * immediately normalises away. A fixed nominal viewport keeps the layout a
- * function of the *graph*, which is what makes it cacheable at all.
+ * **New containment children start at their parent** (d3's own collapse/
+ * expand pattern): a newly visible node without a stored position enters the
+ * simulation at its parent's warm position, so the relaxation it needs is
+ * local — the collide force makes it step out among its siblings — instead of
+ * d3's phyllotaxis spiral dropping it across the graph and dragging the whole
+ * arrangement along.
+ *
+ * The viewport is **not** a parameter, deliberately. The layout is centred on
+ * the origin by `forceX()`/`forceY()`, and sigma's camera fits whatever extent
+ * it is handed — so feeding the real column width in would re-run the
+ * simulation on every divider drag to produce a picture the camera
+ * immediately normalises away. Keeping the layout a function of the *graph*
+ * alone is what makes it cacheable at all.
  */
 export function layoutFor(
   nodes: readonly WireGraphNode[],
   edges: readonly WireGraphEdge[],
   warm?: ReadonlyMap<string, Point>,
 ): Map<string, Point> {
-  const options: LayoutOptions = { ticks: LAYOUT_TICKS, seed: LAYOUT_SEED };
+  const seeded = new Map<string, Point>(warm ?? []);
+  if (seeded.size > 0) {
+    for (const e of edges) {
+      if (e.kind !== "contains" && e.kind !== "anchored-at") continue;
+      if (seeded.has(e.target)) continue;
+      const at = seeded.get(e.source);
+      if (at !== undefined) seeded.set(e.target, { x: at.x, y: at.y });
+    }
+  }
+  const options: LayoutOptions = { ticks: LAYOUT_TICKS, seed: LAYOUT_SEED, pinWarm: true };
+  if (seeded.size > 0) options.initial = seeded;
   return computeLayout(
     { generatedAt: "", staleness: null, nodes: [...nodes], edges: [...edges], contentDigest: "" },
-    warm === undefined ? options : { ...options, initial: warm },
+    options,
   );
 }
 

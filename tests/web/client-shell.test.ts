@@ -58,6 +58,7 @@ function payload(nodes: WireGraphNode[], staleness: WireStalenessState | null = 
       staleness: staleness === null ? null : { state: staleness, reasons: [] },
       nodes,
       edges: [],
+      contentDigest: "",
     },
     tags: {},
     dangling: {},

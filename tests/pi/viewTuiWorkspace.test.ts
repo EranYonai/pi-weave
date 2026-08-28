@@ -29,7 +29,7 @@ function bindNodeId(node: WorkspaceNode, paneId: string | undefined, nodeId: str
 }
 
 function graph(): GraphModel {
-  return { generatedAt: "2026-06-01T00:00:00.000Z", staleness: null, nodes: [], edges: [], danglingLinks: {} };
+  return { generatedAt: "2026-06-01T00:00:00.000Z", staleness: null, nodes: [], edges: [], danglingLinks: {}, contentDigest: "" };
 }
 
 beforeEach(() => resetWorkspaceIds());

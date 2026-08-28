@@ -19,7 +19,7 @@ export function graph(
   edges: GraphModel["edges"],
   staleness: GraphModel["staleness"] = null,
 ): GraphModel {
-  return { generatedAt: "2026-06-01T00:00:00.000Z", staleness, nodes, edges, danglingLinks: {} };
+  return { generatedAt: "2026-06-01T00:00:00.000Z", staleness, nodes, edges, danglingLinks: {}, contentDigest: "" };
 }
 
 export const NOW = Date.parse("2026-06-01T00:00:00.000Z");

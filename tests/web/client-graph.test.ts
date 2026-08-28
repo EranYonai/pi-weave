@@ -666,13 +666,14 @@ function fakeSigma() {
     node?: (payload: { node: string }) => void;
     stage?: () => void;
     downNode?: (payload: { node: string }) => void;
-    moveBody?: (payload: { event: { x: number; y: number } }) => void;
+    moveBody?: (payload: { event: { x: number; y: number }; preventSigmaDefault(): void }) => void;
     upNode?: () => void;
     upStage?: () => void;
   } = {};
   let graph: ReturnType<typeof project> | null = null;
   let resets = 0;
   const panning: boolean[] = [];
+  let prevented = 0;
 
   const instance: SigmaLike = {
     on(event: string, handler: unknown) {
@@ -680,7 +681,7 @@ function fakeSigma() {
       if (event === "clickNode") handlers.node = handler as (payload: { node: string }) => void;
       if (event === "clickStage") handlers.stage = handler as () => void;
       if (event === "downNode") handlers.downNode = handler as (payload: { node: string }) => void;
-      if (event === "moveBody") handlers.moveBody = handler as (payload: { event: { x: number; y: number } }) => void;
+      if (event === "moveBody") handlers.moveBody = handler as (payload: { event: { x: number; y: number }; preventSigmaDefault(): void }) => void;
       if (event === "upNode") handlers.upNode = handler as () => void;
       if (event === "upStage") handlers.upStage = handler as () => void;
       return instance;
@@ -739,9 +740,18 @@ function fakeSigma() {
     downNode: (id: string) => handlers.downNode?.({ node: id }),
     // The renderer derives the dragged id from its own `downNode` state, so
     // the id argument here is ignored; only the coordinates reach `moveBody`.
-    moveBody: (_id: string, x: number, y: number) => handlers.moveBody?.({ event: { x, y } }),
+    // The payload carries a live `preventSigmaDefault` so a test can observe
+    // whether the renderer suppressed the captor's pan.
+    moveBody: (_id: string, x: number, y: number) =>
+      handlers.moveBody?.({
+        event: { x, y },
+        preventSigmaDefault: () => {
+          prevented++;
+        },
+      }),
     upNode: () => handlers.upNode?.(),
     upStage: () => handlers.upStage?.(),
+    prevented: () => prevented,
   };
 }
 
@@ -850,6 +860,25 @@ describe("sigmaRenderer over the injected constructor (§7.5)", () => {
     fake.moveBody("a", 5, 6);
     fake.upNode();
     expect(fake.panning()).toEqual([false, true]);
+  });
+
+  it("tells sigma's captor to skip the pan while a node drag is live", () => {
+    // The captor's `enableCameraPanning` gate is one layer; its per-event
+    // `sigmaDefaultPrevented` check is the other, and it is consulted after
+    // the `moveBody` handler returns. During a drag the renderer must call
+    // it, or the camera still follows the cursor and the node appears to
+    // slide away under the view; with no drag live, it must leave the pan
+    // alone.
+    const fake = fakeSigma();
+    const renderer = sigmaRenderer(fake.factory, "dark");
+    renderer.setGraph(model);
+    renderer.mount(container);
+    fake.moveBody("a", 10, 20);
+    expect(fake.prevented()).toBe(0);
+    fake.downNode("a");
+    fake.moveBody("a", 10, 20);
+    fake.upNode();
+    expect(fake.prevented()).toBe(1);
   });
 
   it("treats a release with no active drag as a no-op", () => {
@@ -992,7 +1021,7 @@ describe("the P3 pipeline on the repo fixture (§7.1, §11)", () => {
   // and every assertion is on the computed positions and the derived render
   // state — never on pixels, which §10 rules out permanently.
   const fixture = repoLikeGraph();
-  const positions = computeLayout(fixture, { ticks: 300, seed: 1, width: 1280, height: 800 });
+  const positions = computeLayout(fixture, { ticks: 300, seed: 1 });
   const model = renderGraph(fixture.nodes, fixture.edges, positions, "dark");
 
   it("draws every node in the fixture", () => {

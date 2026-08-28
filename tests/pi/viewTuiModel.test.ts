@@ -294,6 +294,7 @@ describe("model re-exports the portable view-models", () => {
       ],
       edges: [{ source: "vault", target: "note:a", kind: "contains" as const }],
       danglingLinks: {},
+      contentDigest: "",
     };
     const rows = treeRows(model, { expanded: new Set(["vault"]), showInternals: false, provFilter: null, query: "" });
     expect(rows.map((r) => r.id)).toEqual(["vault", "note:a"]);

@@ -62,7 +62,7 @@ const EDGES: WireGraphEdge[] = [
 ];
 
 const GRAPH: GraphPayload = {
-  model: { generatedAt: "2026-03-04T09:00:00Z", staleness: null, nodes: NODES, edges: EDGES },
+  model: { generatedAt: "2026-03-04T09:00:00Z", staleness: null, nodes: NODES, edges: EDGES, contentDigest: "" },
   // Key order is `deriveTagIndex`'s: count descending, then tag ascending.
   tags: { architecture: ["alpha", "beta"], viewer: ["alpha", "gamma"], solo: ["alpha"] },
   dangling: {},

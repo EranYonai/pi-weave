@@ -33,21 +33,16 @@ import { useEffect, useMemo, useRef, useState, useCallback } from "preact/hooks"
 import type { GraphPayload } from "../../shared/wire";
 import type { GraphViewState } from "./column.model";
 import {
-  DEPTHS,
   FIT_HINT,
   FIT_LABEL,
   LEGEND,
   allExpanded,
-  depthHint,
-  depthLabel,
   effectiveView,
   expandHint,
   expandLabel,
   graphClick,
   graphColumnModel,
   graphCountLabel,
-  parseDepth,
-  setDepth,
   toggleExpandAll,
 } from "./column.model";
 import type { PositionStorage } from "./positions";
@@ -84,21 +79,17 @@ export function Graph(props: GraphProps) {
   const canvas = useRef<HTMLDivElement | null>(null);
   const renderer = useRef<GraphRenderer | null>(null);
   const dynamics = useRef<GraphSimulation | null>(null);
-  const [running, setRunning] = useState(true);
-  // Mirror for the mount-time drag handlers, which must arm the clock without
-  // re-registering when `running` changes.
-  const runningRef = useRef(running);
-  runningRef.current = running;
   const clock = useRef<number | null>(null);
   /**
-   * Arm the simulation clock — idempotent, and a no-op while paused.
+   * Arm the simulation clock — idempotent.
    *
-   * The clock sleeps whenever the engine's alpha reaches its floor: a graph
-   * that is holding still costs zero frames. It re-arms when a drag pins a
-   * node (the engine re-heats) and after a re-layout hands over a new engine.
+   * The layout is always live; the clock still sleeps whenever the engine's
+   * alpha reaches its floor (a graph that is holding still costs zero frames)
+   * and re-arms when a drag pins a node or a re-layout hands over a new
+   * engine.
    */
   const armClock = useCallback(() => {
-    if (!runningRef.current || clock.current !== null) return;
+    if (clock.current !== null) return;
     const step = () => {
       clock.current = null;
       const engine = dynamics.current;
@@ -177,21 +168,18 @@ export function Graph(props: GraphProps) {
     };
   }, [model.key, armClock]);
 
-  // Effect 2 (keyed on `running`) owns the *clock*: armed while running, torn
-  // down while paused. The step itself puts the clock to sleep the moment the
-  // engine settles — `armClock` is what brings it back — so pausing merely
-  // freezes the picture at the last simulated positions, and resuming picks
-  // up where it left off.
-  useEffect(() => {
-    if (!running) return;
-    armClock();
-    return () => {
+  // Effect 2 owns the clock's unmount cleanup: the engine's own lifecycle is
+  // effect 1's, and the step self-terminates whenever the engine settles, so
+  // the only teardown left here is a frame that could outlive the component.
+  useEffect(
+    () => () => {
       if (clock.current !== null) {
         cancelAnimationFrame(clock.current);
         clock.current = null;
       }
-    };
-  }, [running, armClock]);
+    },
+    [],
+  );
 
   useEffect(() => {
     renderer.current?.setHighlight(model.highlight);
@@ -207,30 +195,9 @@ export function Graph(props: GraphProps) {
         <button type="button" class="weave-chip" title={FIT_HINT} onClick={() => renderer.current?.fit()}>
           {FIT_LABEL}
         </button>
-        <button
-          type="button"
-          class="weave-chip"
-          title={running ? "pause the live layout" : "resume the live layout"}
-          onClick={() => setRunning((value) => !value)}
-        >
-          {running ? "pause" : "play"}
-        </button>
         <button type="button" class="weave-chip" title={expandHint(everything)} onClick={() => setState(toggleExpandAll(view, model.clusters))}>
           {expandLabel(everything)}
         </button>
-        <select
-          class="weave-chip weave-depth"
-          title={depthHint(view.depth)}
-          aria-label="Highlight depth"
-          value={String(view.depth)}
-          onChange={(event) => setState(setDepth(view, parseDepth(event.currentTarget.value, view.depth)))}
-        >
-          {DEPTHS.map((depth) => (
-            <option key={depth} value={String(depth)}>
-              {depthLabel(depth)}
-            </option>
-          ))}
-        </select>
         <span class="weave-graph-legend">
           <span class="weave-legend-on">◉ {LEGEND.selected}</span>
           <span class="weave-legend-near">● {LEGEND.neighborhood}</span>

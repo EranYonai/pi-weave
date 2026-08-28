@@ -51,25 +51,6 @@ import { resolveLayout } from "./positions";
 
 // --- the view state ------------------------------------------------------------------
 
-/**
- * How many hops of neighbourhood the highlight covers.
- *
- * The `[depth 1 ▾]` control from the §1.2 mock. 1 is core's
- * `focusNeighborhood` verbatim; 2 and 3 are that set expanded by re-applying
- * it, which is the only definition that cannot disagree with the context
- * rail's at depth 1.
- *
- * Capped at 3 deliberately. On this repository's shape the 60-child hub is two
- * hops from most of the graph, so depth 4 highlights nearly everything and a
- * highlight that covers everything conveys nothing. A number rather than a
- * boolean because "just the neighbours" and "the neighbourhood around this
- * module" are genuinely different questions.
- */
-export type Depth = 1 | 2 | 3;
-
-/** Every depth the control offers, in order. */
-export const DEPTHS: readonly Depth[] = [1, 2, 3];
-
 /** The graph column's state. Owned by the column; never on the context bus. */
 export interface GraphViewState {
   /**
@@ -83,8 +64,6 @@ export interface GraphViewState {
    * {@link initialGraphView}.
    */
   readonly expanded: ReadonlySet<string>;
-  /** How far the highlight reaches. */
-  readonly depth: Depth;
 }
 
 /**
@@ -112,7 +91,7 @@ export const AUTO_COLLAPSE_ABOVE = 120;
 export function initialGraphView(model: ViewGraphModel): GraphViewState {
   const expanded =
     model.nodes.length > AUTO_COLLAPSE_ABOVE ? new Set<string>() : new Set(clusterAggregate(model, new Set()).clusters.keys());
-  return { expanded, depth: 1 };
+  return { expanded };
 }
 
 /**
@@ -127,7 +106,7 @@ export function initialGraphView(model: ViewGraphModel): GraphViewState {
  */
 export function effectiveView(payload: GraphPayload | null, state: GraphViewState | null): GraphViewState {
   if (state !== null) return state;
-  if (payload === null) return { expanded: new Set(), depth: 1 };
+  if (payload === null) return { expanded: new Set() };
   return initialGraphView(viewModel(payload));
 }
 
@@ -156,21 +135,17 @@ export function collapseAll(state: GraphViewState): GraphViewState {
   return { ...state, expanded: new Set() };
 }
 
-/** Set the highlight depth. */
-export function setDepth(state: GraphViewState, depth: Depth): GraphViewState {
-  return state.depth === depth ? state : { ...state, depth };
-}
-
 // --- the highlight (§1.3, §7.4) ---------------------------------------------------------
 
 /**
  * The set of ids that stay lit when `selectedId` is selected.
  *
- * Depth 1 is `focusNeighborhood` **exactly** — core's function, the same one
- * the context rail's "Related" is built from, reached through the §2.1.1 door
- * rather than reimplemented. Deeper is that operation applied again, which is
- * the only definition of "2 hops" that cannot disagree with "1 hop" at the
- * boundary.
+ * `focusNeighborhood` **verbatim** — core's function, the same one the
+ * context rail's "Related" is built from, reached through the §2.1.1 door
+ * rather than reimplemented. (The `[depth 1 ▾]` control once let the user
+ * widen this to two and three hops; it read as decoration next to the rail's
+ * fixed-depth "Related" and is gone — one definition of "related", one
+ * behaviour everywhere.)
  *
  * `null` in, `null` out: nothing selected means no highlight at all, which the
  * reducers treat as "render everything normally" — deliberately not the same
@@ -182,33 +157,12 @@ export function setDepth(state: GraphViewState, depth: Depth): GraphViewState {
  * highlighting the hidden id would light nothing while leaving the cluster
  * that actually represents it dimmed.
  */
-export function highlightFor(edges: readonly WireGraphEdge[], selectedId: string | null, depth: Depth): Set<string> | null {
+export function highlightFor(edges: readonly WireGraphEdge[], selectedId: string | null): Set<string> | null {
   if (selectedId === null) return null;
-  let frontier = focusNeighborhood(selectedId, edges);
-  for (let hop = 1; hop < depth; hop++) {
-    const next = new Set(frontier);
-    for (const id of frontier) for (const neighbour of focusNeighborhood(id, edges)) next.add(neighbour);
-    // A neighbourhood that stopped growing has reached its whole connected
-    // component, so further hops cannot add anything and the loop is waste.
-    if (next.size === frontier.size) break;
-    frontier = next;
-  }
-  return frontier;
+  return focusNeighborhood(selectedId, edges);
 }
 
 // --- the control strip (§1.2) ---------------------------------------------------------------
-
-/** The `[depth 1 ▾]` control's label. */
-export function depthLabel(depth: Depth): string {
-  return `depth ${depth}`;
-}
-
-/** Its tooltip — says what the number means, not what it is. */
-export function depthHint(depth: Depth): string {
-  return depth === 1
-    ? "highlighting direct neighbours of the selection"
-    : `highlighting everything within ${depth} hops of the selection`;
-}
 
 /** The `[expand]` control's label, which is really a toggle. */
 export function expandLabel(allExpanded: boolean): string {
@@ -238,19 +192,6 @@ export function allExpanded(state: GraphViewState, clusters: ReadonlyMap<string,
  */
 export function toggleExpandAll(state: GraphViewState, clusters: ReadonlyMap<string, ClusterInfo>): GraphViewState {
   return allExpanded(state, clusters) ? collapseAll(state) : expandAll(state, clusters);
-}
-
-/**
- * Parse the depth `<select>`'s value.
- *
- * A `<select>` yields a string and the component must not cast it — an
- * `as Depth` on unvalidated input is exactly how a `depth 7` ends up in state
- * and the highlight silently covers the whole graph. Anything unrecognised
- * falls back to the current depth, so a malformed event changes nothing.
- */
-export function parseDepth(value: string, fallback: Depth): Depth {
-  const parsed = Number(value);
-  return (DEPTHS as readonly number[]).includes(parsed) ? (parsed as Depth) : fallback;
 }
 
 /** The `[fit]` control. Constant, but named here so the component holds no copy. */
@@ -354,7 +295,7 @@ export function graphColumnModel(
 
   return {
     graph: renderGraph(reduced.nodes, reduced.edges, layout.positions, scheme),
-    highlight: highlightFor(reduced.edges, selectedId, state.depth),
+    highlight: highlightFor(reduced.edges, selectedId),
     key: layout.key,
     cached: layout.cached,
     clusters: reduced.clusters,

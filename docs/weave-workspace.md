@@ -707,8 +707,10 @@ Server-side on first load (Node, ~300 ticks, tens of ms for this graph), shipped
 laid out with no visible settling. The client re-runs the sim only on user drag or expand/collapse. `layout.ts` is identical code in both
 places — that is why it lives in `shared/` and takes no DOM.
 
-Seeding: children start on a small deterministic ring around their parent (angle from a hash of the child id), **never** at the parent's
-exact point. Exact co-location was one of the four mechanisms in the old failure.
+Seeding: none invented — d3 initializes nodes without positions on a deterministic phyllotaxis spiral, and the force-directed-tree recipe
+(`forceLink` with `distance(0)` at full strength for containment, gentle `forceManyBody`, `forceX()`/`forceY()` centre gravity) does the
+rest. New containment children on an expand start **at their parent's** warm position (d3's own collapse/expand pattern), and a warm
+re-layout pins the nodes the client already positioned so the existing arrangement is the user's, not the sim's to re-mix.
 
 **As built (P3): the layout runs client-side, and the cache replaces the server precompute.** `GraphPayload.positions` is `null` by design
 (§5.3) — `shared/layout.ts` imports `d3-force` and the server tier's npm allowlist is empty — so the client runs the *identical* `shared`
@@ -876,7 +878,7 @@ expect(Math.max(box.w, box.h) / Math.min(box.w, box.h)).toBeLessThan(MAX_ROOT_AS
 The general lesson: **assert on the subset the bug was reported about, not only on the aggregate.** An aggregate has enough slack to hide
 the exact failure it was written to catch.
 
-Thresholds are derived from geometry that is true before the simulation runs (`NODE_RADIUS`, `CONTAINS_DISTANCE`, the viewport), never
+Thresholds are derived from geometry that is true before the simulation runs (`NODE_RADIUS`, the collision diameter, the viewport), never
 reverse-engineered from a passing run — a tuned threshold passes the next bug too, which is how 671 tests stayed green. `metrics.test.ts`
 tests the measuring instruments separately, because a gate is only as trustworthy as its ruler.
 

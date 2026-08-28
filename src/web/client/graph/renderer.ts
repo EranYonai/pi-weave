@@ -184,7 +184,7 @@ export interface SigmaLike {
   on(event: "clickNode", handler: (payload: { node: string }) => void): unknown;
   on(event: "clickStage", handler: () => void): unknown;
   on(event: "downNode", handler: (payload: { node: string }) => void): unknown;
-  on(event: "moveBody", handler: (payload: { event: { x: number; y: number } }) => void): unknown;
+  on(event: "moveBody", handler: (payload: { event: { x: number; y: number }; preventSigmaDefault(): void }) => void): unknown;
   on(event: "upNode" | "upStage", handler: () => void): unknown;
   viewportToGraph(position: { x: number; y: number }): Point;
   setSetting(key: "nodeReducer", value: (id: string, data: RenderNode) => NodeDisplayOverride): unknown;
@@ -271,8 +271,17 @@ export function sigmaRenderer(create: SigmaFactory, scheme: ColorScheme): GraphR
         sigma?.setSetting("enableCameraPanning", false);
         dragStart(node);
       });
-      instance.on("moveBody", ({ event }) => {
-        if (dragging !== null) dragMove(dragging, instance.viewportToGraph({ x: event.x, y: event.y }));
+      instance.on("moveBody", (payload) => {
+        if (dragging !== null) {
+          // Sigma's captor pans the camera on every mouse move while the
+          // button is down; during a node drag that is the pan the gesture
+          // must not be. `preventSigmaDefault` is the captor's own gate — it
+          // is consulted right after this handler returns — and without it
+          // the camera follows the cursor 1:1 while the pin follows it too,
+          // so the node appears to slide away under the view.
+          payload.preventSigmaDefault();
+          dragMove(dragging, instance.viewportToGraph({ x: payload.event.x, y: payload.event.y }));
+        }
       });
       instance.on("upNode", () => endDrag(dragging));
       instance.on("upStage", () => endDrag(null));
