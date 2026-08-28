@@ -1074,21 +1074,29 @@ describe("Watcher — real fs.watch end to end", () => {
    *
    * What is asserted is soundness, not delivery: whatever the platform does,
    * the watcher must never invent a scope. A real note write can legitimately
-   * surface as any of three things —
+   * surface as any of four things —
    *
    *  1. `notes/live.md` → one `vault` frame (Linux inotify, and macOS when it
    *     names the file);
    *  2. an `EMFILE` on the watcher's `error` event → the root is demoted and
    *     `available` goes false (macOS under a low `launchctl limit maxfiles`);
    *  3. a *directory*-level event naming `notes` → correctly ignored, because
-   *     a directory is not a note, so nothing is reported at all.
+   *     a directory is not a note, so nothing is reported at all;
+   *  4. an event **without a filename** — FSEvents delivers these
+   *     sporadically — which the "hint, not delta" contract turns into
+   *     whole-root-dirty. On the cwd watcher that surfaces as a `repo` frame
+   *     even though only the vault moved: the platform declined to say where
+   *     the event belongs, and over-reporting a scope is the safe direction
+   *     (the cache invalidates, the client refetches, nothing is missed).
    *
    * Case 3 is why "assert a frame arrives" would be flaky here rather than
-   * strict. The deterministic coverage of the delivery path lives in the
+   * strict, and case 4 is why the scope assertion tolerates the repo frame
+   * while still forbidding `git` — a vault write can never legitimately
+   * produce one. The deterministic coverage of the delivery path lives in the
    * injected-`openWatch` suites above; this test exists to prove the default
    * wiring is real and that its output is never *wrong*.
    */
-  it("never reports a scope other than vault, however the platform behaves", async () => {
+  it("always reports the vault write, and never a git scope", async () => {
     const { cwd, vaultRoot } = await workspace();
     const seen: ChangeScope[][] = [];
     const clock = fakeScheduler();
@@ -1104,7 +1112,13 @@ describe("Watcher — real fs.watch end to end", () => {
     }
     clock.runDelays();
 
-    for (const scopes of seen) expect(scopes).toEqual(["vault"]);
+    for (const scopes of seen) {
+      // The write is always reported; a null-name event on the repo watcher
+      // may add a `repo` frame (hint, not delta) — but `git` can never be
+      // invented by a vault write.
+      expect(scopes).toContain("vault");
+      expect(scopes).not.toContain("git");
+    }
     // And when the watch died, the status says so — which is what lets
     // `server.ts` fall back to stamp polling instead of pretending.
     if (failed()) expect(w.status().available).toBe(false);
