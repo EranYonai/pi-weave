@@ -91,6 +91,7 @@ describe("THEME_CSS", () => {
     const classes = [
       "weave-header",
       "weave-brand",
+      "weave-brand-mark",
       "weave-search",
       "weave-summary",
       "weave-summary-part",
@@ -115,6 +116,7 @@ describe("THEME_CSS", () => {
       "weave-chip",
       "weave-rows",
       "weave-row",
+      "weave-row-new",
       "weave-row-on",
       "weave-twisty",
       "weave-kind",
@@ -170,7 +172,6 @@ describe("THEME_CSS", () => {
       "weave-graph-canvas",
       "weave-graph-empty",
       "weave-graph-controls",
-      "weave-depth",
       "weave-graph-legend",
       "weave-legend-on",
       "weave-legend-near",

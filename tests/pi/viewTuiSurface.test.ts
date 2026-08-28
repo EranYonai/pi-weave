@@ -23,7 +23,7 @@ function node(id: string, kind: GraphNode["kind"], label: string, prov: NoteSour
   return { id, kind, label, provenance: prov, detail };
 }
 function graph(nodes: GraphNode[], edges: GraphModel["edges"]): GraphModel {
-  return { generatedAt: "2026-06-01T00:00:00.000Z", staleness: null, nodes, edges, danglingLinks: {} };
+  return { generatedAt: "2026-06-01T00:00:00.000Z", staleness: null, nodes, edges, danglingLinks: {}, contentDigest: "" };
 }
 function ctx(model: GraphModel): SurfaceContext {
   return {

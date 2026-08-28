@@ -58,7 +58,7 @@ function noteNode(slug: string, title: string): WireGraphNode {
 
 function payloadOf(nodes: WireGraphNode[], dangling: Record<string, string[]> = {}): GraphPayload {
   return {
-    model: { generatedAt: "2026-03-04T09:00:00Z", staleness: null, nodes, edges: [] },
+    model: { generatedAt: "2026-03-04T09:00:00Z", staleness: null, nodes, edges: [], contentDigest: "" },
     tags: {},
     dangling,
     positions: null,

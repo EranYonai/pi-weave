@@ -131,9 +131,13 @@ export function edgeColor(kind: WireEdgeKind, scheme: ColorScheme): string {
 /**
  * The smallest a node is ever drawn, in layout units.
  *
- * A leaf still has to be clickable, and sigma's hit test is the drawn radius.
+ * A leaf still has to be clickable, and sigma's hit test is the drawn radius —
+ * at fit zoom a leaf renders at `MIN_NODE_SIZE · cameraCorrection`, so a floor
+ * of 6 is what keeps every node inside a pointer's reach at overview zoom.
+ * (The d3 gallery's force-directed graphs draw every node the same radius for
+ * exactly this reason; size still varies by degree up to the ceiling.)
  */
-export const MIN_NODE_SIZE = 3;
+export const MIN_NODE_SIZE = 6;
 
 /**
  * The degree at which a node reaches {@link NODE_RADIUS}.
@@ -455,6 +459,7 @@ export function edgeReducer(
  */
 export interface GraphSettings {
   readonly hideEdgesOnMove: boolean;
+  readonly enableCameraPanning: boolean;
   readonly renderEdgeLabels: boolean;
   readonly labelDensity: number;
   readonly labelGridCellSize: number;
@@ -505,6 +510,9 @@ export function graphSettings(scheme: ColorScheme): GraphSettings {
     // §7.4. A pan over a few thousand edges is the one interaction that drops
     // frames, and the edges are the part nobody is reading mid-gesture.
     hideEdgesOnMove: true,
+    // The renderer toggles this off while a node is being dragged, so the
+    // gesture pins the node to the cursor instead of panning the camera.
+    enableCameraPanning: true,
     renderEdgeLabels: false,
     labelDensity: LABEL_DENSITY,
     labelGridCellSize: LABEL_GRID_CELL_SIZE,

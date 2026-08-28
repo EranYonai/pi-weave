@@ -207,11 +207,11 @@ describe("/weave-view (bare) — browser workspace by default", () => {
       const mock = track(ctx);
       // session_start seeds the base status text the marker is appended to.
       await mock.emit("session_start", {}, ctx);
-      expect(ctx.ui.statuses["weave"]).toMatch(/^○ 🧵 vault:/);
+      expect(ctx.ui.statuses["weave"]).toMatch(/^○ 🕸️ vault:/);
 
       await view(mock, "--no-open", ctx);
       const port = new URL(urlFrom(ctx)).port;
-      expect(ctx.ui.statuses["weave"]).toMatch(new RegExp(`^○ 🧵 vault:.* · web:${port}$`));
+      expect(ctx.ui.statuses["weave"]).toMatch(new RegExp(`^○ 🕸️ vault:.* · web:${port}$`));
 
       // The active indicator still flips, and keeps the marker.
       await mock.emit("agent_start", {}, ctx);
@@ -559,7 +559,7 @@ describe("browser launch failure", () => {
       // The port is advertised, and the assertion is on the *port* rather
       // than on the ` · ` separator. This test never emits `session_start`,
       // so there is no base status text for a separator to separate from and
-      // the line is `○ web:PORT`, not `○ 🧵 vault:N · web:PORT`. Requiring
+      // the line is `○ web:PORT`, not `○ 🕸️ vault:N · web:PORT`. Requiring
       // the separator here was requiring a leading ` · ` against nothing.
       //
       // Strengthened rather than relaxed: it now pins the real port, so a

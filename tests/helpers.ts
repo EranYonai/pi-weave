@@ -254,3 +254,15 @@ export async function withVaultEnv<T>(vaultRoot: string, fn: () => Promise<T>): 
     else process.env.PI_WEAVE_VAULT = before;
   }
 }
+
+/** Set PI_WEAVE_SESSIONS for the duration of a test body, then restore. */
+export async function withSessionsEnv<T>(sessionsRoot: string, fn: () => Promise<T>): Promise<T> {
+  const before = process.env.PI_WEAVE_SESSIONS;
+  process.env.PI_WEAVE_SESSIONS = sessionsRoot;
+  try {
+    return await fn();
+  } finally {
+    if (before === undefined) delete process.env.PI_WEAVE_SESSIONS;
+    else process.env.PI_WEAVE_SESSIONS = before;
+  }
+}

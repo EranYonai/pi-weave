@@ -76,3 +76,14 @@ export const treeState = signal<TreeState>(initialTreeState());
 
 /** SSE liveness (§6). */
 export const connection = signal<ConnectionState>("live");
+
+/**
+ * Node ids that appeared in the most recent graph update (weave-workspace
+ * §6 frame → tree feedback).
+ *
+ * Empty on the mount fetch — a first load must not animate the whole tree.
+ * The controller replaces the set on every published payload and clears it
+ * after {@link ../workspace!RECENT_TTL_MS}, so a row collapsed and re-expanded
+ * minutes later does not replay its arrival animation.
+ */
+export const recentIds = signal<ReadonlySet<string>>(new Set());

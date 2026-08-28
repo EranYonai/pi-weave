@@ -127,6 +127,7 @@ describe("wire DTOs mirror the core types (compile-time)", () => {
       nodes: [],
       edges: [],
       danglingLinks: {},
+      contentDigest: "",
     };
     for (const key of WIRE_MODEL_OMITTED_KEYS) expect(key in sample).toBe(true);
   });
@@ -226,6 +227,7 @@ describe("wire DTOs mirror the core types (compile-time)", () => {
       nodes: [{ id: "vault", kind: "vault", label: "vault", provenance: null, detail: { notes: "1" } }],
       edges: [{ source: "vault", target: "note:a", kind: "contains" }],
       danglingLinks: { a: ["ghost"] },
+      contentDigest: "",
     };
     // Core → wire is a widening-free assignment even with the extra key,
     // because the wire type is a strict subset. The reverse needs the key

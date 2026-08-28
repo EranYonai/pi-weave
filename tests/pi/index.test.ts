@@ -41,7 +41,7 @@ describe("session_start", () => {
     await withVaultEnv(await makeTempDir(), async () => {
       const ctx = createMockCtx(cwd);
       await mock.emit("session_start", {}, ctx);
-      expect(ctx.ui.statuses.weave).toBe("○ 🧵 vault:0");
+      expect(ctx.ui.statuses.weave).toBe("○ 🕸️ vault:0");
       expect(ctx.ui.notifications).toEqual([]);
     });
   });
@@ -52,19 +52,19 @@ describe("session_start", () => {
     await withVaultEnv(await makeTempDir(), async () => {
       const ctx = createMockCtx(cwd);
       await mock.emit("session_start", {}, ctx);
-      expect(ctx.ui.statuses.weave).toBe("○ 🧵 vault:0");
+      expect(ctx.ui.statuses.weave).toBe("○ 🕸️ vault:0");
 
       await mock.emit("agent_start", {}, ctx);
-      expect(ctx.ui.statuses.weave).toBe("● 🧵 vault:0");
+      expect(ctx.ui.statuses.weave).toBe("● 🕸️ vault:0");
 
       await mock.emit("agent_end", {}, ctx);
-      expect(ctx.ui.statuses.weave).toBe("○ 🧵 vault:0");
+      expect(ctx.ui.statuses.weave).toBe("○ 🕸️ vault:0");
 
       // Uses lastCtx when event ctx is undefined
       await mock.emit("agent_start", {}, undefined as unknown as typeof ctx);
-      expect(ctx.ui.statuses.weave).toBe("● 🧵 vault:0");
+      expect(ctx.ui.statuses.weave).toBe("● 🕸️ vault:0");
       await mock.emit("agent_end", {}, undefined as unknown as typeof ctx);
-      expect(ctx.ui.statuses.weave).toBe("○ 🧵 vault:0");
+      expect(ctx.ui.statuses.weave).toBe("○ 🕸️ vault:0");
     });
   });
 
@@ -75,7 +75,7 @@ describe("session_start", () => {
       const ctx = createMockCtx(cwd);
       delete (ctx.ui as { theme?: unknown }).theme;
       await mock.emit("session_start", {}, ctx);
-      expect(ctx.ui.statuses.weave).toBe("○ 🧵 vault:0");
+      expect(ctx.ui.statuses.weave).toBe("○ 🕸️ vault:0");
 
       const throwingCtx = createMockCtx(cwd);
       Object.defineProperty(throwingCtx.ui, "theme", {
@@ -84,7 +84,7 @@ describe("session_start", () => {
         },
       });
       await mock.emit("agent_start", {}, throwingCtx);
-      expect(throwingCtx.ui.statuses.weave).toBe("● 🧵 vault:0");
+      expect(throwingCtx.ui.statuses.weave).toBe("● 🕸️ vault:0");
 
       const noUiCtx = { cwd, hasUI: false, mode: "print", ui: {} } as unknown as typeof ctx;
       await mock.emit("agent_start", {}, noUiCtx);
@@ -97,7 +97,7 @@ describe("session_start", () => {
     await withVaultEnv(await makeTempDir(), async () => {
       const ctx = createMockCtx(repo);
       await mock.emit("session_start", {}, ctx);
-      expect(ctx.ui.statuses.weave).toBe("○ 🧵 vault:0 · repo:unindexed");
+      expect(ctx.ui.statuses.weave).toBe("○ 🕸️ vault:0 · repo:unindexed");
       expect(ctx.ui.notifications).toHaveLength(1);
       expect(ctx.ui.notifications[0]?.level).toBe("info");
       expect(ctx.ui.notifications[0]?.message).toContain("no knowledge index");
@@ -241,7 +241,7 @@ describe("/weave-scan deep", () => {
       });
       await mock.commands.get("weave-scan")!.handler("deep", ctx);
       // wait for the background scan to emit its first progress line
-      for (let i = 0; i < 50 && ctx.ui.statuses.weave === "● 🧵 deep scan: starting…"; i++) {
+      for (let i = 0; i < 50 && ctx.ui.statuses.weave === "● 🕸️ deep scan: starting…"; i++) {
         await new Promise((r) => setTimeout(r, 10));
       }
       const progress = ctx.ui.statuses.weave ?? "";
@@ -391,6 +391,50 @@ describe("weave_note tool", () => {
     });
   });
 
+  it("raw appends land in a ## Raw tail and finalize preserves them", async () => {
+    const mock = buildExtension();
+    const ctx = createMockCtx(await makeTempDir());
+    await withVaultEnv(await makeTempDir(), async () => {
+      await mock.runTool("weave_note", { action: "add", title: "Debrief", text: "compiled" }, ctx);
+      const appended = await mock.runTool(
+        "weave_note",
+        { action: "append", slug: "debrief", text: '"she pushed back politely"', raw: true },
+        ctx,
+      );
+      expect(appended.content[0]?.text).toContain("## Raw tail");
+
+      const got = await mock.runTool("weave_note", { action: "get", slug: "debrief" }, ctx);
+      expect(got.content[0]?.text).toContain("## Raw");
+      expect(got.content[0]?.text).toContain('"she pushed back politely"');
+
+      const finalized = await mock.runTool(
+        "weave_note",
+        { action: "finalize", slug: "debrief", text: "# Debrief\n\n**Verdict:** hire" },
+        ctx,
+      );
+      expect(finalized.content[0]?.text).toContain("Raw tail preserved");
+      const reGot = await mock.runTool("weave_note", { action: "get", slug: "debrief" }, ctx);
+      expect(reGot.content[0]?.text).toContain('"she pushed back politely"');
+    });
+  });
+
+  it("finalize on a note without a raw tail preserves the whole body", async () => {
+    const mock = buildExtension();
+    const ctx = createMockCtx(await makeTempDir());
+    await withVaultEnv(await makeTempDir(), async () => {
+      await mock.runTool("weave_note", { action: "add", title: "Dictated", text: "raw words only" }, ctx);
+      const finalized = await mock.runTool(
+        "weave_note",
+        { action: "finalize", slug: "dictated", text: "# Structured" },
+        ctx,
+      );
+      expect(finalized.content[0]?.text).toContain("Raw tail preserved");
+      const got = await mock.runTool("weave_note", { action: "get", slug: "dictated" }, ctx);
+      expect(got.content[0]?.text).toContain("# Structured");
+      expect(got.content[0]?.text).toContain("raw words only");
+    });
+  });
+
   it("keeps every addition when appends run concurrently", async () => {
     const mock = buildExtension();
     const ctx = createMockCtx(await makeTempDir());
@@ -461,7 +505,7 @@ describe("weave_note tool", () => {
       await mock.runTool("weave_note", { action: "add", title: "Auth migration", text: "---\n\n## Raw\n<!-- NEVER edit below this line. Verbatim user input preserved here. -->\n\n```\n\"We should move to OIDC.\"\n```", source: "human" }, ctx);
       const res = await mock.runTool("weave_note", { action: "finalize", slug: "auth-migration", text: "**Decision:** move toward OIDC." }, ctx);
       expect(res.content[0]?.text).toContain("Finalized auth-migration");
-      expect(res.content[0]?.text).toContain("Raw notes tail preserved");
+      expect(res.content[0]?.text).toContain("Raw tail preserved");
       const got = await mock.runTool("weave_note", { action: "get", slug: "auth-migration" }, ctx);
       expect(got.content[0]?.text).toContain("**Decision:** move toward OIDC.");
       expect(got.content[0]?.text).toContain("## Raw");

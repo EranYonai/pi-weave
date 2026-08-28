@@ -11,6 +11,7 @@
 import { createHash } from "node:crypto";
 import * as fs from "node:fs/promises";
 import { join } from "node:path";
+import { mapWithConcurrency } from "./concurrency";
 import { parseFrontMatter, quoteField, unquoteField } from "./frontmatter";
 import { listFiles } from "./git";
 import { repoKnowledgeDir } from "./paths";
@@ -177,25 +178,6 @@ export function isSummarizablePath(path: string): boolean {
 
 export function hashContent(content: string | Buffer): string {
   return createHash("sha1").update(content).digest("hex");
-}
-
-async function mapWithConcurrency<T, R>(
-  items: readonly T[],
-  concurrency: number,
-  fn: (item: T, index: number) => Promise<R>,
-  shouldStop?: () => boolean,
-): Promise<R[]> {
-  const results: R[] = new Array(items.length);
-  let next = 0;
-  async function worker(): Promise<void> {
-    while (next < items.length) {
-      if (shouldStop?.()) return;
-      const i = next++;
-      results[i] = await fn(items[i] as T, i);
-    }
-  }
-  await Promise.all(Array.from({ length: Math.max(1, concurrency) }, worker));
-  return results;
 }
 
 /**

@@ -153,6 +153,13 @@ export interface WireGraphModel {
   staleness: WireStalenessReport | null;
   nodes: WireGraphNode[];
   edges: WireGraphEdge[];
+  /**
+   * Content fingerprint of the note bodies (see core `GraphModel`). Rides
+   * the wire so `GraphPayload.stamp` — hashed over these bytes — moves on a
+   * body-only edit, which is what un-dedupes the SSE frame that refetches
+   * an open note.
+   */
+  contentDigest: string;
 }
 
 /**

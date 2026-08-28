@@ -14,13 +14,12 @@
  */
 
 import { describe, expect, it } from "vitest";
-import { CONTAINS_DISTANCE, NODE_RADIUS, ringRadius } from "../../src/web/shared/layout";
+import { COLLIDE_RADIUS, NODE_RADIUS } from "../../src/web/shared/layout";
 import { angularOccupancy, clusterSeparation, minPairwiseDistance, variance } from "../../src/web/shared/metrics";
 import { clusterAggregate, focusNeighborhood } from "../../src/web/shared/view";
 import type { GraphPayload, WireGraphEdge, WireGraphNode } from "../../src/web/shared/wire";
 import {
   AUTO_COLLAPSE_ABOVE,
-  DEPTHS,
   EMPTY_COLUMN,
   FIT_HINT,
   FIT_LABEL,
@@ -28,8 +27,6 @@ import {
   allExpanded,
   clusterBadge,
   collapseAll,
-  depthHint,
-  depthLabel,
   effectiveView,
   expandAll,
   expandHint,
@@ -41,12 +38,10 @@ import {
   highlightFor,
   initialGraphView,
   nodeTooltip,
-  parseDepth,
-  setDepth,
   toggleCluster,
   toggleExpandAll,
 } from "../../src/web/client/graph/column.model";
-import type { Depth, GraphViewState } from "../../src/web/client/graph/column.model";
+import type { GraphViewState } from "../../src/web/client/graph/column.model";
 import type { PositionStorage } from "../../src/web/client/graph/positions";
 import { LIGHT_QUERY, schemeOf } from "../../src/web/client/graph/scheme";
 import { viewModel } from "../../src/web/client/tree/tree.model";
@@ -64,7 +59,7 @@ function edge(source: string, target: string, kind: WireGraphEdge["kind"] = "con
 
 function payloadOf(nodes: WireGraphNode[], edges: WireGraphEdge[]): GraphPayload {
   return {
-    model: { generatedAt: "2026-08-25T09:00:00Z", staleness: null, nodes, edges },
+    model: { generatedAt: "2026-08-25T09:00:00Z", staleness: null, nodes, edges, contentDigest: "" },
     tags: {},
     dangling: {},
     positions: null,
@@ -113,8 +108,8 @@ function storage(): PositionStorage {
   };
 }
 
-const ALL_OPEN: GraphViewState = { expanded: new Set(["vault", "repository", "module:src"]), depth: 1 };
-const ALL_SHUT: GraphViewState = { expanded: new Set(), depth: 1 };
+const ALL_OPEN: GraphViewState = { expanded: new Set(["vault", "repository", "module:src"]) };
+const ALL_SHUT: GraphViewState = { expanded: new Set() };
 
 // --- the view state ---------------------------------------------------------------------
 
@@ -125,7 +120,6 @@ describe("initialGraphView", () => {
     const view = initialGraphView(SMALL_MODEL);
     expect(view.expanded.has("vault")).toBe(true);
     expect(view.expanded.has("module:src")).toBe(true);
-    expect(view.depth).toBe(1);
   });
 
   it("opens a large graph as its clusters", () => {
@@ -167,14 +161,13 @@ describe("effectiveView", () => {
     // The rule that matters: the watcher fires on every file save and the
     // client refetches, so a payload arriving must not silently re-expand
     // clusters the user collapsed.
-    const chosen: GraphViewState = { expanded: new Set(["vault"]), depth: 2 };
+    const chosen: GraphViewState = { expanded: new Set(["vault"]) };
     expect(effectiveView(SMALL, chosen)).toBe(chosen);
   });
 
   it("has an answer before the first payload", () => {
     const view = effectiveView(null, null);
     expect(view.expanded.size).toBe(0);
-    expect(view.depth).toBe(1);
   });
 });
 
@@ -209,37 +202,6 @@ describe("expansion reducers", () => {
     expect(clusterAggregate(SMALL_MODEL, collapseAll(ALL_OPEN).expanded).nodes.map((n) => n.id)).toEqual(["vault", "repository"]);
   });
 
-  it("preserves the depth across an expansion change", () => {
-    const deep: GraphViewState = { expanded: new Set(), depth: 3 };
-    expect(expandAll(deep, clusters).depth).toBe(3);
-    expect(collapseAll(deep).depth).toBe(3);
-    expect(toggleCluster(deep, "vault").depth).toBe(3);
-  });
-});
-
-describe("depth", () => {
-  it("sets and short-circuits", () => {
-    expect(setDepth(ALL_SHUT, 2).depth).toBe(2);
-    // Identity on a no-op, so a re-render is not triggered for nothing.
-    expect(setDepth(ALL_SHUT, 1)).toBe(ALL_SHUT);
-  });
-
-  it("parses the <select>'s string rather than casting it", () => {
-    // An `as Depth` on unvalidated input is exactly how a `depth 7` ends up in
-    // state and the highlight silently covers the whole graph.
-    expect(parseDepth("2", 1)).toBe(2);
-    expect(parseDepth("3", 1)).toBe(3);
-    for (const bad of ["7", "0", "-1", "", "two", "1.5", "NaN"]) {
-      expect(parseDepth(bad, 2), bad).toBe(2);
-    }
-  });
-
-  it("offers exactly 1, 2 and 3", () => {
-    // Capped because on this repository's shape the 60-child hub is two hops
-    // from most of the graph — depth 4 highlights everything, and a highlight
-    // that covers everything conveys nothing.
-    expect(DEPTHS).toEqual([1, 2, 3]);
-  });
 });
 
 // --- the highlight (§1.3, §7.4) ---------------------------------------------------------
@@ -250,48 +212,42 @@ describe("highlightFor (§7.4)", () => {
   it("is null when nothing is selected", () => {
     // Deliberately not the empty set: the reducers read `null` as "render
     // everything normally" and an empty set as "everything dims".
-    expect(highlightFor(edges, null, 1)).toBeNull();
+    expect(highlightFor(edges, null)).toBeNull();
   });
 
-  it("is exactly core's focusNeighborhood at depth 1", () => {
+  it("is exactly core's focusNeighborhood", () => {
     // The §3 no-drift claim, made concrete: the graph's highlight and the
     // context rail's "Related" are the same set because they are the same
     // function, not two that behave alike today.
-    expect(highlightFor(edges, "note:a", 1)).toEqual(focusNeighborhood("note:a", edges));
+    expect(highlightFor(edges, "note:a")).toEqual(focusNeighborhood("note:a", edges));
   });
 
-  it("grows by one hop per depth", () => {
-    const one = highlightFor(edges, "file:src/x.ts", 1)!;
-    const two = highlightFor(edges, "file:src/x.ts", 2)!;
-    const three = highlightFor(edges, "file:src/x.ts", 3)!;
+  it("lights the selection and its direct neighbours", () => {
+    const one = highlightFor(edges, "file:src/x.ts")!;
     expect(one).toEqual(new Set(["file:src/x.ts", "module:src"]));
-    // module:src's own neighbours: repository, note:a (a `mentions` edge).
-    expect(two.has("repository")).toBe(true);
-    expect(two.has("note:a")).toBe(true);
-    expect(two.size).toBeGreaterThan(one.size);
-    expect(three.size).toBeGreaterThan(two.size);
-    // Monotone: a deeper highlight never drops something a shallower one lit.
-    for (const id of one) expect(two.has(id), id).toBe(true);
-    for (const id of two) expect(three.has(id), id).toBe(true);
+  });
+
+  it("returns null for no selection", () => {
+    expect(highlightFor(edges, null)).toBeNull();
   });
 
   it("stops early once the connected component is covered", () => {
-    // Otherwise depth 3 on a two-node graph would walk the same set twice for
-    // nothing. Asserted through the result, which is the component itself.
+    // Kept from the depth-control era: the component is the answer, whatever
+    // widening used to be.
     const tiny = [edge("a", "b")];
-    expect(highlightFor(tiny, "a", 3)).toEqual(new Set(["a", "b"]));
+    expect(highlightFor(tiny, "a")).toEqual(new Set(["a", "b"]));
   });
 
   it("includes the selection even when nothing links to it", () => {
     // An isolated node must still light, or selecting it would dim the entire
     // graph including the thing that was selected.
-    expect(highlightFor(edges, "lonely", 2)).toEqual(new Set(["lonely"]));
+    expect(highlightFor(edges, "lonely")).toEqual(new Set(["lonely"]));
   });
 
   it("is empty of the graph when the selection is not in it", () => {
     // A stale selection from a previous payload. Everything dims, which is a
     // true statement — nothing here is related to it.
-    const highlight = highlightFor(edges, "note:gone", 1)!;
+    const highlight = highlightFor(edges, "note:gone")!;
     expect(highlight.has("vault")).toBe(false);
   });
 });
@@ -305,7 +261,7 @@ describe("the §1.3 context bus reaches the graph", () => {
     const viaGraph = graphClick(ALL_OPEN, clusterAggregate(SMALL_MODEL, ALL_OPEN.expanded).clusters, "note:b");
     const fromTree = "note:b";
     expect(viaGraph.selectedId).toBe(fromTree);
-    expect(highlightFor(SMALL.model.edges, viaGraph.selectedId, 1)).toEqual(highlightFor(SMALL.model.edges, fromTree, 1));
+    expect(highlightFor(SMALL.model.edges, viaGraph.selectedId)).toEqual(highlightFor(SMALL.model.edges, fromTree));
   });
 
   it("drives the column model from a selection the graph never made", () => {
@@ -321,13 +277,6 @@ describe("the §1.3 context bus reaches the graph", () => {
 
 describe("the control strip (§1.2)", () => {
   const clusters = clusterAggregate(SMALL_MODEL, new Set()).clusters;
-
-  it("labels and explains the depth control", () => {
-    expect(depthLabel(1)).toBe("depth 1");
-    expect(depthLabel(3)).toBe("depth 3");
-    expect(depthHint(1)).toContain("direct neighbours");
-    expect(depthHint(2)).toContain("2 hops");
-  });
 
   it("labels the expand control by what pressing it will do", () => {
     expect(expandLabel(false)).toBe("expand");
@@ -499,7 +448,7 @@ describe("graphColumnModel", () => {
     // The retired viewer's bug, and the reason `clusterAggregate` is reduction
     // rather than masking: `note:a --mentions--> module:src` must survive a
     // collapsed `repository` as an edge to `repository`, not vanish.
-    const state: GraphViewState = { expanded: new Set(["vault"]), depth: 1 };
+    const state: GraphViewState = { expanded: new Set(["vault"]) };
     const model = graphColumnModel(SMALL, null, state, storage(), "dark");
     const mention = model.graph.edges.find((e) => e.kind === "mentions");
     expect(mention?.source).toBe("note:a");
@@ -509,7 +458,7 @@ describe("graphColumnModel", () => {
   it("highlights over the visible edges, so a hidden neighbour lights its cluster", () => {
     // Highlighting the hidden id would light nothing while leaving the cluster
     // that actually represents it dimmed.
-    const state: GraphViewState = { expanded: new Set(["vault"]), depth: 1 };
+    const state: GraphViewState = { expanded: new Set(["vault"]) };
     const model = graphColumnModel(SMALL, "note:a", state, storage(), "dark");
     expect(model.highlight?.has("repository")).toBe(true);
     expect(model.highlight?.has("module:src")).toBe(false);
@@ -567,7 +516,7 @@ describe("P3 exit criterion — the repo fixture renders as 5 clusters (§11)", 
   const fixture = repoLikeGraph();
   const payload = payloadOf([...fixture.nodes], [...fixture.edges]);
   const model = viewModel(payload);
-  const everything: GraphViewState = { expanded: new Set(clusterAggregate(model, new Set()).clusters.keys()), depth: 1 };
+  const everything: GraphViewState = { expanded: new Set(clusterAggregate(model, new Set()).clusters.keys()) };
   const column = graphColumnModel(payload, null, everything, storage(), "dark");
   const positionOf = (id: string) => {
     const drawn = column.graph.nodes.find((n) => n.id === id);
@@ -584,7 +533,7 @@ describe("P3 exit criterion — the repo fixture renders as 5 clusters (§11)", 
     // their children's rings cannot interpenetrate.
     const positions = new Map(column.graph.nodes.map((n) => [n.id, { x: n.x, y: n.y }]));
     for (const root of REPO_LIKE_ROOTS) expect(positions.has(root), root).toBe(true);
-    expect(clusterSeparation(positions, REPO_LIKE_ROOTS)).toBeGreaterThan(2 * CONTAINS_DISTANCE);
+    expect(clusterSeparation(positions, REPO_LIKE_ROOTS)).toBeGreaterThan(2 * COLLIDE_RADIUS);
   });
 
   it("arranges the five clusters in two dimensions, not on a line", () => {
@@ -593,25 +542,24 @@ describe("P3 exit criterion — the repo fixture renders as 5 clusters (§11)", 
     // anchors are squeezed onto one axis (§8's measured 5,000 vs 52,000).
     const anchors = REPO_LIKE_ROOTS.map((id) => positionOf(id)!);
     expect(anchors).toHaveLength(5);
-    const minAxisVariance = Math.pow(800 / 10, 2);
+    // The compact canonical tree is elongated under centre gravity, so the
+    // floor is the collide geometry (a line scores 0 on one axis), not the
+    // viewport.
+    const minAxisVariance = Math.pow(COLLIDE_RADIUS, 2);
     expect(variance(anchors.map((p) => p.x))).toBeGreaterThan(minAxisVariance);
     expect(variance(anchors.map((p) => p.y))).toBeGreaterThan(minAxisVariance);
   });
 
-  it("puts the 60-child hub on a wide ring", () => {
-    // "Wide" is `ringRadius(60)`, which is derived geometry — the radius whose
-    // circumference holds 60 siblings a collision diameter apart — not a
-    // tuned pixel count. Every leaf within a factor of two of it, and the ring
-    // occupying at least nine of twelve compass sectors.
+  it("clusters the 60-child hub's leaves around it, not across the graph", () => {
+    // The force-directed-tree recipe holds children at their parent, so the
+    // leaves hug the hub — every one of them within a few collision diameters
+    // — and the ring still occupies most of the compass rather than a ray.
     const hub = positionOf("repository")!;
     const leaves = column.graph.nodes.filter((n) => n.id.startsWith("module:src/m")).map((n) => ({ x: n.x, y: n.y }));
     expect(leaves).toHaveLength(60);
 
-    const target = ringRadius(60);
-    expect(target).toBeGreaterThan(CONTAINS_DISTANCE);
     const radii = leaves.map((p) => Math.hypot(p.x - hub.x, p.y - hub.y));
-    expect(Math.min(...radii)).toBeGreaterThan(target / 2);
-    expect(Math.max(...radii)).toBeLessThan(target * 2);
+    expect(Math.max(...radii)).toBeLessThan(8 * 2 * COLLIDE_RADIUS);
     expect(angularOccupancy(hub, leaves, 12)).toBeGreaterThanOrEqual(9);
   });
 
@@ -627,7 +575,7 @@ describe("P3 exit criterion — the repo fixture renders as 5 clusters (§11)", 
     // The other half of "renders as 5 clusters": collapsed, the canvas holds
     // the five roots and nothing else, with every hidden node accounted for by
     // one of them.
-    const collapsed = graphColumnModel(payload, null, { expanded: new Set(), depth: 1 }, storage(), "dark");
+    const collapsed = graphColumnModel(payload, null, { expanded: new Set() }, storage(), "dark");
     expect(collapsed.graph.nodes.map((n) => n.id).sort()).toEqual([...REPO_LIKE_ROOTS].sort());
     const hidden = collapsed.total - collapsed.visible;
     const badged = REPO_LIKE_ROOTS.map((id) => clusterAggregate(model, new Set()).clusters.get(id))
@@ -641,7 +589,7 @@ describe("P3 exit criterion — selecting anywhere highlights everywhere (§11, 
   const fixture = repoLikeGraph();
   const payload = payloadOf([...fixture.nodes], [...fixture.edges]);
   const model = viewModel(payload);
-  const everything: GraphViewState = { expanded: new Set(clusterAggregate(model, new Set()).clusters.keys()), depth: 1 };
+  const everything: GraphViewState = { expanded: new Set(clusterAggregate(model, new Set()).clusters.keys()) };
 
   it("lights the selection and its neighbours, and dims the rest", () => {
     // The derived render state, not pixels: run the column's own reducers over
@@ -683,17 +631,11 @@ describe("P3 exit criterion — selecting anywhere highlights everywhere (§11, 
     expect(a.highlight).toEqual(b.highlight);
   });
 
-  it("widens with depth, and covers more of the graph at 3 than at 1", () => {
-    const at = (depth: Depth) => graphColumnModel(payload, "note:n000", { ...everything, depth }, storage(), "dark").highlight!;
-    expect(at(2).size).toBeGreaterThan(at(1).size);
-    expect(at(3).size).toBeGreaterThan(at(2).size);
-  });
-
   it("lights a collapsed cluster when the selection's neighbour is inside it", () => {
     // With `repository` collapsed, `note:n000 --links-to--> module:src/m000`
     // has been retargeted onto `repository` — so selecting the note must light
     // the cluster standing in for the module, not nothing.
-    const collapsed: GraphViewState = { expanded: new Set(["vault"]), depth: 1 };
+    const collapsed: GraphViewState = { expanded: new Set(["vault"]) };
     const column = graphColumnModel(payload, "note:n000", collapsed, storage(), "dark");
     expect(column.highlight?.has("repository")).toBe(true);
     expect(column.graph.nodes.some((n) => n.id === "module:src/m000")).toBe(false);

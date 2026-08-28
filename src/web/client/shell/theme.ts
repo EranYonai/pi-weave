@@ -69,6 +69,7 @@ export const THEME_CSS = `
   --weave-bg:#141317;--weave-panel:#191820;--weave-fg:#e8e6ee;--weave-dim:#8f8a9c;
   --weave-faint:#5d5869;--weave-line:#26242e;--weave-line-strong:#343141;
   --weave-accent:#a48cff;--weave-ok:#4ade80;--weave-warn:#fbbf24;--weave-bad:#f87171;
+  --weave-new:rgba(164,140,255,.20);
   --weave-row:26px;--weave-gutter:10px;
 }
 @media (prefers-color-scheme: light){
@@ -76,6 +77,7 @@ export const THEME_CSS = `
     --weave-bg:#faf9f7;--weave-panel:#ffffff;--weave-fg:#1c1b19;--weave-dim:#6f6b66;
     --weave-faint:#9a958e;--weave-line:#e6e3de;--weave-line-strong:#d2cec8;
     --weave-accent:#6d4aff;--weave-ok:#15803d;--weave-warn:#b45309;--weave-bad:#b91c1c;
+    --weave-new:rgba(109,74,255,.14);
   }
 }
 body{font-size:13px}
@@ -86,7 +88,8 @@ body{font-size:13px}
   display:flex;align-items:center;gap:14px;padding:0 var(--weave-gutter);
   height:34px;border-bottom:1px solid var(--weave-line);background:var(--weave-panel);
 }
-.weave-brand{font-weight:600;letter-spacing:.01em;white-space:nowrap}
+.weave-brand{display:inline-flex;align-items:center;gap:6px;font-size:14px;font-weight:600;letter-spacing:.01em;white-space:nowrap}
+.weave-brand-mark{height:20px;width:20px;border-radius:5px}
 /* A button styled as a search field: the palette owns the only text input,
    so this opens it rather than pretending to accept a query. */
 .weave-search{
@@ -185,6 +188,17 @@ body{font-size:13px}
 }
 .weave-row:hover{background:var(--weave-line)}
 .weave-row-on{background:var(--weave-line-strong);color:var(--weave-fg)}
+/* A newly-arrived node (a file or note added since the last update, §6):
+   one short highlight that fades while the label settles from bold back to
+   normal. The class is computed from the frame diff in workspace.ts and
+   expires with it, so collapsing and re-expanding later does not replay the
+   arrival, and the first load never flashes the whole tree. */
+.weave-row-new{animation:weave-row-new 2.6s ease-out both}
+@keyframes weave-row-new{
+  0%{background:var(--weave-new);font-weight:700}
+  40%{font-weight:700}
+  100%{background:transparent;font-weight:400}
+}
 .weave-twisty{width:10px;flex:none;color:var(--weave-faint);cursor:pointer;text-align:center}
 .weave-kind{flex:none;color:var(--weave-faint);font-size:11px}
 .weave-prov{flex:none;font-size:9px}
@@ -309,7 +323,6 @@ body{font-size:13px}
   display:flex;align-items:center;gap:6px;flex-wrap:wrap;
   padding:5px var(--weave-gutter);border-top:1px solid var(--weave-line);
 }
-.weave-depth{font:inherit;font-size:10.5px;padding:3px 4px}
 .weave-graph-legend{
   margin-left:auto;display:flex;gap:9px;font-size:10.5px;color:var(--weave-faint);
   white-space:nowrap;

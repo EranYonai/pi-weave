@@ -12,7 +12,8 @@
  */
 
 import { describe, expect, it } from "vitest";
-import { CONTAINS_DISTANCE, computeLayout } from "../../src/web/shared/layout";
+import { COLLIDE_RADIUS, computeLayout } from "../../src/web/shared/layout";
+import { hashId } from "../../src/web/client/graph/positions";
 import type { Point } from "../../src/web/shared/layout";
 import type { WireGraphEdge, WireGraphNode } from "../../src/web/shared/wire";
 import {
@@ -90,7 +91,7 @@ describe("layoutFor (§7.3)", () => {
     expect(LAYOUT_TICKS).toBe(300);
     expect(LAYOUT_SEED).toBe(1);
     const direct = computeLayout(
-      { generatedAt: "", staleness: null, nodes: [...NODES], edges: [...EDGES] },
+      { generatedAt: "", staleness: null, nodes: [...NODES], edges: [...EDGES], contentDigest: "" },
       { ticks: LAYOUT_TICKS, seed: LAYOUT_SEED },
     );
     expect(layoutFor(NODES, EDGES)).toEqual(direct);
@@ -115,7 +116,7 @@ describe("layoutFor (§7.3)", () => {
     const again = layoutFor(NODES, EDGES, settled);
     for (const [id, before] of settled) {
       const after = again.get(id)!;
-      expect(Math.hypot(before.x - after.x, before.y - after.y), id).toBeLessThan(CONTAINS_DISTANCE);
+      expect(Math.hypot(before.x - after.x, before.y - after.y), id).toBeLessThan(2 * COLLIDE_RADIUS);
     }
   });
 
@@ -224,8 +225,8 @@ describe("position serialization", () => {
 
   it("rounds to a tenth of a layout unit", () => {
     // Far below one screen pixel at any usable zoom, and it roughly halves the
-    // stored string. §8 pins that a re-run from settled positions moves
-    // nothing by more than `CONTAINS_DISTANCE`, which is 700× this.
+    // stored string. §8 pins that a pinned re-run from settled positions moves
+    // nothing at all, which makes a tenth of a unit pure headroom.
     const back = deserializePositions(serializePositions("k", positions), "k");
     expect(back?.get("a")).toEqual({ x: 1.2, y: -7.9 });
   });
@@ -413,4 +414,31 @@ describe("resolveLayout — cache first, simulation second (§11 P3)", () => {
     expect(warm.cached).toBe(true);
     expect(warm.positions.size).toBe(fixture.nodes.length);
   });
+});
+
+describe("the shape digest's hash (positions.ts's cache key)", () => {
+  it("hashes ids to unsigned 32-bit values", () => {
+    for (const id of ["", "a", "note:one", "module:src/m059", "\u{1f9f5}"]) {
+      const h = hashId(id);
+      expect(Number.isInteger(h)).toBe(true);
+      expect(h).toBeGreaterThanOrEqual(0);
+      expect(h).toBeLessThan(2 ** 32);
+    }
+  });
+
+  it("is stable across calls and distinct for one-character differences", () => {
+    expect(hashId("leaf042")).toBe(hashId("leaf042"));
+    expect(hashId("a")).not.toBe(hashId("b"));
+    expect(hashId("leaf041")).not.toBe(hashId("leaf042"));
+  });
+
+  it("avalanches — the property that turns a hash into a usable angle", () => {
+    // Raw FNV-1a fails this: its high bits barely move between adjacent short
+    // ids, and `seedPositions` reads the high bits as the ring angle. Bucket
+    // 200 sequential ids by their top 4 bits; a good mixer fills all 16.
+    const buckets = new Set<number>();
+    for (let i = 0; i < 200; i++) buckets.add(hashId(`leaf${String(i).padStart(3, "0")}`) >>> 28);
+    expect(buckets.size).toBe(16);
+  });
+
 });

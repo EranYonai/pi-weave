@@ -35,7 +35,7 @@ function node(id: string, kind: NodeKind, label: string, prov: NoteSource | null
   return { id, kind, label, provenance: prov, detail };
 }
 function graph(nodes: GraphNode[], edges: GraphModel["edges"], staleness: GraphModel["staleness"] = null): GraphModel {
-  return { generatedAt: "2026-06-01T00:00:00.000Z", staleness, nodes, edges, danglingLinks: {} };
+  return { generatedAt: "2026-06-01T00:00:00.000Z", staleness, nodes, edges, danglingLinks: {}, contentDigest: "" };
 }
 const NOW = Date.parse("2026-06-01T00:00:00.000Z");
 function fakeTheme(): WeaveTheme {
@@ -53,7 +53,7 @@ function fakeLoaders(over: Partial<WeaveLoaders> = {}): WeaveLoaders {
     loadNote: async () => null,
     loadOkf: async () => null,
     openNote: async () => true,
-    rebuild: async () => ({ generatedAt: "", staleness: null, nodes: [], edges: [], danglingLinks: {} }),
+    rebuild: async () => ({ generatedAt: "", staleness: null, nodes: [], edges: [], danglingLinks: {}, contentDigest: "" }),
     ...over,
   };
 }

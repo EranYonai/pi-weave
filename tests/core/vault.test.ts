@@ -13,6 +13,7 @@ import {
   listNotes,
   noteCount,
   RAW_NOTES_HEADING,
+  RAW_TAIL_NOTICE,
   readVault,
   resolveNotePath,
   searchNotes,
@@ -99,6 +100,57 @@ describe("appendToNote", () => {
   it("returns null for unknown slugs", async () => {
     expect(await appendToNote(vault, "ghost", "text")).toBeNull();
   });
+
+  it("raw: true creates a ## Raw tail with a dated fenced block", async () => {
+    const note = await addNote(vault, { title: "Dictation", body: "compiled so far" });
+    const updated = await appendToNote(
+      vault,
+      note.slug,
+      '"we should do X"',
+      new Date(2026, 7, 23, 8, 45, 0),
+      { raw: true },
+    );
+    expect(updated?.body).toContain("compiled so far");
+    expect(updated?.body).toContain("---\n\n## Raw\n" + RAW_TAIL_NOTICE);
+    expect(updated?.body).toContain("<!-- appended 2026-08-23 08:45 -->\n```\n\"we should do X\"\n```");
+    // dictation lands below the compiled body, inside a findable tail
+    expect(extractRawTail(updated!.body)).not.toBe("");
+    expect(updated!.body.indexOf("compiled so far")).toBeLessThan(updated!.body.indexOf(RAW_NOTES_HEADING));
+  });
+
+  it("raw: true appends inside an existing tail and keeps the body above untouched", async () => {
+    const note = await addNote(vault, { title: "Dictation", body: "compiled" });
+    await appendToNote(vault, note.slug, "one", new Date(2026, 7, 23, 8, 45, 0), { raw: true });
+    const second = await appendToNote(vault, note.slug, "two", new Date(2026, 7, 23, 9, 0, 0), { raw: true });
+    expect(second?.body).toContain("```\none\n```");
+    expect(second?.body).toContain("```\ntwo\n```");
+    // still exactly one tail opening, still starting at the compiled body
+    expect(second!.body.split(RAW_NOTES_HEADING).length - 1).toBe(1);
+    expect(second!.body.startsWith("compiled\n\n---\n\n## Raw")).toBe(true);
+    // first block stays above the second (append-only order)
+    expect(second!.body.indexOf("```")).toBeLessThan(second!.body.indexOf("<!-- appended 2026-08-23 09:00 -->"));
+  });
+
+  it("plain appends stay above an existing raw tail", async () => {
+    const note = await addNote(vault, { title: "Dictation", body: "compiled" });
+    await appendToNote(vault, note.slug, "verbatim words", new Date(2026, 7, 23, 8, 45, 0), { raw: true });
+    const updated = await appendToNote(vault, note.slug, "## New section\n\nEditorial text.", new Date(2026, 7, 23, 9, 0, 0));
+    const body = updated!.body;
+    expect(body).toContain("Editorial text.");
+    // editorial addition sits between the compiled body and the raw tail
+    expect(body.indexOf("Editorial text.")).toBeGreaterThan(body.indexOf("compiled"));
+    expect(body.indexOf("Editorial text.")).toBeLessThan(body.indexOf(RAW_NOTES_HEADING));
+    // the tail survived verbatim at the bottom
+    expect(extractRawTail(body)).toContain("verbatim words");
+  });
+
+  it("plain appends stay above a tail that fills the whole body", async () => {
+    const rawOnly = "---\n\n## Raw\n" + RAW_TAIL_NOTICE + "\n\n```\nverbatim\n```";
+    const note = await addNote(vault, { title: "Raw only", body: rawOnly });
+    const updated = await appendToNote(vault, note.slug, "structured bit");
+    expect(updated?.body.startsWith("structured bit\n\n---\n\n## Raw")).toBe(true);
+    expect(extractRawTail(updated!.body)).toBe(rawOnly);
+  });
 });
 
 describe("formatRawAppend", () => {
@@ -111,6 +163,14 @@ describe("formatRawAppend", () => {
   it("defaults to current date when omitted", () => {
     const result = formatRawAppend("test");
     expect(result).toMatch(/^<!-- appended \d{4}-\d{2}-\d{2} \d{2}:\d{2} -->\n```\ntest\n```$/);
+  });
+
+  it("uses a longer fence when the verbatim text contains backticks", () => {
+    const fixed = new Date(2026, 7, 23, 8, 45, 0);
+    const tripled = formatRawAppend("said ```code``` out loud", fixed);
+    expect(tripled).toContain("\n````\nsaid ```code``` out loud\n````");
+    const quadrupled = formatRawAppend("has ```` inside", fixed);
+    expect(quadrupled).toContain("\n`````\nhas ```` inside\n`````");
   });
 });
 
@@ -166,10 +226,25 @@ describe("finalizeNote", () => {
     expect(finalized!.body.indexOf("**Decision:**")).toBeLessThan(finalized!.body.indexOf("## Raw"));
   });
 
-  it("finalizing a note with no raw tail just replaces the body", async () => {
-    const note = await addNote(vault, { title: "Plain", body: "old body" });
+  it("finalizing a note with no raw tail preserves the whole body as a new raw tail", async () => {
+    const note = await addNote(vault, { title: "Plain", body: "old dictated body" });
     const finalized = await finalizeNote(vault, note.slug, { body: "new body" });
-    expect(finalized?.body).toBe("new body");
+    expect(finalized?.body).toContain("new body");
+    expect(finalized?.body).toContain("## Raw");
+    expect(finalized?.body).toContain(RAW_TAIL_NOTICE);
+    // nothing is lost: the pre-finalize body survives verbatim below
+    expect(finalized?.body).toContain("old dictated body");
+    expect(finalized!.body.indexOf("new body")).toBeLessThan(finalized!.body.indexOf("## Raw"));
+    // the new tail is a real tail: a second finalize keeps it untouched
+    const again = await finalizeNote(vault, note.slug, { body: "newer body" });
+    expect(again?.body).toContain("newer body");
+    expect(extractRawTail(again!.body)).toBe(extractRawTail(finalized!.body));
+  });
+
+  it("finalizing an empty-body note creates no tail", async () => {
+    const note = await addNote(vault, { title: "Empty", body: "" });
+    const finalized = await finalizeNote(vault, note.slug, { body: "structured" });
+    expect(finalized?.body).toBe("structured");
     expect(finalized?.body).not.toContain("## Raw");
   });
 
@@ -311,12 +386,17 @@ describe("statNotes", () => {
 });
 
 describe("slug safety (untrusted tool input)", () => {
-  it("resolves safe slugs and rejects traversal/nested/empty ones", () => {
+  it("resolves safe slugs (including nested) and rejects traversal/empty ones", () => {
     expect(resolveNotePath(vault, "plain-slug_2")).toBe(join(vault, "notes", "plain-slug_2.md"));
+    // Nested slugs are legitimate — session memory lives in a vault
+    // subdirectory (docs/session-scan.md) — but they stay inside notes/.
+    expect(resolveNotePath(vault, "sessions/my-session")).toBe(
+      join(vault, "notes", "sessions", "my-session.md"),
+    );
     expect(resolveNotePath(vault, "../escape")).toBeNull();
     expect(resolveNotePath(vault, "../../deep/escape")).toBeNull();
+    expect(resolveNotePath(vault, "sessions/../../escape")).toBeNull();
     expect(resolveNotePath(vault, "..")).toBeNull();
-    expect(resolveNotePath(vault, "nested/note")).toBeNull();
     expect(resolveNotePath(vault, "")).toBeNull();
     expect(resolveNotePath(vault, "   ")).toBeNull();
   });

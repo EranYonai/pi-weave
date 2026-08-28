@@ -37,6 +37,7 @@ const GRAPH: GraphPayload = {
       { id: "b", kind: "note", label: "Beta", provenance: "agent", detail: {} },
     ],
     edges: [{ source: "a", target: "b", kind: "links-to" }],
+    contentDigest: "",
   },
   tags: {},
   dangling: {},

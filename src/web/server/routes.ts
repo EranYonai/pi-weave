@@ -363,6 +363,12 @@ export function toGraphPayload(model: CoreGraphModel, notes: readonly TaggedNote
  * prompted a refetch. A digest changes if and only if the bytes change, which
  * is the property both consumers actually need.
  *
+ * The digest is exact, but the payload is only an *excerpt* of the workspace:
+ * a note body below `PREVIEW_LEN` does not appear in the payload at all, so
+ * a body-only edit used to reproduce byte-identical payload and re-open the
+ * same hole through both dedupe layers. `GraphModel.contentDigest` — hashed
+ * over the note bodies themselves — closes that; see `core/graph/model.ts`.
+ *
  * `generatedAt` keeps its own, different job: it is the human-facing
  * "data as of" marker on the model, and the status bar still reads it.
  *
@@ -657,11 +663,15 @@ function normalizeEtag(value: string): string {
  * `DELETE /api/graph` and `PUT /api/note/x` answering the same `404` as any
  * other unrouted request: the family claims a request or it does not.
  *
- * The `rest` after the slug is matched **exactly**, not by prefix. A slug can
- * never legitimately contain `/` — `resolveNotePath` rejects it — so
- * `/api/note/a/b` is not a note named `a` with a sub-resource `b`, it is a
- * request for nothing, and it gets the `404` it deserves.
+ * The `rest` after the slug is matched **exactly**, not by prefix. Slugs may
+ * nest (`sessions/foo` — session memory lives in a vault subdirectory), so
+ * the family has exactly one sub-resource path (`/rename`) and everything
+ * else after a `/` belongs to the slug itself; anything else a caller
+ * appends is a request for nothing and gets the `404` it deserves. Core's
+ * `resolveNotePath` remains the traversal guard for whatever slug arrives.
  */
+const renameSuffix = "/rename";
+
 async function routeNote(
   deps: RouteDeps,
   method: string,
@@ -669,9 +679,11 @@ async function routeNote(
   req: IncomingMessage,
   res: ServerResponse,
 ): Promise<boolean> {
-  const cut = target.indexOf("/");
-  const slug = cut === -1 ? target : target.slice(0, cut);
-  const rest = cut === -1 ? "" : target.slice(cut);
+  // One sub-resource, matched at the end: a nested slug can itself contain
+  // slashes, so the split is anchored at the end, not the first slash.
+  const isRename = target.endsWith(renameSuffix);
+  const slug = isRename ? target.slice(0, target.length - renameSuffix.length) : target;
+  const rest = isRename ? renameSuffix : "";
 
   if (rest === "" && method === "GET") {
     await sendNote(deps, slug, res);

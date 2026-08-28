@@ -26,8 +26,10 @@ import { promises as fs, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 import { WorkspaceCache } from "../../src/core/cache/workspace";
+import { buildGraph } from "../../src/core/graph/build";
 import type { GraphModel as CoreGraphModel } from "../../src/core/graph/model";
 import { buildRepoIndex, writeRepoIndex } from "../../src/core/repoIndex";
+import type { Note } from "../../src/core/types";
 import { addNote } from "../../src/core/vault";
 import { DEFAULT_COOKIE_NAME } from "../../src/web/server/security";
 import {
@@ -254,6 +256,7 @@ describe("toGraphPayload", () => {
     nodes: [],
     edges: [],
     danglingLinks: {},
+    contentDigest: "",
   };
 
   it("carries a content digest as the stamp and leaves positions to the client", () => {
@@ -263,13 +266,45 @@ describe("toGraphPayload", () => {
     // turn every legitimate wire-shape change into a mystery failure here.
     const payload = toGraphPayload(EMPTY);
     expect(payload).toEqual({
-      model: { generatedAt: "2026-01-01T00:00:00.000Z", staleness: null, nodes: [], edges: [] },
+      model: {
+        generatedAt: "2026-01-01T00:00:00.000Z",
+        staleness: null,
+        nodes: [],
+        edges: [],
+        contentDigest: "",
+      },
       tags: {},
       dangling: {},
       positions: null,
       stamp: expect.stringMatching(/^[0-9a-f]{32}$/) as unknown as string,
     });
     expect(payload.stamp).not.toBe(payload.model.generatedAt);
+  });
+
+  it("changes the stamp when only a note body changes", () => {
+    // §15.6's residual blind spot: the payload carries only a display
+    // excerpt of a note body, so an edit below the fold used to reproduce
+    // byte-identical payload — and the dedupe layers on both ends discarded
+    // the frame that would have refetched the open note. The model's
+    // `contentDigest` covers the bodies themselves, so any body edit moves
+    // the stamp even when the excerpts and front matter stand still.
+    const body = "x".repeat(300);
+    const note = (text: string): Note[] => [{
+      slug: "a", title: "A", body: text, created: "", updated: "", tags: [], source: "human",
+    }];
+    const editBelowFold = buildGraph({
+      vault: { root: "/v", exists: true, noteCount: 1 },
+      notes: note(body + " — and the edit lands here"),
+      repository: null,
+    });
+    const sameLengthEdit = buildGraph({
+      vault: { root: "/v", exists: true, noteCount: 1 },
+      notes: note("y".repeat(300)),
+      repository: null,
+    });
+    expect(editBelowFold.contentDigest).not.toBe("");
+    expect(sameLengthEdit.contentDigest).not.toBe(editBelowFold.contentDigest);
+    expect(toGraphPayload(editBelowFold).stamp).not.toBe(toGraphPayload(sameLengthEdit).stamp);
   });
 
   it("changes the stamp when only `generatedAt` moves", () => {
@@ -1799,8 +1834,11 @@ describe("unrouted requests", () => {
       ["PATCH", "/api/note/alpha-note"],
       ["GET", "/api/note/alpha-note/rename"],
       ["DELETE", "/api/note/alpha-note/rename"],
-      ["POST", "/api/note/alpha-note/nonsense"],
-      ["GET", "/api/note/alpha-note/extra/deep"],
+      // Nested slugs are legitimate since session memory moved into a vault
+      // subdirectory — `/api/note/a/b` is a note request, not a sub-resource.
+      // The only sub-resource is `/rename`, matched at the end, so the
+      // unroutable shape is anything *after* that suffix.
+      ["GET", "/api/note/alpha-note/rename/extra"],
     ] as const) {
       const res = await fetch(server.url + path, {
         method,

@@ -64,7 +64,7 @@ pi -e ./src/pi/index.ts                                   # quick manual test
 pi --mode rpc -e ./src/pi/index.ts                        # machine-driven smoke test
 ```
 
-Smoke expectation: on session start pi's status line shows `🧵 vault:N · repo:unindexed|ok|stale` and, in an unindexed repo, an info
+Smoke expectation: on session start pi's status line shows `🕸️ vault:N · repo:unindexed|ok|stale` and, in an unindexed repo, an info
 notification suggests exploring.
 
 ## Style

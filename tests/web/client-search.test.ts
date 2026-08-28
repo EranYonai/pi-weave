@@ -73,7 +73,7 @@ function hit(slug: string, title: string, score: number, snippet = "…body…")
 
 function payload(nodes: WireGraphNode[]): GraphPayload {
   return {
-    model: { generatedAt: "2026-03-04T09:08:07Z", staleness: null, nodes, edges: [] },
+    model: { generatedAt: "2026-03-04T09:08:07Z", staleness: null, nodes, edges: [], contentDigest: "" },
     tags: {},
     dangling: {},
     // Still `null` on the wire (§5.3, §7.3) — the client lays out itself.

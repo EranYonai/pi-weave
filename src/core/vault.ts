@@ -1,7 +1,14 @@
-import { existsSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
 import { promises as fs } from "node:fs";
-import { isAbsolute, join, relative, sep } from "node:path";
-import { parseNoteFile, serializeNote } from "./frontmatter";
+import { dirname, isAbsolute, join, relative } from "node:path";
+import {
+  MANAGED_FRONT_MATTER_KEYS,
+  parseFrontMatter,
+  parseNoteFile,
+  quoteField,
+  serializeNote,
+  upsertFrontMatterFields,
+} from "./frontmatter";
 import { withMutationQueue } from "./mutex";
 import { NOTES_DIR, OKF_MANIFEST } from "./paths";
 import { slugify, uniqueSlug } from "./slug";
@@ -65,16 +72,21 @@ function notePath(root: string, slug: string): string {
 
 /**
  * Resolve a note slug to its on-disk path, or null when the slug is unsafe.
- * Slugs arrive from tool parameters, so they are untrusted: `../x`, nested
- * paths, and absolute escapes must never read or write outside the flat
- * <vault>/notes/ directory.
+ * Slugs arrive from tool parameters, so they are untrusted: `../x` and
+ * absolute escapes must never read or write outside `<vault>/notes/`
+ * (subdirectories *within* it are legitimate — the sessions collection).
  */
 export function resolveNotePath(root: string, slug: string): string | null {
   if (slug.trim().length === 0) return null;
   const notesDir = join(root, NOTES_DIR);
   const candidate = join(notesDir, `${slug}.md`);
   const rel = relative(notesDir, candidate);
-  if (rel.startsWith("..") || isAbsolute(rel) || rel.includes(sep)) return null;
+  // Slugs may nest (`sessions/foo`) — that is how session memory stays in an
+  // inner folder of the vault graph (docs/session-scan.md) — but they may
+  // never escape the collection: `..` segments and absolute paths resolve
+  // outside notes/ and are rejected here, at the one door every read and
+  // write walks through.
+  if (rel.startsWith("..") || isAbsolute(rel) || rel.length === 0) return null;
   return candidate;
 }
 
@@ -146,6 +158,9 @@ async function writeNote(
   frontMatter: NoteFrontMatter | undefined,
 ): Promise<Note> {
   const text = serializeNote(meta, body, frontMatter);
+  // Path-slugs (`sessions/foo`) may introduce a new subdirectory; every
+  // write path funnels through here, so this is the one mkdir that matters.
+  await fs.mkdir(dirname(path), { recursive: true });
   await fs.writeFile(path, text, "utf8");
   const parsed = parseNoteFile(text);
   return { slug, ...parsed.meta, body: parsed.body, frontMatter: parsed.frontMatter };
@@ -193,21 +208,69 @@ function withNoteLocks<T>(paths: readonly string[], task: () => Promise<T>): Pro
   )();
 }
 
+/** Options for {@link appendToNote}. */
+export interface AppendToNoteOptions {
+  /**
+   * Append as **verbatim dictation** into the `## Raw` tail (the skill's raw
+   * tail format: separator, heading, never-edit notice, dated fenced block).
+   * Creates the tail when the note does not have one yet. Use this for raw
+   * user dictation; the default plain append adds structured Markdown to the
+   * editorial body above the tail.
+   */
+  raw?: boolean;
+}
+
 /** Append Markdown to an existing note and bump `updated`. */
 export async function appendToNote(
   root: string,
   slug: string,
   addition: string,
   now: Date = new Date(),
+  options: AppendToNoteOptions = {},
 ): Promise<Note | null> {
   const path = resolveNotePath(root, slug);
   if (!path) return null;
   return withNoteLocks([path], async () => {
     const note = await getNote(root, slug);
     if (!note) return null;
-    const body = note.body.replace(/\s+$/, "") + "\n\n" + addition.trim() + "\n";
+    const tail = extractRawTail(note.body);
+    let body: string;
+    if (options.raw) {
+      // A raw append always lands at the very end of the body — which is the
+      // end of the `## Raw` tail whenever one exists — so "append at end" is
+      // the correct placement; the only branch is tail creation.
+      const block =
+        tail === ""
+          ? `${rawTailOpening()}\n\n${formatRawAppend(addition, now)}`
+          : formatRawAppend(addition, now);
+      body = note.body.replace(/\s+$/, "") + "\n\n" + block + "\n";
+    } else if (tail === "") {
+      body = note.body.replace(/\s+$/, "") + "\n\n" + addition.trim() + "\n";
+    } else {
+      // Structured additions belong to the editorial body ABOVE the tail —
+      // the raw tail stays the note's bottom, append-only and untouched.
+      const idx = note.body.lastIndexOf(tail);
+      const head = note.body.slice(0, idx).replace(/\s+$/, "");
+      body = (head ? head + "\n\n" : "") + addition.trim() + "\n\n" + tail + "\n";
+    }
     return writeNote(path, slug, { ...note, updated: now.toISOString() }, body, note.frontMatter);
   });
+}
+
+/**
+ * Pick a code fence that cannot be terminated by any backtick run inside
+ * `text` (CommonMark: a fence must be at least as long as the longest
+ * backtick run it encloses).
+ */
+function fenceFor(text: string): string {
+  let longest = 0;
+  for (const match of text.matchAll(/`+/g)) longest = Math.max(longest, match[0].length);
+  return "`".repeat(Math.max(3, longest + 1));
+}
+
+/** The canonical opening of a `## Raw` tail: separator, heading, notice. */
+function rawTailOpening(): string {
+  return `---\n\n${RAW_NOTES_HEADING}\n${RAW_TAIL_NOTICE}`;
 }
 
 /** Format a verbatim user scribble as an append-only raw block with a timestamp. */
@@ -219,12 +282,17 @@ export function formatRawAppend(rawText: string, date: Date = new Date()): strin
   const hh = pad(date.getHours());
   const min = pad(date.getMinutes());
   const timestamp = `${yyyy}-${mm}-${dd} ${hh}:${min}`;
+  const fence = fenceFor(rawText);
 
-  return `<!-- appended ${timestamp} -->\n\`\`\`\n${rawText.trim()}\n\`\`\``;
+  return `<!-- appended ${timestamp} -->\n${fence}\n${rawText.trim()}\n${fence}`;
 }
 
 /** The append-only tail where verbatim user scribbles live. */
 export const RAW_NOTES_HEADING = "## Raw";
+
+/** The never-edit notice comment at the top of a raw tail (skill format). */
+export const RAW_TAIL_NOTICE =
+  "<!-- NEVER edit below this line. Verbatim user input preserved here. -->";
 
 /**
  * Extract the raw tail (including separator line, heading, and everything after) verbatim.
@@ -273,7 +341,18 @@ export async function finalizeNote(
     const note = await getNote(root, slug);
     if (!note) return null;
     const rawTail = extractRawTail(note.body);
-    const body = input.body.trim() + (rawTail ? `\n\n${rawTail}` : "");
+    const structured = input.body.trim();
+    // A note whose body carries no `## Raw` marker yet is treated as *all*
+    // raw: the entire pre-finalize body is preserved verbatim beneath the
+    // restructured body as a freshly created tail (docs/notepad.md §4 — the
+    // user's words are never silently destroyed by finalization).
+    const body =
+      structured +
+      (rawTail !== ""
+        ? `\n\n${rawTail}`
+        : note.body.trim() === ""
+          ? ""
+          : `\n\n${rawTailOpening()}\n\n${fenceFor(note.body)}\n${note.body.trim()}\n${fenceFor(note.body)}`);
     const meta: NoteMeta = { ...note, updated: (input.now ?? new Date()).toISOString() };
     return writeNote(path, slug, meta, body, note.frontMatter);
   });
@@ -547,15 +626,184 @@ export async function deleteNote(root: string, slug: string): Promise<DeleteResu
   });
 }
 
+// ---------------------------------------------------------------------------
+// Generated-note upsert (weave-scan sessions; docs/session-scan.md)
+// ---------------------------------------------------------------------------
+
+export interface UpsertNoteInput {
+  /** Desired slug (already slug-safe); uniquified (`-2`, `-3`…) when creating. */
+  slug: string;
+  title: string;
+  body: string;
+  tags?: string[];
+  /** Defaults to `"generated"` — the safe direction for AGENTS.md rule 4. */
+  source?: NoteSource;
+  /**
+   * Extra **owned scalar** front-matter fields (e.g. `session_hash`) upserted
+   * on every write. Managed keys and syntactically unsafe keys are silently
+   * dropped: the note engine owns those, and this function will not fight it.
+   */
+  fields?: Record<string, string>;
+  /**
+   * Content identity of the generated note, when the slug alone must not
+   * decide ownership: on the create path, a candidate slug already occupied
+   * by a note carrying a **different** identity value is skipped (the slug
+   * uniquifies to `-2`, `-3`…), while a same-identity occupant is treated as
+   * ours. Without this, two generated artifacts that derive the same slug —
+   * two sessions that began with the same first message, say — would have
+   * the second silently overwrite the first, marker keys and all.
+   */
+  identity?: { field: string; value: string };
+  /** Injectable clock for tests. */
+  now?: Date;
+}
+
+/**
+ * Idempotently create-or-update a note, for generated knowledge that is
+ * re-derivable from a source of truth (a session transcript, a scan) and
+ * keyed by content the note carries in its front matter.
+ *
+ * - **Create** (no file at `slug`): canonical managed block plus the extra
+ *   fields, body as given, `created` = `updated` = now. The slug is passed
+ *   through `uniqueSlug`, so a taken slug shifts to `-2` rather than
+ *   overwriting a note the caller could not see.
+ * - **Update** (file exists): replace the body and the extra fields, bump
+ *   `updated`, and change nothing else — `title`, `created`, `tags`, unknown
+ *   front-matter keys, and the append-only `## Raw` tail all survive, per
+ *   the vault's round-trip guarantees. Title and tags are deliberately
+ *   creation-time values: the human may have retitled or retagged the note,
+ *   and a re-scan must not clobber that.
+ *
+ * Both paths hold the notes-**directory** lock (like `addNote`): the create
+ * path runs a check-then-create slug allocation that must be atomic, and the
+ * update path's `getNote`-then-write is the same lost-update window.
+ */
+export async function upsertNote(root: string, input: UpsertNoteInput): Promise<Note> {
+  await ensureVault(root);
+  return withNoteLocks([join(root, NOTES_DIR)], async () => {
+    const now = (input.now ?? new Date()).toISOString();
+    const noteAt = (slug: string) => notePath(root, slug);
+    const identity = input.identity;
+    let existing = await getNote(root, input.slug);
+    if (
+      existing !== null &&
+      identity &&
+      fieldFromFrontMatter(existing.frontMatter, identity.field) !== identity.value
+    ) {
+      // The note at this slug belongs to a different identity (or to no
+      // identity at all — a human note): never update it in place. Fall
+      // through to the create path, whose guard picks the next free slug.
+      existing = null;
+    }
+    if (existing === null) {
+      const slug = uniqueSlug(input.slug, (candidate) => {
+        if (!existsSync(noteAt(candidate))) return false; // free
+        if (!identity) return true; // slug ownership is the caller's problem
+        return occupantIdentity(root, candidate, identity.field) !== identity.value;
+      });
+      const meta: NoteMeta = {
+        title: input.title,
+        created: now,
+        updated: now,
+        tags: input.tags ?? [],
+        source: input.source ?? "generated",
+      };
+      // The managed lines below are re-rendered from `meta` by `serializeNote`
+      // (replayBlock substitutes rendered values for managed keys in place);
+      // spelling them here just fixes the block's key order.
+      const fields = sanitizeUpsertFields(input.fields);
+      const frontMatter = [
+        `title: ${quoteField(meta.title)}`,
+        `created: ${meta.created}`,
+        `updated: ${meta.updated}`,
+        `tags: [${meta.tags.map(quoteField).join(", ")}]`,
+        `source: ${meta.source}`,
+        ...upsertFrontMatterFields([], fields),
+      ];
+      return writeNote(noteAt(slug), slug, meta, input.body, frontMatter);
+    }
+    const meta: NoteMeta = { ...existing, updated: now };
+    const fields = sanitizeUpsertFields(input.fields);
+    const frontMatter = upsertFrontMatterFields(existing.frontMatter ?? [], fields);
+    const body = preserveRawTail(existing.body, input.body);
+    return writeNote(noteAt(input.slug), input.slug, meta, body, frontMatter);
+  });
+}
+
+/**
+ * The identity value carried in a note's own front-matter block, or null when
+ * absent — an absent identity never matches, so unmarked notes are never
+ * claimed as ours.
+ */
+function fieldFromFrontMatter(lines: NoteFrontMatter | undefined, field: string): string | null {
+  if (!lines) return null;
+  const parsed = parseFrontMatter(["---", ...lines, "---", ""].join("\n"));
+  if (!parsed) return null;
+  return parsed.fields.get(field) ?? null;
+}
+
+/**
+ * The identity value a note at `slug` carries in its front matter, or null
+ * when the file is missing, malformed, or does not declare the field — a
+ * null never equals a real identity value, so such a file blocks the slug.
+ */
+function occupantIdentity(root: string, slug: string, field: string): string | null {
+  let text: string;
+  try {
+    text = readFileSync(notePath(root, slug), "utf8");
+  } catch {
+    return null;
+  }
+  const parsed = parseFrontMatter(text);
+  if (!parsed) return null;
+  return parsed.fields.get(field) ?? null;
+}
+
+/**
+ * Drop fields this function has no business writing: managed keys (the note
+ * engine renders those from `NoteMeta`) and keys that are not plain scalar
+ * identifiers (a hostile key could smuggle newlines or `---` into the block).
+ * Values are guarded by `quoteField` at render time.
+ */
+function sanitizeUpsertFields(fields: Record<string, string> | undefined): Record<string, string> {
+  if (!fields) return {};
+  const managed = new Set<string>(MANAGED_FRONT_MATTER_KEYS);
+  const out: Record<string, string> = {};
+  for (const [key, value] of Object.entries(fields)) {
+    if (managed.has(key)) continue;
+    if (!/^[A-Za-z][A-Za-z0-9_-]*$/.test(key)) continue;
+    out[key] = value;
+  }
+  return out;
+}
+
 async function listNoteFiles(root: string): Promise<string[]> {
   const dir = join(root, NOTES_DIR);
-  let entries: string[];
-  try {
-    entries = await fs.readdir(dir);
-  } catch {
-    return [];
+  const out: string[] = [];
+  // Recursive by design: vault notes may nest (`sessions/<name>` — session
+  // memory lives in an inner folder of the graph, docs/session-scan.md), and
+  // every consumer above this function (list, search, graph, cache) speaks
+  // in slugs, so the relative path *is* the slug.
+  async function walk(prefix: string): Promise<void> {
+    let entries;
+    try {
+      entries = await fs.readdir(prefix.length > 0 ? join(dir, prefix) : dir, { withFileTypes: true });
+    } catch {
+      return; // missing vault — nothing to list
+    }
+    for (const entry of entries) {
+      if (entry.isDirectory()) {
+        await walk(prefix.length > 0 ? `${prefix}/${entry.name}` : entry.name);
+        continue;
+      }
+      if (entry.isFile() && entry.name.endsWith(".md")) {
+        const slug = prefix.length > 0 ? `${prefix}/${entry.name}` : entry.name;
+        out.push(slug);
+      }
+    }
   }
-  return entries.filter((name) => name.endsWith(".md")).sort();
+  await walk("");
+  return out.sort();
 }
 
 /**

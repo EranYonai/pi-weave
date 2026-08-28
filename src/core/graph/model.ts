@@ -84,4 +84,19 @@ export interface GraphModel {
    * unchanged inputs.
    */
   danglingLinks: Record<string, string[]>;
+  /**
+   * Content fingerprint of the note bodies the graph was built from
+   * (SHA-256 over `slug\0body-digest` pairs in slug order, truncated to
+   * 128 bits of hex).
+   *
+   * Exists so the wire payload's stamp — the digest the ETag and the SSE
+   * dedupe both key on — is sensitive to a **body-only** edit. The payload
+   * itself carries only display excerpts of a note (`detail.preview`, the
+   * first 240 flattened characters), so an edit below the fold with
+   * unchanged front matter used to leave the payload byte-identical: the
+   * frame was deduped away and the open note stayed stale until a manual
+   * reload. The digest is a function of content only, so it keeps the
+   * byte-determinism contract.
+   */
+  contentDigest: string;
 }

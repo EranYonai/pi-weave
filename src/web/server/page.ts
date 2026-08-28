@@ -43,6 +43,7 @@
  */
 
 import { randomBytes } from "node:crypto";
+import { LOGO_MARK_B64, LOGO_MARK_MIME } from "../shared/logo";
 import type { Bootstrap } from "../shared/wire";
 import { BOOTSTRAP_ELEMENT_ID } from "../shared/wire";
 
@@ -236,6 +237,7 @@ export function renderPage(opts: RenderPageOptions): RenderedPage {
     '<meta name="viewport" content="width=device-width,initial-scale=1">',
     '<meta name="referrer" content="no-referrer">',
     "<title>pi-weave workspace</title>",
+    `<link rel="icon" type="image/png" href="data:${escapeAttr(LOGO_MARK_MIME)};base64,${escapeAttr(LOGO_MARK_B64)}">`,
     `<style nonce="${escapeAttr(nonce)}">`,
     THEME_CSS,
     "</style>",

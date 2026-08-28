@@ -64,22 +64,22 @@ describe("formatStatusLine", () => {
   const vault = { root: "/v", exists: true, noteCount: 3 };
 
   it("vault only", () => {
-    expect(formatStatusLine({ cwd: "/x", vault, repository: null })).toBe("🧵 vault:3");
+    expect(formatStatusLine({ cwd: "/x", vault, repository: null })).toBe("🕸️ vault:3");
   });
 
   it("unindexed repo", () => {
     const repo = { root: "/r", name: "r", indexed: false, staleness: { state: "missing" as const, reasons: [] }, summaryCount: 0 };
-    expect(formatStatusLine({ cwd: "/r", vault, repository: repo })).toBe("🧵 vault:3 · repo:unindexed");
+    expect(formatStatusLine({ cwd: "/r", vault, repository: repo })).toBe("🕸️ vault:3 · repo:unindexed");
   });
 
   it("indexed fresh repo", () => {
     const repo = { root: "/r", name: "r", indexed: true, staleness: { state: "fresh" as const, reasons: [] }, summaryCount: 0 };
-    expect(formatStatusLine({ cwd: "/r", vault, repository: repo })).toBe("🧵 vault:3 · r:ok");
+    expect(formatStatusLine({ cwd: "/r", vault, repository: repo })).toBe("🕸️ vault:3 · r:ok");
   });
 
   it("indexed stale repo", () => {
     const repo = { root: "/r", name: "r", indexed: true, staleness: { state: "stale" as const, reasons: [] }, summaryCount: 0 };
-    expect(formatStatusLine({ cwd: "/r", vault, repository: repo })).toBe("🧵 vault:3 · r:stale");
+    expect(formatStatusLine({ cwd: "/r", vault, repository: repo })).toBe("🕸️ vault:3 · r:stale");
   });
 });
 

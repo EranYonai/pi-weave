@@ -30,6 +30,7 @@ import { domEventSource } from "../live";
 import { createEditor, watchUnload, type EditorHandle } from "../note/editor.controller";
 import { editorPrompt, editorToolbar, initialEditorState, shouldBlockUnload } from "../note/editor.model";
 import { SearchPalette } from "../search/SearchPalette";
+import { restoreSelection, saveSelection } from "../selection.storage";
 import { connection, graph, noteBody, selectedId } from "../state";
 import type { WorkspaceHandle } from "../workspace";
 import { observeNotes, select, startWorkspace } from "../workspace";
@@ -82,6 +83,22 @@ export function Shell(props: ShellProps) {
     workspace.current = handle;
     return () => handle.stop();
   }, []);
+
+  // §1.3 continuity: a reload keeps the note you were reading. Saving is
+  // gated on the restore decision so the mount-time `null` cannot wipe the
+  // saved id before the first graph arrives to validate it against.
+  const selectionRestored = useRef(false);
+  useEffect(() => {
+    if (!selectionRestored.current) return;
+    saveSelection(localStorage, selectedId.value);
+  }, [selectedId.value]);
+  useEffect(() => {
+    if (selectionRestored.current || graph.value === null) return;
+    selectionRestored.current = true;
+    if (selectedId.value !== null) return;
+    const saved = restoreSelection(graph.value, localStorage);
+    if (saved !== null) void select(fetchJson, saved);
+  }, [graph.value]);
 
   // Every note that arrives, from any of the three directions it can arrive
   // from (mount, selection, SSE refetch), so the editor can decide whether it

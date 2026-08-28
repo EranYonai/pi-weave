@@ -32,7 +32,7 @@ function edge(source: string, target: string, kind: GraphEdge["kind"] = "contain
 }
 
 function model(nodes: GraphNode[], edges: GraphEdge[]): GraphModel {
-  return { generatedAt: STAMP, staleness: null, nodes, edges, danglingLinks: {} };
+  return { generatedAt: STAMP, staleness: null, nodes, edges, danglingLinks: {}, contentDigest: "" };
 }
 
 /** Zero-padded suffix so ids sort the way they were generated. */

@@ -94,6 +94,12 @@ export interface GraphRenderer {
   fit(): void;
   /** Current positions, for warm-starting a re-run. */
   positions(): Map<string, Point>;
+  /** Called when the user starts dragging a node. */
+  onDragStart(handler: (id: string) => void): void;
+  /** Called with graph-space coordinates while a node is dragged. */
+  onDragMove(handler: (id: string, at: Point) => void): void;
+  /** Called when a node drag ends. */
+  onDragEnd(handler: (id: string) => void): void;
   /** Tear down. Idempotent, and must leave no listener behind. */
   destroy(): void;
 }
@@ -130,6 +136,9 @@ export function nullRenderer(): GraphRenderer {
     setHighlight() {},
     onSelect() {},
     fit() {},
+    onDragStart() {},
+    onDragMove() {},
+    onDragEnd() {},
     positions() {
       return new Map();
     },
@@ -174,8 +183,13 @@ export interface CameraLike {
 export interface SigmaLike {
   on(event: "clickNode", handler: (payload: { node: string }) => void): unknown;
   on(event: "clickStage", handler: () => void): unknown;
+  on(event: "downNode", handler: (payload: { node: string }) => void): unknown;
+  on(event: "moveBody", handler: (payload: { event: { x: number; y: number }; preventSigmaDefault(): void }) => void): unknown;
+  on(event: "upNode" | "upStage", handler: () => void): unknown;
+  viewportToGraph(position: { x: number; y: number }): Point;
   setSetting(key: "nodeReducer", value: (id: string, data: RenderNode) => NodeDisplayOverride): unknown;
   setSetting(key: "edgeReducer", value: (key: string, data: RenderEdge) => EdgeDisplayOverride): unknown;
+  setSetting(key: "enableCameraPanning", value: boolean): unknown;
   setGraph(graph: ProjectedGraph): unknown;
   refresh(): unknown;
   getCamera(): CameraLike;
@@ -212,6 +226,21 @@ export function sigmaRenderer(create: SigmaFactory, scheme: ColorScheme): GraphR
   let graph: ProjectedGraph = project({ nodes: [], edges: [] });
   let highlight: ReadonlySet<string> | null = null;
   let select: (id: string | null) => void = () => {};
+  let dragStart: (id: string) => void = () => {};
+  let dragMove: (id: string, at: Point) => void = () => {};
+  let dragEnd: (id: string) => void = () => {};
+  let dragging: string | null = null;
+
+  const endDrag = (id: string | null): void => {
+    if (dragging === null) return;
+    const current = dragging;
+    dragging = null;
+    // A node drag is a pin, not a pan: sigma's captor would otherwise move the
+    // camera on the same gesture that is moving the node, and the node would
+    // slide away from the cursor. Re-enable panning only when the drag ends.
+    sigma?.setSetting("enableCameraPanning", true);
+    if (id === null || id === current) dragEnd(current);
+  };
 
   /**
    * Push the current highlight into sigma's reducers (§7.4).
@@ -236,6 +265,26 @@ export function sigmaRenderer(create: SigmaFactory, scheme: ColorScheme): GraphR
       // the tree and the context rail all recompute from it.
       instance.on("clickNode", ({ node }) => select(node));
       instance.on("clickStage", () => select(null));
+      instance.on("downNode", ({ node }) => {
+        dragging = node;
+        // Hold the view still while the node follows the cursor (see endDrag).
+        sigma?.setSetting("enableCameraPanning", false);
+        dragStart(node);
+      });
+      instance.on("moveBody", (payload) => {
+        if (dragging !== null) {
+          // Sigma's captor pans the camera on every mouse move while the
+          // button is down; during a node drag that is the pan the gesture
+          // must not be. `preventSigmaDefault` is the captor's own gate — it
+          // is consulted right after this handler returns — and without it
+          // the camera follows the cursor 1:1 while the pin follows it too,
+          // so the node appears to slide away under the view.
+          payload.preventSigmaDefault();
+          dragMove(dragging, instance.viewportToGraph({ x: payload.event.x, y: payload.event.y }));
+        }
+      });
+      instance.on("upNode", () => endDrag(dragging));
+      instance.on("upStage", () => endDrag(null));
       applyReducers(instance);
       sigma = instance;
     },
@@ -261,6 +310,18 @@ export function sigmaRenderer(create: SigmaFactory, scheme: ColorScheme): GraphR
       select = handler;
     },
 
+    onDragStart(handler) {
+      dragStart = handler;
+    },
+
+    onDragMove(handler) {
+      dragMove = handler;
+    },
+
+    onDragEnd(handler) {
+      dragEnd = handler;
+    },
+
     fit() {
       // `animatedReset` settles when the animation ends. Nothing awaits a
       // camera move, and a rejection from a camera killed mid-flight is noise.
@@ -270,7 +331,6 @@ export function sigmaRenderer(create: SigmaFactory, scheme: ColorScheme): GraphR
     positions() {
       return positionsOf(graph);
     },
-
     destroy() {
       sigma?.kill();
       sigma = null;

@@ -38,7 +38,7 @@ function fakeLoaders(over: Partial<WeaveLoaders> = {}): WeaveLoaders & { openNot
       openNoteCalls.push(slug);
       return true;
     },
-    rebuild: async () => ({ generatedAt: "", staleness: null, nodes: [], edges: [], danglingLinks: {} }),
+    rebuild: async () => ({ generatedAt: "", staleness: null, nodes: [], edges: [], danglingLinks: {}, contentDigest: "" }),
     openNoteCalls,
     ...over,
   } as WeaveLoaders & { openNoteCalls: string[] };
@@ -49,7 +49,7 @@ function node(id: string, kind: GraphNode["kind"], label: string, prov: NoteSour
 }
 
 function graph(nodes: GraphNode[], edges: GraphModel["edges"], staleness: GraphModel["staleness"] = null): GraphModel {
-  return { generatedAt: "2026-06-01T00:00:00.000Z", staleness, nodes, edges, danglingLinks: {} };
+  return { generatedAt: "2026-06-01T00:00:00.000Z", staleness, nodes, edges, danglingLinks: {}, contentDigest: "" };
 }
 
 function explorer(model: GraphModel, opts: { rows?: number; loaders?: Partial<WeaveLoaders>; done?: (r: null) => void } = {}) {

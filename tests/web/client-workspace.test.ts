@@ -16,8 +16,15 @@ import { afterEach, describe, expect, it } from "vitest";
 import type { FetchLike, HttpRequest, HttpResponse } from "../../src/web/client/api";
 import type { EventSourceLike } from "../../src/web/client/live";
 import { SOCKET_CLOSED, SOCKET_CONNECTING } from "../../src/web/client/live.model";
-import { connection, graph, noteBody, selectedId } from "../../src/web/client/state";
-import { noteSlug, observeNotes, resetWorkspace, select, startWorkspace } from "../../src/web/client/workspace";
+import { connection, graph, noteBody, recentIds, selectedId } from "../../src/web/client/state";
+import {
+  addedNodeIds,
+  noteSlug,
+  observeNotes,
+  resetWorkspace,
+  select,
+  startWorkspace,
+} from "../../src/web/client/workspace";
 import { CHANGE_EVENT_NAME } from "../../src/web/shared/wire";
 import type { GraphPayload, NotePayload, ViewNote } from "../../src/web/shared/wire";
 
@@ -34,6 +41,7 @@ function payloadAt(stamp: string): GraphPayload {
       staleness: null,
       nodes: [{ id: "note:alpha", kind: "note", label: "Alpha", provenance: "human", detail: {} }],
       edges: [],
+      contentDigest: "",
     },
     tags: {},
     dangling: {},
@@ -561,5 +569,110 @@ describe("resetWorkspace", () => {
     expect(graph.value).toBeNull();
     expect(noteBody.value).toBeNull();
     expect(connection.value).toBe("live");
+    expect(recentIds.value.size).toBe(0);
+  });
+});
+
+describe("addedNodeIds", () => {
+  it("flags nothing on the mount fetch — a first load is not 'new'", () => {
+    expect(addedNodeIds(null, payloadAt("s1")).size).toBe(0);
+  });
+
+  it("flags ids the previous payload did not have", () => {
+    const next = payloadAt("s2");
+    next.model.nodes = [
+      ...next.model.nodes,
+      { id: "file:new.ts", kind: "file", label: "new.ts", provenance: null, detail: {} },
+    ];
+    const added = addedNodeIds(payloadAt("s1"), next);
+    expect(added.has("file:new.ts")).toBe(true);
+    expect(added.has("note:alpha")).toBe(false);
+  });
+
+  it("flags nothing when the node set is unchanged", () => {
+    expect(addedNodeIds(payloadAt("s1"), payloadAt("s1")).size).toBe(0);
+  });
+
+  it("flags an id that left and returned", () => {
+    const gone = payloadAt("s2");
+    gone.model.nodes = [];
+    const back = payloadAt("s3");
+    expect(addedNodeIds(payloadAt("s1"), gone).has("note:alpha")).toBe(false);
+    expect(addedNodeIds(gone, back).has("note:alpha")).toBe(true);
+  });
+});
+
+describe("recent arrivals (tree flash)", () => {
+  it("the mount fetch flags nothing", async () => {
+    const fetch = router({ graph: () => ({ status: 200, body: payloadAt("s1") }) });
+    const handle = startWorkspace({ fetch, open: () => fakeSource() });
+    await settle();
+    expect(recentIds.value.size).toBe(0);
+    handle.stop();
+  });
+
+  it("a frame that adds a node flags exactly the addition, then the timer clears it", async () => {
+    let body = payloadAt("s1");
+    const fetch = router({
+      graph: () => ({ status: 200, body }),
+      note: () => ({ status: 404, body: {} }),
+    });
+    const source = fakeSource();
+    const deferred: Array<{ fn: () => void; ms: number; cancel: () => void }> = [];
+    const defer = (fn: () => void, ms: number) => {
+      const entry = { fn, ms, cancel: () => undefined };
+      entry.cancel = () => {
+        entry.fn = () => undefined;
+      };
+      deferred.push(entry);
+      return entry.cancel;
+    };
+    const handle = startWorkspace({ fetch, open: () => source, defer });
+    await settle();
+
+    const next = payloadAt("s2");
+    next.model.nodes = [
+      ...next.model.nodes,
+      { id: "file:new.ts", kind: "file", label: "new.ts", provenance: null, detail: {} },
+    ];
+    body = next;
+    source.emit(JSON.stringify({ scope: "vault", stamp: "s2" }));
+    await settle();
+
+    expect(recentIds.value.has("file:new.ts")).toBe(true);
+    expect(recentIds.value.has("note:alpha")).toBe(false);
+
+    deferred[0]?.fn();
+    expect(recentIds.value.size).toBe(0);
+    handle.stop();
+  });
+
+  it("stop clears the flag and cancels the pending expiry", async () => {
+    let body = payloadAt("s1");
+    const fetch = router({ graph: () => ({ status: 200, body }) });
+    const source = fakeSource();
+    const deferred: Array<{ fn: () => void; ms: number; ran: boolean; cancelRan: boolean }> = [];
+    const defer = (fn: () => void, ms: number) => {
+      const entry = { fn, ms, ran: false, cancelRan: false };
+      deferred.push(entry);
+      return () => {
+        entry.cancelRan = true;
+      };
+    };
+    const handle = startWorkspace({ fetch, open: () => source, defer });
+    await settle();
+
+    body = payloadAt("s2");
+    body.model.nodes = [
+      ...body.model.nodes,
+      { id: "file:new.ts", kind: "file", label: "new.ts", provenance: null, detail: {} },
+    ];
+    source.emit(JSON.stringify({ scope: "vault", stamp: "s2" }));
+    await settle();
+    expect(recentIds.value.has("file:new.ts")).toBe(true);
+
+    handle.stop();
+    expect(recentIds.value.size).toBe(0);
+    expect(deferred[0]?.cancelRan).toBe(true);
   });
 });

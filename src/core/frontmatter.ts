@@ -290,6 +290,59 @@ export function parseFrontMatter(text: string): ParsedFrontMatter | null {
 }
 
 /**
+ * Upsert owned scalar fields into a front-matter block, preserving order.
+ *
+ * For each wanted key: the **first** line declaring it is replaced with a
+ * fresh `key: value` line in place, and any later declarations are dropped —
+ * mirroring how duplicate managed keys collapse in `replayBlock` (the
+ * subset parser keeps the last occurrence, so collapsing to one line with
+ * the fresh value is the consistent outcome). A key introducing a block
+ * construct (`scalar: false`) is replaced too: the value this function writes
+ * is a scalar, and leaving the old block head in place would orphan its
+ * indented children under a duplicated key.
+ *
+ * Wanted keys the block never declared are appended at the end, in the order
+ * given. Everything else — unknown keys, blank lines, junk — is carried
+ * through byte-identically, the same round-trip contract `serializeNote`
+ * honors for the note engine's writes.
+ *
+ * Keys arrive from pi-weave's own generated-note writers (`session_id`,
+ * `session_hash`, …); there is no escaping for the *key* because a key is
+ * caller-controlled code, not user input — `quoteField` guards the value.
+ */
+export function upsertFrontMatterFields(
+  lines: NoteFrontMatter,
+  fields: Record<string, string>,
+): NoteFrontMatter {
+  const wanted = new Set(Object.keys(fields));
+  const out: string[] = [];
+  const written = new Set<string>();
+  let inDroppedBlock = false;
+  for (const line of scanFrontMatter(lines)) {
+    // Continuation lines of a block construct whose head we replaced: their
+    // parent key is gone, so carrying them would leave orphaned YAML children
+    // under a scalar. The block ends at the first non-indented line.
+    if (inDroppedBlock) {
+      if (/^\s/.test(line.text)) continue;
+      inDroppedBlock = false;
+    }
+    if (line.key !== null && wanted.has(line.key)) {
+      if (!written.has(line.key)) {
+        out.push(`${line.key}: ${quoteField(fields[line.key] ?? "")}`);
+        written.add(line.key);
+        if (!line.scalar) inDroppedBlock = true; // swallow the block body too
+      }
+      continue; // later duplicates collapse into the first occurrence
+    }
+    out.push(line.text);
+  }
+  for (const [key, value] of Object.entries(fields)) {
+    if (!written.has(key)) out.push(`${key}: ${quoteField(value)}`);
+  }
+  return out;
+}
+
+/**
  * Parse a note file. Throws on missing/invalid front matter so callers can
  * treat the file as malformed rather than guessing.
  */
