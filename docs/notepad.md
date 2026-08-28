@@ -1054,7 +1054,7 @@ Grounding the spec in what exists today:
 
 | Spec concept | Current primitive | Gap |
 | --- | --- | --- |
-| Capture (§4, §7) | `weave_note` add/append via the skill | Explicit by design (redesign 2026-08): capture only on request; finalization is editorial, raw tail preserved. **Implemented:** `finalizeNote` in `src/core/vault.ts` + `weave_note` action=finalize restructure the body above the `## Raw notes` tail and preserve it verbatim. **Dictation mode:** finalize is called after every interactive append so the body stays continuously compiled (see §7). |
+| Capture (§4, §7) | `weave_note` add/append via the skill | Explicit by design (redesign 2026-08): capture only on request; finalization is editorial, raw tail preserved. **Implemented:** `finalizeNote` in `src/core/vault.ts` + `weave_note` action=finalize restructure the body above the `## Raw notes` tail and preserve it verbatim. **Dictation mode:** finalize is called after every interactive append so the body stays continuously compiled (see §7). **Implemented (2026-08):** `append` with `raw: true` appends verbatim dictation into the `## Raw` tail (dated fenced block, tail auto-created); a body with no tail yet is preserved in full as a new tail on finalize; plain appends stay above an existing tail. |
 | Retrieval (§17, §18) | `weave_note` search/get with snippets; exact + body search | Semantic/graph/temporal/provenance retrieval variants are future work |
 | Repository scope (§11, §12) | `weave_repo` status/scan/overview; auto-detect on session start | Repo *entity* references inside notes (clickable) need the viewer + richer index levels (design §9) |
 | Visualization (§9, §10, §20) | none | [weave-view.md](weave-view.md) is the planned layer |

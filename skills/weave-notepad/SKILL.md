@@ -15,9 +15,16 @@ In pi, use the `weave_note` tool. In other harnesses (or when the tool is not av
 - **Notes** live at `~/.okf/notes/<slug>.md` (vault root overridable via `PI_WEAVE_VAULT`).
 - Each note has YAML front matter: `title`, `created`, `updated` (ISO-8601), `tags: [..]`, and `source: human | agent | generated`.
 - `weave_note` actions: `list`, `get`, `add`, `append`, `finalize`, `search`. `finalize` restructures the body *above* the `## Raw` tail and
-  preserves the tail verbatim.
+  preserves the tail verbatim — a body with no tail yet is preserved **in full** as a newly created tail, so finalization never destroys
+  dictation.
+- **Dictation appends**: use `append` with `raw: true` — the tool appends the text verbatim into the `## Raw` tail as a dated fenced block,
+  creating the tail if the note has none. In pi, never hand-format the raw tail; the tool maintains it.
 
 ## Raw Tail Format
+
+In pi you rarely format this by hand: `weave_note` append with `raw: true` appends a dated fenced block into the tail (and creates the whole
+tail — separator, heading, notice — when the note has none). The format below is what that produces, and what to write when editing files
+directly or working in other harnesses.
 
 Every note maintains a verbatim, append-only raw section at the bottom separated by a horizontal rule (`---`):
 
@@ -50,7 +57,8 @@ Every note maintains a verbatim, append-only raw section at the bottom separated
 During live dictation / interview note-taking (see the skill description), Pi does **not** wait until the end to organize the note. Every
 interactive append is immediately compiled into the body:
 
-1. **Append the raw words verbatim** to the `## Raw` tail as usual (a dated `<!-- appended YYYY-MM-DD HH:MM -->` code block).
+1. **Append the raw words verbatim** into the `## Raw` tail (`weave_note` action=append with `raw: true` — the tool adds the dated code block
+   and creates the tail if missing).
 2. **Then immediately finalize** (`weave_note` action=finalize): rewrite the body *above* the `## Raw` tail — front-loaded summary,
    sections, decisions, questions, tasks, entities, links — so the compiled document reflects everything said so far.
 3. **Never rewrite or remove the `## Raw` tail.** It stays append-only and verbatim; only the body above it changes.
@@ -74,13 +82,14 @@ down". Never promote conversation into a note on your own initiative — capture
 1. **Search first** (`weave_note` action=search): if a note exists, `append` to it rather than creating a duplicate.
 2. Title: short noun phrase ("Auth boundary decision", not "Notes").
 3. **Scribble in, verbatim.** When the user is dictating, append their words to the note as rough, verbatim scribbles — no silent rewording.
-   Keep them under the `## Raw` tail format at the end of the note.
+   Append with `raw: true` so they land under the `## Raw` tail at the end of the note (the tail is created automatically if missing).
 4. **Compile continuously during dictation.** After *every* interactive append in dictation mode, immediately finalize the body *above* the
    raw tail so the compiled doc stays current (see [Dictation mode](#dictation-mode-continuous-compile)). Outside dictation mode,
    compilation stays on request.
 5. **Finalize on request.** When the user says "finalize this" / "clean this up", restructure the body *above* the raw tail: front-loaded
    summary, sections, entities, links. Use `weave_note` action=finalize (or edit the file directly in other harnesses). Move nothing out of
-   `## Raw` — it is append-only and never rewritten.
+   `## Raw` — it is append-only and never rewritten. A note with no `## Raw` tail yet gets its entire pre-finalize body preserved as a new
+   raw tail: finalization is editorial, never destructive.
 6. Tags: 1–4 lowercase tags; reuse existing tags when possible.
 7. Provenance: notes the user scribbled stay `source: human` (finalization is editorial, not authorship) — pass `source: "human"` to `add`
    for user-scribbled notes. Notes you draft from scratch are `source: agent` (the default). Never overwrite a `source: human` note's

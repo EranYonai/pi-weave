@@ -193,21 +193,69 @@ function withNoteLocks<T>(paths: readonly string[], task: () => Promise<T>): Pro
   )();
 }
 
+/** Options for {@link appendToNote}. */
+export interface AppendToNoteOptions {
+  /**
+   * Append as **verbatim dictation** into the `## Raw` tail (the skill's raw
+   * tail format: separator, heading, never-edit notice, dated fenced block).
+   * Creates the tail when the note does not have one yet. Use this for raw
+   * user dictation; the default plain append adds structured Markdown to the
+   * editorial body above the tail.
+   */
+  raw?: boolean;
+}
+
 /** Append Markdown to an existing note and bump `updated`. */
 export async function appendToNote(
   root: string,
   slug: string,
   addition: string,
   now: Date = new Date(),
+  options: AppendToNoteOptions = {},
 ): Promise<Note | null> {
   const path = resolveNotePath(root, slug);
   if (!path) return null;
   return withNoteLocks([path], async () => {
     const note = await getNote(root, slug);
     if (!note) return null;
-    const body = note.body.replace(/\s+$/, "") + "\n\n" + addition.trim() + "\n";
+    const tail = extractRawTail(note.body);
+    let body: string;
+    if (options.raw) {
+      // A raw append always lands at the very end of the body — which is the
+      // end of the `## Raw` tail whenever one exists — so "append at end" is
+      // the correct placement; the only branch is tail creation.
+      const block =
+        tail === ""
+          ? `${rawTailOpening()}\n\n${formatRawAppend(addition, now)}`
+          : formatRawAppend(addition, now);
+      body = note.body.replace(/\s+$/, "") + "\n\n" + block + "\n";
+    } else if (tail === "") {
+      body = note.body.replace(/\s+$/, "") + "\n\n" + addition.trim() + "\n";
+    } else {
+      // Structured additions belong to the editorial body ABOVE the tail —
+      // the raw tail stays the note's bottom, append-only and untouched.
+      const idx = note.body.lastIndexOf(tail);
+      const head = note.body.slice(0, idx).replace(/\s+$/, "");
+      body = (head ? head + "\n\n" : "") + addition.trim() + "\n\n" + tail + "\n";
+    }
     return writeNote(path, slug, { ...note, updated: now.toISOString() }, body, note.frontMatter);
   });
+}
+
+/**
+ * Pick a code fence that cannot be terminated by any backtick run inside
+ * `text` (CommonMark: a fence must be at least as long as the longest
+ * backtick run it encloses).
+ */
+function fenceFor(text: string): string {
+  let longest = 0;
+  for (const match of text.matchAll(/`+/g)) longest = Math.max(longest, match[0].length);
+  return "`".repeat(Math.max(3, longest + 1));
+}
+
+/** The canonical opening of a `## Raw` tail: separator, heading, notice. */
+function rawTailOpening(): string {
+  return `---\n\n${RAW_NOTES_HEADING}\n${RAW_TAIL_NOTICE}`;
 }
 
 /** Format a verbatim user scribble as an append-only raw block with a timestamp. */
@@ -219,12 +267,17 @@ export function formatRawAppend(rawText: string, date: Date = new Date()): strin
   const hh = pad(date.getHours());
   const min = pad(date.getMinutes());
   const timestamp = `${yyyy}-${mm}-${dd} ${hh}:${min}`;
+  const fence = fenceFor(rawText);
 
-  return `<!-- appended ${timestamp} -->\n\`\`\`\n${rawText.trim()}\n\`\`\``;
+  return `<!-- appended ${timestamp} -->\n${fence}\n${rawText.trim()}\n${fence}`;
 }
 
 /** The append-only tail where verbatim user scribbles live. */
 export const RAW_NOTES_HEADING = "## Raw";
+
+/** The never-edit notice comment at the top of a raw tail (skill format). */
+export const RAW_TAIL_NOTICE =
+  "<!-- NEVER edit below this line. Verbatim user input preserved here. -->";
 
 /**
  * Extract the raw tail (including separator line, heading, and everything after) verbatim.
@@ -273,7 +326,18 @@ export async function finalizeNote(
     const note = await getNote(root, slug);
     if (!note) return null;
     const rawTail = extractRawTail(note.body);
-    const body = input.body.trim() + (rawTail ? `\n\n${rawTail}` : "");
+    const structured = input.body.trim();
+    // A note whose body carries no `## Raw` marker yet is treated as *all*
+    // raw: the entire pre-finalize body is preserved verbatim beneath the
+    // restructured body as a freshly created tail (docs/notepad.md §4 — the
+    // user's words are never silently destroyed by finalization).
+    const body =
+      structured +
+      (rawTail !== ""
+        ? `\n\n${rawTail}`
+        : note.body.trim() === ""
+          ? ""
+          : `\n\n${rawTailOpening()}\n\n${fenceFor(note.body)}\n${note.body.trim()}\n${fenceFor(note.body)}`);
     const meta: NoteMeta = { ...note, updated: (input.now ?? new Date()).toISOString() };
     return writeNote(path, slug, meta, body, note.frontMatter);
   });

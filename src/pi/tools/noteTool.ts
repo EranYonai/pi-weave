@@ -5,6 +5,7 @@ import { Type } from "typebox";
 import {
   addNote,
   appendToNote,
+  extractRawTail,
   finalizeNote,
   formatNote,
   formatRawAppend,
@@ -30,7 +31,8 @@ export function registerNoteTool(pi: ExtensionAPI): void {
     description:
       "Read and write notes in the pi-weave vault — a persistent, human-readable knowledge base " +
       "of Markdown notes. Actions: list (all notes), get (one note by slug), add (new note), " +
-      "append (extend a note), finalize (restructure a note above its raw tail), search (title/tags/body). " +
+      "append (extend a note; raw=true appends verbatim dictation into the ## Raw tail), " +
+      "finalize (restructure a note above its raw tail), search (title/tags/body). " +
       "Use it to remember decisions, facts, and user preferences across sessions.",
     promptSnippet: "Remember and retrieve durable knowledge in the pi-weave vault",
     promptGuidelines: [
@@ -43,6 +45,7 @@ export function registerNoteTool(pi: ExtensionAPI): void {
       text: Type.Optional(Type.String({ description: "Markdown body (add), addition (append), or restructured body above the raw tail (finalize)" })),
       tags: Type.Optional(Type.Array(Type.String(), { description: "Tags (add)" })),
       slug: Type.Optional(Type.String({ description: "Note slug (get, append, finalize)" })),
+      raw: Type.Optional(Type.Boolean({ description: "append: add text as verbatim dictation to the ## Raw tail (timestamped fenced block; tail created if missing). Use for dictation/scribbles; omit for structured Markdown additions" })),
       source: Type.Optional(StringEnum(["human", "agent"] as const, { description: "Provenance (add): human for user-scribbled notes, agent for Pi-drafted (default agent)" })),
       query: Type.Optional(Type.String({ description: "Search query (search)" })),
     }),
@@ -117,12 +120,14 @@ export function registerNoteTool(pi: ExtensionAPI): void {
           // Serialized read-modify-write: parallel weave_note appends (and
           // pi's own file tools) targeting the same note would otherwise
           // lose each other's additions.
-          const note = await withMutationQueue(path, () => appendToNote(vault, slug, text));
+          const note = await withMutationQueue(path, () =>
+            appendToNote(vault, slug, text, new Date(), params.raw ? { raw: true } : {}),
+          );
           if (!note) {
             return { content: [{ type: "text", text: `No note found with slug '${params.slug}'.` }], details: { action: "append", found: false } };
           }
           return {
-            content: [{ type: "text", text: `Appended to ${note.slug} (updated ${note.updated}).` }],
+            content: [{ type: "text", text: params.raw ? `Appended verbatim to the ## Raw tail of ${note.slug} (updated ${note.updated}).` : `Appended to ${note.slug} (updated ${note.updated}).` }],
             details: { action: "append", found: true, note },
           };
         }
@@ -150,8 +155,12 @@ export function registerNoteTool(pi: ExtensionAPI): void {
           if (!note) {
             return { content: [{ type: "text", text: `No note found with slug '${params.slug}'.` }], details: { action: "finalize", found: false } };
           }
+          // Be truthful about what was preserved: a note with no `## Raw`
+          // marker yet gets its whole pre-finalize body preserved as a new
+          // raw tail (never silently dropped).
+          const preserved = extractRawTail(note.body) !== "";
           return {
-            content: [{ type: "text", text: `Finalized ${note.slug} (updated ${note.updated}). Raw notes tail preserved.` }],
+            content: [{ type: "text", text: `Finalized ${note.slug} (updated ${note.updated}). ${preserved ? "Raw tail preserved beneath the structured body." : "Note body was empty — nothing to preserve."}` }],
             details: { action: "finalize", found: true, note },
           };
         }

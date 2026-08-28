@@ -391,6 +391,50 @@ describe("weave_note tool", () => {
     });
   });
 
+  it("raw appends land in a ## Raw tail and finalize preserves them", async () => {
+    const mock = buildExtension();
+    const ctx = createMockCtx(await makeTempDir());
+    await withVaultEnv(await makeTempDir(), async () => {
+      await mock.runTool("weave_note", { action: "add", title: "Debrief", text: "compiled" }, ctx);
+      const appended = await mock.runTool(
+        "weave_note",
+        { action: "append", slug: "debrief", text: '"she pushed back politely"', raw: true },
+        ctx,
+      );
+      expect(appended.content[0]?.text).toContain("## Raw tail");
+
+      const got = await mock.runTool("weave_note", { action: "get", slug: "debrief" }, ctx);
+      expect(got.content[0]?.text).toContain("## Raw");
+      expect(got.content[0]?.text).toContain('"she pushed back politely"');
+
+      const finalized = await mock.runTool(
+        "weave_note",
+        { action: "finalize", slug: "debrief", text: "# Debrief\n\n**Verdict:** hire" },
+        ctx,
+      );
+      expect(finalized.content[0]?.text).toContain("Raw tail preserved");
+      const reGot = await mock.runTool("weave_note", { action: "get", slug: "debrief" }, ctx);
+      expect(reGot.content[0]?.text).toContain('"she pushed back politely"');
+    });
+  });
+
+  it("finalize on a note without a raw tail preserves the whole body", async () => {
+    const mock = buildExtension();
+    const ctx = createMockCtx(await makeTempDir());
+    await withVaultEnv(await makeTempDir(), async () => {
+      await mock.runTool("weave_note", { action: "add", title: "Dictated", text: "raw words only" }, ctx);
+      const finalized = await mock.runTool(
+        "weave_note",
+        { action: "finalize", slug: "dictated", text: "# Structured" },
+        ctx,
+      );
+      expect(finalized.content[0]?.text).toContain("Raw tail preserved");
+      const got = await mock.runTool("weave_note", { action: "get", slug: "dictated" }, ctx);
+      expect(got.content[0]?.text).toContain("# Structured");
+      expect(got.content[0]?.text).toContain("raw words only");
+    });
+  });
+
   it("keeps every addition when appends run concurrently", async () => {
     const mock = buildExtension();
     const ctx = createMockCtx(await makeTempDir());
@@ -461,7 +505,7 @@ describe("weave_note tool", () => {
       await mock.runTool("weave_note", { action: "add", title: "Auth migration", text: "---\n\n## Raw\n<!-- NEVER edit below this line. Verbatim user input preserved here. -->\n\n```\n\"We should move to OIDC.\"\n```", source: "human" }, ctx);
       const res = await mock.runTool("weave_note", { action: "finalize", slug: "auth-migration", text: "**Decision:** move toward OIDC." }, ctx);
       expect(res.content[0]?.text).toContain("Finalized auth-migration");
-      expect(res.content[0]?.text).toContain("Raw notes tail preserved");
+      expect(res.content[0]?.text).toContain("Raw tail preserved");
       const got = await mock.runTool("weave_note", { action: "get", slug: "auth-migration" }, ctx);
       expect(got.content[0]?.text).toContain("**Decision:** move toward OIDC.");
       expect(got.content[0]?.text).toContain("## Raw");
