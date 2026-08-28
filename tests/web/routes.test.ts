@@ -29,6 +29,7 @@ import { WorkspaceCache } from "../../src/core/cache/workspace";
 import { buildGraph } from "../../src/core/graph/build";
 import type { GraphModel as CoreGraphModel } from "../../src/core/graph/model";
 import { buildRepoIndex, writeRepoIndex } from "../../src/core/repoIndex";
+import type { Note } from "../../src/core/types";
 import { addNote } from "../../src/core/vault";
 import { DEFAULT_COOKIE_NAME } from "../../src/web/server/security";
 import {

@@ -673,6 +673,6 @@ describe("recent arrivals (tree flash)", () => {
 
     handle.stop();
     expect(recentIds.value.size).toBe(0);
-    expect(deferred[0].cancelRan).toBe(true);
+    expect(deferred[0]?.cancelRan).toBe(true);
   });
 });
