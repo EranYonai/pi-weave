@@ -78,7 +78,7 @@ export function layoutFor(
 ): Map<string, Point> {
   const options: LayoutOptions = { ticks: LAYOUT_TICKS, seed: LAYOUT_SEED };
   return computeLayout(
-    { generatedAt: "", staleness: null, nodes: [...nodes], edges: [...edges] },
+    { generatedAt: "", staleness: null, nodes: [...nodes], edges: [...edges], contentDigest: "" },
     warm === undefined ? options : { ...options, initial: warm },
   );
 }

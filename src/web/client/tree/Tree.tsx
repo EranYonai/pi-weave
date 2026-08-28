@@ -8,6 +8,7 @@
  */
 
 import { useState } from "preact/hooks";
+import { recentIds } from "../state";
 import type { GraphPayload } from "../../shared/wire";
 import type { TreeRowView, TreeViewState } from "./tree.model";
 import {
@@ -45,7 +46,9 @@ function Row({ view, onSelect, onToggle }: { view: TreeRowView; onSelect: () => 
   return (
     <li
       id={view.domId}
-      class={`weave-row weave-row-${view.kind}${view.selected ? " weave-row-on" : ""}`}
+      class={`weave-row weave-row-${view.kind}${view.selected ? " weave-row-on" : ""}${
+        recentIds.value.has(view.id) ? " weave-row-new" : ""
+      }`}
       role="treeitem"
       aria-level={view.level}
       aria-posinset={view.posinset}

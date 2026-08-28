@@ -9,6 +9,7 @@
  */
 
 import type { Note, RepoIndex, StalenessReport, VaultStatus } from "../types";
+import { createHash } from "node:crypto";
 import type { SummaryRecord } from "../summaries";
 import type { EdgeKind, GraphEdge, GraphModel, GraphNode } from "./model";
 import { buildPathIndex, resolveMentions, type PathIndex } from "./mentions";
@@ -29,6 +30,30 @@ export interface BuildGraphInput {
 
 const SHORT_SHA_LEN = 7;
 const PREVIEW_LEN = 240;
+
+/** Hex length of {@link noteBodyDigest} and of the model's `contentDigest`. */
+const DIGEST_HEX_LEN = 32;
+
+/**
+ * Content fingerprint of one note body. Pure, deterministic, truncated to
+ * 128 bits — a change-detection key, not a security boundary.
+ */
+export function noteBodyDigest(body: string): string {
+  return createHash("sha256").update(body).digest("hex").slice(0, DIGEST_HEX_LEN);
+}
+
+/**
+ * The model's `contentDigest`: one hash over every note's slug and body
+ * digest, slug-sorted so it does not depend on note order. Empty when there
+ * are no notes — which is still a distinct value from any non-empty vault.
+ */
+export function noteContentDigest(notes: readonly Note[]): string {
+  const hash = createHash("sha256");
+  for (const note of [...notes].sort((a, b) => (a.slug < b.slug ? -1 : a.slug > b.slug ? 1 : 0))) {
+    hash.update(`${note.slug}\u0000${noteBodyDigest(note.body)}\n`);
+  }
+  return hash.digest("hex").slice(0, DIGEST_HEX_LEN);
+}
 
 function moduleDetail(
   path: string,
@@ -284,6 +309,9 @@ export function buildGraph(input: BuildGraphInput, options: { maxNotes?: number 
     nodes,
     edges,
     danglingLinks,
+    // The same slice the vault side kept, so the digest describes exactly
+    // the notes that have nodes. Slug-ordered inside, hence order-stable.
+    contentDigest: noteContentDigest(input.notes.slice(0, maxNotes)),
   };
 }
 

@@ -31,9 +31,10 @@
  * the socket, is what tells the user something is wrong.
  */
 
-import type { NotePayload } from "../shared/wire";
+import type { GraphPayload, NotePayload } from "../shared/wire";
 import type { ApiResult, FetchLike } from "./api";
 import { fetchGraph, fetchNote } from "./api";
+import { recentIds } from "./state";
 import type { EventSourceFactory, LiveHandle } from "./live";
 import { startLive } from "./live";
 import type { RefetchPlan } from "./live.model";
@@ -46,6 +47,34 @@ export interface WorkspaceOptions {
   open: EventSourceFactory;
   /** Overrides the SSE path. Tests use it; the shell does not. */
   path?: string;
+  /**
+   * One-shot timer, injectable for tests. Defaults to `setTimeout`. Used
+   * only to expire the recent-arrivals highlight ({@link RECENT_TTL_MS}).
+   */
+  defer?: (fn: () => void, ms: number) => () => void;
+}
+
+/** How long a newly-arrived node stays flagged in the tree (the animation is shorter). */
+export const RECENT_TTL_MS = 3_000;
+
+const NO_IDS: ReadonlySet<string> = new Set();
+
+/**
+ * Node ids present in `next` but not in `previous`.
+ *
+ * The mount fetch passes `previous === null`, which yields the empty set —
+ * a first load must not animate the entire tree as "new". A node that left
+ * and returned is new again: from the reader's point of view it *is* a
+ * fresh arrival.
+ */
+export function addedNodeIds(previous: GraphPayload | null, next: GraphPayload): ReadonlySet<string> {
+  if (previous === null) return NO_IDS;
+  const before = new Set(previous.model.nodes.map((node) => node.id));
+  const added = new Set<string>();
+  for (const node of next.model.nodes) {
+    if (!before.has(node.id)) added.add(node.id);
+  }
+  return added;
 }
 
 /**
@@ -97,10 +126,20 @@ export interface WorkspaceHandle {
  * subscriber. Skipping it is the difference between an idle workspace doing
  * nothing and one re-rendering three columns every time the watcher twitches.
  */
-async function loadGraph(fetchImpl: FetchLike, live: LiveHandle | null): Promise<ApiResult<unknown>> {
+async function loadGraph(
+  fetchImpl: FetchLike,
+  live: LiveHandle | null,
+  onPublished?: (previous: GraphPayload | null, next: GraphPayload) => void,
+): Promise<ApiResult<unknown>> {
+  // Captured before the fetch so the diff describes exactly what the reader
+  // was looking at when the update landed.
+  const previous = graph.value;
   const result = await fetchGraph(fetchImpl, graph.value);
   if (!result.ok) return result;
-  if (!result.cached) graph.value = result.data;
+  if (!result.cached) {
+    graph.value = result.data;
+    onPublished?.(previous, result.data);
+  }
   live?.seen(result.data.stamp);
   return result;
 }
@@ -157,13 +196,34 @@ export function noteSlug(id: string | null): string | null {
  */
 export function startWorkspace(opts: WorkspaceOptions): WorkspaceHandle {
   let live: LiveHandle | null = null;
+  let cancelRecentExpiry: (() => void) | null = null;
+  const defer =
+    opts.defer ??
+    ((fn: () => void, ms: number) => {
+      const handle = setTimeout(fn, ms);
+      return () => clearTimeout(handle);
+    });
+
+  /** Publish the frame's arrivals; the tree flashes them while they are new. */
+  const onPublished = (previous: GraphPayload | null, next: GraphPayload): void => {
+    const added = addedNodeIds(previous, next);
+    recentIds.value = added;
+    cancelRecentExpiry?.();
+    cancelRecentExpiry = null;
+    if (added.size > 0) {
+      cancelRecentExpiry = defer(() => {
+        cancelRecentExpiry = null;
+        recentIds.value = NO_IDS;
+      }, RECENT_TTL_MS);
+    }
+  };
 
   const runPlan = (plan: RefetchPlan): void => {
     // Fire-and-forget: this is called from a socket callback, which cannot
     // await. Failures are values (`api.ts`), so there is nothing to reject —
     // `void` documents that rather than hiding a floating promise.
     void (async () => {
-      if (plan.graph) await loadGraph(opts.fetch, live);
+      if (plan.graph) await loadGraph(opts.fetch, live, onPublished);
       if (plan.note) await loadNote(opts.fetch);
     })();
   };
@@ -175,7 +235,7 @@ export function startWorkspace(opts: WorkspaceOptions): WorkspaceHandle {
     ...(opts.path === undefined ? {} : { path: opts.path }),
   });
 
-  void loadGraph(opts.fetch, live);
+  void loadGraph(opts.fetch, live, onPublished);
 
   return {
     refresh() {
@@ -187,6 +247,9 @@ export function startWorkspace(opts: WorkspaceOptions): WorkspaceHandle {
     stop() {
       live?.stop();
       live = null;
+      cancelRecentExpiry?.();
+      cancelRecentExpiry = null;
+      recentIds.value = NO_IDS;
     },
   };
 }
@@ -211,4 +274,5 @@ export function resetWorkspace(): void {
   graph.value = null;
   noteBody.value = null;
   connection.value = "live";
+  recentIds.value = NO_IDS;
 }

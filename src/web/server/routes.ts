@@ -363,6 +363,12 @@ export function toGraphPayload(model: CoreGraphModel, notes: readonly TaggedNote
  * prompted a refetch. A digest changes if and only if the bytes change, which
  * is the property both consumers actually need.
  *
+ * The digest is exact, but the payload is only an *excerpt* of the workspace:
+ * a note body below `PREVIEW_LEN` does not appear in the payload at all, so
+ * a body-only edit used to reproduce byte-identical payload and re-open the
+ * same hole through both dedupe layers. `GraphModel.contentDigest` — hashed
+ * over the note bodies themselves — closes that; see `core/graph/model.ts`.
+ *
  * `generatedAt` keeps its own, different job: it is the human-facing
  * "data as of" marker on the model, and the status bar still reads it.
  *
