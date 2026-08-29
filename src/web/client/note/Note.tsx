@@ -96,13 +96,16 @@ export function Note(props: NoteProps) {
   // `props` would need a non-null assertion at the second read.
   const toolbar = props.toolbar;
   const shell = { draft: props.draft, prompt: props.prompt, send: props.send };
+  // Keyed on the slug, not the body digest: the article is the scroll
+  // container, so an in-place swap would open every note at the previous
+  // note's scroll offset. A key change remounts it, and a fresh container
+  // starts at the top — no scroll-API effect to untest. The provenance
+  // class is the page's spine: the left rule takes the source's colour,
+  // which is how the desk says who wrote what a glance away from the text.
+  const header = noteHeader(note, props.now);
   return (
-    // Keyed on the slug, not the body digest: the article is the scroll
-    // container, so an in-place swap would open every note at the previous
-    // note's scroll offset. A key change remounts it, and a fresh container
-    // starts at the top — no scroll-API effect to untest.
-    <article key={note.slug} class="weave-note">
-      <Header view={noteHeader(note, props.now)} />
+    <article key={note.slug} class={`weave-note weave-note-${header.provenance}`}>
+      <Header view={header} />
       {toolbar === null ? null : <EditorBar toolbar={toolbar} {...shell} />}
       {toolbar !== null && toolbar.editing ? (
         <Editor toolbar={toolbar} {...shell} />
@@ -116,9 +119,16 @@ export function Note(props: NoteProps) {
           tabIndex={-1}
           onClick={(event) => {
             // A wikilink carries no href, so nothing is navigating; this only
-            // has to route the click onto the §1.3 context bus.
+            // has to route the click onto the §1.3 context bus. Anywhere else
+            // on the page *is* the edit affordance: a click on the prose opens
+            // the editor. The two never fight, because the link check reads
+            // the exact element the click landed on.
             const target = wikilinkTargetOf(event.target as unknown as Parameters<typeof wikilinkTargetOf>[0]);
-            if (target !== null) props.onSelect(target);
+            if (target !== null) {
+              props.onSelect(target);
+              return;
+            }
+            if (props.toolbar !== null) props.send({ type: "toggle" });
           }}
           onKeyDown={(event) => {
             if (event.key !== "Enter" && event.key !== " ") return;

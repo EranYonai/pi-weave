@@ -224,6 +224,19 @@ export function graphEmptyMessage(payload: GraphPayload | null, visible: number)
   return visible === 0 ? "Nothing to draw at this expansion." : null;
 }
 
+/**
+ * The boot-failure sentence, and why it is not a branch of
+ * {@link graphEmptyMessage}: that function answers "the graph has no shape to
+ * draw", and its callers reach it with a `payload` that may be `null` only at
+ * boot. A failed boot is a different *fact* — the server was reached and
+ * could not answer (or could not be reached), while the socket's `offline`
+ * wording may or may not also apply — so it gets its own sentence and its own
+ * boolean. Suggesting a named action matters more here than anywhere else:
+ * a failure at boot is the workspace's first impression.
+ */
+export const BOOT_FAILED_MESSAGE =
+  "The workspace did not load — ⟳ retries now, and the next change to the vault retries on its own.";
+
 // --- the whole column state -----------------------------------------------------------------
 
 /** Everything the column needs to render one frame. */
@@ -284,8 +297,14 @@ export function graphColumnModel(
   state: GraphViewState,
   storage: PositionStorage,
   scheme: ColorScheme,
+  // Optional so every existing caller and test keeps its shape; only the
+  // shell's boot-failure signal has a reason to pass it.
+  bootFailed = false,
 ): GraphColumnModel {
-  if (payload === null) return EMPTY_COLUMN;
+  if (payload === null)
+    // Identity preserved on the ordinary path (`EMPTY_COLUMN` is compared by
+    // callers); only a failed boot earns a fresh one, with its own sentence.
+    return bootFailed ? { ...EMPTY_COLUMN, empty: BOOT_FAILED_MESSAGE } : EMPTY_COLUMN;
 
   const model = viewModel(payload);
   const reduced: ClusterAggregate = clusterAggregate(model, state.expanded);

@@ -33,10 +33,11 @@ import { createEditor, watchUnload, type EditorHandle } from "../note/editor.con
 import { editorPrompt, editorToolbar, initialEditorState, shouldBlockUnload } from "../note/editor.model";
 import { SearchPalette } from "../search/SearchPalette";
 import { restoreSelection, saveSelection } from "../selection.storage";
-import { connection, graph, noteBody, selectedId } from "../state";
+import { connection, graph, graphFailed, noteBody, selectedId } from "../state";
 import type { WorkspaceHandle } from "../workspace";
 import { observeNotes, select, startWorkspace } from "../workspace";
 import { Columns } from "./Columns";
+import { deeplinkSelection, formatHash } from "./deeplink.model";
 import { dividerHandlers } from "./drag.model";
 import { Header } from "./Header";
 import { HelpOverlay } from "./HelpOverlay";
@@ -109,16 +110,31 @@ export function Shell(props: ShellProps) {
   // gated on the restore decision so the mount-time `null` cannot wipe the
   // saved id before the first graph arrives to validate it against.
   const selectionRestored = useRef(false);
+  // The deep link is read once, at mount, into a ref — the URL is an input
+  // to boot only, and the hash-write effect below must never clear a link
+  // this effect has not read yet.
+  const bootHash = useRef(location.hash);
   useEffect(() => {
     if (!selectionRestored.current) return;
     saveSelection(localStorage, selectedId.value);
+    // replaceState, not pushState: the address bar mirrors the note on
+    // screen, and reading three notes is not three history entries. The
+    // *string* is the model's (`formatHash`); this is the write itself.
+    history.replaceState(null, "", formatHash(selectedId.value));
   }, [selectedId.value]);
   useEffect(() => {
     if (selectionRestored.current || graph.value === null) return;
     selectionRestored.current = true;
     if (selectedId.value !== null) return;
-    const saved = restoreSelection(graph.value, localStorage);
-    if (saved !== null) void select(fetchJson, saved);
+    // A link wins over storage: the address bar is an explicit instruction,
+    // the saved note is a habit. A link to a note the graph does not hold is
+    // refused (see `deeplink.model.ts`) and continuity falls through.
+    const linked = deeplinkSelection(bootHash.current, graph.value);
+    if (linked !== null) void select(fetchJson, linked);
+    else {
+      const saved = restoreSelection(graph.value, localStorage);
+      if (saved !== null) void select(fetchJson, saved);
+    }
   }, [graph.value]);
 
   // Every note that arrives, from any of the three directions it can arrive
@@ -200,6 +216,7 @@ export function Shell(props: ShellProps) {
         onUp={drag.onUp}
         onKey={drag.onKey}
         scheme={effectiveScheme(theme, systemScheme)}
+        bootFailed={graphFailed.value}
         graph={graph.value}
         note={noteBody.value}
         selectedId={selectedId.value}

@@ -155,6 +155,12 @@ describe("THEME_CSS", () => {
       "weave-tree-count",
       "weave-note",
       "weave-note-empty",
+      // The page's provenance spine: the article carries `weave-note-${source}`,
+      // so the manuscript's left rule takes its writer's colour. Same three
+      // kinds as the `weave-prov-*` glyphs.
+      "weave-note-human",
+      "weave-note-agent",
+      "weave-note-generated",
       "weave-note-head",
       "weave-note-title",
       "weave-note-meta",

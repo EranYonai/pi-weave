@@ -118,6 +118,7 @@ const LIGHT_TOKENS = `
     --weave-faint:#7f6455;--weave-line:#dfd3c3;--weave-line-strong:#d0b8a8;
     --weave-accent:#85586f;--weave-ok:#3f704e;--weave-warn:#a05a1c;--weave-bad:#a93b45;
     --weave-new:rgba(133,88,111,.16);
+    --weave-page:#fdf9f3;
   `;
 
 export const THEME_CSS = `
@@ -131,6 +132,15 @@ export const THEME_CSS = `
      Rails, rows and bars keep --weave-gutter, so density is a property of the
      furniture and generosity a property of the page. */
   --weave-note-gutter:18px;
+  /* The desk-and-page split. The workspace is a desk of instruments — tree,
+     graph, rail, bars — on the --weave-bg ground; the note column is the one
+     *page* lying on it, one step off the desk and one step off the canvas:
+     dark keeps a deeper indigo sheet, light keeps the linen panel. Two voices
+     in total: sans for instruments and prose alike, mono for data — a third
+     face was tried (serif prose) and withdrawn at the user's call; two voices
+     read calmer than three. The CSP allows nothing fetched, and both are
+     system stacks. */
+  --weave-page:#272c4a;
   /* Two radii, per the plan: hairline-sharp for controls (a 4 px corner is
      the difference between a control and a card), one softer corner for the
      two overlays that float above the grid. Tag pills are 999px — a capsule
@@ -323,11 +333,20 @@ body{font-size:var(--weave-px-base)}
 }
 
 /* note column ----------------------------------------------------------- */
-/* The note column is where the reading gutter applies: head, body and
-   editor share it so toggling the editor does not reflow the measure. */
-.weave-note{display:flex;flex-direction:column;min-height:0;flex:1;overflow:auto}
-.weave-note-empty{flex:1;margin:0;padding:14px var(--weave-note-gutter);color:var(--weave-dim);max-width:44ch;line-height:1.5}
-.weave-note-head{padding:10px var(--weave-note-gutter) 8px;border-bottom:1px solid var(--weave-line)}
+/* The page. The desk holds instruments; this column is what the user reads,
+   so it lies on --weave-page — one step off the desk and the canvas grounds —
+   in the serif reading voice. The 2px rule flush to its left edge is the
+   spine: it takes the note's provenance colour (see the --weave-spine map),
+   so the document's origin is readable peripherally, before any glyph is.
+   Head, body and editor share the --weave-note-gutter so toggling the editor
+   does not reflow the measure. */
+.weave-note{display:flex;flex-direction:column;min-height:0;flex:1;overflow:auto;background:var(--weave-page)}
+.weave-note-human{--weave-spine:var(--weave-ok)}
+.weave-note-agent{--weave-spine:var(--weave-accent)}
+.weave-note-generated{--weave-spine:var(--weave-faint)}
+.weave-note{border-left:2px solid var(--weave-spine,transparent)}
+.weave-note-empty{flex:1;margin:0;padding:14px var(--weave-note-gutter);color:var(--weave-dim);max-width:44ch;line-height:1.5;background:var(--weave-page)}
+.weave-note-head{padding:12px var(--weave-note-gutter) 8px;border-bottom:1px solid var(--weave-line)}
 .weave-note-title{margin:0 0 4px;font-size:var(--weave-px-title);font-weight:600;line-height:1.3;color:var(--weave-fg)}
 .weave-note-meta{margin:0;display:flex;gap:10px;font-size:var(--weave-px-ui);color:var(--weave-dim);flex-wrap:wrap}
 .weave-note-time{color:var(--weave-faint)}
@@ -336,11 +355,16 @@ body{font-size:var(--weave-px-base)}
   font-size:var(--weave-px-caption);color:var(--weave-accent);background:var(--weave-panel);
   padding:1px 6px;border:1px solid var(--weave-line-strong);border-radius:999px;
 }
-.weave-note-body{padding:10px var(--weave-note-gutter) 24px;line-height:1.6;max-width:78ch;color:var(--weave-fg)}
+/* Prose runs the column's full width — a 66ch measure was tried and
+   withdrawn at the user's call: this is a workspace, and the note shares the
+   width the desk gives it. Code and the raw editor stay mono deliberately —
+   reading prose and reading raw are different postures, and the face switch
+   is the toggle. */
+.weave-note-body{padding:12px var(--weave-note-gutter) 28px;line-height:1.6;color:var(--weave-fg)}
 .weave-note-body>*:first-child{margin-top:0}
 .weave-note-body h1,.weave-note-body h2,.weave-note-body h3,
 .weave-note-body h4,.weave-note-body h5,.weave-note-body h6{
-  margin:18px 0 6px;font-weight:600;line-height:1.3;
+  margin:20px 0 7px;font-weight:600;line-height:1.35;letter-spacing:.005em;
 }
 .weave-note-body h1{font-size:var(--weave-px-title)}
 .weave-note-body h2{font-size:var(--weave-px-subhead)}
@@ -423,7 +447,7 @@ body{font-size:var(--weave-px-base)}
   flex:1;min-height:240px;resize:none;
   padding:10px var(--weave-note-gutter) 24px;
   font:inherit;font-family:var(--weave-mono);font-size:var(--weave-px-row);line-height:1.6;
-  color:var(--weave-fg);background:var(--weave-bg);border:0;outline-offset:-2px;
+  color:var(--weave-fg);background:var(--weave-page);border:0;outline-offset:-2px;
 }
 
 /* graph column ---------------------------------------------------------- */

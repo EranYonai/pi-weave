@@ -72,6 +72,12 @@ export interface GraphProps {
    */
   scheme: ColorScheme | null;
   /**
+   * Whether the boot graph fetch failed (`state.ts`'s `graphFailed`). The
+   * empty column's sentence switches from "Loading…" to a named recovery:
+   * a canvas that never arrives needs a first sentence that says why.
+   */
+  bootFailed?: boolean;
+  /**
    * A slot the column writes its `fit` into, so the global `g` key can reach
    * it (§11 P4).
    *
@@ -127,8 +133,8 @@ export function Graph(props: GraphProps) {
   // graph. Identity is the whole contract; do not switch the effect to
   // comparing set contents, the memo makes comparison unnecessary.
   const model = useMemo(
-    () => graphColumnModel(props.graph, props.selectedId, view, props.storage, scheme),
-    [props.graph, props.selectedId, view, props.storage, scheme],
+    () => graphColumnModel(props.graph, props.selectedId, view, props.storage, scheme, props.bootFailed),
+    [props.graph, props.selectedId, view, props.storage, scheme, props.bootFailed],
   );
   const everything = allExpanded(view, model.clusters);
 

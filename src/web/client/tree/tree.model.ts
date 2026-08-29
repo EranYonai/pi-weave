@@ -672,7 +672,8 @@ export function treeEmptyMessage(
   const hint = treeEmptyHint(viewModel(payload));
   if (hint !== null) return hint;
   if (rows.length > 0) return null;
-  if (state.query.length > 0 || state.provFilter !== null) return "nothing matches this filter";
+  if (state.query.length > 0 || state.provFilter !== null)
+    return "nothing matches this filter — clear it to see the whole vault";
   // No rows, no filter, and core had no opinion — a payload with no roots at
   // all, which the server does not produce but a truncated response could.
   return "nothing to show";

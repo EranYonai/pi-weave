@@ -719,14 +719,14 @@ describe("treeEmptyMessage", () => {
     // The failure this prevents: telling a user their vault is empty because
     // they typed a typo into the filter box.
     const query = setQuery(initialTreeView(), "zzz");
-    expect(treeEmptyMessage(GRAPH, rowsFor(GRAPH, query), query)).toBe("nothing matches this filter");
+    expect(treeEmptyMessage(GRAPH, rowsFor(GRAPH, query), query)).toBe("nothing matches this filter — clear it to see the whole vault");
     // Same for a provenance filter that matches no note in a populated vault.
     const onlyHuman = payloadOf(
       [node("vault", "vault", "Vault"), node("note:beta", "note", "Beta", "agent")],
       [{ source: "vault", target: "note:beta", kind: "contains" }],
     );
     const prov = cycleProvenance(initialTreeView());
-    expect(treeEmptyMessage(onlyHuman, rowsFor(onlyHuman, prov), prov)).toBe("nothing matches this filter");
+    expect(treeEmptyMessage(onlyHuman, rowsFor(onlyHuman, prov), prov)).toBe("nothing matches this filter — clear it to see the whole vault");
   });
 
   it("uses core's own hint for a genuinely empty vault, so TUI and web agree", () => {

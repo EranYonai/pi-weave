@@ -19,6 +19,7 @@ import { angularOccupancy, clusterSeparation, minPairwiseDistance, variance } fr
 import { clusterAggregate, focusNeighborhood } from "../../src/web/shared/view";
 import type { GraphPayload, WireGraphEdge, WireGraphNode } from "../../src/web/shared/wire";
 import {
+  BOOT_FAILED_MESSAGE,
   EMPTY_COLUMN,
   FIT_HINT,
   FIT_LABEL,
@@ -331,6 +332,13 @@ describe("graphEmptyMessage", () => {
     expect(graphEmptyMessage(payloadOf([], []), 0)).toContain("weave-scan");
     expect(graphEmptyMessage(SMALL, 0)).toContain("expansion");
     expect(graphEmptyMessage(SMALL, 6)).toBeNull();
+  });
+
+  it("says the boot-failure sentence when the boot fetch failed", () => {
+    // The column's one first impression: a failure at boot names the
+    // recovery, it does not sit in a "Loading…" that will never resolve.
+    expect(graphColumnModel(null, null, initialGraphView(SMALL_MODEL), storage(), "dark", true).empty).toBe(BOOT_FAILED_MESSAGE);
+    expect(graphColumnModel(null, null, initialGraphView(SMALL_MODEL), storage(), "dark", false).empty).toBe("Loading…");
   });
 });
 

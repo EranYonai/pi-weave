@@ -82,6 +82,8 @@ export interface ColumnsProps {
    * the graph needs the decision handed to it as a value.
    */
   scheme: ColorScheme | null;
+  /** The boot graph fetch failed — see `state.ts`'s `graphFailed`. */
+  bootFailed: boolean;
   /** Slot the graph column fills with its `fit`, for the global `g` key. */
   fit: { current: (() => void) | null };
   /**
@@ -127,6 +129,7 @@ function Column({ id, props }: { id: ColumnId; props: ColumnsProps }) {
           storage={props.storage}
           host={props.host}
           scheme={props.scheme}
+          bootFailed={props.bootFailed}
           fit={props.fit}
         />
       ) : null}
