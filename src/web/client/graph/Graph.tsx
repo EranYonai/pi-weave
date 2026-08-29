@@ -159,6 +159,15 @@ export function Graph(props: GraphProps) {
     });
     instance.mount(canvas.current ?? { clientWidth: 0, clientHeight: 0 });
     renderer.current = instance;
+    // A remount from a scheme flip re-runs *this* effect while the effects
+    // below stay keyed on `model.key` / `model.highlight` — which have not
+    // changed, because the theme switch did not touch the graph's shape. The
+    // fresh canvas would therefore sit empty until the next expand, collapse
+    // or selection moved those keys. Push from `live` (current render, not
+    // the render this effect was created in), so a remount carries whatever
+    // the column is already showing.
+    instance.setGraph(live.current.model.graph);
+    instance.setHighlight(live.current.model.highlight);
     props.fit.current = () => instance.fit();
     return () => {
       instance.destroy();
@@ -211,7 +220,9 @@ export function Graph(props: GraphProps) {
       {/* Same shape as `ContextRail`'s: the *decision* is `graphEmptyMessage`,
           and what is left here is whether to render the paragraph it returned. */}
       {model.empty === null ? null : <p class="weave-graph-empty">{model.empty}</p>}
-      <div class="weave-graph-canvas" ref={canvas} role="img" aria-label="Knowledge graph" />
+      {/* `tabIndex={-1}` is the `⌘3` focus target — see `Note.tsx`'s matching
+          comment. The tree's target is the rows `<ul>`, which has its own. */}
+      <div class="weave-graph-canvas" ref={canvas} role="img" aria-label="Knowledge graph" tabIndex={-1} />
       <div class="weave-graph-controls">
         <button type="button" class="weave-chip" title={FIT_HINT} onClick={() => renderer.current?.fit()}>
           {FIT_LABEL}
@@ -222,6 +233,7 @@ export function Graph(props: GraphProps) {
         <span class="weave-graph-legend">
           <span class="weave-legend-on">◉ {LEGEND.selected}</span>
           <span class="weave-legend-near">● {LEGEND.neighborhood}</span>
+          <span class="weave-legend-dim">· {LEGEND.dimmed}</span>
         </span>
       </div>
       <p class="weave-graph-count">{graphCountLabel(model.visible, model.total)}</p>

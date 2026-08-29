@@ -72,7 +72,7 @@ export const GRAPH_PALETTE: Readonly<Record<ColorScheme, Readonly<Record<ColorSl
     warning: "#e8b04c",
     dim: "#bb9ecf",
     text: "#fde2f3",
-    muted: "#8f83b5",
+    muted: "#aca3d4",
     line: "#4a527e",
   },
   light: {
@@ -81,7 +81,7 @@ export const GRAPH_PALETTE: Readonly<Record<ColorScheme, Readonly<Record<ColorSl
     warning: "#a05a1c",
     dim: "#7c6257",
     text: "#43303a",
-    muted: "#a68d80",
+    muted: "#7f6455",
     line: "#d0b8a8",
   },
 };

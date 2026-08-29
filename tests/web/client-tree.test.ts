@@ -381,6 +381,15 @@ describe("treeKey", () => {
     expect(treeKey(rows, state, "note:alpha", "ArrowUp")).toMatchObject({ selectedId: "vault", handled: true });
   });
 
+  it("refuses every key while the user is typing into the filter", () => {
+    // The filter box sits inside the listened element, so `j` in a query like
+    // "jack" once arrived here as an alias and moved the cursor instead of
+    // entering the character. While typing, nothing is tree navigation.
+    for (const raw of ["j", "k", "ArrowDown", "Home"]) {
+      expect(treeKey(rows, state, "vault", raw, true), raw).toMatchObject({ handled: false });
+    }
+  });
+
   it("jumps to the ends with Home and End", () => {
     expect(treeKey(rows, state, "note:beta", "Home").selectedId).toBe("vault");
     expect(treeKey(rows, state, "note:beta", "End").selectedId).toBe("module:src/web");

@@ -7,7 +7,7 @@
  * `useState`, one memo and three handlers. §10's rule.
  */
 
-import { useMemo, useState } from "preact/hooks";
+import { useEffect, useMemo, useRef, useState } from "preact/hooks";
 import type { GraphPayload } from "../../shared/wire";
 import { useFocusTrap } from "../shell/FocusTrap";
 import type { SearchRowView } from "./search.model";
@@ -45,6 +45,15 @@ export function SearchPalette(props: SearchPaletteProps) {
   const [state, setState] = useState(initialSearchState);
   const search = useMemo(() => createSearch({ ...props.ports, onChange: setState }), []);
   const trap = useFocusTrap();
+  const input = useRef<HTMLInputElement | null>(null);
+  // Focus the input, not the container the trap starts on: the palette's
+  // whole surface is its query, and opening it to a container that only
+  // swallows (and does not forward) keystrokes makes the user click before
+  // they can type. Runs after the trap's own effect — hooks run in order,
+  // and the trap is created first — so this is the final word. The input
+  // carries the dialog's `aria-label`, so the announcement the
+  // container-focus exists for still happens.
+  useEffect(() => void input.current?.focus(), []);
   const model = paletteModel(state, props.graph);
 
   const pick = (index: number | null): void => {
@@ -76,7 +85,7 @@ export function SearchPalette(props: SearchPaletteProps) {
         <input
           type="search"
           class="weave-palette-input"
-          autofocus
+          ref={input}
           value={state.query}
           placeholder={PALETTE_PLACEHOLDER}
           aria-label={PALETTE_TITLE}

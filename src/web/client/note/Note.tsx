@@ -109,6 +109,11 @@ export function Note(props: NoteProps) {
       ) : (
         <div
           class="weave-note-body"
+          // Programmatic focus target for `⌘2`: without a `tabindex`,
+          // `focusSelector`'s `.focus()` is a silent no-op. `-1` keeps it out
+          // of the Tab order (the workspace moves by `j/k` and `⌘1/2/3`, and
+          // Tab must stay the user's).
+          tabIndex={-1}
           onClick={(event) => {
             // A wikilink carries no href, so nothing is navigating; this only
             // has to route the click onto the §1.3 context bus.

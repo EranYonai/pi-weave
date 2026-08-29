@@ -42,8 +42,16 @@ describe("trapTarget", () => {
     // `null` means "leave the event alone". Calling `preventDefault` here
     // would produce a dialog that swallows Tab and does nothing with it.
     expect(trapTarget(0, -1, false)).toBeNull();
-    expect(trapTarget(1, 0, false)).toBeNull();
-    expect(trapTarget(1, 0, true)).toBeNull();
+  });
+
+  it("holds a one-focusable dialog closed — the cycle is the dialog", () => {
+    // Tab out of a modal whose only control is, say, the palette's input
+    // would land in the covered workspace, typing into context the user
+    // cannot see. A single focusable is its own cycle, in both directions,
+    // and from the container itself.
+    expect(trapTarget(1, 0, false)).toBe(0);
+    expect(trapTarget(1, 0, true)).toBe(0);
+    expect(trapTarget(1, -1, false)).toBe(0);
   });
 });
 

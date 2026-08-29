@@ -52,11 +52,18 @@ export const FOCUSABLE_SELECTOR = [
  * Where Tab should land next, or `null` to leave the event alone.
  *
  * Returns an **index** rather than an element so the whole thing is testable
- * with an array of numbers if you like. `null` means "not our business":
- * a trap over zero or one focusable elements has nothing to cycle, and
- * calling `preventDefault` in that case would strand the user on a dialog
- * that eats Tab and does nothing with it — strictly worse than an untrapped
- * one they can at least escape.
+ * with an array of numbers if you like. Two refusal cases, by different
+ * reasoning:
+ *
+ * - `count === 0` — nothing to cycle, and holding the user on a dialog that
+ *   eats Tab and does nothing with it is strictly worse than an untrapped one
+ *   they can at least escape.
+ * - `count === 1` — there *is* something to cycle, and the modal must not
+ *   let go: Tab returns the user to the single control, matching the WAI-ARIA
+ *   expectation that focus stays in an open dialog. (This was once `null`
+ *   with the zero case's reasoning — "one thing, nowhere to go" — but a
+ *   palette whose only control is its input would then Tab straight out into
+ *   the covered workspace, typing into a search box the user cannot see.)
  *
  * @param count how many focusables the dialog contains
  * @param at the index of the currently focused one, or `-1` when focus is on
@@ -64,7 +71,8 @@ export const FOCUSABLE_SELECTOR = [
  * @param backwards Shift+Tab
  */
 export function trapTarget(count: number, at: number, backwards: boolean): number | null {
-  if (count <= 1) return null;
+  if (count === 0) return null;
+  if (count === 1) return 0;
   // Focus on the container itself: Tab enters at the top, Shift+Tab at the
   // bottom. Without this the first Tab out of a freshly-opened dialog would
   // compute from -1 and land on the second control, skipping the input.

@@ -88,8 +88,15 @@
  * - **Light, "linen & plum"** — `#F8EDE3` ground, `#DFD3C3`/`#D0B8A8` as the
  *   hairline pair, and the plum `#85586F` running the *whole* text ramp:
  *   foreground is plum darkened to `#43303A`, dim plum warmed to `#7C6257`,
- *   faint lightened to `#A68D80`. The greys are of the palette rather than
- *   neutral, which is what keeps a warm ground from feeling tinted.
+ *   faint deepened to `#7F6455` (4.7:1 on the ground). The greys are of the
+ *   palette rather than neutral, which is what keeps a warm ground from
+ *   feeling tinted.
+ *
+ * The two faints are AA-floor fixes, not taste: the first drafts (`#8F83B5`
+ * dark, `#A68D80` light) measured 3.8:1 and 2.7:1 on their grounds — a 9 px
+ * kind label at 2.7:1 was decoration, not text. The replacements
+ * (`#ACA3D4`, `#7F6455`) sit at 4.5–4.7:1 while staying clearly below their
+ * `--weave-dim` siblings, which is what keeps a hint reading as a hint.
  *
  * Status colours follow each scheme's temperature (sage/amber/brick in
  * light; soft green/amber/rose on indigo) at ≥ 4.5:1 text contrast — measured,
@@ -108,7 +115,7 @@
  */
 const LIGHT_TOKENS = `
     --weave-bg:#f8ede3;--weave-panel:#fdf9f3;--weave-raise:#f1e3d4;--weave-fg:#43303a;--weave-dim:#7c6257;
-    --weave-faint:#a68d80;--weave-line:#dfd3c3;--weave-line-strong:#d0b8a8;
+    --weave-faint:#7f6455;--weave-line:#dfd3c3;--weave-line-strong:#d0b8a8;
     --weave-accent:#85586f;--weave-ok:#3f704e;--weave-warn:#a05a1c;--weave-bad:#a93b45;
     --weave-new:rgba(133,88,111,.16);
   `;
@@ -116,7 +123,7 @@ const LIGHT_TOKENS = `
 export const THEME_CSS = `
 :root{
   --weave-bg:#2a2f4f;--weave-panel:#343b61;--weave-raise:#3d4570;--weave-fg:#fde2f3;--weave-dim:#bb9ecf;
-  --weave-faint:#8f83b5;--weave-line:#3b4266;--weave-line-strong:#4a527e;
+  --weave-faint:#aca3d4;--weave-line:#3b4266;--weave-line-strong:#4a527e;
   --weave-accent:#b79fdd;--weave-ok:#7fc49a;--weave-warn:#e8b04c;--weave-bad:#eb93a1;
   --weave-new:rgba(145,127,179,.22);
   --weave-row:26px;--weave-gutter:10px;
@@ -255,6 +262,16 @@ body{font-size:13px}
 }
 .weave-row:hover{background:var(--weave-line)}
 .weave-row-on{background:var(--weave-line-strong);color:var(--weave-fg)}
+/* The selection has one voice. On the stronger --weave-line-strong ground
+   every quieter token fails contrast — measured 3.2:1 (dark faint) to 2.9:1
+   (light faint), and even --weave-dim lands under 3 — so a selected row's
+   kind, provenance and meta children join its label in --weave-fg. The
+   provenance glyph shape carries the distinction the colour swap drops;
+   elsewhere the hues are unaffected. The palette's hit rows need the same
+   remap: same selected ground, same failure. */
+.weave-row-on .weave-twisty,.weave-row-on .weave-kind,.weave-row-on .weave-prov,
+.weave-row-on .weave-meta{color:var(--weave-fg)}
+.weave-hit-on .weave-hit-badge,.weave-hit-on .weave-hit-detail{color:var(--weave-fg)}
 /* A newly-arrived node (a file or note added since the last update, §6):
    one short highlight that fades while the label settles from bold back to
    normal. The class is computed from the frame diff in workspace.ts and
@@ -396,6 +413,10 @@ body{font-size:13px}
 }
 .weave-legend-on{color:var(--weave-accent)}
 .weave-legend-near{color:var(--weave-fg)}
+/* The third entry is the one the graph actually draws most when a selection
+   dims its neighbourhood: unrelated nodes recede to --weave-faint, and the
+   legend names that state instead of leaving it unexplained. */
+.weave-legend-dim{color:var(--weave-faint)}
 .weave-graph-count{
   margin:0;padding:3px var(--weave-gutter);font-size:10.5px;color:var(--weave-faint);
   border-top:1px solid var(--weave-line);
@@ -510,6 +531,30 @@ body{font-size:13px}
 ::-webkit-scrollbar-track{background:transparent}
 ::-webkit-scrollbar-thumb{background:var(--weave-line-strong);border-radius:4px}
 ::-webkit-scrollbar-thumb:hover{background:var(--weave-faint)}
+/* motion -----------------------------------------------------------------
+   The one place motion is declared, directly above the kill switch that
+   neutralises it: every animated thing in the sheet is either in the
+   transition list or carries one of the three animation names, which is what
+   keeps the reduced-motion rule sufficient by construction — a future
+   element.animate() call would duck under it and is therefore not motion
+   this sheet may use. Transitions cover the interactive set (hover states
+   that would otherwise snap); entrances are overlay-only, because exits
+   would need delay-unmount plumbing far past polish. Compositor-safe
+   properties only — colour, border, opacity, transform; height and padding
+   snap. */
+.weave-row,.weave-ctx-link,.weave-chip,.weave-search,.weave-refresh,.weave-theme,
+.weave-divider,.weave-hit,.weave-note-toggle,.weave-note-save,.weave-note-open,
+.weave-note-action{
+  transition:background-color 120ms ease,border-color 120ms ease,color 120ms ease;
+}
+.weave-scrim{animation:weave-fade-in 140ms ease-out both}
+.weave-palette,.weave-help{animation:weave-overlay-in 160ms ease-out both}
+/* The conflict prompt mounts once per conflict, so its entrance cannot strobe
+   the way a context-rail flash would — that rail deliberately stays still. */
+.weave-note-prompt{animation:weave-prompt-in 180ms ease-out both}
+@keyframes weave-fade-in{from{opacity:0}}
+@keyframes weave-overlay-in{from{opacity:0;transform:translateY(4px)}}
+@keyframes weave-prompt-in{from{opacity:0;transform:translateY(-2px)}}
 @media (prefers-reduced-motion: reduce){*{transition:none!important;animation:none!important}}
 `;
 

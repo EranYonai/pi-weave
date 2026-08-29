@@ -200,6 +200,7 @@ describe("THEME_CSS", () => {
       "weave-graph-legend",
       "weave-legend-on",
       "weave-legend-near",
+      "weave-legend-dim",
       "weave-graph-count",
       // The ⌘K palette and the help overlay (P4).
       "weave-search-text",
