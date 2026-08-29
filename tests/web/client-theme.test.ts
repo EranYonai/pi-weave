@@ -249,6 +249,33 @@ describe("THEME_CSS", () => {
     expect(THEME_CSS).not.toMatch(/font-size:\s*(1[6-9]|[2-9]\d)px/);
   });
 
+  it("draws every size from the named type ramp, never an ad-hoc pixel", () => {
+    // Tier 4's ramp: seven role-named tokens, and every `font-size:` in the
+    // sheet is one of them. A literal px here is a size the ramp does not
+    // govern — the exact drift (9/10/11/11.5/…) this gate exists to stop.
+    const steps = ["9.5px", "10.5px", "11.5px", "12px", "13px", "14px", "15px"];
+    const declared = [...THEME_CSS.matchAll(/--weave-px-([a-z]+):(\d+(?:\.\d+)?px)/g)].map((m) => m[2]!);
+    expect(new Set(declared)).toEqual(new Set(steps));
+    const stray = [...THEME_CSS.matchAll(/font-size:\s*([^;}]+)/g)]
+      .map((m) => m[1]!.trim())
+      .filter((size) => !/^var\(--weave-px-(prov|caption|ui|row|base|subhead|title)\)$/.test(size));
+    expect(stray).toEqual([]);
+  });
+
+  it("keeps the two-value radius scale, not ad-hoc corners", () => {
+    // Controls take --weave-radius, overlays --weave-radius-pop, tag pills
+    // are 999px capsules, and the palette input resets to 0 inside its own
+    // pop radius. Nothing else may state a literal.
+    const radii = [...THEME_CSS.matchAll(/border-radius:\s*([^;}]+)/g)].map((m) => m[1]!.trim());
+    const allowed = new Set([
+      "var(--weave-radius)",
+      "var(--weave-radius-pop)",
+      "0",
+      "999px",
+    ]);
+    expect(radii.filter((r) => !allowed.has(r))).toEqual([]);
+  });
+
   it("widens the divider's hit area without thickening the visible rule", () => {
     // A 1 px grid track is unhittable with a mouse.
     expect(THEME_CSS).toContain(".weave-divider::after");
