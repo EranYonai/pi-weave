@@ -80,6 +80,17 @@ describe("shellKey — the claimed shortcuts", () => {
     expect(shellKey(key({ key: "?" }), IDLE)).toEqual({ type: "openHelp" });
   });
 
+  it("claims `t` for the theme cycle, modifier-free", () => {
+    // Cycling colour is reversible and cheap, so it earns a bare key. Shift
+    // stays exempt — the same `KeyboardEvent.key` resolution `?` relies on —
+    // but the real modifiers must leave it alone.
+    expect(shellKey(key({ key: "t" }), IDLE)).toEqual({ type: "cycleTheme" });
+    expect(shellKey(key({ key: "t", shift: true }), IDLE)).toEqual({ type: "cycleTheme" });
+    for (const mod of ["meta", "ctrl", "alt"] as const) {
+      expect(shellKey(key({ key: "t", [mod]: true }), IDLE), mod).toBeNull();
+    }
+  });
+
   it("accepts `?` even though it arrives with Shift held", () => {
     // `?` is Shift+`/` on most layouts and `KeyboardEvent.key` has already
     // resolved it, so testing Shift would make the help key unreachable on
@@ -337,6 +348,7 @@ describe("runShellAction", () => {
       clearSelection: () => void log.push("clear"),
       toggleEdit: () => void log.push("toggleEdit"),
       saveNote: () => void log.push("saveNote"),
+      cycleTheme: () => void log.push("cycleTheme"),
     };
   }
 
@@ -357,6 +369,7 @@ describe("runShellAction", () => {
       [{ type: "clearSelection" }, "clear"],
       [{ type: "toggleEdit" }, "toggleEdit"],
       [{ type: "saveNote" }, "saveNote"],
+      [{ type: "cycleTheme" }, "cycleTheme"],
     ];
     for (const [action, expected] of cases) {
       const fx = effects();
@@ -397,6 +410,7 @@ describe("every action is reachable from a key", () => {
       [
         "clearSelection",
         "closeOverlay",
+        "cycleTheme",
         "filterTree",
         "fitGraph",
         "focusColumn",

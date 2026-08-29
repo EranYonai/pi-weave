@@ -127,14 +127,15 @@ export function isCollapsed(breakpoint: Breakpoint, column: ColumnId): boolean {
  * The persisted layout.
  *
  * `fractions` always satisfies the {@link normalizeFractions} invariant.
- * `revealed` records which viewport-collapsed columns the user has explicitly
- * opened via the toggle — it is separate from `fractions` so that opening the
- * graph on a narrow window does not disturb the widths a wide window will
- * restore.
+ *
+ * There was once a `revealed` set here — a toggle that could re-open a
+ * viewport-collapsed column — but no surface ever rendered it, so it shipped
+ * as dead state that survived persistence and loads. Deleted rather than
+ * wired: a documented-but-absent affordance is worse than none, and the
+ * breakpoint collapse is the §1.2 behaviour as specified.
  */
 export interface LayoutState {
   readonly fractions: Columns<number>;
-  readonly revealed: readonly ColumnId[];
 }
 
 /**
@@ -244,10 +245,9 @@ export function minShares(available: number): Columns<number> {
 }
 
 /** A valid {@link LayoutState} from arbitrary shares. The only constructor. */
-export function makeLayout(fractions: Columns<number>, available: number, revealed: readonly ColumnId[] = []): LayoutState {
+export function makeLayout(fractions: Columns<number>, available: number): LayoutState {
   return {
     fractions: normalizeFractions(fractions, minShares(available)),
-    revealed: COLUMNS.filter((id) => revealed.includes(id)),
   };
 }
 
@@ -339,30 +339,7 @@ export function resizeAt(state: LayoutState, divider: DividerId, deltaPx: number
   if (delta === 0) return state;
 
   const moved = { ...state.fractions, [left]: state.fractions[left] + delta, [right]: state.fractions[right] - delta };
-  return { fractions: normalizeFractions(moved, floors), revealed: state.revealed };
-}
-
-// --- toggles ------------------------------------------------------------------
-
-/**
- * Open or close a viewport-collapsed column.
- *
- * Only meaningful for a column the current breakpoint has collapsed — at
- * `"wide"` everything is already on screen and the toggle is not rendered.
- * The state is kept regardless of breakpoint so that narrowing the window,
- * opening the graph, widening, and narrowing again does not lose the
- * preference.
- */
-export function toggleColumn(state: LayoutState, column: ColumnId): LayoutState {
-  const revealed = state.revealed.includes(column)
-    ? state.revealed.filter((id) => id !== column)
-    : COLUMNS.filter((id) => id === column || state.revealed.includes(id));
-  return { fractions: state.fractions, revealed };
-}
-
-/** Whether a column is on screen: inline at this breakpoint, or revealed. */
-export function isVisible(state: LayoutState, breakpoint: Breakpoint, column: ColumnId): boolean {
-  return !isCollapsed(breakpoint, column) || state.revealed.includes(column);
+  return { fractions: normalizeFractions(moved, floors) };
 }
 
 // --- persistence ---------------------------------------------------------------
@@ -398,7 +375,6 @@ export function serializeLayout(state: LayoutState): string {
     tree: round4(state.fractions.tree),
     note: round4(state.fractions.note),
     graph: round4(state.fractions.graph),
-    revealed: [...state.revealed],
   });
 }
 
@@ -435,6 +411,9 @@ export function deserializeLayout(raw: string | null, available: number): Layout
   const record = parsed as Record<string, unknown>;
   if (record["v"] !== 1) return null;
 
+  // The `revealed` key of the toggle era is deliberately not parsed: the
+  // toggle never rendered, so a stored set is dead weight and unknown keys
+  // are ignored the same way devtools experiments are.
   const fractions: Record<ColumnId, number> = { tree: 0, note: 0, graph: 0 };
   for (const id of COLUMNS) {
     const value = record[id];
@@ -442,12 +421,7 @@ export function deserializeLayout(raw: string | null, available: number): Layout
     fractions[id] = value;
   }
 
-  const revealedRaw = record["revealed"];
-  const revealed = Array.isArray(revealedRaw)
-    ? COLUMNS.filter((id) => (revealedRaw as unknown[]).includes(id))
-    : [];
-
-  return makeLayout(fractions, available, revealed);
+  return makeLayout(fractions, available);
 }
 
 /**

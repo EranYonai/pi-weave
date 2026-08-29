@@ -22,6 +22,17 @@ import { NONCE_SOURCES, THEME_CSS, findNonce, installTheme } from "../../src/web
 import type { StyleElement, ThemeHost } from "../../src/web/client/shell/theme";
 import { COLUMNS, columnVar } from "../../src/web/client/shell/layout.model";
 import { EDITOR_PROMPT_KINDS } from "../../src/web/client/note/editor.model";
+import {
+  THEME_CHOICES,
+  THEME_STORAGE_KEY,
+  cycleTheme,
+  effectiveScheme,
+  isThemeChoice,
+  loadTheme,
+  saveTheme,
+  themeAttr,
+  themeButton,
+} from "../../src/web/client/shell/theme.model";
 
 // --- a fake document ------------------------------------------------------------
 
@@ -72,6 +83,19 @@ describe("THEME_CSS", () => {
     expect(light).toBeGreaterThan(root);
   });
 
+  it("answers the manual override through the data attribute", () => {
+    // `theme.model.ts`'s header explains the pair of selectors: an explicit
+    // light branch (must beat the media query) plus the media query narrowed
+    // by `:not([data-weave-theme="dark"])` (so a dark *choice* wins when the
+    // OS says light, and system mode still answers a live OS flip). There is
+    // deliberately no `:root[data-weave-theme="dark"]` — the dark tokens sit
+    // in the base `:root` and every light rule is guarded, so dark is what
+    // remains when the guards all fail to match. No selector here may depend
+    // on inline styles — CSP forbids them.
+    expect(THEME_CSS).toContain(':root[data-weave-theme="light"]');
+    expect(THEME_CSS).toContain(':root:not([data-weave-theme="dark"])');
+  });
+
   it("consumes the column custom properties layout.model.ts produces", () => {
     // The contract between `columnVars` and the grid rule. If either side is
     // renamed, the columns silently fall back to percentages.
@@ -96,6 +120,7 @@ describe("THEME_CSS", () => {
       "weave-summary",
       "weave-summary-part",
       "weave-refresh",
+      "weave-theme",
       "weave-conn",
       "weave-conn-dot",
       "weave-conn-ok",
@@ -401,5 +426,76 @@ describe("fetchJson", () => {
     expect(seen[0]?.["method"]).toBe("POST");
     expect(seen[0]?.["headers"]).toEqual({ "content-type": "application/json" });
     expect(seen[0]?.["body"]).toBe('{"slug":"alpha"}');
+  });
+});
+
+// --- the choice, not the palette ------------------------------------------------------
+
+describe("theme.model", () => {
+  /** A storage fake that behaves like a real `localStorage`, plus a broken one. */
+  function storage(): { getItem: (k: string) => string | null; setItem: (k: string, v: string) => void; data: Map<string, string> } {
+    const data = new Map<string, string>();
+    return { data, getItem: (k) => data.get(k) ?? null, setItem: (k, v) => void data.set(k, v) };
+  }
+
+  it("round-trips a choice through storage", () => {
+    const store = storage();
+    for (const choice of THEME_CHOICES) {
+      saveTheme(store, choice);
+      expect(loadTheme(store)).toBe(choice);
+      expect(store.data.get(THEME_STORAGE_KEY)).toBe(choice);
+    }
+  });
+
+  it("absorbs unreadable storage and foreign values as system", () => {
+    // The section-5 partitioned-storage posture: a theme that cannot load is
+    // cosmetic, never a mount failure.
+    const broken = { getItem: () => { throw new Error("quota"); }, setItem: () => {} };
+    expect(loadTheme(broken)).toBeNull();
+    const foreign = storage();
+    foreign.setItem(THEME_STORAGE_KEY, "sepia");
+    expect(loadTheme(foreign)).toBeNull();
+  });
+
+  it("saves and reports failure, in the shape saveSelection returns", () => {
+    const broken = { getItem: () => null, setItem: () => { throw new Error("quota"); } };
+    expect(saveTheme(broken, "light")).toBe(false);
+  });
+
+  it("cycles system → light → dark → system", () => {
+    expect(cycleTheme("system")).toBe("light");
+    expect(cycleTheme("light")).toBe("dark");
+    expect(cycleTheme("dark")).toBe("system");
+  });
+
+  it("resolves system mode through the OS, and a choice over it", () => {
+    expect(effectiveScheme("system", "light")).toBe("light");
+    expect(effectiveScheme("system", "dark")).toBe("dark");
+    expect(effectiveScheme("light", "dark")).toBe("light");
+    expect(effectiveScheme("dark", "light")).toBe("dark");
+  });
+
+  it("clears the attribute in system mode so the media query governs", () => {
+    // Any attribute at all would override the OS flip the media query is
+    // there to follow — so "system" is the *absence*, not a third value.
+    expect(themeAttr("system")).toBeNull();
+    expect(themeAttr("light")).toBe("light");
+    expect(themeAttr("dark")).toBe("dark");
+  });
+});
+
+describe("themeButton", () => {
+  it("gives every choice a distinct glyph from the provenance family", () => {
+    const glyphs = THEME_CHOICES.map((choice) => themeButton(choice).glyph);
+    for (const [choice, glyph] of THEME_CHOICES.map((c, i) => [c, glyphs[i]] as const)) {
+      expect(["●", "◐", "○"], choice).toContain(glyph);
+    }
+    expect(new Set(glyphs).size).toBe(THEME_CHOICES.length);
+  });
+
+  it("hints where the choice is and what clicking does", () => {
+    const view = themeButton("system");
+    expect(view.hint).toContain("system");
+    expect(view.hint).toContain("light");
   });
 });

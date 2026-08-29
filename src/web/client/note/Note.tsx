@@ -24,6 +24,7 @@
  */
 
 import DOMPurify from "dompurify";
+import { useMemo } from "preact/hooks";
 import type { GraphPayload, NotePayload } from "../../shared/wire";
 import type { EditorEvent, EditorPrompt, EditorToolbar } from "./editor.model";
 import { Editor, EditorBar } from "./Editor";
@@ -74,16 +75,33 @@ function Header({ view }: { view: NoteHeaderView }) {
 export function Note(props: NoteProps) {
   const note = props.note?.note ?? null;
   const empty = noteEmptyMessage(props.selectedId, note);
-  if (note === null) return <p class="weave-note-empty">{empty}</p>;
 
-  const index = wikiIndex(props.graph, note.slug);
+  // Both hook calls sit before the empty-return so the hook order cannot
+  // depend on whether a note is loaded. The memoization is cheap insurance:
+  // one marked parse + DOMPurify pass + O(nodes) index per *body or vault*
+  // instead of per shell render (every editor keystroke and divider pixel
+  // re-renders the shell). The instance the render builds —
+  // `markdownRenderer(index)` inside `renderNote` — stays per-call by design;
+  // only the *result* is memoized.
+  const index = useMemo(() => (note === null ? null : wikiIndex(props.graph, note.slug)), [note, props.graph]);
+  const html = useMemo(
+    () => (note === null || index === null ? "" : renderNote(DOMPurify, note.body, index)),
+    [note, index],
+  );
+
+  if (note === null || index === null) return <p class="weave-note-empty">{empty}</p>;
+
   // Bound once so TypeScript narrows it for both uses below: `toolbar.editing`
   // is what decides whether the textarea renders, and reading it twice off
   // `props` would need a non-null assertion at the second read.
   const toolbar = props.toolbar;
   const shell = { draft: props.draft, prompt: props.prompt, send: props.send };
   return (
-    <article class="weave-note">
+    // Keyed on the slug, not the body digest: the article is the scroll
+    // container, so an in-place swap would open every note at the previous
+    // note's scroll offset. A key change remounts it, and a fresh container
+    // starts at the top — no scroll-API effect to untest.
+    <article key={note.slug} class="weave-note">
       <Header view={noteHeader(note, props.now)} />
       {toolbar === null ? null : <EditorBar toolbar={toolbar} {...shell} />}
       {toolbar !== null && toolbar.editing ? (
@@ -105,7 +123,7 @@ export function Note(props: NoteProps) {
             props.onSelect(target);
           }}
           // Sanitised by `renderNote`'s three layers — see note.model.ts.
-          dangerouslySetInnerHTML={{ __html: renderNote(DOMPurify, note.body, index) }}
+          dangerouslySetInnerHTML={{ __html: html }}
         />
       )}
     </article>

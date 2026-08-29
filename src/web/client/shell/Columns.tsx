@@ -25,6 +25,7 @@
 import { Fragment } from "preact";
 import { useLayoutEffect, useRef } from "preact/hooks";
 import { Graph } from "../graph/Graph";
+import type { ColorScheme } from "../graph/graph.model";
 import type { PositionStorage } from "../graph/positions";
 import type { RendererFactory } from "../graph/renderer";
 import type { SchemeHost } from "../graph/scheme";
@@ -73,6 +74,14 @@ export interface ColumnsProps {
   renderer: RendererFactory;
   storage: PositionStorage;
   host: SchemeHost;
+  /**
+   * The scheme the shell resolved from the user's theme choice
+   * (`shell/theme.model.ts`'s `effectiveScheme`), or `null` to let the column
+   * read the OS (`graph/scheme.ts`'s `schemeOf`). The stylesheet carries the
+   * choice to everything CSS paints; WebGL cannot read custom properties, so
+   * the graph needs the decision handed to it as a value.
+   */
+  scheme: ColorScheme | null;
   /** Slot the graph column fills with its `fit`, for the global `g` key. */
   fit: { current: (() => void) | null };
   /**
@@ -117,6 +126,7 @@ function Column({ id, props }: { id: ColumnId; props: ColumnsProps }) {
           renderer={props.renderer}
           storage={props.storage}
           host={props.host}
+          scheme={props.scheme}
           fit={props.fit}
         />
       ) : null}

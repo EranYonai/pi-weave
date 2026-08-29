@@ -27,7 +27,7 @@
  * | `⌘1` `⌘2` `⌘3` | always |
  * | `⌘E` `⌘S` | always — the editor's two keys (§11 P5.4) |
  * | `Esc` | an overlay is open, or something is selected. Never otherwise |
- * | `/` `g` `?` | **only** when focus is not in a text field and no overlay is open |
+ * | `/` `g` `?` `t` | **only** when focus is not in a text field and no overlay is open |
  *
  * `⌘S` is claimed **even while typing**, which is the one place this map
  * deliberately overrides the browser. It has to be: the browser's `⌘S` is
@@ -51,6 +51,7 @@
  * `⌘K`, which would otherwise re-open the palette on top of itself.
  */
 
+import { COLUMNS, columnsAt } from "./layout.model";
 import type { ColumnId } from "./layout.model";
 import type { OverlayId } from "./shell.model";
 
@@ -104,7 +105,9 @@ export type ShellAction =
   /** `⌘E` — toggle the note column between read and edit (§11 P5.4). */
   | { readonly type: "toggleEdit" }
   /** `⌘S` — save the open draft. */
-  | { readonly type: "saveNote" };
+  | { readonly type: "saveNote" }
+  /** `t` — cycle the colour theme: system → light → dark → system. */
+  | { readonly type: "cycleTheme" };
 
 /**
  * The command-key letters, as data.
@@ -128,6 +131,18 @@ export const COMMAND_KEYS: Readonly<Record<string, ShellAction>> = {
  * `COLUMNS` rather than three hand-written cases.
  */
 export const COLUMN_DIGITS: Readonly<Record<string, ColumnId>> = { "1": "tree", "2": "note", "3": "graph" };
+
+/**
+ * The columns a breakpoint can put off screen — the graph at `"medium"`, the
+ * tree too at `"narrow"`, never the note. The help sheet's derived rows use it
+ * to stay honest about `⌘1`/`⌘3`: at 900 px the `⌘3` command is a documented
+ * no-op, and a help line that hides that is the same lie the `disabled`
+ * search button once was. Derived from `columnsAt`, not listed, so the caveat
+ * cannot drift from the breakpoints the sheet is attached to.
+ */
+const COLLAPSIBLE_COLUMNS: ReadonlySet<ColumnId> = new Set(
+  COLUMNS.filter((c) => columnsAt("medium").includes(c) === false || columnsAt("narrow").includes(c) === false),
+);
 
 /**
  * Whether a modifier combination counts as "the platform's command key".
@@ -162,6 +177,7 @@ export const BARE_KEYS: Readonly<Record<string, ShellAction>> = {
   "/": { type: "filterTree" },
   g: { type: "fitGraph" },
   "?": { type: "openHelp" },
+  t: { type: "cycleTheme" },
 };
 
 /**
@@ -346,6 +362,8 @@ export interface ShellEffects {
   toggleEdit(): void;
   /** `⌘S` — dispatch `save` into the note editor. */
   saveNote(): void;
+  /** `t` — advance the user's theme choice by one step in its cycle. */
+  cycleTheme(): void;
 }
 
 /** Perform an action. Total over {@link ShellAction}. */
@@ -371,6 +389,8 @@ export function runShellAction(action: ShellAction, fx: ShellEffects): void {
       return fx.toggleEdit();
     case "saveNote":
       return fx.saveNote();
+    case "cycleTheme":
+      return fx.cycleTheme();
   }
 }
 
@@ -408,8 +428,12 @@ export function keyHelp(cmd: string): readonly KeyHelpGroup[] {
       title: "Global",
       entries: [
         { combo: `${cmd}K`, what: "Search notes and the repository" },
-        ...Object.entries(COLUMN_DIGITS).map(([digit, column]) => ({ combo: `${cmd}${digit}`, what: `Focus the ${column} column` })),
+        ...Object.entries(COLUMN_DIGITS).map(([digit, column]) => ({
+          combo: `${cmd}${digit}`,
+          what: `Focus the ${column} column${COLLAPSIBLE_COLUMNS.has(column) ? " (when on screen)" : ""}`,
+        })),
         { combo: "?", what: "This help" },
+        { combo: "t", what: "Cycle the colour theme (system / light / dark)" },
         { combo: "Esc", what: "Clear the selection, or close an overlay" },
       ],
     },

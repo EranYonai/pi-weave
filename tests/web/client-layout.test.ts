@@ -33,7 +33,6 @@ import {
   deserializeLayout,
   dividerPair,
   isCollapsed,
-  isVisible,
   loadLayout,
   makeLayout,
   minShares,
@@ -42,7 +41,6 @@ import {
   resolveColumns,
   saveLayout,
   serializeLayout,
-  toggleColumn,
 } from "../../src/web/client/shell/layout.model";
 import type { ColumnId, Columns, LayoutState, LayoutStorage } from "../../src/web/client/shell/layout.model";
 
@@ -271,15 +269,6 @@ describe("makeLayout / defaultLayout", () => {
   it("normalises whatever it is handed", () => {
     expectValid(makeLayout({ tree: 5, note: 1, graph: 1 }, WIDE));
   });
-
-  it("starts with nothing revealed", () => {
-    expect(defaultLayout(WIDE).revealed).toEqual([]);
-  });
-
-  it("keeps revealed columns in layout order and drops unknown entries", () => {
-    const state = makeLayout(DEFAULT_FRACTIONS, WIDE, ["graph", "tree", "nope" as ColumnId]);
-    expect(state.revealed).toEqual(["tree", "graph"]);
-  });
 });
 
 // --- resolution ------------------------------------------------------------------
@@ -410,11 +399,6 @@ describe("resizeAt", () => {
     expect(resizeAt(before, "tree", delta, available)).toBe(before);
   });
 
-  it("preserves the revealed set across a drag", () => {
-    const before = toggleColumn(defaultLayout(WIDE), "graph");
-    expect(resizeAt(before, "tree", 60, WIDE).revealed).toEqual(["graph"]);
-  });
-
   it("round-trips: dragging out and back lands where it started", () => {
     const before = defaultLayout(WIDE);
     const after = resizeAt(resizeAt(before, "tree", 90, WIDE), "tree", -90, WIDE);
@@ -431,49 +415,14 @@ describe("resizeAt", () => {
   });
 });
 
-// --- toggles ----------------------------------------------------------------------
+// --- collapsing ------------------------------------------------------------------
 
-describe("toggleColumn", () => {
-  it("reveals a collapsed column", () => {
-    expect(toggleColumn(defaultLayout(WIDE), "graph").revealed).toEqual(["graph"]);
-  });
-
-  it("hides it again", () => {
-    const opened = toggleColumn(defaultLayout(WIDE), "graph");
-    expect(toggleColumn(opened, "graph").revealed).toEqual([]);
-  });
-
-  it("keeps the revealed set in layout order", () => {
-    const state = toggleColumn(toggleColumn(defaultLayout(WIDE), "graph"), "tree");
-    expect(state.revealed).toEqual(["tree", "graph"]);
-  });
-
-  it("does not disturb the widths", () => {
-    const before = defaultLayout(WIDE);
-    expect(toggleColumn(before, "graph").fractions).toEqual(before.fractions);
-  });
-});
-
-describe("isVisible", () => {
-  it("is true for every column when wide, revealed or not", () => {
-    const state = defaultLayout(WIDE);
-    for (const id of COLUMNS) expect(isVisible(state, "wide", id)).toBe(true);
-  });
-
-  it("is false for a viewport-collapsed column that has not been revealed", () => {
-    expect(isVisible(defaultLayout(WIDE), "medium", "graph")).toBe(false);
-  });
-
-  it("is true once the user opens the toggle", () => {
-    const state = toggleColumn(defaultLayout(WIDE), "graph");
-    expect(isVisible(state, "medium", "graph")).toBe(true);
-  });
-
-  it("survives a widen-then-narrow round trip — the preference is kept", () => {
-    // The reason `revealed` is state rather than a breakpoint derivation.
-    const state = toggleColumn(defaultLayout(WIDE), "graph");
-    expect(isVisible(state, "wide", "graph")).toBe(true);
-    expect(isVisible(state, "medium", "graph")).toBe(true);
+describe("isCollapsed", () => {
+  it("hides the graph at medium and everything but the note when narrow", () => {
+    expect(isCollapsed("medium", "graph")).toBe(true);
+    expect(isCollapsed("medium", "tree")).toBe(false);
+    expect(isCollapsed("narrow", "tree")).toBe(true);
+    expect(isCollapsed("wide", "graph")).toBe(false);
   });
 });
 
@@ -487,15 +436,24 @@ describe("serializeLayout / deserializeLayout", () => {
     for (const id of COLUMNS) expect(after!.fractions[id]).toBeCloseTo(before.fractions[id], 3);
   });
 
-  it("round-trips the revealed set", () => {
-    const before = toggleColumn(defaultLayout(WIDE), "graph");
-    expect(deserializeLayout(serializeLayout(before), WIDE)?.revealed).toEqual(["graph"]);
+  it("ignores a stored revealed set from the toggle era", () => {
+    // The toggle never rendered, so every stored entry carries the key. The
+    // reader must not choke on it — and must not resurrect it.
+    const legacy = '{"v":1,"tree":0.33,"note":0.34,"graph":0.33,"revealed":["graph"]}';
+    const after = deserializeLayout(legacy, WIDE);
+    expect(after).not.toBeNull();
+    expect(Object.keys(JSON.parse(serializeLayout(after!)) as Record<string, unknown>).sort()).toEqual([
+      "graph",
+      "note",
+      "tree",
+      "v",
+    ]);
   });
 
   it("writes a versioned, human-readable object", () => {
     const parsed = JSON.parse(serializeLayout(defaultLayout(WIDE))) as Record<string, unknown>;
     expect(parsed["v"]).toBe(1);
-    expect(Object.keys(parsed).sort()).toEqual(["graph", "note", "revealed", "tree", "v"]);
+    expect(Object.keys(parsed).sort()).toEqual(["graph", "note", "tree", "v"]);
   });
 
   it("rounds fractions to four decimals so a stored entry is readable", () => {
@@ -532,13 +490,13 @@ describe("serializeLayout / deserializeLayout", () => {
     expectValid(state!);
   });
 
-  it("ignores a non-array revealed field", () => {
-    expect(deserializeLayout('{"v":1,"tree":0.2,"note":0.5,"graph":0.3,"revealed":"graph"}', WIDE)?.revealed).toEqual([]);
-  });
-
-  it("filters junk out of the revealed array", () => {
-    const raw = '{"v":1,"tree":0.2,"note":0.5,"graph":0.3,"revealed":["graph","../etc/passwd",7]}';
-    expect(deserializeLayout(raw, WIDE)?.revealed).toEqual(["graph"]);
+  it("ignores a stored revealed field from the toggle era", () => {
+    // Both the junk the old reader filtered and the string a hand-editor
+    // would produce: unknown keys carry no meaning now.
+    expect(deserializeLayout('{"v":1,"tree":0.2,"note":0.5,"graph":0.3,"revealed":"graph"}', WIDE)).not.toBeNull();
+    expect(
+      deserializeLayout('{"v":1,"tree":0.2,"note":0.5,"graph":0.3,"revealed":["graph","../etc/passwd",7]}', WIDE),
+    ).not.toBeNull();
   });
 
   it("survives a hand-edited entry that a user typed into devtools", () => {
@@ -550,9 +508,10 @@ describe("serializeLayout / deserializeLayout", () => {
 
 describe("loadLayout", () => {
   it("reads a stored layout", () => {
-    const stored = toggleColumn(defaultLayout(WIDE), "graph");
+    const stored = resizeAt(defaultLayout(WIDE), "tree", 130, WIDE);
     const storage = fakeStorage({ [LAYOUT_STORAGE_KEY]: serializeLayout(stored) });
-    expect(loadLayout(storage, WIDE).revealed).toEqual(["graph"]);
+    const loaded = loadLayout(storage, WIDE);
+    for (const id of COLUMNS) expect(loaded.fractions[id]).toBeCloseTo(stored.fractions[id], 3);
   });
 
   it("falls back to the default when storage is empty", () => {
@@ -576,8 +535,8 @@ describe("loadLayout", () => {
   });
 
   it("uses the namespaced key and nothing else", () => {
-    const storage = fakeStorage({ layout: serializeLayout(toggleColumn(defaultLayout(WIDE), "graph")) });
-    expect(loadLayout(storage, WIDE).revealed).toEqual([]);
+    const storage = fakeStorage({ layout: serializeLayout(defaultLayout(WIDE)) });
+    expect(loadLayout(storage, WIDE)).toEqual(defaultLayout(WIDE));
   });
 });
 

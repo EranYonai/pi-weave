@@ -54,6 +54,16 @@
  * bundle has parsed — while the palette a user actually looks at is decided
  * here.
  *
+ * And since `shell/theme.model.ts`, the palette a user looks at is a
+ * *choice*: `:root` carries dark, the light tokens sit in
+ * {@link LIGHT_TOKENS} and are applied by a `data-weave-theme` attribute
+ * (a manual selection) and by the media query narrowed with
+ * `:root:not([data-weave-theme="dark"])` (the system default). Clearing the
+ * attribute returns the workspace to following the OS with no client-side
+ * listener involved. The graph follows the same resolution through
+ * `theme.model.ts`'s `effectiveScheme`, because its WebGL palette cannot
+ * read any of this.
+ *
  * ## "Dense but calm" (§1.2)
  *
  * The sketch is an information-dense IDE surface, not a marketing page, so
@@ -82,28 +92,48 @@
  *   neutral, which is what keeps a warm ground from feeling tinted.
  *
  * Status colours follow each scheme's temperature (sage/amber/brick in
- * light; soft green/amber/rose on indigo) at ≥ 4.2:1 text contrast, replacing
- * the framework defaults this sheet shipped with.
+ * light; soft green/amber/rose on indigo) at ≥ 4.5:1 text contrast — measured,
+ * not eyeballed (`eb93a1`/`2a2f4f` 5.70, `a93b45`/`f8ede3` 5.36), replacing
+ * the framework defaults this sheet shipped with. The dark rose is lightened
+ * from its first draft `#e37e8d` — which already passed at 4.72, but only
+ * just — to `#eb93a1` for margin.
  *
  * The graph cannot read these variables (WebGL — `graph.model.ts`), so
  * `GRAPH_PALETTE` mirrors seven of the slots as literals; the test that makes
  * that copy safe asserts every mirrored hex appears in this string.
  */
-export const THEME_CSS = `
-:root{
-  --weave-bg:#2a2f4f;--weave-panel:#343b61;--weave-raise:#3d4570;--weave-fg:#fde2f3;--weave-dim:#bb9ecf;
-  --weave-faint:#8f83b5;--weave-line:#3b4266;--weave-line-strong:#4a527e;
-  --weave-accent:#b79fdd;--weave-ok:#7fc49a;--weave-warn:#e8b04c;--weave-bad:#e37e8d;
-  --weave-new:rgba(145,127,179,.22);
-  --weave-row:26px;--weave-gutter:10px;
-}
-@media (prefers-color-scheme: light){
-  :root{
+/**
+ * The light-block tokens, interpolated into both selectors that need them —
+ * see the {@link THEME_CSS} branch rules.
+ */
+const LIGHT_TOKENS = `
     --weave-bg:#f8ede3;--weave-panel:#fdf9f3;--weave-raise:#f1e3d4;--weave-fg:#43303a;--weave-dim:#7c6257;
     --weave-faint:#a68d80;--weave-line:#dfd3c3;--weave-line-strong:#d0b8a8;
     --weave-accent:#85586f;--weave-ok:#3f704e;--weave-warn:#a05a1c;--weave-bad:#a93b45;
     --weave-new:rgba(133,88,111,.16);
+  `;
+
+export const THEME_CSS = `
+:root{
+  --weave-bg:#2a2f4f;--weave-panel:#343b61;--weave-raise:#3d4570;--weave-fg:#fde2f3;--weave-dim:#bb9ecf;
+  --weave-faint:#8f83b5;--weave-line:#3b4266;--weave-line-strong:#4a527e;
+  --weave-accent:#b79fdd;--weave-ok:#7fc49a;--weave-warn:#e8b04c;--weave-bad:#eb93a1;
+  --weave-new:rgba(145,127,179,.22);
+  --weave-row:26px;--weave-gutter:10px;
+}
+/* The light tokens, shared verbatim by the attribute branch and the media
+   query below — one const interpolated twice is the only way CSS gets
+   "these are the same colours" without a preprocessor. Which branch wins is
+   theme.model.ts's business: the attribute carries a *manual* choice, the
+   media query the system default, and the :not() is what lets the two coexist
+   without a manual "dark" being dragged back into light by the OS. */
+@media (prefers-color-scheme: light){
+  :root:not([data-weave-theme="dark"]){
+    ${LIGHT_TOKENS}
   }
+}
+:root[data-weave-theme="light"]{
+  ${LIGHT_TOKENS}
 }
 body{font-size:13px}
 #app{height:100%;display:grid;grid-template-rows:auto 1fr auto;background:var(--weave-bg)}
@@ -139,6 +169,14 @@ body{font-size:13px}
   border:0;padding:3px 5px;border-radius:4px;cursor:pointer;
 }
 .weave-refresh:hover{color:var(--weave-fg);background:var(--weave-line)}
+/* The theme cycle (shell/theme.model.ts). Same shape as the refresh button:
+   an icon-size control in a 34 px bar, glyph-only because the filled/half/
+   hollow family already means something in this workspace. */
+.weave-theme{
+  font:inherit;font-size:13px;line-height:1;color:var(--weave-dim);background:none;
+  border:0;padding:3px 6px;border-radius:4px;cursor:pointer;
+}
+.weave-theme:hover{color:var(--weave-fg);background:var(--weave-line)}
 
 /* connection indicator -------------------------------------------------- */
 .weave-conn{display:inline-flex;align-items:center;gap:5px;font-size:11.5px;color:var(--weave-dim);white-space:nowrap}
@@ -375,7 +413,7 @@ body{font-size:13px}
 .weave-ctx-empty{margin:0;padding:10px var(--weave-gutter);color:var(--weave-dim);line-height:1.5}
 .weave-ctx-group{padding:5px var(--weave-gutter) 2px}
 .weave-ctx-heading{
-  margin:0 0 2px;font-size:9.5px;font-weight:600;letter-spacing:.09em;color:var(--weave-faint);
+  margin:0 0 2px;font-size:10px;font-weight:600;letter-spacing:.09em;color:var(--weave-faint);
 }
 .weave-ctx-rows,.weave-ctx-tags{margin:0;padding:0;list-style:none}
 .weave-ctx-row{display:flex}
@@ -409,6 +447,14 @@ body{font-size:13px}
 .weave-scrim{
   position:fixed;inset:0;z-index:10;display:flex;justify-content:center;
   align-items:flex-start;padding:9vh 16px 16px;background:rgba(0,0,0,.45);
+}
+/* The scrim above is tuned for the dark ground, where a neutral black veil
+   reads as depth. On the linen ground the same veil reads as a power cut, so
+   the light scheme gets its own — a plum-tinted veil at reduced strength,
+   drawn from the foreground ramp rather than from grey. */
+:root[data-weave-theme="light"] .weave-scrim{background:rgba(67,48,58,.28)}
+@media (prefers-color-scheme: light){
+  :root:not([data-weave-theme="dark"]) .weave-scrim{background:rgba(67,48,58,.28)}
 }
 .weave-palette,.weave-help{
   display:flex;flex-direction:column;width:100%;max-width:560px;max-height:72vh;
@@ -451,6 +497,19 @@ body{font-size:13px}
 
 /* focus ----------------------------------------------------------------- */
 :focus-visible{outline:2px solid var(--weave-accent);outline-offset:1px}
+/* Text selection rides the accent, not the browser default: a selection in
+   the ⌘K palette and a selection while editing stay *of* this theme, and the
+   --weave-new tint is exactly an accent at a strength text stays legible in. */
+::selection{background:var(--weave-new)}
+/* Every scroller in the workspace (rows, note body, rail, palette results,
+   help sheet, editor) gets the same thin chrome: the default scrollbar is a
+   15 px system object the hairline aesthetic cannot afford, and Firefox and
+   the Blink/WebKit pair cover the whole surface with these five rules. */
+*{scrollbar-width:thin;scrollbar-color:var(--weave-line-strong) transparent}
+::-webkit-scrollbar{width:8px;height:8px}
+::-webkit-scrollbar-track{background:transparent}
+::-webkit-scrollbar-thumb{background:var(--weave-line-strong);border-radius:4px}
+::-webkit-scrollbar-thumb:hover{background:var(--weave-faint)}
 @media (prefers-reduced-motion: reduce){*{transition:none!important;animation:none!important}}
 `;
 

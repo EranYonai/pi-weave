@@ -42,7 +42,7 @@ import {
 } from "../../src/web/client/graph/column.model";
 import type { GraphViewState } from "../../src/web/client/graph/column.model";
 import type { PositionStorage } from "../../src/web/client/graph/positions";
-import { LIGHT_QUERY, schemeOf } from "../../src/web/client/graph/scheme";
+import { LIGHT_QUERY, type SchemeList, schemeOf } from "../../src/web/client/graph/scheme";
 import { viewModel } from "../../src/web/client/tree/tree.model";
 import { REPO_LIKE_ROOTS, repoLikeGraph } from "../fixtures/graphShapes";
 
@@ -408,8 +408,16 @@ describe("tooltips", () => {
 
 describe("schemeOf", () => {
   it("reads prefers-color-scheme", () => {
-    expect(schemeOf({ matchMedia: (q) => ({ matches: q === LIGHT_QUERY }) })).toBe("light");
-    expect(schemeOf({ matchMedia: () => ({ matches: false }) })).toBe("dark");
+    // A fake list is an object literal with a listener slot, exactly as
+    // `SchemeList`'s header promises: the real platform list satisfies the
+    // interface structurally, so the fakes do too.
+    const list = (matches: boolean): SchemeList => ({
+      matches,
+      addEventListener: () => {},
+      removeEventListener: () => {},
+    });
+    expect(schemeOf({ matchMedia: (q) => list(q === LIGHT_QUERY) })).toBe("light");
+    expect(schemeOf({ matchMedia: () => list(false) })).toBe("dark");
   });
 
   it("defaults to dark, matching the sheet the user ends up looking at", () => {

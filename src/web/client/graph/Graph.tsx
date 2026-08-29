@@ -29,7 +29,7 @@
  * `Shell.tsx` uses for its drag handlers, for the same reason.
  */
 
-import { useEffect, useMemo, useRef, useState, useCallback } from "preact/hooks";
+import { useEffect, useRef, useState, useCallback, useMemo } from "preact/hooks";
 import type { GraphPayload } from "../../shared/wire";
 import type { GraphViewState } from "./column.model";
 import {
@@ -49,6 +49,7 @@ import type { PositionStorage } from "./positions";
 import type { GraphRenderer, RendererFactory } from "./renderer";
 import { schemeOf } from "./scheme";
 import type { SchemeHost } from "./scheme";
+import type { ColorScheme } from "./graph.model";
 import { createGraphSimulation } from "./dynamics";
 import type { GraphSimulation } from "./dynamics";
 
@@ -62,6 +63,14 @@ export interface GraphProps {
   storage: PositionStorage;
   /** Injected: `window`. Read once, for `prefers-color-scheme`. */
   host: SchemeHost;
+  /**
+   * The effective scheme, resolved by the shell from the user's theme choice
+   * (`shell/theme.model.ts`), or `null`/omitted to read the OS via
+   * {@link schemeOf}. A change remounts the renderer — the one response to a
+   * palette change `renderer.ts` calls honest — because a WebGL palette is
+   * fixed at construction.
+   */
+  scheme: ColorScheme | null;
   /**
    * A slot the column writes its `fit` into, so the global `g` key can reach
    * it (§11 P4).
@@ -106,9 +115,21 @@ export function Graph(props: GraphProps) {
   // expanded". `effectiveView` resolves the difference; see its doc comment.
   const [state, setState] = useState<GraphViewState | null>(null);
 
-  const scheme = useMemo(() => schemeOf(props.host), [props.host]);
+  // The shell's decision wins; `schemeOf` stays for a host-driven default.
+  const scheme = props.scheme ?? schemeOf(props.host);
   const view = effectiveView(props.graph, state);
-  const model = graphColumnModel(props.graph, props.selectedId, view, props.storage, scheme);
+  // Memoized for two reasons, one cheap and one load-bearing. Cheap: the
+  // shell re-renders on every editor keystroke and every divider pixel, and
+  // an un-memoized run re-reads `localStorage` and re-parses the position
+  // map for a model nothing uses. Load-bearing: the effects below key on
+  // `model.highlight`'s *identity* — an un-memoized model hands them a fresh
+  // `Set` every render, so typing in the note would repaint the whole WebGL
+  // graph. Identity is the whole contract; do not switch the effect to
+  // comparing set contents, the memo makes comparison unnecessary.
+  const model = useMemo(
+    () => graphColumnModel(props.graph, props.selectedId, view, props.storage, scheme),
+    [props.graph, props.selectedId, view, props.storage, scheme],
+  );
   const everything = allExpanded(view, model.clusters);
 
   // Read by the mount-time `onSelect`, which outlives this render.

@@ -80,6 +80,13 @@ export interface GraphViewState {
  * explicitly rather than carrying an "all" flag, because `clusterAggregate`
  * takes a set and the first thing a user does is collapse one — which has to
  * leave the others open.
+ *
+ * On cost, measured (244 nodes / 251 edges, ticks: 300): a *cold* cache-miss
+ * layout once blocked the main thread for ~0.4–0.8 s — not "tens of
+ * milliseconds". Two corrections landed: `forceCollide` dropped to one pass
+ * per tick (~45 % faster), and the honest number is now on the record here.
+ * `warm` re-layouts stay in the ~250 ms range; the `[collapse]` control
+ * remains the escape hatch for everything.
  */
 export function initialGraphView(model: ViewGraphModel): GraphViewState {
   return { expanded: new Set(clusterAggregate(model, new Set()).clusters.keys()) };
