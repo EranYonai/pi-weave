@@ -15,6 +15,7 @@
  * | `singleNodeGraph`    | no NaN, no crash                                  |
  * | `emptyGraph`         | no NaN, no crash                                  |
  * | `pathologicalGraph`  | self-edges and edges to missing ids are survivable|
+ * | `siblingBlobsGraph`  | big sibling branches separate with a corridor     |
  */
 
 import type { GraphEdge, GraphModel, GraphNode, NodeKind } from "../../src/core/graph/model";
@@ -191,3 +192,69 @@ export function pathologicalGraph(): GraphModel {
   ];
   return model(nodes, edges);
 }
+
+/**
+ * The sibling-blobs shape: the real repository's tangle, abstracted.
+ *
+ * Two roots whose big branches are blobs of their own — a `module:summaries`
+ * fan of summary files and a `vfolder:sessions` fan of session notes — plus a
+ * smaller `module:src` branch and the usual small twigs. Under single-centre
+ * gravity these interleave into one hairball (measured on the real graph:
+ * bounding-box gap 0 between the `module:.okf` and `vfolder:sessions`
+ * subtrees), which is the bug `branchAnchors` exists to fix. A handful of
+ * `links-to` edges cross the blobs, so separation is genuine work against
+ * real edges rather than two disconnected components.
+ */
+export function siblingBlobsGraph(): GraphModel {
+  const nodes: GraphNode[] = [];
+  const edges: GraphEdge[] = [];
+
+  // 1. the repository — three modules, two of them big.
+  nodes.push(node("repository", "repository", "pi-weave"));
+  nodes.push(node("module:summaries", "module", "summaries"));
+  edges.push(edge("repository", "module:summaries"));
+  for (let i = 0; i < 60; i++) {
+    const id = `file:summaries/s${pad(i)}.md`;
+    nodes.push(node(id, "file", `s${pad(i)}.summary.md`));
+    edges.push(edge("module:summaries", id));
+  }
+  nodes.push(node("module:src", "module", "src"));
+  edges.push(edge("repository", "module:src"));
+  for (let i = 0; i < 12; i++) {
+    const id = `module:src/m${pad(i)}`;
+    nodes.push(node(id, "module", `src/m${pad(i)}`));
+    edges.push(edge("module:src", id));
+  }
+  // a small twig: joins the root group, must not get a ring slot of its own.
+  nodes.push(node("module:docs", "module", "docs"));
+  edges.push(edge("repository", "module:docs"));
+  for (let i = 0; i < 2; i++) {
+    const id = `file:docs/d${pad(i)}.md`;
+    nodes.push(node(id, "file", `d${pad(i)}.md`));
+    edges.push(edge("module:docs", id));
+  }
+
+  // 2. the vault — one big sessions branch, four loose notes.
+  nodes.push(node("vault", "vault", "Vault"));
+  nodes.push(node("vfolder:sessions", "module", "sessions"));
+  edges.push(edge("vault", "vfolder:sessions"));
+  for (let i = 0; i < 20; i++) {
+    const id = `note:session-${pad(i)}`;
+    nodes.push(node(id, "note", `Session ${pad(i)}`, i % 2 ? "agent" : "human"));
+    edges.push(edge("vfolder:sessions", id));
+  }
+  for (let i = 0; i < 4; i++) {
+    const id = `note:loose-${pad(i)}`;
+    nodes.push(node(id, "note", `Loose ${pad(i)}`, "human"));
+    edges.push(edge("vault", id));
+  }
+
+  // Cross-blob associations — few, like the real thing.
+  edges.push(edge("note:session-000", "module:src/m000", "links-to"));
+  edges.push(edge("note:loose-001", "module:summaries", "mentions"));
+
+  return model(nodes, edges);
+}
+
+/** The big branches of {@link siblingBlobsGraph}, in id order. */
+export const SIBLING_BLOB_BRANCHES: readonly string[] = ["module:src", "module:summaries", "vfolder:sessions"];

@@ -38,7 +38,7 @@
  */
 
 import type { Point } from "../../shared/layout";
-import { createForceSimulation, isContainment } from "../../shared/layout";
+import { branchAnchors, createForceSimulation, isContainment } from "../../shared/layout";
 import type { WireEdgeKind } from "../../shared/graph";
 import type { RenderGraph } from "./graph.model";
 
@@ -123,11 +123,16 @@ export function createGraphSimulation(graph: RenderGraph, initial?: ReadonlyMap<
   }
 
   // No invented seeding; centre gravity lives in the factory (`forceX()`/
-  // `forceY()`). `anchors` starts empty — every node targets the origin — and
-  // grows on release: a dropped node's anchor is retargeted to its drop point,
-  // so placement sticks (the anchor is five times stronger than the leaf
+  // `forceY()`). The anchors start as the **branch ring** (`branchAnchors`),
+  // so a released graph holds the separated equilibrium the static layout
+  // settled into instead of gliding back toward one centre — the live and
+  // static paths share one physics, and that includes its gravity targets.
+  // `release` then overrides a dropped node's entry with its drop point, so a
+  // placement sticks (the anchor is five times stronger than the leaf
   // spring, so the node rests where the user left it).
-  const anchors = new Map<string, Point>();
+  const settled = new Map<string, Point>();
+  for (const node of graph.nodes) settled.set(node.id, { x: node.x, y: node.y });
+  const anchors = new Map<string, Point>(branchAnchors(graph, settled));
   const sim = createForceSimulation({ nodes, links, anchors, seed: 1 })
     .alpha(SETTLE_ALPHA)
     .alphaMin(ALPHA_MIN);

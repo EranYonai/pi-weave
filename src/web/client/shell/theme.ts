@@ -63,21 +63,46 @@
  * and 1 px hairline rules; calm comes from a **single** accent colour used
  * only for focus and selection, three greys doing all the structural work,
  * and no borders where a background change already separates two regions.
+ *
+ * ## Where the hexes come from
+ *
+ * Both schemes are derived from two four-colour seeds, and every token is
+ * either one of the four or a blend/darkening of them — so the two schemes
+ * read as siblings of one product, not a light theme bolted onto a dark one:
+ *
+ * - **Dark, "indigo dusk"** — `#2A2F4F` ground, `#917FB3` violet kept for
+ *   fills and the `--weave-new` tint, `#E5BEEC` and `#FDE2F3` as the text
+ *   ramp. `--weave-accent` is the halfway blend of the violet and the lilac
+ *   (`#B79FDD`, 5.6:1 on the ground) because the violet alone sits at 3.8:1 —
+ *   fine under a pointer, too faint for an 11 px link or a focus ring.
+ * - **Light, "linen & plum"** — `#F8EDE3` ground, `#DFD3C3`/`#D0B8A8` as the
+ *   hairline pair, and the plum `#85586F` running the *whole* text ramp:
+ *   foreground is plum darkened to `#43303A`, dim plum warmed to `#7C6257`,
+ *   faint lightened to `#A68D80`. The greys are of the palette rather than
+ *   neutral, which is what keeps a warm ground from feeling tinted.
+ *
+ * Status colours follow each scheme's temperature (sage/amber/brick in
+ * light; soft green/amber/rose on indigo) at ≥ 4.2:1 text contrast, replacing
+ * the framework defaults this sheet shipped with.
+ *
+ * The graph cannot read these variables (WebGL — `graph.model.ts`), so
+ * `GRAPH_PALETTE` mirrors seven of the slots as literals; the test that makes
+ * that copy safe asserts every mirrored hex appears in this string.
  */
 export const THEME_CSS = `
 :root{
-  --weave-bg:#141317;--weave-panel:#191820;--weave-fg:#e8e6ee;--weave-dim:#8f8a9c;
-  --weave-faint:#5d5869;--weave-line:#26242e;--weave-line-strong:#343141;
-  --weave-accent:#a48cff;--weave-ok:#4ade80;--weave-warn:#fbbf24;--weave-bad:#f87171;
-  --weave-new:rgba(164,140,255,.20);
+  --weave-bg:#2a2f4f;--weave-panel:#343b61;--weave-raise:#3d4570;--weave-fg:#fde2f3;--weave-dim:#bb9ecf;
+  --weave-faint:#8f83b5;--weave-line:#3b4266;--weave-line-strong:#4a527e;
+  --weave-accent:#b79fdd;--weave-ok:#7fc49a;--weave-warn:#e8b04c;--weave-bad:#e37e8d;
+  --weave-new:rgba(145,127,179,.22);
   --weave-row:26px;--weave-gutter:10px;
 }
 @media (prefers-color-scheme: light){
   :root{
-    --weave-bg:#faf9f7;--weave-panel:#ffffff;--weave-fg:#1c1b19;--weave-dim:#6f6b66;
-    --weave-faint:#9a958e;--weave-line:#e6e3de;--weave-line-strong:#d2cec8;
-    --weave-accent:#6d4aff;--weave-ok:#15803d;--weave-warn:#b45309;--weave-bad:#b91c1c;
-    --weave-new:rgba(109,74,255,.14);
+    --weave-bg:#f8ede3;--weave-panel:#fdf9f3;--weave-raise:#f1e3d4;--weave-fg:#43303a;--weave-dim:#7c6257;
+    --weave-faint:#a68d80;--weave-line:#dfd3c3;--weave-line-strong:#d0b8a8;
+    --weave-accent:#85586f;--weave-ok:#3f704e;--weave-warn:#a05a1c;--weave-bad:#a93b45;
+    --weave-new:rgba(133,88,111,.16);
   }
 }
 body{font-size:13px}

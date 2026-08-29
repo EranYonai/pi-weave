@@ -41,6 +41,7 @@ import {
   edgeColor,
   edgeKey,
   edgeReducer,
+  frameBox,
   graphSettings,
   kindColor,
   nodeLabel,
@@ -56,6 +57,7 @@ import type {
   RenderEdge,
   RenderGraph,
   RenderNode,
+  ViewBox,
 } from "../../src/web/client/graph/graph.model";
 import { emptyProjection, positionsOf, project, syncPositions } from "../../src/web/client/graph/project";
 import { nullRenderer, sigmaRenderer } from "../../src/web/client/graph/renderer";
@@ -462,6 +464,33 @@ describe("the highlight reducers (§7.4)", () => {
 
 // --- settings (§7.4) ----------------------------------------------------------------------
 
+describe("frameBox — the frozen view box", () => {
+  it("is the exact extent of the positions", () => {
+    const box = frameBox([
+      { x: -10, y: 5 },
+      { x: 30, y: -2 },
+      { x: 7, y: 9 },
+    ]);
+    expect(box).toEqual({ x: [-10, 30], y: [-2, 9] });
+  });
+
+  it("is null for no finite positions", () => {
+    // The degenerate inputs must not produce a box of ±Infinity — the caller
+    // clears sigma's override instead and lets the default take over.
+    expect(frameBox([])).toBeNull();
+    expect(frameBox([{ x: Number.NaN, y: 0 }, { x: 0, y: Number.POSITIVE_INFINITY }])).toBeNull();
+  });
+
+  it("keeps finite positions and drops poisoned ones", () => {
+    const box = frameBox([
+      { x: 1, y: 1 },
+      { x: Number.NaN, y: 4 },
+      { x: 5, y: -3 },
+    ]);
+    expect(box).toEqual({ x: [1, 5], y: [-3, 1] });
+  });
+});
+
 describe("sigma settings (§7.4)", () => {
   it("sets every §7.4 semantic-zoom lever", () => {
     const settings = graphSettings("dark");
@@ -695,6 +724,8 @@ function fakeSigma() {
   let resets = 0;
   const panning: boolean[] = [];
   let prevented = 0;
+  /** The boxes handed to `setCustomBBox`, in order — `null` means cleared. */
+  const boxes: Array<ViewBox | null> = [];
 
   const instance: SigmaLike = {
     on(event: string, handler: unknown) {
@@ -717,6 +748,11 @@ function fakeSigma() {
     setGraph(next) {
       calls.push("setGraph");
       graph = next;
+      return instance;
+    },
+    setCustomBBox(box) {
+      calls.push("setCustomBBox");
+      boxes.push(box);
       return instance;
     },
     refresh() {
@@ -754,6 +790,7 @@ function fakeSigma() {
     resets: () => resets,
     graph: () => graph,
     panning: () => panning,
+    boxes: () => boxes,
     nodeReducer: () => nodes,
     edgeReducer: () => edges,
     clickNode: (id: string) => handlers.node?.({ node: id }),
@@ -826,6 +863,58 @@ describe("sigmaRenderer over the injected constructor (§7.5)", () => {
     renderer.mount(container);
     renderer.mount(container);
     expect(fake.created).toHaveLength(1);
+  });
+
+  it("freezes the view box onto the graph it mounts with", () => {
+    // The first frame is already framed: the box is set at mount for whatever
+    // graph arrived before it, so the view does not start on sigma's moving
+    // auto-fit and then snap once the box lands.
+    const fake = fakeSigma();
+    const renderer = sigmaRenderer(fake.factory, "dark");
+    renderer.setGraph(model);
+    renderer.mount(container);
+    expect(fake.boxes()).toEqual([{ x: [0, 10], y: [0, 10] }]);
+  });
+
+  it("re-frames the box on a new graph, and never while the sim settles", () => {
+    // A shape change legitimately changes the extent (new nodes). A settling
+    // simulation does not — `setPositions` must leave the box alone, or every
+    // drag frame would move the view under the cursor again, which is exactly
+    // the autoRescale behaviour the box exists to replace.
+    const fake = fakeSigma();
+    const renderer = sigmaRenderer(fake.factory, "dark");
+    renderer.mount(container);
+    renderer.setGraph(model);
+    expect(fake.boxes().length).toBe(2); // mount (empty) + setGraph
+    renderer.setPositions(
+      new Map([
+        ["a", { x: 500, y: 0 }],
+        ["b", { x: 510, y: 0 }],
+        ["c", { x: 500, y: 10 }],
+      ]),
+    );
+    expect(fake.boxes().length).toBe(2);
+  });
+
+  it("fit re-frames onto the current positions, then resets the camera", () => {
+    // A graph the user has pulled apart wants its dragged nodes inside the
+    // view: `fit` recomputes the box from what is on screen now, rather than
+    // reusing the box the graph arrived with.
+    const fake = fakeSigma();
+    const renderer = sigmaRenderer(fake.factory, "dark");
+    renderer.setGraph(model);
+    renderer.mount(container);
+    renderer.setPositions(
+      new Map([
+        ["a", { x: 100, y: 0 }],
+        ["b", { x: 110, y: 0 }],
+        ["c", { x: 100, y: 10 }],
+      ]),
+    );
+    renderer.fit();
+    const last = fake.boxes()[fake.boxes().length - 1];
+    expect(last).toEqual({ x: [100, 110], y: [0, 10] });
+    expect(fake.resets()).toBe(1);
   });
 
   it("routes a node click and a stage click to the §1.3 bus", () => {

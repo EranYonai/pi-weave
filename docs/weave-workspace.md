@@ -96,6 +96,14 @@ concessions. Sigma is the battle-tested package for *this* problem.
 
 Revisit only if we measurably exceed sigma's comfort zone (tens of thousands of nodes). §7.5 keeps that swap cheap.
 
+**One sigma default we refuse: `autoRescale`.** Sigma's default recomputes the graph→viewport normalization from the *moving extent* on
+every repaint — and a drag repaints every frame. The moment a dragged node crossed the extent boundary (the edge of the view), the whole
+graph rescaled under the cursor: the view "suddenly made a distance", the node read as dragged very far from the centre while the user
+chased it, and node sizes shrank with every frame. The renderer now freezes the view onto a `setCustomBBox` computed from the rendered
+positions — on mount, on every `setGraph` (a shape change legitimately changes the extent) and on `[fit]` (which re-frames onto the
+*current* positions, dragged nodes included) — and never while the simulation settles, so a drag's coordinates are stable for its whole
+gesture and the canvas itself bounds how far a node can be pulled. `graph.model.ts`'s `frameBox` is the pure half; the renderer wires it.
+
 ---
 
 ## 1. Product frame
@@ -701,6 +709,20 @@ reproducible layouts — which is what makes §8 a stable CI gate rather than a 
 I checked the alternative: `graphology-layout-forceatlas2/iterate.js` contains **no** jiggle and no coincident-node special case. It would
 reproduce our bug. Rejected.
 
+**Big sibling branches get a second pass.** Single-centre gravity has a failure d3's example never faces: two blobs that share a root —
+measured on this repository, a 195-node `module:.okf` and a 40-node `vfolder:sessions`, connected by almost nothing — interleave at the
+same centre into one hairball (bounding-box gap **0** between their subtrees). When a model has depth-1 branches of ≥ 8 nodes
+(`BIG_BRANCH_MIN`), the layout runs twice: pass 1 is the recipe unchanged (so the ring can measure each blob's *actual* spread), then every
+branch is teleported onto its slot on a ring sized from those measurements — transport is arithmetic, not physics, because gravity alone
+moved the smallest blob only 40 % of the way in 150 anchored ticks and the tick budget is a smoothness parameter, not a quality one — and
+pass 2 relaxes the arrangement into place with each branch's gravity re-targeted onto its slot. The root group (roots, single notes, small
+twigs) keeps the origin, preserving the no-component-escapes guarantee and the five-root separation the §8 gate asserts. Measured on the
+real graph: gap **0 → 980** layout units between the summaries and sessions blobs; the gate lives in `layout.dynamics.test.ts`'s
+sibling-blobs block over `tests/fixtures/graphShapes.ts`'s `siblingBlobsGraph()`. Graphs without big branches take the exact single-pass
+path the §8 gate was written against. The live driver (`dynamics.ts`) seeds the same ring, so a released graph holds the separated
+equilibrium instead of gliding back to one centre. The positions cache is versioned (`v2`) — the shape key cannot see a recipe change under
+the same node and edge set, so the version is what discards the tangled `v1` arrangements.
+
 ### 7.3 Where layout runs
 
 Server-side on first load (Node, ~300 ticks, tens of ms for this graph), shipped in `GraphPayload.positions`, so the graph appears already
@@ -1283,7 +1305,7 @@ chrome, and `THEME_CSS` is now roughly **12.8 KiB** of CSS inside the JS bundle.
 is now more than twice as strong.
 
 Meanwhile `page.ts`'s `THEME_CSS` — the block that *does* paint before the bundle arrives, and whose stated job is "a dark-mode user should
-not get a white flash" — is still **light-first** (`--weave-bg:#faf9f7`, with dark behind a `prefers-color-scheme` media query) and knows
+not get a white flash" — is still **light-first** (`--weave-bg:#f8ede3`, with dark behind a `prefers-color-scheme` media query) and knows
 nothing about the grid the client actually renders. The two stylesheets also disagree: the shell's palette is dark-first with a light media
 query, and defines variables (`--weave-panel`, `--weave-faint`, `--weave-line-strong`, `--weave-row`, `--weave-gutter`) that the server
 block does not. A dark-mode user therefore gets a light flash from the very block written to prevent one.

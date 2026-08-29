@@ -18,7 +18,15 @@
  */
 
 import { describe, expect, it } from "vitest";
-import { COLLIDE_RADIUS as COLLIDE_RADIUS_VALUE, NODE_RADIUS, computeLayout, lcg } from "../../src/web/shared/layout";
+import {
+  BIG_BRANCH_MIN,
+  COLLIDE_RADIUS as COLLIDE_RADIUS_VALUE,
+  NODE_RADIUS,
+  bigBranches,
+  branchAnchors,
+  computeLayout,
+  lcg,
+} from "../../src/web/shared/layout";
 import type { Point } from "../../src/web/shared/layout";
 import { allFinite, angularOccupancy, bbox, clusterSeparation, minPairwiseDistance, variance } from "../../src/web/shared/metrics";
 import {
@@ -30,6 +38,7 @@ import {
   emptyGraph,
   pathologicalGraph,
   repoLikeGraph,
+  siblingBlobsGraph,
   singleNodeGraph,
   starGraph,
 } from "../fixtures/graphShapes";
@@ -371,6 +380,147 @@ describe("layout dynamics — degenerate input", () => {
     ]);
     const positions = computeLayout(graph, { ...OPTS, initial: poisoned });
     expect(allFinite(pointsOf(positions))).toBe(true);
+  });
+});
+
+describe("layout dynamics — sibling blobs (branch anchors)", () => {
+  // The real repository's tangle, as a fixture: a summaries fan, a sessions
+  // fan and an src branch, tangled into one blob by single-centre gravity.
+  // `branchAnchors` is the fix, and this block is its gate — the sibling of
+  // the disconnected-components block above, for blobs that *do* share a root.
+  const graph = siblingBlobsGraph();
+  const positions = computeLayout(graph, OPTS);
+  const points = pointsOf(positions);
+
+  /** Members of one branch, by the id shapes the fixture gives them. */
+  const members = (match: (id: string) => boolean): Point[] => graph.nodes.filter((n) => match(n.id)).map((n) => positions.get(n.id)!);
+
+  const blobs: ReadonlyArray<readonly Point[]> = [
+    members((id) => id === "module:summaries" || id.startsWith("file:summaries/")),
+    members((id) => id === "module:src" || id.startsWith("module:src/")),
+    members((id) => id === "vfolder:sessions" || id.startsWith("note:session-")),
+  ];
+
+  it("places every node exactly once, all finite", () => {
+    expect(positions.size).toBe(graph.nodes.length);
+    expect(allFinite(points)).toBe(true);
+  });
+
+  it("keeps every pair of nodes at least a node diameter apart", () => {
+    expect(minPairwiseDistance(points)).toBeGreaterThan(NODE_DIAMETER);
+  });
+
+  it("leaves a corridor between every pair of blobs", () => {
+    // "Separated groups should be separated, or have some space between
+    // them" — the space, measured: the bbox gap between two branch subtrees
+    // exceeds a collision diameter, the floor at which two groups of
+    // collision-spaced nodes are still two groups. (Under the single-centre
+    // recipe this measured 0 on the real repository's graph.)
+    for (let i = 0; i < blobs.length; i++) {
+      for (let j = i + 1; j < blobs.length; j++) {
+        const a = bbox(blobs[i]!);
+        const b = bbox(blobs[j]!);
+        const dx = Math.max(b.minX - a.maxX, a.minX - b.maxX, 0);
+        const dy = Math.max(b.minY - a.maxY, a.minY - b.maxY, 0);
+        const gap = Math.hypot(dx, dy);
+        expect(gap, `blob ${i} vs blob ${j}`).toBeGreaterThan(COLLIDE_DIAMETER);
+      }
+    }
+  });
+
+  it("never interleaves members of different blobs", () => {
+    // The strictest form of the same claim: the closest pair drawn from two
+    // different branches is still further apart than a node diameter, so no
+    // member of one blob sits inside another.
+    for (let i = 0; i < blobs.length; i++) {
+      for (let j = i + 1; j < blobs.length; j++) {
+        let min = Infinity;
+        for (const p of blobs[i]!) {
+          for (const q of blobs[j]!) {
+            const d = Math.hypot(p.x - q.x, p.y - q.y);
+            if (d < min) min = d;
+          }
+        }
+        expect(min, `blob ${i} vs blob ${j}`).toBeGreaterThan(NODE_DIAMETER);
+      }
+    }
+  });
+
+  it("keeps the small twig with its root, not on the ring", () => {
+    // `module:docs` (3 nodes) is below BIG_BRANCH_MIN, so it belongs to the
+    // root group at the origin — closer to the repository than to any blob's
+    // centroid. A twig on the ring would mean the threshold had regressed.
+    const docs = positions.get("module:docs")!;
+    const repo = positions.get("repository")!;
+    const toRepo = Math.hypot(docs.x - repo.x, docs.y - repo.y);
+    for (const pts of blobs) {
+      const box = bbox(pts);
+      const toBlob = Math.hypot(docs.x - box.cx, docs.y - box.cy);
+      expect(toRepo).toBeLessThan(toBlob);
+    }
+  });
+
+  it("is deterministic, seed and all", () => {
+    expect(computeLayout(graph, OPTS)).toEqual(positions);
+    expect(computeLayout(siblingBlobsGraph(), OPTS)).toEqual(positions);
+  });
+});
+
+describe("branch anchors — the geometry, not the physics", () => {
+  /** A root with one module holding `n` files: the threshold probe. */
+  const fan = (n: number) => {
+    const nodes: Array<{
+      id: string;
+      kind: "repository" | "module" | "file";
+      label: string;
+      provenance: null;
+      detail: Record<string, never>;
+    }> = [
+      { id: "repository", kind: "repository", label: "r", provenance: null, detail: {} },
+      { id: "module:x", kind: "module", label: "x", provenance: null, detail: {} },
+    ];
+    const edges: Array<{ source: string; target: string; kind: "contains" }> = [
+      { source: "repository", target: "module:x", kind: "contains" },
+    ];
+    for (let i = 0; i < n; i++) {
+      nodes.push({ id: `file:f${i}`, kind: "file", label: `f${i}`, provenance: null, detail: {} });
+      edges.push({ source: "module:x", target: `file:f${i}`, kind: "contains" });
+    }
+    return { generatedAt: "2026-08-24T00:00:00.000Z", staleness: null, nodes, edges, contentDigest: "" };
+  };
+
+  it("separates exactly the branches at or above the threshold", () => {
+    // The boundary is the contract: below it a branch is a twig that stays
+    // with its root, at it the branch is a blob that earns a ring slot. The
+    // count is *members* — the module node is part of its own subtree.
+    expect(bigBranches(fan(BIG_BRANCH_MIN - 2))).toHaveLength(0);
+    expect(bigBranches(fan(BIG_BRANCH_MIN - 1))).toHaveLength(1);
+    expect(bigBranches(fan(BIG_BRANCH_MIN - 1))[0]?.members).toHaveLength(BIG_BRANCH_MIN);
+  });
+
+  it("sizes discs from settled positions, falling back when nothing is", () => {
+    // An empty `settled` is the degenerate call (the live driver before its
+    // first layout, a caller probing structure): every disc falls back to one
+    // collision radius, and the anchors are still placed — deterministically,
+    // not by exception.
+    const model = siblingBlobsGraph();
+    const anchors = branchAnchors(model, new Map());
+    // All three branches' members, and nothing else.
+    expect(anchors.size).toBe(95);
+    const again = branchAnchors(model, new Map());
+    expect([...anchors]).toEqual([...again]);
+  });
+
+  it("parks only the unpinned — a warm expand keeps its arrangement", () => {
+    // The §7.3 collapse/expand contract, on a graph with big branches: nodes
+    // the client already positioned are pinned at exactly those positions —
+    // the teleport must move the graph around them, not them.
+    const model = siblingBlobsGraph();
+    const first = computeLayout(model, OPTS);
+    const again = computeLayout(model, { ...OPTS, initial: first, pinWarm: true });
+    for (const [id, p] of first) {
+      expect(again.get(id), id).toEqual(p);
+    }
   });
 });
 

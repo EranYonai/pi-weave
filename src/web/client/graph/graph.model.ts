@@ -67,22 +67,22 @@ export type ColorScheme = "dark" | "light";
  */
 export const GRAPH_PALETTE: Readonly<Record<ColorScheme, Readonly<Record<ColorSlot, string>>>> = {
   dark: {
-    accent: "#a48cff",
-    success: "#4ade80",
-    warning: "#fbbf24",
-    dim: "#8f8a9c",
-    text: "#e8e6ee",
-    muted: "#5d5869",
-    line: "#343141",
+    accent: "#b79fdd",
+    success: "#7fc49a",
+    warning: "#e8b04c",
+    dim: "#bb9ecf",
+    text: "#fde2f3",
+    muted: "#8f83b5",
+    line: "#4a527e",
   },
   light: {
-    accent: "#6d4aff",
-    success: "#15803d",
-    warning: "#b45309",
-    dim: "#6f6b66",
-    text: "#1c1b19",
-    muted: "#9a958e",
-    line: "#d2cec8",
+    accent: "#85586f",
+    success: "#3f704e",
+    warning: "#a05a1c",
+    dim: "#7c6257",
+    text: "#43303a",
+    muted: "#a68d80",
+    line: "#d0b8a8",
   },
 };
 
@@ -123,12 +123,11 @@ export const KIND_SLOT: Readonly<Record<WireNodeKind, ColorSlot>> = {
  * Edge kind → colour slot. Structure recedes; association is the accent.
  *
  * "Recedes" used to mean `line` (`--weave-line-strong`), which read as
- * *absent*: #343141 on the #141317 background is a 1.46:1 contrast ratio, and
- * the light pair is 1.49:1 — below the 3:1 non-text minimum, and the reason
- * the skeleton of the graph was invisible until something was selected. The
- * `dim` slot is 5.5:1 against the dark background and 5.0:1 against the light
- * one, so containment reads as the hairline scaffolding it is without
- * vanishing.
+ * *absent* — 1.5:1 against either background, below the 3:1 non-text minimum,
+ * and the reason the skeleton of the graph was invisible until something was
+ * selected. The `dim` slot is 5.5:1 against the dark background and 4.9:1
+ * against the light one, so containment reads as the hairline scaffolding it
+ * is without vanishing.
  *
  * `mentions` joins `links-to` on the accent. Both are content associations
  * between human knowledge and the rest of the graph — splitting them across
@@ -275,6 +274,52 @@ export interface RenderEdge {
 export interface RenderGraph {
   readonly nodes: readonly RenderNode[];
   readonly edges: readonly RenderEdge[];
+}
+
+/** The normalization box the renderer freezes the view to. See {@link frameBox}. */
+export interface ViewBox {
+  readonly x: readonly [number, number];
+  readonly y: readonly [number, number];
+}
+
+/**
+ * The box the graph is framed on — sigma's `customBBox`.
+ *
+ * ## Why a box is frozen at all
+ *
+ * Sigma's default `autoRescale` recomputes the graph→viewport normalization
+ * from the **current extent on every refresh**, and a drag repaints every
+ * frame. The consequence, measured on this repository's graph: the moment a
+ * dragged node crosses the extent boundary — at the edge of the view — the
+ * whole graph rescales under the cursor, so the view "suddenly makes a
+ * distance" and the node ends up dragged very far from the centre while the
+ * user chases it. A frozen box makes the coordinates stable for the whole
+ * session: the node stays under the cursor, the canvas bounds the drag, and
+ * `[fit]` re-frames onto whatever the current positions are.
+ *
+ * The box is the exact extent of the rendered positions — no padding of its
+ * own, because sigma's `stagePadding` (in pixels) already insets the fit, and
+ * the same box handed back on `fit()` re-frames dragged-apart graphs.
+ *
+ * `null` for an empty graph: there is nothing to frame, and the caller
+ * clears the override so sigma falls back to its own behaviour.
+ */
+export function frameBox(points: readonly Point[]): ViewBox | null {
+  let minX = Infinity;
+  let minY = Infinity;
+  let maxX = -Infinity;
+  let maxY = -Infinity;
+  let seen = 0;
+  for (const p of points) {
+    if (!Number.isFinite(p.x) || !Number.isFinite(p.y)) continue;
+    seen++;
+    if (p.x < minX) minX = p.x;
+    if (p.x > maxX) maxX = p.x;
+    if (p.y < minY) minY = p.y;
+    if (p.y > maxY) maxY = p.y;
+  }
+  if (seen === 0) return null;
+  return { x: [minX, maxX], y: [minY, maxY] };
 }
 
 /** The empty graph. What the column renders before the first payload lands. */
