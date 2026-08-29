@@ -47,7 +47,7 @@ import type { LayoutState } from "./layout.model";
 import { breakpointFor, loadLayout, resolveColumns, saveLayout } from "./layout.model";
 import { StatusBar } from "./StatusBar";
 import type { OverlayId } from "./shell.model";
-import { connectionView, looksApple, searchShortcut, statusBarModel, summarize } from "./shell.model";
+import { TICK_MS, connectionView, looksApple, searchShortcut, statusBarModel, summarize } from "./shell.model";
 import { cycleTheme, effectiveScheme, loadTheme, saveTheme, themeAttr, themeButton } from "./theme.model";
 import type { ThemeChoice } from "./theme.model";
 import { watchViewport } from "./viewport";
@@ -149,6 +149,18 @@ export function Shell(props: ShellProps) {
 
   useEffect(() => watchViewport(window, setWidth), []);
 
+  // The relative-time clock. Every "8h ago" in the tree and the note meta is
+  // computed from a `now` stamped per render, and a resting workspace never
+  // re-renders on its own — so the minutes used to go stale until the next
+  // SSE frame. One interval at `TICK_MS` (the reasoning is in `shell.model.ts`);
+  // `setNow` with a new value re-renders, and a re-render is all the copy
+  // needs to catch up.
+  const [now, setNow] = useState(() => Date.now());
+  useEffect(() => {
+    const tick = setInterval(() => setNow(Date.now()), TICK_MS);
+    return () => clearInterval(tick);
+  }, []);
+
   // The theme's two effects: the attribute decides what the sheet paints, the
   // save decides what a reload restores. Both keyed on the choice alone — a
   // system-scheme flip touches neither, because the media query repaints the
@@ -225,7 +237,7 @@ export function Shell(props: ShellProps) {
         // column's `onSelect` routes here, so there is one guarded door
         // rather than three that each had to remember.
         onSelect={(id) => editor.send({ type: "navigate", id })}
-        now={Date.now()}
+        now={now}
         toolbar={editorToolbar(editorState)}
         prompt={editorPrompt(editorState)}
         draft={editorState.draft}

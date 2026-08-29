@@ -103,7 +103,11 @@ const CONNECTION_VIEWS: Readonly<Record<ConnectionState, ConnectionView>> = {
     // not go looking for a reload button.
     hint: "the event stream dropped — retrying, and everything refetches when it returns",
   },
-  offline: { label: "offline", tone: "bad", hint: "the workspace server is gone — use ⟳ to retry" },
+  offline: {
+    label: "offline",
+    tone: "bad",
+    hint: "the workspace server is gone — the header's refresh control retries",
+  },
 };
 
 /** Present a connection state. Total over the three states of §1.3. */
@@ -276,6 +280,37 @@ export function columnSlots(resolved: readonly ResolvedColumn[]): readonly Colum
 function isDivider(column: ColumnId): column is DividerId {
   return (DIVIDERS as readonly ColumnId[]).includes(column);
 }
+
+// --- the refresh button ------------------------------------------------------------
+
+/**
+ * The refresh control's glyph, as SVG path data.
+ *
+ * A drawn icon replaces the `⟳` text character for the same reason §P6.4
+ * retires the tree's glyph soup: a text arrow is whatever the platform's
+ * fallback font draws it as, while these two strokes are the brand's own
+ * weight everywhere. Stored as pure data here — §10 — so `Header.tsx` stays
+ * props-in/JSX-out and the shape is testable without a DOM. 24×24 viewBox,
+ * stroked, `currentColor`: the header recolours it on hover like any other
+ * glyph.
+ */
+export const REFRESH_ICON_PATHS: readonly string[] = [
+  "M21 12a9 9 0 1 1-2.64-6.36",
+  "M21 3v6h-6",
+];
+
+/**
+ * How often the shell re-renders on its own, in ms.
+ *
+ * Every relative time ("8h ago") is computed from a `now` the shell stamps
+ * per render, and a resting workspace never re-renders — so without this tick
+ * the minutes go stale ("2h ago" at 2:59 still reads "2h ago" at 3:20). One
+ * 60 s tick is the smallest honest answer: finer-grained would re-render the
+ * whole shell for pixels nobody reads, coarser makes every "8h ago" wrong for
+ * most of an hour. The §7 register's "don't add a timer" refers to the graph's
+ * RAF clock, which idles by construction; this is wall-clock copy, not physics.
+ */
+export const TICK_MS = 60_000;
 
 // --- the search affordance ---------------------------------------------------------
 

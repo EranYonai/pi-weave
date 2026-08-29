@@ -24,6 +24,7 @@
 import type { TreeRow, TreeState, ViewGraphModel } from "../../shared/view";
 import { formatTreeMeta, treeEmptyHint, treeRows } from "../../shared/view";
 import type { GraphPayload, WireNodeKind, WireNoteSource } from "../../shared/wire";
+import type { IconName } from "../shell/icons.model";
 
 // --- the view state ------------------------------------------------------------
 
@@ -337,30 +338,73 @@ export function treeKey(
 // --- presentation ---------------------------------------------------------------------
 
 /**
- * Kind → glyph.
+ * Kind → icon.
  *
- * A parallel table to the TUI's `kindStyle` (`src/pi/viewer/tui/theme.ts`),
- * which the client tier may not import. The glyphs are deliberately the same
- * characters: someone who has used `/weave-view tui` should recognise the tree
- * in the browser, and two products' worth of icon vocabulary is a cost with no
- * benefit. Colour is *not* duplicated — that stays in the stylesheet, keyed by
+ * The descendant of the old `KIND_GLYPHS` text table: the same nine-way
+ * distinction (a parallel table to the TUI's `kindStyle`, which the client
+ * tier may not import), but drawn from {@link ICONS}' one sprite instead of
+ * nine unrelated font fallbacks. The TUI-cross-training argument for reusing
+ * the *characters* is gone now that neither surface draws them as text, but
+ * the pairings survive: `vault` solid against `gitState` hollow, `note` with
+ * its folded corner against `file` without, `external` still pointing out.
+ *
+ * Colour is *not* duplicated — that stays in the stylesheet, keyed by
  * {@link TreeRowView.kind}.
  */
-const KIND_GLYPHS: Readonly<Record<WireNodeKind, string>> = {
-  vault: "◆",
-  note: "▪",
-  repository: "▣",
-  module: "▤",
-  package: "◈",
-  entryPoint: "▷",
-  gitState: "◇",
-  external: "↗",
-  file: "·",
+const KIND_ICONS: Readonly<Record<WireNodeKind, IconName>> = {
+  vault: "vault",
+  note: "note",
+  repository: "repository",
+  module: "module",
+  package: "package",
+  entryPoint: "entryPoint",
+  gitState: "gitState",
+  external: "external",
+  file: "file",
 };
 
-/** The glyph for a node kind. */
-export function kindGlyph(kind: WireNodeKind): string {
-  return KIND_GLYPHS[kind];
+/** The icon name for a node kind. */
+export function kindIcon(kind: WireNodeKind): IconName {
+  return KIND_ICONS[kind];
+}
+
+// --- the session fold -----------------------------------------------------------------
+
+/**
+ * The synthesized folder session memory lives under.
+ *
+ * Core's graph builder (`src/core/graph/build.ts`) nests notes whose slug has
+ * a directory under a synthesized `vfolder:<dir>` node — kind `module`,
+ * because reusing the tree's containment chain needs no client change. That
+ * reuse is why there is no `session` node *kind*: a session note is an
+ * ordinary `note` that happens to be filed there, and this client recognises
+ * it by path, not by kind.
+ */
+export const SESSION_DIR = "sessions";
+
+/** True when a node id names a note under the {@link SESSION_DIR} fold. */
+export function isSessionNote(id: string): boolean {
+  return id.startsWith(`note:${SESSION_DIR}/`);
+}
+
+/**
+ * Whether a row renders a notch quieter.
+ *
+ * `sessions/<n>.md` notes are machine-written memory that accrues by the
+ * dozens with near-duplicate titles, so at any real vault size they are most
+ * of the tree's rows — and rows that all look alike at full weight make the
+ * six notes a human actually wrote harder to find. So session rows sit in
+ * `--weave-dim` until hovered or selected, which is how Obsidian treats its
+ * own long tails.
+ *
+ * The *never* half is the load-bearing part: `selectedId` is the §1.3 bus, so
+ * the selection is decided somewhere the tree does not own, and a rule that
+ * could dim the selected row would be a rule the graph's click could silently
+ * break. The class-coverage gate does not see this — it is asserted here,
+ * which is where §10 says it belongs.
+ */
+export function isMuted(row: TreeRow, selectedId: string | null): boolean {
+  return row.id !== selectedId && isSessionNote(row.id);
 }
 
 /**
@@ -388,11 +432,8 @@ export function provenanceTitle(provenance: WireNoteSource | null): string {
   return provenance === null ? "" : `${provenance}-authored`;
 }
 
-/** The disclosure state of a row: which triangle, or none. */
+/** The disclosure state of a row: which way the twisty points, or none. */
 export type Twisty = "open" | "closed" | "leaf";
-
-/** `▾` / `▸` / nothing. */
-export const TWISTY_GLYPHS: Readonly<Record<Twisty, string>> = { open: "▾", closed: "▸", leaf: "" };
 
 // --- ARIA ---------------------------------------------------------------------------
 
@@ -507,15 +548,23 @@ export interface TreeRowView {
   readonly depth: number;
   readonly label: string;
   readonly kind: WireNodeKind;
-  readonly kindGlyph: string;
+  /** Which sprite glyph the kind slot draws; the `.tsx` builds the `<svg>`. */
+  readonly kindIcon: IconName;
   readonly provenance: WireNoteSource | null;
   readonly provenanceGlyph: string;
   readonly provenanceTitle: string;
   readonly twisty: Twisty;
-  readonly twistyGlyph: string;
   readonly hasKids: boolean;
   readonly expanded: boolean;
   readonly selected: boolean;
+  /**
+   * Render a notch quieter — the session rows of {@link isMuted}.
+   *
+   * A view-model flag rather than a `.tsx` branch for the same reason every
+   * other branch is here, and the stylesheet keys off it with
+   * `.weave-row-muted`.
+   */
+  readonly muted: boolean;
   /** The trailing annotation, already formatted against `now`. */
   readonly meta: string;
   /** ARIA `aria-level`, which is 1-based where `depth` is 0-based. */
@@ -543,15 +592,15 @@ export function rowView(row: TreeRow, selectedId: string | null, now: number, po
     depth: row.depth,
     label: row.label,
     kind: row.kind,
-    kindGlyph: kindGlyph(row.kind),
+    kindIcon: kindIcon(row.kind),
     provenance: row.provenance,
     provenanceGlyph: provenanceGlyph(row.provenance),
     provenanceTitle: provenanceTitle(row.provenance),
     twisty,
-    twistyGlyph: TWISTY_GLYPHS[twisty],
     hasKids: row.hasKids,
     expanded: row.expanded,
     selected: row.id === selectedId,
+    muted: isMuted(row, selectedId),
     meta: formatTreeMeta(row.meta, now),
     level: row.depth + 1,
   };

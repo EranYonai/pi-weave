@@ -672,6 +672,17 @@ export function wikilinkTargetOf(from: ClosestElement | null): string | null {
 
 // --- the front-matter header --------------------------------------------------------------
 
+/**
+ * The meta row's two words, centralised like every other string in this file.
+ *
+ * Say what the moment *is* to a human: "edited 1d ago" answers "has this moved
+ * since I read it?", which is the only question the timestamp is there for.
+ * "updated" was the git-adjacent word for the same fact and made the reader
+ * translate; the two lines now read as a sentence each.
+ */
+export const EDITED_WORD = "edited";
+export const CREATED_WORD = "created";
+
 /** The note header: title, provenance badge, relative time, tags. */
 export interface NoteHeaderView {
   readonly title: string;
@@ -716,6 +727,306 @@ export function noteHeader(note: ViewNote, now: number): NoteHeaderView {
 /** `#architecture`. The `#` is display only — tags are stored bare. */
 export function tagLabel(tag: string): string {
   return `#${tag}`;
+}
+
+// --- the wikilink preview (P6.3) ---------------------------------------------------------
+//
+// Hovering (or focusing) a wikilink shows a small card near it: which note it
+// names, and the first few words of that note. Everything that *decides*
+// lives here — what the card says, how it is worded for a ghost, how it is
+// placed on screen, and when it is shown at all — because none of those are
+// DOM concerns and §10 forbids shipping a decision only a DOM test could
+// reach. `Note.tsx` is reduced to reading pointer/focus geometry off events
+// and handing the card its text.
+//
+// The one thing this module refuses to do is get between a click and the
+// §1.3 bus. The card carries `pointer-events: none` (theme.ts) and is never
+// given a click handler, so the delegated `wikilinkTargetOf` walk in
+// `Note.tsx` keeps reading the *link* under the pointer, not the card that
+// happens to cover it.
+
+/**
+ * How many characters of a note the hover card will show.
+ *
+ * Core's graph builder already flattens and caps every note body at 240
+ * characters into `detail.preview` (`src/core/graph/build.ts`), which is what
+ * makes this feature free — no per-hover request, and the graph payload the
+ * note column already holds is the only source. 200 is what remains once the
+ * markdown syntax is stripped and the truncation round-trips onto a word
+ * boundary.
+ */
+export const PREVIEW_LIMIT = 200;
+
+/**
+ * How far the card sits from the pointer, in px.
+ *
+ * Small enough that the card and the link read as one thing; large enough
+ * that the card never swallows the cursor's next move (the card itself is
+ * `pointer-events: none`, so the gap is about visibility, not hit testing).
+ */
+export const PREVIEW_GAP = 8;
+
+/** The card's kind line for a link nothing in the vault answers to. */
+export const GHOST_KIND = "no note";
+
+/**
+ * The card's DOM id, shared by the element and the `aria-describedby` it is
+ * announced through. A constant rather than an inline literal on both sides
+ * because the link is a *string* of rendered HTML — see
+ * `Note.tsx`'s layout effect — and the pair cannot be typed into agreement.
+ */
+export const PREVIEW_ID = "weave-preview";
+
+/** A `PreviewElement` the preview's delegated handlers may land on. */
+export interface PreviewAnchor {
+  /**
+   * The target note's slug, or `null` for a ghost.
+   *
+   * `slug` is the *resolution*, `text` is what the reader sees; a ghost has
+   * only the second, and the one thing a ghost must not do is borrow a slug
+   * it does not have.
+   */
+  readonly slug: string | null;
+  /** The link's visible text, trimmed — the spelling the note was written as. */
+  readonly text: string;
+}
+
+/**
+ * The slice of `Element` the preview's delegated handlers walk.
+ *
+ * `className`/`textContent` are optional so the plain `ClosestElement` fakes
+ * `wikilinkTargetOf`'s tests build stay assignable to this port — the real
+ * `HTMLElement` supplies both, and the walk below treats an absent one as
+ * "not this kind of element". Declared here rather than widening
+ * {@link ClosestElement} because the click path genuinely needs neither: a
+ * click resolves through the attribute alone.
+ */
+export interface PreviewElement extends ClosestElement {
+  readonly className?: string;
+  readonly textContent?: string | null;
+}
+
+/**
+ * The element a pointer/focus event landed on, as a preview anchor, or `null`.
+ *
+ * The same ancestor walk {@link wikilinkTargetOf} uses, extended for the one
+ * case that walk refuses: a ghost is a `<span>`, so it carries no
+ * {@link WIKILINK_ATTR} and the click-through walk correctly reports "not a
+ * link". Here a ghost *is* interesting — the card's whole point is to say what
+ * a link points at, and "there is no note behind this" is an answer too. The
+ * ghost class is matched against the class list, not with `includes("ghost")`
+ * over the raw string, which would half-match a future `…-ghost-note` class.
+ *
+ * The depth limit is the same {@link MAX_ANCESTOR_WALK} guard, for the same
+ * reason: the walk runs inside a pointer handler, and a parent cycle must cost
+ * a `null` and not the tab.
+ */
+export function previewAnchorOf(from: PreviewElement | null): PreviewAnchor | null {
+  let node = from;
+  for (let depth = 0; node !== null && depth < MAX_ANCESTOR_WALK; depth++) {
+    const slug = node.getAttribute(WIKILINK_ATTR);
+    if (slug !== null && slug !== "") return { slug, text: (node.textContent ?? "").trim() };
+    const classes = (node.className ?? "").split(/\s+/);
+    if (classes.includes("weave-wiki-ghost")) return { slug: null, text: (node.textContent ?? "").trim() };
+    node = node.parentElement;
+  }
+  return null;
+}
+
+/**
+ * Markdown reduced to a sentence a card can show, stripped **safely**.
+ *
+ * "Safely" is the operative word. The card renders its text through a Preact
+ * text node, so the string is *not* interpolated into markup and needs no HTML
+ * escaping — the same property `escapeHtml` relies on runs the other way: no
+ * markup position, no attack. Stripping is therefore about legibility, not
+ * security, and it is also the last line of defence for the case where the
+ * renderer's output is ever piped somewhere less forgiving.
+ *
+ * The transforms are removals and are ordered narrowest-first: fenced code and
+ * inline spans release their text, images and links release their alt/label,
+ * wikilinks release their alias (or target), tag-shaped runs are deleted
+ * outright, and the emphasis markers are dropped. Whitespace is collapsed
+ * last, so the result is always one line no matter what the note's source
+ * formatting was.
+ */
+export function stripMarkdown(markdown: string): string {
+  return (
+    markdown
+      // Fenced blocks and inline code: the *content* of a code span is text,
+      // but a fence contributes lines, not prose, and the card wants prose.
+      .replace(/```[\s\S]*?(?:```|$)/g, " ")
+      .replace(/~~~[\s\S]*?(?:~~~|$)/g, " ")
+      .replace(/`([^`]*)`/g, "$1")
+      // Images first, so their `![…](…)` is not half-eaten by the link rule.
+      .replace(/!\[([^\]]*)\]\([^)]*\)/g, "$1")
+      .replace(/\[([^\]]*)\]\([^)]*\)/g, "$1")
+      .replace(/\[\[([^\]|]*)(?:\|([^\]]*))?\]\]/g, (_m, target: string, alias: string | undefined) => alias ?? target)
+      // Anything tag-shaped is deleted rather than kept as text: an agent's
+      // note that embeds `<summary>…` should not read as markup on the card.
+      .replace(/<[^>]*>/g, " ")
+      // The residual markdown voice: headings, rules, quotes, markers, focus
+      // on the words the writer put there.
+      .replace(/^\s{0,3}#{1,6}\s+/gm, "")
+      .replace(/^\s{0,3}>\s?/gm, "")
+      // A GFM thematic break may be spaced (`- - -`), and it has to go before
+      // the list-marker rule or that rule eats one of its three characters
+      // and leaves a fragment behind.
+      .replace(/^\s{0,3}([-*_][ \t]?){3,}$/gm, " ")
+      .replace(/^\s{0,3}[-*+]\s+/gm, "")
+      .replace(/^\s{0,3}\d+[.)]\s+/gm, "")
+      .replace(/[*_~]{1,3}([^*_~]*)[*_~]{1,3}/g, "$1")
+      .replace(/\s+/g, " ")
+      .trim()
+  );
+}
+
+/**
+ * {@link stripMarkdown}, truncated to {@link PREVIEW_LIMIT} on a word boundary.
+ *
+ * The boundary matters more than the ellipsis: a card that ends `the release
+ * pla…` reads as broken, and cutting mid-word is the single most visible
+ * thing a preview can get wrong. The search happens on the *untrimmed* slice
+ * so a trailing separator is never kept, and a slice with no space at all —
+ * one long token, a URL — cuts hard rather than overflowing. `…` is appended
+ * only when something was actually removed, so a short note's card ends with
+ * its own punctuation.
+ */
+export function excerptOf(markdown: string, limit: number = PREVIEW_LIMIT): string {
+  const plain = stripMarkdown(markdown);
+  if (plain.length <= limit) return plain;
+  const end = plain.lastIndexOf(" ", limit);
+  const cut = end > 0 ? plain.slice(0, end) : plain.slice(0, limit);
+  return `${cut}…`;
+}
+
+/** What the hover card shows. */
+export interface PreviewCard {
+  /** True for a link no note answers to — the card then offers, not previews. */
+  readonly ghost: boolean;
+  /** The target's title, or the alias a ghost was written as. */
+  readonly title: string;
+  /** The kind line: `note · agent-authored`, or `no note` for a ghost. */
+  readonly kind: string;
+  /** The card's body text: the target's opening words, or the ghost sentence. */
+  readonly text: string;
+}
+
+/**
+ * Build the card one anchor shows.
+ *
+ * For a resolved link the text comes off the target node's `detail.preview` —
+ * see {@link PREVIEW_LIMIT} for why that is a feature rather than a shortcut.
+ * The node is looked up in the payload rather than trusted to the anchor: the
+ * index that resolved the link was built from the same payload, but the card
+ * is *rendered* and would rather refuse (`null`, and `Note.tsx` renders
+ * nothing) than display a card about a note the payload does not actually
+ * describe.
+ *
+ * A ghost gets the sentence `.weave-wiki-ghost`'s existing `title` already
+ * uses — "no note named X" — so the two affordances say the same thing in
+ * hover and in preview, and a reader never has to reconcile two vocabularies.
+ */
+export function previewCard(payload: GraphPayload | null, anchor: PreviewAnchor): PreviewCard | null {
+  if (anchor.slug === null) {
+    const title = anchor.text === "" ? "this link" : anchor.text;
+    return { ghost: true, title, kind: GHOST_KIND, text: `no note named “${title}” yet` };
+  }
+  const node = payload?.model.nodes.find((candidate) => candidate.id === `note:${anchor.slug}` && candidate.kind === "note");
+  if (node === undefined) return null;
+  const kind = node.provenance === null ? node.kind : `${node.kind} · ${provenanceTitle(node.provenance)}`;
+  return { ghost: false, title: node.label, kind, text: excerptOf(node.detail.preview ?? "") };
+}
+
+/** Where the card goes, in viewport coordinates. */
+export interface PreviewPlacement {
+  readonly x: number;
+  readonly y: number;
+}
+
+/**
+ * Choose the card's position from the pointer's viewport coordinates.
+ *
+ * Prefer below-right of the pointer — the reading direction for a page whose
+ * text is left-aligned — and flip an axis only when the card would leave the
+ * viewport that way. Both edges are then clamped, so a card taller or wider
+ * than a small window degrades to being pinned at the gap rather than
+ * rendering off-screen with nothing to correct it.
+ *
+ * `cardWidth`/`cardHeight` are measured values: the component reads them off
+ * the element it just mounted (§10 keeps the *decision*, not the DOM read).
+ * That makes this deliberately a post-layout query — the card's text varies,
+ * and guessing a height here would put every card one line off.
+ */
+export function previewPlacement(
+  pointerX: number,
+  pointerY: number,
+  cardWidth: number,
+  cardHeight: number,
+  viewportWidth: number,
+  viewportHeight: number,
+  gap: number = PREVIEW_GAP,
+): PreviewPlacement {
+  let x = pointerX + gap;
+  let y = pointerY + gap;
+  if (x + cardWidth > viewportWidth - gap) x = pointerX - gap - cardWidth;
+  if (y + cardHeight > viewportHeight - gap) y = pointerY - gap - cardHeight;
+  x = Math.min(Math.max(x, gap), Math.max(gap, viewportWidth - gap - cardWidth));
+  y = Math.min(Math.max(y, gap), Math.max(gap, viewportHeight - gap - cardHeight));
+  return { x, y };
+}
+
+/**
+ * The card's visibility, as a reducer.
+ *
+ * Three facts move together — which link is under the pointer, where the
+ * pointer is, whether anything is open at all — and a pair of booleans plus a
+ * global would let them drift apart (the classic failure: one link's
+ * `mouseleave` clearing another link's card, or a card left open after the
+ * note changed). {@link reducePreview} is the table instead:
+ *
+ *  - `show` replaces whatever was open — including swapping one link for
+ *    another mid-stroke across the prose — and is ignored for a null anchor,
+ *    which is what a `mouseover` on plain prose produces on its way anywhere;
+ *  - `hide` clears, and is a no-op when nothing is open, so a body-wide
+ *    `mouseover` stream costs no re-renders;
+ *  - `dismiss` is `hide` on Escape: the only way a *keyboard* user closes
+ *    what focus opened, and kept a separate event name so the two paths can
+ *    each be asserted to close the card without one being redefined later
+ *    into something the other does not want.
+ */
+export interface PreviewState {
+  /** The anchor being previewed, or `null` when nothing is open. */
+  readonly anchor: PreviewAnchor | null;
+  /** Where the pointer (or focused link) was when the card opened. */
+  readonly pointerX: number;
+  readonly pointerY: number;
+}
+
+/** Nothing previewing — the resting state. */
+export const EMPTY_PREVIEW: PreviewState = { anchor: null, pointerX: 0, pointerY: 0 };
+
+export type PreviewEvent =
+  | { readonly type: "show"; readonly anchor: PreviewAnchor; readonly x: number; readonly y: number }
+  | { readonly type: "hide" }
+  | { readonly type: "dismiss" };
+
+/** One transition of the preview card. */
+export function reducePreview(state: PreviewState, event: PreviewEvent): PreviewState {
+  switch (event.type) {
+    case "show": {
+      // An anchor with nothing to name previews as a blank nothing: the
+      // tokenizer cannot emit one (empty targets render as no element at
+      // all), so this is only reachable through a synthetic event, and the
+      // honest answer is to leave the card exactly as it was.
+      if (event.anchor.slug === null && event.anchor.text === "") return state;
+      return { anchor: event.anchor, pointerX: event.x, pointerY: event.y };
+    }
+    case "hide":
+      return state.anchor === null ? state : EMPTY_PREVIEW;
+    case "dismiss":
+      return EMPTY_PREVIEW;
+  }
 }
 
 // --- empty states ----------------------------------------------------------------------------

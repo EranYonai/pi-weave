@@ -188,7 +188,7 @@ export interface SigmaLike {
   on(event: "upNode" | "upStage", handler: () => void): unknown;
   viewportToGraph(position: { x: number; y: number }): Point;
   setSetting(key: "nodeReducer", value: (id: string, data: RenderNode) => NodeDisplayOverride): unknown;
-  setSetting(key: "edgeReducer", value: (key: string, data: RenderEdge) => EdgeDisplayOverride): unknown;
+  setSetting(key: "edgeReducer", value: (key: string, data: RenderEdge, scheme: ColorScheme) => EdgeDisplayOverride): unknown;
   setSetting(key: "enableCameraPanning", value: boolean): unknown;
   setGraph(graph: ProjectedGraph): unknown;
   /**
@@ -266,7 +266,7 @@ export function sigmaRenderer(create: SigmaFactory, scheme: ColorScheme): GraphR
     const nodes = nodeReducer(highlight);
     const edges = edgeReducer(highlight);
     instance.setSetting("nodeReducer", (id, data) => ({ ...data, ...nodes(id, data, scheme) }));
-    instance.setSetting("edgeReducer", (key, data) => ({ ...data, ...edges(key, data) }));
+    instance.setSetting("edgeReducer", (key, data) => ({ ...data, ...edges(key, data, scheme) }));
   };
 
   return {

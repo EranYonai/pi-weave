@@ -38,7 +38,7 @@
  */
 
 import type { Point } from "../../shared/layout";
-import { branchAnchors, createForceSimulation, isContainment } from "../../shared/layout";
+import { branchAnchors, collideRadius, createForceSimulation, isContainment } from "../../shared/layout";
 import type { WireEdgeKind } from "../../shared/graph";
 import type { RenderGraph } from "./graph.model";
 
@@ -51,6 +51,8 @@ interface SimNode {
   index?: number;
   fx?: number | null;
   fy?: number | null;
+  /** The node's collision disc, from its drawn size (`CollideNode`). */
+  r?: number;
 }
 
 interface SimLink {
@@ -104,6 +106,10 @@ export function createGraphSimulation(graph: RenderGraph, initial?: ReadonlyMap<
       y: at !== undefined && Number.isFinite(at.y) ? at.y : node.y,
       vx: 0,
       vy: 0,
+      // The live physics reserves the same room per node the static layout
+      // did — the drawn radius plus label room — so a drag never lets a hub
+      // overlap the cloud it lifts. One formula, two drivers.
+      r: collideRadius(node.size),
     };
   });
   const byId = new Map(nodes.map((node) => [node.id, node]));

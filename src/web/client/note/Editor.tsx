@@ -14,7 +14,7 @@
  */
 
 import type { EditorEvent, EditorPrompt, EditorToolbar } from "./editor.model";
-import { OPEN_HINT, OPEN_LABEL } from "./editor.model";
+import { editorBarVisible } from "./editor.model";
 
 export interface EditorProps {
   toolbar: EditorToolbar;
@@ -42,14 +42,17 @@ function Prompt({ prompt, send }: { prompt: EditorPrompt; send: (event: EditorEv
   );
 }
 
-/** The toolbar while editing: done, save, open-in-$EDITOR, and the status word.
+/** The toolbar while editing: done, save, and the status word.
  *
- * There is no button in read mode: the note itself is the edit affordance —
- * clicking its text opens the editor (see `Note.tsx`), and `⌘E` still works.
- * Rendering the button only while editing keeps the read view down to prose
- * and the `Open in $EDITOR` control. */
+ * `Open in $EDITOR` no longer lives here (P6.3): as the bar's only read-mode
+ * inhabitant it read as the note's headline control, a full-width bordered
+ * shout before the prose began. It is an icon in the head's meta row instead
+ * — same event, same hint, one third the visual weight — and
+ * `editorBarVisible` is what keeps the read view down to prose rather than a
+ * bar announcing nothing. */
 export function EditorBar(props: EditorProps) {
   const { toolbar, send } = props;
+  if (!editorBarVisible(toolbar, props.prompt)) return null;
   return (
     <div class="weave-note-bar">
       {toolbar.editing ? (
@@ -67,9 +70,6 @@ export function EditorBar(props: EditorProps) {
           {toolbar.saveLabel}
         </button>
       ) : null}
-      <button type="button" class="weave-note-open" title={OPEN_HINT} onClick={() => send({ type: "open" })}>
-        {OPEN_LABEL}
-      </button>
       {toolbar.dirty ? (
         <span class="weave-note-dirty" title="unsaved changes" aria-hidden="true">
           •

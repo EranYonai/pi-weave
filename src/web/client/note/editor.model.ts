@@ -513,6 +513,17 @@ export const EDIT_LABEL = "Edit";
 export const READ_LABEL = "Done";
 export const SAVE_LABEL = "Save";
 export const SAVING_LABEL = "Saving…";
+/**
+ * The `Open in $EDITOR` control's name — kept as its accessible label, not as
+ * its text.
+ *
+ * P6.3 demoted this control out of the note bar: as a full-width bordered
+ * button sitting between the title and the prose it out-shouted the document
+ * it opens. It is now an icon in the head's meta row ({@link OPEN_ICON} in
+ * `Note.tsx`'s header), so the label lives on for `aria-label` and the
+ * title/tooltip, where the explanation belongs — the icon alone is a glyph,
+ * not an invitation.
+ */
 export const OPEN_LABEL = "Open in $EDITOR";
 export const OPEN_HINT = "Hand this note to $EDITOR (or your platform's opener)";
 export const DISCARD_LABEL = "Discard changes";
@@ -521,6 +532,30 @@ export const RELOAD_LABEL = "Reload from disk";
 export const OVERWRITE_LABEL = "Overwrite";
 export const EXTERNAL_MESSAGE = "this note changed on disk while you were editing";
 export const COLLISION_HINT = "pick a different name";
+
+/**
+ * The icon the demoted `Open in $EDITOR` control shows, as a string.
+ *
+ * A single inline SVG is the whole icon system this button needs, and a
+ * string constant is what keeps it CSP-legal and testable: it is inserted as
+ * *markup* (not as an attribute, which a strict CSP would block), it is
+ * `currentColor` so the button's own colour states style it for free, and
+ * carrying it here — with `aria-hidden: true` because the accessible name is
+ * {@link OPEN_LABEL} — means a test can assert the icon ships with the
+ * accessible name and hint rather than hoping the component wires them.
+ *
+ * Deliberately not the shared icon sprite P6.4 builds for the tree and rail:
+ * that is another column's job and another module's vocabulary, and a 15px
+ * pencil-plus-page does not want a dependency on it.
+ */
+export const OPEN_ICON =
+  '<svg viewBox="0 0 16 16" width="15" height="15" fill="none" stroke="currentColor" stroke-width="1.4" ' +
+  'stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false">' +
+  // The page, open at the corner the pencil is leaving through.
+  '<path d="M9 2H3.6A1.6 1.6 0 0 0 2 3.6v8.8A1.6 1.6 0 0 0 3.6 14h8.8A1.6 1.6 0 0 0 14 12.4V9"/>' +
+  // The pencil: `edit`'s geometry from the Feather icon, scaled to 16px.
+  '<path d="M11.3 2a1.9 1.9 0 1 1 2.7 2.7L5.6 13 2 14l1-3.6 8.3-8.4z"/>' +
+  "</svg>";
 
 /** Which prompt, if any, the column must render. */
 export type EditorPromptKind = "conflict" | "collision" | "external" | "discard";
@@ -633,4 +668,19 @@ export function editorToolbar(state: EditorState): EditorToolbar {
     tone: state.message === null ? "none" : state.status === "error" ? "warn" : "ok",
     dirty: isDirty(state),
   };
+}
+
+/**
+ * Whether the editor bar should render at all.
+ *
+ * P6.3 removed the `Open in $EDITOR` button from the bar (it lives in the
+ * head's meta row now), which took away the bar's only read-mode inhabitant.
+ * A bar that renders in read mode is then an empty ruled strip between the
+ * head and the prose — a border describing nothing. So the bar is *earned*:
+ * while editing it is always present, otherwise only a message or a prompt
+ * (a save's status line, an "opened in your editor" acknowledgement, a
+ * conflict) puts something inside it.
+ */
+export function editorBarVisible(toolbar: EditorToolbar, prompt: EditorPrompt | null): boolean {
+  return toolbar.editing || toolbar.message !== null || prompt !== null;
 }

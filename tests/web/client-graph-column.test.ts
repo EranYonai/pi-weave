@@ -14,7 +14,7 @@
  */
 
 import { describe, expect, it } from "vitest";
-import { COLLIDE_RADIUS, NODE_RADIUS } from "../../src/web/shared/layout";
+import { COLLIDE_RADIUS, MAX_NODE_SIZE, NODE_RADIUS } from "../../src/web/shared/layout";
 import { angularOccupancy, clusterSeparation, minPairwiseDistance, variance } from "../../src/web/shared/metrics";
 import { clusterAggregate, focusNeighborhood } from "../../src/web/shared/view";
 import type { GraphPayload, WireGraphEdge, WireGraphNode } from "../../src/web/shared/wire";
@@ -583,10 +583,13 @@ describe("P3 exit criterion — the repo fixture renders as 5 clusters (§11)", 
 
   it("draws no two nodes on top of each other", () => {
     // §8 proves this of the positions; this proves it of what is *drawn*,
-    // which additionally needs every rendered radius inside the same budget.
+    // which additionally needs every rendered radius inside the ramp's
+    // ceiling — `computeLayout` reserves a `collideRadius(nodeSize(degree))`
+    // disc per node, so the collision proof covers the painted circles only
+    // while no size exceeds `MAX_NODE_SIZE`.
     const points = column.graph.nodes.map((n) => ({ x: n.x, y: n.y }));
     expect(minPairwiseDistance(points)).toBeGreaterThan(2 * NODE_RADIUS);
-    for (const drawn of column.graph.nodes) expect(drawn.size, drawn.id).toBeLessThanOrEqual(NODE_RADIUS);
+    for (const drawn of column.graph.nodes) expect(drawn.size, drawn.id).toBeLessThanOrEqual(MAX_NODE_SIZE);
   });
 
   it("collapses to exactly the five clusters", () => {

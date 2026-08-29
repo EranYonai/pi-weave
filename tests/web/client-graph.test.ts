@@ -26,19 +26,24 @@ import type { WireGraphEdge, WireGraphNode, WireNodeKind } from "../../src/web/s
 import { WIRE_EDGE_KINDS, WIRE_NODE_KINDS } from "../../src/web/shared/wire";
 import {
   DEGREE_AT_MAX_SIZE,
+  EDGE_PRESENCE,
+  EDGE_RECESS_STRENGTH,
   EDGE_SIZE,
   EDGE_SLOT,
   EMPTY_RENDER_GRAPH,
   GRAPH_PALETTE,
   HIGHLIGHT_Z_LIFT,
   KIND_SLOT,
+  LABEL_BUDGET,
   LABEL_DENSITY,
   LABEL_GRID_CELL_SIZE,
   LABEL_SIZE_THRESHOLD,
+  MAX_NODE_SIZE,
   MIN_NODE_SIZE,
+  blendHex,
   degrees,
-  dimColor,
   edgeColor,
+  edgeDrawColor,
   edgeKey,
   edgeReducer,
   frameBox,
@@ -47,7 +52,9 @@ import {
   nodeLabel,
   nodeReducer,
   nodeSize,
+  recessColor,
   renderGraph,
+  truncateLabel,
 } from "../../src/web/client/graph/graph.model";
 import type {
   ColorScheme,
@@ -158,34 +165,114 @@ describe("the graph palette is the shell's palette (§7.4)", () => {
     expect(EDGE_SIZE["links-to"]).toBeGreaterThan(EDGE_SIZE.mentions);
   });
 
-  it("dims to a colour, never to the background", () => {
+  it("paints structural edges recessed and association edges at full voice", () => {
+    // P6.2's edge step: the containment web is background and recedes toward
+    // the ground when nothing is selected, while the accent associations —
+    // the only chroma voice on the stage — keep their exact slot colour.
     for (const scheme of SCHEMES) {
-      expect(dimColor(scheme)).toBe(GRAPH_PALETTE[scheme].muted);
-      // The background is `--weave-bg`, which is not in the palette at all —
-      // dimming to it would delete the context the highlight exists to show.
-      expect(dimColor(scheme)).not.toBe(GRAPH_PALETTE[scheme].text);
+      // Recessed, not repainted: the drawn colour is the edge's own slot
+      // colour blended toward the ground at {@link EDGE_RECESS_STRENGTH}.
+      expect(edgeDrawColor("contains", scheme)).toBe(
+        blendHex(edgeColor("contains", scheme), GRAPH_PALETTE[scheme].ground, EDGE_RECESS_STRENGTH),
+      );
+      expect(edgeDrawColor("anchored-at", scheme)).toBe(
+        blendHex(edgeColor("anchored-at", scheme), GRAPH_PALETTE[scheme].ground, EDGE_RECESS_STRENGTH),
+      );
+      expect(edgeDrawColor("contains", scheme)).not.toBe(edgeColor("contains", scheme));
+      expect(edgeDrawColor("links-to", scheme)).toBe(edgeColor("links-to", scheme));
+      expect(edgeDrawColor("mentions", scheme)).toBe(edgeColor("mentions", scheme));
+      // Recessed, then, but present: the drawn colour still differs from the
+      // ground itself, or the skeleton would vanish rather than recede.
+      expect(edgeDrawColor("contains", scheme)).not.toBe(GRAPH_PALETTE[scheme].ground);
+    }
+  });
+});
+
+// --- receding a colour --------------------------------------------------------------------
+
+describe("blendHex", () => {
+  it("blends each channel linearly and rounds to whole hex channels", () => {
+    expect(blendHex("#c6a0f6", "#24273a", 0.85)).toMatch(/^#[0-9a-f]{6}$/);
+    expect(blendHex("#ffffff", "#000000", 0.5)).toBe("#808080");
+    // 16→12, 32→24, 48→36 at 75 % of the original.
+    expect(blendHex("#102030", "#000000", 0.25)).toBe("#0c1824");
+  });
+
+  it("is the identity at 0 and the destination at 1", () => {
+    expect(blendHex("#c6a0f6", "#24273a", 0)).toBe("#c6a0f6");
+    expect(blendHex("#c6a0f6", "#24273a", 1)).toBe("#24273a");
+  });
+
+  it("keeps working when the destination is the node's own colour", () => {
+    // The degenerate blend — a node whose colour *is* the ground — must not
+    // produce NaN or run out of palette.
+    expect(blendHex("#24273a", "#24273a", 0.85)).toBe("#24273a");
+  });
+
+  it("refuses a malformed colour rather than producing a half-parsed hex", () => {
+    for (const bad of ["", "#abc", "#a98fe", "rgb(169,143,228)", "not-a-colour"]) {
+      expect(blendHex(bad, "#24273a", 0.85), bad).toBe(bad);
+      expect(blendHex("#c6a0f6", bad, 0.85), `toward ${bad}`).toBe("#c6a0f6");
+    }
+  });
+
+  it("clamps an out-of-range t instead of overshooting the palette", () => {
+    expect(blendHex("#808080", "#ffffff", -1)).toBe("#808080");
+    expect(blendHex("#808080", "#ffffff", 2)).toBe("#ffffff");
+    expect(blendHex("#808080", "#ffffff", Number.NaN)).toBe("#808080");
+  });
+});
+
+describe("recessColor (P6.2: dim by recession, not hue swap)", () => {
+  it("blends toward the scheme's ground by default, keeping 15 % of the colour", () => {
+    for (const scheme of SCHEMES) {
+      const mine = kindColor("note", scheme);
+      const receded = recessColor(mine, scheme);
+      expect(receded).not.toBe(mine);
+      expect(receded).not.toBe(GRAPH_PALETTE[scheme].ground);
+      // Same hue family, lower contrast: the channel each scheme's accent
+      // carries stays the dominant one after the blend.
+      expect(blendHex(mine, GRAPH_PALETTE[scheme].ground, 0.85)).toBe(receded);
+    }
+  });
+
+  it("different node colours recede to different colours", () => {
+    // The old mechanism repainted everything to `muted`; the whole point of
+    // the change is that an unrelated note and an unrelated module are still
+    // *distinguishably* themselves at 15 % strength.
+    for (const scheme of SCHEMES) {
+      const note = recessColor(kindColor("note", scheme), scheme);
+      const vault = recessColor(kindColor("vault", scheme), scheme);
+      expect(note).not.toBe(vault);
+   }
+  });
+
+  it("matches the graph's real ground, which the stylesheet declares", () => {
+    // The mirror gate covers the *slots*; this pins the recession's
+    // destination to the same ground the canvas sits on.
+    for (const scheme of SCHEMES) {
+      expect(GRAPH_PALETTE[scheme].ground).toBe(scheme === "dark" ? "#24273a" : "#eff1f5");
     }
   });
 });
 
 // --- sizes ---------------------------------------------------------------------------
 
-describe("node size (§7.2, §8)", () => {
-  it("never exceeds NODE_RADIUS — the contract §8's gate depends on", () => {
-    // `layout.ts` separates nodes by `COLLIDE_RADIUS = NODE_RADIUS + 9` and
-    // the dynamics gate asserts `minPairwiseDistance > 2 · NODE_RADIUS`. That
-    // assertion is only a statement about *pixels not overlapping* while the
-    // renderer honours the same ceiling. Draw a hub at 24 and the gate stays
-    // green over a hairball.
+describe("node size (§7.2, §8, P6.2)", () => {
+  it("never outgrows the largest node the layout reserved room for", () => {
+    // The ramp lives in `shared/layout.ts` and the collision force reads the
+    // same numbers (`collideRadius(nodeSize(degree))`), so the ceiling the
+    // renderer paints is the one the layout separated for. Draw a hub above
+    // `MAX_NODE_SIZE` and the §8 gate stays green over a hairball.
     for (const degree of [0, 1, 2, 7, 32, 60, 200, 5000]) {
-      expect(nodeSize(degree), `degree ${degree}`).toBeLessThanOrEqual(NODE_RADIUS);
+      expect(nodeSize(degree), `degree ${degree}`).toBeLessThanOrEqual(MAX_NODE_SIZE);
       expect(nodeSize(degree), `degree ${degree}`).toBeGreaterThanOrEqual(MIN_NODE_SIZE);
     }
   });
 
   it("is monotonic in degree and reaches the ceiling at DEGREE_AT_MAX_SIZE", () => {
     expect(nodeSize(0)).toBe(MIN_NODE_SIZE);
-    expect(nodeSize(DEGREE_AT_MAX_SIZE)).toBeCloseTo(NODE_RADIUS, 10);
+    expect(nodeSize(DEGREE_AT_MAX_SIZE)).toBeCloseTo(MAX_NODE_SIZE, 10);
     let previous = -Infinity;
     for (let d = 0; d <= 64; d++) {
       const size = nodeSize(d);
@@ -194,12 +281,14 @@ describe("node size (§7.2, §8)", () => {
     }
   });
 
-  it("separates a hub from a leaf without making the leaf invisible", () => {
-    // The point of the log curve: 60 children must read as bigger than 6, and
-    // a degree-0 note must still be clickable.
+  it("makes a hub read as a place, not a thicker dot (P6.2)", () => {
+    // The Tier 6 brief: the old 6→9 ramp made everything nearly the same size.
+    // The diameter ratio is what the eye compares, and the ceiling is the
+    // roughly-2× the brief asks for over the base radius.
+    expect(nodeSize(0)).toBeLessThan(NODE_RADIUS);
+    expect(nodeSize(32)).toBeCloseTo(MAX_NODE_SIZE, 10);
     expect(nodeSize(60)).toBeGreaterThan(nodeSize(6));
     expect(nodeSize(6)).toBeGreaterThan(nodeSize(0));
-    expect(nodeSize(0)).toBeGreaterThan(0);
   });
 
   it("treats a degenerate degree as zero rather than producing NaN", () => {
@@ -234,6 +323,73 @@ describe("node labels (§3, AGENTS.md rule 4)", () => {
 
   it("gives a structural node no badge at all", () => {
     expect(nodeLabel(node("module:src", "module", "src"))).toBe("src");
+  });
+});
+
+// --- truncation (P6.2) ----------------------------------------------------------------------
+
+describe("truncateLabel (P6.2: word-boundary truncation)", () => {
+  it("leaves a label at or under the budget completely alone", () => {
+    expect(truncateLabel("", LABEL_BUDGET)).toBe("");
+    expect(truncateLabel("alpha", LABEL_BUDGET)).toBe("alpha");
+    // Exactly at the budget is still "fits" — ellipsising a name that fits
+    // would spend the budget making it shorter for no reason.
+    expect(truncateLabel("a".repeat(LABEL_BUDGET), LABEL_BUDGET)).toBe("a".repeat(LABEL_BUDGET));
+    expect(truncateLabel("pkg (packages/a/package.json)")).toBe("pkg (packages/a/package.json)");
+  });
+
+  it("cuts at the last word boundary inside the budget, not mid-word", () => {
+    // "Alpha beta gamma delta epsilon zeta" is 35 chars; the budget leaves a
+    // word boundary at 30, and the cut must land there — never "…that g…".
+    expect(truncateLabel("Alpha beta gamma delta epsilon zeta", 32)).toBe(
+      "Alpha beta gamma delta epsilon…",
+    );
+  });
+
+  it("never leaves a space or a partial word before the ellipsis", () => {
+    for (const text of ["Alpha beta gamma delta epsilon zeta", "one two three four five six seven"]) {
+      const cut = truncateLabel(text, 32);
+      expect(cut.endsWith("…")).toBe(true);
+      expect(cut.endsWith(" …")).toBe(false);
+      expect(cut.length).toBeLessThanOrEqual(LABEL_BUDGET);
+    }
+  });
+
+  it("falls back to a hard cut when a single word fills the budget", () => {
+    // An unbroken token has no boundary to honour; a hard cut at the budget
+    // beats spilling past it, which is the degenerate case this guards.
+    expect(truncateLabel("supercalifragilisticexpialidociousandmore", 32)).toBe(
+      `${"supercalifragilisticexpialidocio".slice(0, 31)}…`,
+    );
+  });
+
+  it("honours a tiny budget by cutting at its edge", () => {
+    // With budget 5 the first word boundary sits before the half-way keep
+    // (`LABEL_MIN_KEEP`), so the rule degrades to the hard cut — a two-letter
+    // stub would read as a bug, not a truncation.
+    expect(truncateLabel("alpha beta gamma", 5)).toBe("alph…");
+  });
+
+  it("returns just the ellipsis for a zero budget", () => {
+    expect(truncateLabel("alpha", 0)).toBe("…");
+    expect(truncateLabel("", 0)).toBe("");
+  });
+
+  it("is idempotent, so a re-render of a truncated label cannot shorten it again", () => {
+    const once = truncateLabel("Alpha beta gamma delta epsilon zeta", 32);
+    expect(truncateLabel(once, 32)).toBe(once);
+  });
+
+  it("truncates a composed node label, badge included", () => {
+    // The budget covers the *drawn* label — badge and all — so an agent note
+    // with a long title cuts at the same visual width a plain one does.
+    const long = nodeLabel(node("note:x", "note", "A very long note title that goes on and on forever", "human"));
+    expect(long).toBe("● A very long note title that…");
+    expect(long.length).toBeLessThanOrEqual(LABEL_BUDGET);
+  });
+
+  it("keeps a short provenance-badged label whole", () => {
+    expect(nodeLabel(node("note:a", "note", "Alpha", "human"))).toBe("● Alpha");
   });
 });
 
@@ -419,14 +575,14 @@ describe("the highlight reducers (§7.4)", () => {
     const nodes = nodeReducer(null);
     const edges = edgeReducer(null);
     expect(nodes("a", nodeOf("a"), "dark")).toEqual({});
-    expect(edges(edgeOf("a", "b").key, edgeOf("a", "b"))).toEqual({});
+    expect(edges(edgeOf("a", "b").key, edgeOf("a", "b"), "dark")).toEqual({});
   });
 
   it("dims everything when the selection is not in this graph", () => {
     // The other half of that distinction: an empty neighbourhood is a real
     // answer — "nothing here is related to what you have selected".
     const nodes = nodeReducer(new Set());
-    expect(nodes("a", nodeOf("a"), "dark").color).toBe(dimColor("dark"));
+    expect(nodes("a", nodeOf("a"), "dark").color).toBe(recessColor(nodeOf("a").color, "dark"));
   });
 
   it("lifts the neighbourhood above the cloud and drops the cloud's labels", () => {
@@ -451,14 +607,35 @@ describe("the highlight reducers (§7.4)", () => {
 
   it("dims by scheme", () => {
     const nodes = nodeReducer(new Set(["a"]));
-    expect(nodes("c", nodeOf("c"), "light").color).toBe(dimColor("light"));
+    expect(nodes("c", nodeOf("c"), "light").color).toBe(recessColor(nodeOf("c").color, "light"));
   });
 
   it("keeps an edge only when both endpoints are in the neighbourhood", () => {
     const edges = edgeReducer(new Set(["a", "b"]));
-    expect(edges(edgeOf("a", "b").key, edgeOf("a", "b"))).toEqual({ zIndex: 1 });
-    expect(edges(edgeOf("b", "c").key, edgeOf("b", "c"))).toEqual({ hidden: true });
-    expect(edges(edgeOf("a", "c").key, edgeOf("a", "c"))).toEqual({ hidden: true });
+    expect(edges(edgeOf("a", "b").key, edgeOf("a", "b"), "dark")).toEqual({
+      zIndex: 1,
+      size: edgeOf("a", "b").size * EDGE_PRESENCE,
+    });
+    // A background edge is not deleted — the highlight would then erase the
+    // context it exists to place the selection inside — it recedes to its own
+    // colour blended toward the ground, the treatment the cloud's nodes take.
+    expect(edges(edgeOf("b", "c").key, edgeOf("b", "c"), "dark")).toEqual({
+      color: recessColor(edgeOf("b", "c").color, "dark"),
+    });
+    expect(edges(edgeOf("a", "c").key, edgeOf("a", "c"), "dark")).toEqual({
+      color: recessColor(edgeOf("a", "c").color, "dark"),
+    });
+  });
+
+  it("gives an in-neighbourhood edge more presence than the background's", () => {
+    const edges = edgeReducer(new Set(["a", "b"]));
+    const kept = edges(edgeOf("a", "b").key, edgeOf("a", "b"), "dark");
+    // Lifted above the background's z and thickened by the presence step,
+    // multiplicatively, so a wikilink keeps its weight advantage over the
+    // hairline it rides.
+    expect(kept.zIndex).toBe(1);
+    expect(kept.size).toBe(edgeOf("a", "b").size * EDGE_PRESENCE);
+    expect(kept.size).toBeGreaterThan(edgeOf("a", "b").size);
   });
 });
 
@@ -1030,12 +1207,12 @@ describe("sigmaRenderer over the injected constructor (§7.5)", () => {
 
     const reduce = fake.nodeReducer();
     const outside = model.nodes.find((n) => n.id === "c")!;
-    expect(reduce?.("c", outside).color).toBe(dimColor("dark"));
+    expect(reduce?.("c", outside).color).toBe(recessColor(outside.color, "dark"));
     const inside = model.nodes.find((n) => n.id === "a")!;
     expect(reduce?.("a", inside).color).toBe(inside.color);
   });
 
-  it("hides edges leaving the neighbourhood", () => {
+  it("recedes edges leaving the neighbourhood toward the ground", () => {
     const fake = fakeSigma();
     const renderer = sigmaRenderer(fake.factory, "dark");
     renderer.setGraph(model);
@@ -1044,8 +1221,13 @@ describe("sigmaRenderer over the injected constructor (§7.5)", () => {
     const reduce = fake.edgeReducer();
     const kept = model.edges.find((e) => e.source === "a")!;
     const dropped = model.edges.find((e) => e.source === "b")!;
-    expect(reduce?.(kept.key, kept).hidden).toBeUndefined();
-    expect(reduce?.(dropped.key, dropped).hidden).toBe(true);
+    // The kept edge is untouched apart from its presence step; the dropped one
+    // is not deleted, it recedes — the mount's reducer applies that step using
+    // the scheme the renderer was built with (dark, here).
+    expect(reduce?.(kept.key, kept)?.zIndex).toBe(1);
+    expect(reduce?.(kept.key, kept)?.size).toBe(kept.size * EDGE_PRESENCE);
+    expect(reduce?.(dropped.key, dropped)?.color).toBe(recessColor(dropped.color, "dark"));
+    expect(reduce?.(dropped.key, dropped)?.color).not.toBe(dropped.color);
   });
 
   it("accepts a highlight before mount and applies it when mounted", () => {
@@ -1055,7 +1237,8 @@ describe("sigmaRenderer over the injected constructor (§7.5)", () => {
     renderer.setHighlight(new Set(["a"]));
     renderer.mount(container);
     const reduce = fake.nodeReducer();
-    expect(reduce?.("c", model.nodes.find((n) => n.id === "c")!).color).toBe(dimColor("dark"));
+    const outside = model.nodes.find((n) => n.id === "c")!;
+    expect(reduce?.("c", outside).color).toBe(recessColor(outside.color, "dark"));
   });
 
   it("replaces the graph on setGraph and refreshes on setPositions", () => {
@@ -1156,8 +1339,10 @@ describe("the P3 pipeline on the repo fixture (§7.1, §11)", () => {
 
   it("keeps every drawn radius inside the layout's collision budget", () => {
     // The join between §8's position assertions and what is actually painted:
-    // the gate proves `minPairwiseDistance > 2 · NODE_RADIUS`, and this proves
-    // no node is drawn wider than that.
-    for (const drawn of model.nodes) expect(drawn.size).toBeLessThanOrEqual(NODE_RADIUS);
+    // `computeLayout` reserves each node a `collideRadius(nodeSize(degree))`
+    // disc, so no drawn size may exceed the ramp's ceiling — a bigger circle
+    // than the collision force allowed room for would paint an overlap the
+    // gate's distance assertion never saw.
+    for (const drawn of model.nodes) expect(drawn.size).toBeLessThanOrEqual(MAX_NODE_SIZE);
   });
 });

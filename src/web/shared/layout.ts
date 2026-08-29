@@ -48,8 +48,9 @@
  * Two deviations from the example, both stated rather than hidden:
  *
  * 1. **`forceCollide`** — the example draws 3.5-pixel dots with no labels; we
- *    draw 9-unit nodes with zoomed labels, so nodes keep a collision radius
- *    (`NODE_RADIUS + label room`) and siblings never overlap.
+ *    draw 6–18-unit nodes with zoomed labels, so nodes keep a collision radius
+ *    (`nodeSize(degree) + label room`, per node — see {@link collideRadius})
+ *    and siblings never overlap.
  * 2. **Relation edges** (`links-to` / `mentions`) are not part of the tree.
  *    They ride along at a longer distance and a fraction of the strength, so
  *    they decorate the structure instead of distorting it.
@@ -112,14 +113,89 @@ export interface LayoutOptions {
   pinWarm?: boolean;
 }
 
-/** Visual node radius in layout units. The renderer must not draw larger than this. */
+/**
+ * The visual node ramp, in layout units.
+ *
+ * The renderer reads these as `graph.model.ts`'s sizes, but they live *here*
+ * because the collision force has to reserve the same room the renderer will
+ * paint — a size the layout and the renderer disagree about is a layout whose
+ * non-overlap proof is invalid on the screen. So one module states the ramp
+ * and {@link collideRadius} derives the collision disc from it; §8's gate then
+ * keeps being a statement about pixels, not just about positions.
+ */
 export const NODE_RADIUS = 9;
+/**
+ * The degree-0 floor: a leaf must stay inside a pointer's reach. `sigma`'s hit
+ * test is the drawn radius, and at overview zoom a leaf renders at roughly
+ * `MIN_NODE_SIZE · cameraCorrection`, so this is the smallest clickable node.
+ */
+export const MIN_NODE_SIZE = 6;
+/**
+ * The hub ceiling, ≈2× the base radius.
+ *
+ * The brief for Tier 6's "graph as hero" is hierarchy through size, and the
+ * old ramp (6→9) read as "everything nearly the same size", which is how a
+ * 60-child hub came to look like one more dot. 18 keeps the ceiling inside the
+ * 2–2.5× the brief suggests while leaves stay at 6, so the diameter ratio is
+ * 3× — a hub reads as a *place* rather than a slightly thicker dot.
+ */
+export const MAX_NODE_SIZE = 18;
+/**
+ * The degree at which a node reaches {@link MAX_NODE_SIZE}.
+ *
+ * Fixed rather than "the maximum degree in this graph": a ceiling derived from
+ * the largest hub would make every other node shrink when one module gains a
+ * file, so the same note would render at two sizes on two loads of the same
+ * vault. A constant keeps size comparable across graphs and across sessions.
+ */
+export const DEGREE_AT_MAX_SIZE = 32;
+
+/**
+ * Node radius from incident-edge degree.
+ *
+ * Logarithmic between the leaf floor and the hub ceiling, so a 60-child hub
+ * reads as much bigger than a 6-child module without a degree-0 note becoming
+ * invisible next to it. Pure, and shared with the renderer (§10): the layout's
+ * collision discs and the renderer's circles are the *same* numbers, which is
+ * what keeps "the layout separates the nodes it drew" true.
+ */
+export function nodeSize(degree: number): number {
+  const d = Number.isFinite(degree) && degree > 0 ? degree : 0;
+  const share = Math.min(1, Math.log2(1 + d) / Math.log2(1 + DEGREE_AT_MAX_SIZE));
+  return MIN_NODE_SIZE + (MAX_NODE_SIZE - MIN_NODE_SIZE) * share;
+}
+
+/**
+ * The room a collision disc reserves beyond the drawn circle: breathing room
+ * for the leading edge of the zoomed label, exactly what the old uniform
+ * `COLLIDE_RADIUS` added to `NODE_RADIUS`.
+ */
+export const LABEL_ROOM = 9;
+
+/**
+ * Collision radius: the drawn size plus the label's breathing room.
+ *
+ * Per **degree now**, not per graph — a hub reserves more room than a leaf, so
+ * the degree-sized renderer can never outgrow the disc its layout reserved.
+ * The old uniform value (`NODE_RADIUS + 9`) survives as {@link COLLIDE_RADIUS},
+ * which is what the label grid, the stage padding and the §8 corridor metrics
+ * are still written against.
+ */
+export function collideRadius(drawnSize: number): number {
+  return drawnSize + LABEL_ROOM;
+}
 
 /** Collision radius: the node plus breathing room for the leading edge of its label. */
 export const COLLIDE_RADIUS = NODE_RADIUS + 9;
 
-/** `links-to` / `mentions` are associative, not structural: longer and weak. */
-const RELATION_DISTANCE = 220;
+/**
+ * `links-to` / `mentions` are associative, not structural: longer and weak.
+ * 170 rather than d3-tree-era 220 — a wiki-linked island riding only relation
+ * edges used to sit a fifth of the canvas further out than its containment
+ * neighbours, which is the floating "dust at the frame edges" the Tier 6
+ * pass is about.
+ */
+const RELATION_DISTANCE = 170;
 
 /** Relation edges pull at a fraction of the containment link's strength — decoration, not structure. */
 const RELATION_STRENGTH = 0.05;
@@ -159,8 +235,26 @@ export const BIG_BRANCH_MIN = 8;
  * collision diameter — two groups of collision-spaced nodes can never be
  * closer without their members overlapping anyway, so this is the minimum
  * distance that still reads as "separated" rather than "denser".
+ *
+ * Sized against the *largest* collision disc, since a hub's disc is what
+ * cannot fit through a corridor sized for a leaf's.
  */
-export const BRANCH_GAP = 2 * COLLIDE_RADIUS;
+export const BRANCH_GAP = 2 * collideRadius(MAX_NODE_SIZE);
+/**
+ * How hard `forceX`/`forceY` pull toward each node's gravity target (origin,
+ * or a big branch's ring slot), on the scale d3 defaults to 0.05.
+ *
+ * The Tier 6 pass wants disconnected islands pulled into one organic cloud
+ * instead of orbiting the frame edges, and every node's centre gravity is the
+ * only pull an *unconnected* node feels — repulsion and collide both push.
+ * 0.09 is "slightly":
+ * - enough that a degree-0 island ends up inside the cloud the connected part
+ *   of the graph forms, instead of drifting to the periphery;
+ * - well below the branch-anchored ring's own geometry, because the anchors
+ *   are targets, not pins — the corridor test still passes with the extra
+ *   squeeze, which the §8 gate asserts rather than assumes.
+ */
+export const CENTER_STRENGTH = 0.09;
 
 const DEFAULT_TICKS = 300;
 const DEFAULT_SEED = 1;
@@ -168,7 +262,7 @@ const DEFAULT_SEED = 1;
 /** d3-force's own alpha floor (`simulation.js`); mirrored so `alphaDecay` can be derived from `ticks`. */
 const ALPHA_MIN = 0.001;
 
-interface SimNode extends SimulationNodeDatum {
+interface SimNode extends SimulationNodeDatum, CollideNode {
   id: string;
   x?: number;
   y?: number;
@@ -470,6 +564,17 @@ export function computeLayout(model: GraphModel, options: LayoutOptions = {}): M
     return node;
   });
 
+  // Per-node collision discs, from the same degree ramp the renderer paints
+  // with. Over the analysed edges (already deduped and endpoint-filtered) in
+  // one pass, so a degree-0 island still gets the leaf floor's disc and a hub
+  // reserves the room its drawn circle plus label needs.
+  const degree = new Map<string, number>();
+  for (const e of edges) {
+    degree.set(e.source, (degree.get(e.source) ?? 0) + 1);
+    degree.set(e.target, (degree.get(e.target) ?? 0) + 1);
+  }
+  for (const n of nodes) n.r = collideRadius(nodeSize(degree.get(n.id) ?? 0));
+
   if (nodes.length > 1) {
     const branches = bigBranches(model);
     if (branches.length === 0 || ticks === 0) {
@@ -522,6 +627,19 @@ export interface ForceSimulationOptions<N> {
 }
 
 /**
+ * The node shape the collision force reads.
+ *
+ * `r` is the node's **collision** radius ({@link collideRadius} of its drawn
+ * size), set by the caller — the static layout from the degree ramp, the live
+ * driver from the `RenderNode` sizes it was handed. Absent falls back to the
+ * uniform {@link COLLIDE_RADIUS}, so a caller that never heard of the ramp
+ * still gets the old, correct behaviour.
+ */
+export interface CollideNode {
+  r?: number;
+}
+
+/**
  * The force configuration, as ONE definition shared by the static layout
  * ({@link computeLayout}) and the live driver (`dynamics.ts`).
  *
@@ -538,7 +656,7 @@ export interface ForceSimulationOptions<N> {
  * decay stays at d3's own default, exactly like the example.
  */
 export function createForceSimulation<
-  N extends SimulationNodeDatum & { id: string },
+  N extends SimulationNodeDatum & { id: string; r?: number },
 >(opts: ForceSimulationOptions<N>): Simulation<N, undefined> {
   const link = forceLink<N, { source: string | N; target: string | N; kind: EdgeKind }>(opts.links)
     .id((n) => n.id)
@@ -554,10 +672,18 @@ export function createForceSimulation<
     // scale it cuts a cold 300-tick run roughly in half (measured 325 ms →
     // 179 ms) and the non-degeneracy gate cannot tell the difference. The
     // link force keeps its own two passes — edge untangling is where the
-    // quality actually lives.
-    .force("collide", forceCollide<N>(COLLIDE_RADIUS).strength(1).iterations(1))
-    .force("x", forceX<N>((n) => opts.anchors?.get(n.id)?.x ?? 0))
-    .force("y", forceY<N>((n) => opts.anchors?.get(n.id)?.y ?? 0))
+    // quality actually lives. The radius is per node, so a hub reserves the
+    // room its drawn size needs while leaves keep packing tightly — see
+    // `CollideNode`.
+    .force("collide", forceCollide<N>((n) => n.r ?? COLLIDE_RADIUS).strength(1).iterations(1))
+    .force(
+      "x",
+      forceX<N>((n) => opts.anchors?.get(n.id)?.x ?? 0).strength(CENTER_STRENGTH),
+    )
+    .force(
+      "y",
+      forceY<N>((n) => opts.anchors?.get(n.id)?.y ?? 0).strength(CENTER_STRENGTH),
+    )
     .stop();
 }
 
