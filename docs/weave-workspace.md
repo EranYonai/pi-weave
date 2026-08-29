@@ -1056,7 +1056,9 @@ still an empty state when P2 landed, and tree + note + rail were already a worki
    from the layout's `COLLIDE_RADIUS` so the label grid and the simulation talk about one distance, and `itemSizesReference: "positions"` so
    §8's provably non-overlapping layout does not render as a blob at low zoom.
 6. ✅ **Cluster collapse/expand** via core's `clusterAggregate` (§7.4) — real graph *reduction*, with boundary-crossing edges retargeted onto
-   the standing-in cluster, plus `fit` and a depth 1/2/3 control. A graph above `AUTO_COLLAPSE_ABOVE` (120) nodes opens collapsed.
+   the standing-in cluster, plus `fit` and a depth 1/2/3 control. The graph opens **fully expanded** — the auto-collapse that opened graphs
+   over 120 nodes as their bare roots ("2 of 237 nodes") read as an empty column and was removed in favour of a whole first frame plus the
+   one `[collapse]` press.
 
 *Exit met:* `tests/web/client-graph-column.test.ts` carries the exit criterion directly — the repo fixture reduces to 5 distinct clusters
 with the 60-child hub, and selecting anywhere highlights everywhere.
@@ -1383,8 +1385,9 @@ session itself.
 - **Note** — the selected note rendered with `marked` + `DOMPurify`: front-matter header with a provenance badge and relative times, tags,
   and `[[wikilinks]]` rewritten into internal navigation. An unresolved wikilink renders as a ghost you can see but not follow.
 - **Graph** — sigma over a graphology projection, laid out by d3-force in the browser and cached in `localStorage` so a reopened workspace
-  does not reshuffle. Neighborhood highlight via reducers, semantic zoom, cluster collapse/expand, `fit`, and a depth 1/2/3 control. Graphs
-  over 120 nodes open collapsed.
+  does not reshuffle. Neighborhood highlight via reducers, semantic zoom, cluster collapse/expand, `fit`. The graph opens **expanded**; a
+  first frame of bare roots for larger graphs was tried and removed — it read as an empty pane beside a tree showing the same knowledge
+  whole, and `[collapse]` is one press when the overview is wanted.
 - **Context rail** under the graph — LINKS, BACKLINKS, TAGS and MENTIONS for whatever is selected, every row clickable.
 - **One selection, everywhere.** §1.3's context bus is a single Preact signal: click a tree row, a graph node, a wikilink or a rail entry
   and all four surfaces recompute. That is §1.1's principle — bring related information into the current view — and it is the thing to try

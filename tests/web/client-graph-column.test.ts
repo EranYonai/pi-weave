@@ -19,7 +19,6 @@ import { angularOccupancy, clusterSeparation, minPairwiseDistance, variance } fr
 import { clusterAggregate, focusNeighborhood } from "../../src/web/shared/view";
 import type { GraphPayload, WireGraphEdge, WireGraphNode } from "../../src/web/shared/wire";
 import {
-  AUTO_COLLAPSE_ABOVE,
   EMPTY_COLUMN,
   FIT_HINT,
   FIT_LABEL,
@@ -122,18 +121,21 @@ describe("initialGraphView", () => {
     expect(view.expanded.has("module:src")).toBe(true);
   });
 
-  it("opens a large graph as its clusters", () => {
-    // Above the bound a force layout of a containment tree is a disc of
-    // overlapping labels however you draw it, and the honest first frame is
-    // the roots with their counts.
+  it("opens a large graph whole too", () => {
+    // The expanded view is the *starting* frame at any size. The collapsed
+    // alternative (more than 120 nodes → bare roots — "2 of 237 nodes" on
+    // this repository) read as an empty column the tree had just shown whole.
+    // §8's budget puts the expanded first frame at tens of milliseconds, and
+    // the one [collapse] press undoes it for anyone who wants the overview.
     const nodes = [node("repository", "repository")];
     const edges: WireGraphEdge[] = [];
-    for (let i = 0; i <= AUTO_COLLAPSE_ABOVE; i++) {
+    for (let i = 0; i < 130; i++) {
       nodes.push(node(`file:f${i}`, "file"));
       edges.push(edge("repository", `file:f${i}`));
     }
-    expect(nodes.length).toBeGreaterThan(AUTO_COLLAPSE_ABOVE);
-    expect(initialGraphView(viewModel(payloadOf(nodes, edges))).expanded.size).toBe(0);
+    expect(nodes.length).toBeGreaterThan(120);
+    const view = initialGraphView(viewModel(payloadOf(nodes, edges)));
+    expect([...view.expanded]).toEqual(["repository"]);
   });
 
   it("names the clusters rather than carrying an 'all' flag", () => {

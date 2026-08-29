@@ -59,39 +59,30 @@ export interface GraphViewState {
    * Passed straight to `clusterAggregate`, whose contract is that a node is
    * visible when every containment ancestor between it and a root is
    * expanded. An empty set is therefore the maximally collapsed view — the
-   * roots alone — which is the right first frame for a repository with
-   * thousands of files and the wrong one for a vault with nine notes. See
-   * {@link initialGraphView}.
+   * roots alone — which is what the `[collapse]` control and the tree give
+   * the user. The *default* is the other end: {@link initialGraphView} opens
+   * everything, so the first frame is the graph the tree beside it has
+   * already described.
    */
   readonly expanded: ReadonlySet<string>;
 }
 
 /**
- * How many nodes a graph may have before it opens collapsed.
+ * The state a freshly loaded graph opens in: **fully expanded**.
  *
- * Not a preference — a legibility bound. Above roughly this many, a
- * force-directed layout of a containment tree is a disc of overlapping labels
- * whichever way you draw it, and the honest first frame is the five clusters
- * with their counts. Below it, collapsing hides a graph the user could simply
- * have read.
- *
- * 120 is the point at which this repository's own fixture (89 nodes) still
- * opens whole while a real `src/` scan (hundreds of files) does not.
- */
-export const AUTO_COLLAPSE_ABOVE = 120;
-
-/**
- * The state a freshly loaded graph opens in.
- *
- * Everything expanded for a small graph, nothing for a large one. `expanded`
- * has to name the clusters explicitly rather than carry an "all" flag, because
- * `clusterAggregate` takes a set and the first thing a user does is collapse
- * one — which has to leave the others open.
+ * The alternative was tried and failed: `AUTO_COLLAPSE_ABOVE` opened any
+ * graph over 120 nodes as its bare roots — measured on this repository as
+ * "2 of 237 nodes" — and a pane showing the count while the tree beside it
+ * showed the same knowledge whole reads as an empty column, not a collapsed
+ * one. So the first frame is the whole graph, and §8's layout budget puts the
+ * cost of that at tens of milliseconds; undoing it is the one `[collapse]`
+ * press the control strip already offers. `expanded` still names the clusters
+ * explicitly rather than carrying an "all" flag, because `clusterAggregate`
+ * takes a set and the first thing a user does is collapse one — which has to
+ * leave the others open.
  */
 export function initialGraphView(model: ViewGraphModel): GraphViewState {
-  const expanded =
-    model.nodes.length > AUTO_COLLAPSE_ABOVE ? new Set<string>() : new Set(clusterAggregate(model, new Set()).clusters.keys());
-  return { expanded };
+  return { expanded: new Set(clusterAggregate(model, new Set()).clusters.keys()) };
 }
 
 /**

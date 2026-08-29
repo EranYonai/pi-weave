@@ -143,8 +143,12 @@ body{font-size:13px}
   border-bottom:1px solid var(--weave-line);
 }
 /* Title, then the graph (which takes the slack), then the context rail. The
-   \`1fr\` is what gives \`.weave-graph-canvas\` a definite height to measure. */
-.weave-col-graph{display:grid;grid-template-rows:auto 1fr auto;background:var(--weave-bg)}
+   1fr is what gives .weave-graph-canvas a definite height to measure, and the
+   rail's row is a fixed fraction of the column — not content-sized — so
+   moving the selection between a sparsely-connected note and a richly
+   connected one never repartitions the right-hand column: the rail scrolls
+   inside the same region instead of squeezing the graph. */
+.weave-col-graph{display:grid;grid-template-rows:auto minmax(0,1fr) minmax(96px,40%);background:var(--weave-bg)}
 
 /* dividers -------------------------------------------------------------- */
 .weave-divider{
@@ -340,7 +344,7 @@ body{font-size:13px}
    \`noteEmptyMessage\`, \`graphEmptyMessage\`, \`RAIL_EMPTY\`), each rendered as a
    plain paragraph, so the shared placeholder had no callers left. */
 .weave-rail{
-  display:flex;flex-direction:column;min-height:96px;max-height:46%;overflow:auto;
+  display:flex;flex-direction:column;min-height:0;overflow:auto;
   border-top:1px solid var(--weave-line);background:var(--weave-panel);
 }
 .weave-ctx-empty{margin:0;padding:10px var(--weave-gutter);color:var(--weave-dim);line-height:1.5}

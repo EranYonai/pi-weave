@@ -119,20 +119,41 @@ describe("the graph palette is the shell's palette (§7.4)", () => {
     }
   });
 
-  it("uses the TUI's kind vocabulary rather than a second one", () => {
-    // Mirrors `kindStyle` in `src/pi/viewer/tui/theme.ts`, which the client
-    // tier may not import. Spot-checked on the assignments that carry meaning:
-    // containers are the accent, code is success, plumbing is a warning, and a
-    // note defers to its provenance badge.
+  it("keeps the design language: anchors accent, notes foreground, code grey", () => {
+    // The shell's design language is three greys doing structural work and a
+    // single accent (shell/theme.ts), so the canvas has exactly three colours:
+    // violet anchors for the two knowledge scopes, foreground for notes (the
+    // product), and dim — the grey a `generated` tree row takes — for
+    // generated code. The TUI's success/warning mapping is deliberately not
+    // copied: those are *status* colours here (provenance badges, the
+    // connection dot), and a graph full of green and amber modules read as a
+    // different app inside the workspace.
     expect(KIND_SLOT.vault).toBe("accent");
     expect(KIND_SLOT.repository).toBe("accent");
-    expect(KIND_SLOT.module).toBe("success");
-    expect(KIND_SLOT.package).toBe("success");
-    expect(KIND_SLOT.gitState).toBe("warning");
-    expect(KIND_SLOT.external).toBe("warning");
-    expect(KIND_SLOT.entryPoint).toBe("warning");
+    expect(KIND_SLOT.module).toBe("dim");
+    expect(KIND_SLOT.package).toBe("dim");
+    expect(KIND_SLOT.gitState).toBe("dim");
+    expect(KIND_SLOT.external).toBe("dim");
+    expect(KIND_SLOT.entryPoint).toBe("dim");
     expect(KIND_SLOT.file).toBe("dim");
     expect(KIND_SLOT.note).toBe("text");
+  });
+
+  it("recedes structural edges, accents association edges", () => {
+    // Containment was `line` (`--weave-line-strong`), a 1.46:1 contrast
+    // against the dark background — invisible until something was selected,
+    // which is the bug this mapping exists to prevent. `dim` is above the
+    // 3:1 non-text minimum in both schemes; the accent belongs to the
+    // content associations, with weight (`links-to` at 1.4) and §1.3's rail
+    // telling `links-to` from `mentions`.
+    expect(EDGE_SLOT.contains).toBe("dim");
+    expect(EDGE_SLOT["anchored-at"]).toBe("dim");
+    expect(EDGE_SLOT["links-to"]).toBe("accent");
+    expect(EDGE_SLOT.mentions).toBe("accent");
+    // Association edges keep their weight advantage over the hairline
+    // scaffolding, so a wikilink still reads through a containment web.
+    expect(EDGE_SIZE["links-to"]).toBeGreaterThan(EDGE_SIZE.contains);
+    expect(EDGE_SIZE["links-to"]).toBeGreaterThan(EDGE_SIZE.mentions);
   });
 
   it("dims to a colour, never to the background", () => {
