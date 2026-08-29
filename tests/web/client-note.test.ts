@@ -795,7 +795,7 @@ describe("noteEmptyMessage", () => {
   });
 
   it("invites a selection when nothing is selected", () => {
-    expect(noteEmptyMessage(null, null)).toBe("Select a note to read it here.");
+    expect(noteEmptyMessage(null, null)).toBe("Nothing open — search with ⌘K, or walk the tree with j and k.");
   });
 
   it("says loading while a selected note's body is in flight", () => {

@@ -381,6 +381,15 @@ describe("treeKey", () => {
     expect(treeKey(rows, state, "note:alpha", "ArrowUp")).toMatchObject({ selectedId: "vault", handled: true });
   });
 
+  it("refuses every key while the user is typing into the filter", () => {
+    // The filter box sits inside the listened element, so `j` in a query like
+    // "jack" once arrived here as an alias and moved the cursor instead of
+    // entering the character. While typing, nothing is tree navigation.
+    for (const raw of ["j", "k", "ArrowDown", "Home"]) {
+      expect(treeKey(rows, state, "vault", raw, true), raw).toMatchObject({ handled: false });
+    }
+  });
+
   it("jumps to the ends with Home and End", () => {
     expect(treeKey(rows, state, "note:beta", "Home").selectedId).toBe("vault");
     expect(treeKey(rows, state, "note:beta", "End").selectedId).toBe("module:src/web");
@@ -710,14 +719,14 @@ describe("treeEmptyMessage", () => {
     // The failure this prevents: telling a user their vault is empty because
     // they typed a typo into the filter box.
     const query = setQuery(initialTreeView(), "zzz");
-    expect(treeEmptyMessage(GRAPH, rowsFor(GRAPH, query), query)).toBe("nothing matches this filter");
+    expect(treeEmptyMessage(GRAPH, rowsFor(GRAPH, query), query)).toBe("nothing matches this filter — clear it to see the whole vault");
     // Same for a provenance filter that matches no note in a populated vault.
     const onlyHuman = payloadOf(
       [node("vault", "vault", "Vault"), node("note:beta", "note", "Beta", "agent")],
       [{ source: "vault", target: "note:beta", kind: "contains" }],
     );
     const prov = cycleProvenance(initialTreeView());
-    expect(treeEmptyMessage(onlyHuman, rowsFor(onlyHuman, prov), prov)).toBe("nothing matches this filter");
+    expect(treeEmptyMessage(onlyHuman, rowsFor(onlyHuman, prov), prov)).toBe("nothing matches this filter — clear it to see the whole vault");
   });
 
   it("uses core's own hint for a genuinely empty vault, so TUI and web agree", () => {

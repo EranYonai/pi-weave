@@ -42,19 +42,26 @@ function Prompt({ prompt, send }: { prompt: EditorPrompt; send: (event: EditorEv
   );
 }
 
-/** The toolbar: edit/done, save, open-in-$EDITOR, and the status word. */
+/** The toolbar while editing: done, save, open-in-$EDITOR, and the status word.
+ *
+ * There is no button in read mode: the note itself is the edit affordance —
+ * clicking its text opens the editor (see `Note.tsx`), and `⌘E` still works.
+ * Rendering the button only while editing keeps the read view down to prose
+ * and the `Open in $EDITOR` control. */
 export function EditorBar(props: EditorProps) {
   const { toolbar, send } = props;
   return (
     <div class="weave-note-bar">
-      <button
-        type="button"
-        class="weave-note-toggle"
-        aria-pressed={toolbar.editing}
-        onClick={() => send({ type: "toggle" })}
-      >
-        {toolbar.toggleLabel}
-      </button>
+      {toolbar.editing ? (
+        <button
+          type="button"
+          class="weave-note-toggle"
+          aria-pressed={toolbar.editing}
+          onClick={() => send({ type: "toggle" })}
+        >
+          {toolbar.toggleLabel}
+        </button>
+      ) : null}
       {toolbar.editing ? (
         <button type="button" class="weave-note-save" disabled={!toolbar.canSave} onClick={() => send({ type: "save" })}>
           {toolbar.saveLabel}

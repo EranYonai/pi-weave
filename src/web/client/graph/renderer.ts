@@ -49,8 +49,8 @@
  */
 
 import type { Point } from "../../shared/layout";
-import type { ColorScheme, EdgeDisplayOverride, GraphSettings, NodeDisplayOverride, RenderEdge, RenderGraph, RenderNode } from "./graph.model";
-import { edgeReducer, graphSettings, nodeReducer } from "./graph.model";
+import type { ColorScheme, EdgeDisplayOverride, GraphSettings, NodeDisplayOverride, RenderEdge, RenderGraph, RenderNode, ViewBox } from "./graph.model";
+import { edgeReducer, frameBox, graphSettings, nodeReducer } from "./graph.model";
 import type { ProjectedGraph } from "./project";
 import { positionsOf, project, syncPositions } from "./project";
 
@@ -191,6 +191,15 @@ export interface SigmaLike {
   setSetting(key: "edgeReducer", value: (key: string, data: RenderEdge) => EdgeDisplayOverride): unknown;
   setSetting(key: "enableCameraPanning", value: boolean): unknown;
   setGraph(graph: ProjectedGraph): unknown;
+  /**
+   * Freeze the graph→viewport normalization onto a fixed box.
+   *
+   * Sigma's own `autoRescale` would recompute that mapping from the moving
+   * extent on every repaint — which a drag does every frame — so crossing the
+   * view's edge rescaled the whole graph under the cursor. `graph.model.ts`'s
+   * {@link frameBox} records the why in full.
+   */
+  setCustomBBox(box: ViewBox | null): unknown;
   refresh(): unknown;
   getCamera(): CameraLike;
   kill(): void;
@@ -242,6 +251,9 @@ export function sigmaRenderer(create: SigmaFactory, scheme: ColorScheme): GraphR
     if (id === null || id === current) dragEnd(current);
   };
 
+  /** The box to freeze the view on, from the graph's *current* positions. */
+  const boxOf = (): ViewBox | null => frameBox([...positionsOf(graph).values()]);
+
   /**
    * Push the current highlight into sigma's reducers (§7.4).
    *
@@ -286,12 +298,20 @@ export function sigmaRenderer(create: SigmaFactory, scheme: ColorScheme): GraphR
       instance.on("upNode", () => endDrag(dragging));
       instance.on("upStage", () => endDrag(null));
       applyReducers(instance);
+      // Freeze the view box for whatever graph arrived before mount, so the
+      // first frame is already framed and stable — see `SigmaLike.setCustomBBox`.
+      instance.setCustomBBox(boxOf());
       sigma = instance;
     },
 
     setGraph(next) {
       graph = project(next);
       sigma?.setGraph(graph);
+      // Re-frame on a shape change: new nodes legitimately change the extent,
+      // and the box is what keeps the *drag* frames from also changing it.
+      // Deliberately not touched by `setPositions` — a settling simulation
+      // must not move the view under the user.
+      sigma?.setCustomBBox(boxOf());
     },
 
     setPositions(positions) {
@@ -323,8 +343,12 @@ export function sigmaRenderer(create: SigmaFactory, scheme: ColorScheme): GraphR
     },
 
     fit() {
-      // `animatedReset` settles when the animation ends. Nothing awaits a
-      // camera move, and a rejection from a camera killed mid-flight is noise.
+      // Re-frame onto the **current** positions — a graph the user has pulled
+      // apart wants its dragged nodes inside the view — then reset the camera
+      // onto that box. `animatedReset` settles when the animation ends. Nothing
+      // awaits a camera move, and a rejection from a camera killed mid-flight
+      // is noise.
+      sigma?.setCustomBBox(boxOf());
       void sigma?.getCamera().animatedReset();
     },
 

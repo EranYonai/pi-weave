@@ -16,7 +16,7 @@ import { afterEach, describe, expect, it } from "vitest";
 import type { FetchLike, HttpRequest, HttpResponse } from "../../src/web/client/api";
 import type { EventSourceLike } from "../../src/web/client/live";
 import { SOCKET_CLOSED, SOCKET_CONNECTING } from "../../src/web/client/live.model";
-import { connection, graph, noteBody, recentIds, selectedId } from "../../src/web/client/state";
+import { connection, graph, graphFailed, noteBody, recentIds, selectedId } from "../../src/web/client/state";
 import {
   addedNodeIds,
   noteSlug,
@@ -309,6 +309,40 @@ describe("startWorkspace", () => {
 
     // Stale beats blank.
     expect(graph.value?.stamp).toBe("s1");
+    handle.stop();
+  });
+
+  it("records a boot failure, and a recovery clears it", async () => {
+    const source = fakeSource();
+    let status = 500;
+    const fetch = router({ graph: () => ({ status, body: payloadAt("s2") }) });
+    const handle = startWorkspace({ fetch, open: () => source });
+    await settle();
+
+    expect(graphFailed.value).toBe(true);
+
+    status = 200;
+    source.emit(JSON.stringify({ scope: "vault", stamp: "s2" }));
+    await settle();
+
+    expect(graphFailed.value).toBe(false);
+    handle.stop();
+  });
+
+  it("does not flag a failed refetch while a graph is already on screen", async () => {
+    // A stale graph is strictly better than a blank workspace; the failure
+    // state must not dress it up as a boot failure.
+    const source = fakeSource();
+    let status = 200;
+    const fetch = router({ graph: () => ({ status, body: payloadAt("s1") }) });
+    const handle = startWorkspace({ fetch, open: () => source });
+    await settle();
+
+    status = 500;
+    source.emit(JSON.stringify({ scope: "vault", stamp: "s2" }));
+    await settle();
+
+    expect(graphFailed.value).toBe(false);
     handle.stop();
   });
 

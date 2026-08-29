@@ -1,9 +1,11 @@
 import { describe, expect, it } from "vitest";
 import { createGraphSimulation } from "../../src/web/client/graph/dynamics";
 import type { GraphSimulation } from "../../src/web/client/graph/dynamics";
+import { renderGraph } from "../../src/web/client/graph/graph.model";
 import type { RenderGraph } from "../../src/web/client/graph/graph.model";
 import { COLLIDE_RADIUS, computeLayout, type Point } from "../../src/web/shared/layout";
-import { repoLikeGraph } from "../fixtures/graphShapes";
+import { bbox } from "../../src/web/shared/metrics";
+import { repoLikeGraph, siblingBlobsGraph } from "../fixtures/graphShapes";
 
 function graph(
   nodes: Array<{ id: string; x: number; y: number }>,
@@ -58,6 +60,38 @@ const displacement = (before: Map<string, Point>, after: Map<string, Point>): nu
   }
   return max;
 };
+
+describe("graph dynamics — branch anchors (the live half)", () => {
+  it("holds the separated equilibrium the static layout settled into", () => {
+    // The engine's gravity targets are the branch ring, so mounting the live
+    // sim over an already-separated layout cannot glide it back toward one
+    // centre — the failure that made the static and live paths diverge before
+    // they shared one physics.
+    const model = siblingBlobsGraph();
+    const positions = computeLayout(model, { ticks: 300, seed: 1 });
+    const rendered = renderGraph(model.nodes, model.edges, positions, "dark");
+    const sim = createGraphSimulation(rendered)!;
+    settle(sim);
+
+    const after = sim.positions();
+    const members = (match: (id: string) => boolean): Point[] =>
+      model.nodes.filter((n) => match(n.id)).map((n) => after.get(n.id)!);
+    const blobs = [
+      members((id) => id === "module:summaries" || id.startsWith("file:summaries/")),
+      members((id) => id === "module:src" || id.startsWith("module:src/")),
+      members((id) => id === "vfolder:sessions" || id.startsWith("note:session-")),
+    ];
+    for (let i = 0; i < blobs.length; i++) {
+      for (let j = i + 1; j < blobs.length; j++) {
+        const a = bbox(blobs[i]!);
+        const b = bbox(blobs[j]!);
+        const dx = Math.max(b.minX - a.maxX, a.minX - b.maxX, 0);
+        const dy = Math.max(b.minY - a.maxY, a.minY - b.maxY, 0);
+        expect(Math.hypot(dx, dy), `blob ${i} vs ${j}`).toBeGreaterThan(2 * COLLIDE_RADIUS);
+      }
+    }
+  });
+});
 
 describe("graph dynamics", () => {
   it("returns null for an empty graph", () => {

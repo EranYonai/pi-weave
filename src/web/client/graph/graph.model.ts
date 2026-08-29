@@ -67,53 +67,78 @@ export type ColorScheme = "dark" | "light";
  */
 export const GRAPH_PALETTE: Readonly<Record<ColorScheme, Readonly<Record<ColorSlot, string>>>> = {
   dark: {
-    accent: "#a48cff",
-    success: "#4ade80",
-    warning: "#fbbf24",
-    dim: "#8f8a9c",
-    text: "#e8e6ee",
-    muted: "#5d5869",
-    line: "#343141",
+    accent: "#b79fdd",
+    success: "#7fc49a",
+    warning: "#e8b04c",
+    dim: "#bb9ecf",
+    text: "#fde2f3",
+    muted: "#aca3d4",
+    line: "#4a527e",
   },
   light: {
-    accent: "#6d4aff",
-    success: "#15803d",
-    warning: "#b45309",
-    dim: "#6f6b66",
-    text: "#1c1b19",
-    muted: "#9a958e",
-    line: "#d2cec8",
+    accent: "#85586f",
+    success: "#3f704e",
+    warning: "#a05a1c",
+    dim: "#7c6257",
+    text: "#43303a",
+    muted: "#7f6455",
+    line: "#d0b8a8",
   },
 };
 
 /**
  * Node kind → colour slot.
  *
- * The same assignment `kindStyle` makes in `src/pi/viewer/tui/theme.ts`, which
- * the client tier may not import. Restated rather than re-derived for the
- * reason `tree.model.ts`'s glyph table gives: someone who has used
- * `/weave-view tui` should recognise the graph, and a second vocabulary is a
- * cost with no benefit. `note` takes `text` there too — a note's identity is
- * carried by its provenance badge, not by its kind.
+ * The shell's design language (shell/theme.ts) is **three greys doing the
+ * structural work and one accent used sparingly** — success/warning are
+ * status colours there (provenance badges, the connection dot), not
+ * decoration. Mapping code kinds onto them painted the canvas green and
+ * amber and read as a different app inside the workspace, so every kind
+ * except the three that carry identity recedes into `dim`:
+ *
+ * - `vault` / `repository` keep `accent` — the two knowledge anchors, the
+ *   same violet the note column's wikilinks are painted in.
+ * - `note` keeps `text` — notes are the product (§1.1), and their identity
+ *   is carried by the provenance badge, not by a hue.
+ * - Generated code — modules, packages, entry points, git, externals, files
+ *   — takes `dim`, the same grey a `generated` row takes in the tree. The
+ *   TUI's `kindStyle` (src/pi/viewer/tui/theme.ts) still maps these kinds to
+ *   success/warning; the two media disagree on purpose, because a pi theme
+ *   has no dark/light stylesheet to violate and a terminal can restyle
+ *   everything. Here the sheet decides, and the sheet says calm.
  */
 export const KIND_SLOT: Readonly<Record<WireNodeKind, ColorSlot>> = {
   vault: "accent",
   note: "text",
   repository: "accent",
-  module: "success",
-  package: "success",
-  entryPoint: "warning",
-  gitState: "warning",
-  external: "warning",
+  module: "dim",
+  package: "dim",
+  entryPoint: "dim",
+  gitState: "dim",
+  external: "dim",
   file: "dim",
 };
 
-/** Edge kind → colour slot. Structure recedes; association is the accent. */
+/**
+ * Edge kind → colour slot. Structure recedes; association is the accent.
+ *
+ * "Recedes" used to mean `line` (`--weave-line-strong`), which read as
+ * *absent* — 1.5:1 against either background, below the 3:1 non-text minimum,
+ * and the reason the skeleton of the graph was invisible until something was
+ * selected. The `dim` slot is 5.5:1 against the dark background and 4.9:1
+ * against the light one, so containment reads as the hairline scaffolding it
+ * is without vanishing.
+ *
+ * `mentions` joins `links-to` on the accent. Both are content associations
+ * between human knowledge and the rest of the graph — splitting them across
+ * two hues is what put a rainbow on the canvas — and §1.3's rail is where
+ * the two kinds are told apart, at reading size, with labels.
+ */
 export const EDGE_SLOT: Readonly<Record<WireEdgeKind, ColorSlot>> = {
-  contains: "line",
-  "anchored-at": "line",
+  contains: "dim",
+  "anchored-at": "dim",
   "links-to": "accent",
-  mentions: "warning",
+  mentions: "accent",
 };
 
 /** The colour a node kind is drawn in. */
@@ -171,10 +196,10 @@ export function nodeSize(degree: number): number {
   return MIN_NODE_SIZE + (NODE_RADIUS - MIN_NODE_SIZE) * share;
 }
 
-/** Edge thickness by kind. Containment is scaffolding; a wikilink is content. */
+/** Edge thickness by kind. A wikilink keeps its weight; structure is hairline. */
 export const EDGE_SIZE: Readonly<Record<WireEdgeKind, number>> = {
-  contains: 0.8,
-  "anchored-at": 0.8,
+  contains: 1,
+  "anchored-at": 1,
   "links-to": 1.4,
   mentions: 1,
 };
@@ -249,6 +274,52 @@ export interface RenderEdge {
 export interface RenderGraph {
   readonly nodes: readonly RenderNode[];
   readonly edges: readonly RenderEdge[];
+}
+
+/** The normalization box the renderer freezes the view to. See {@link frameBox}. */
+export interface ViewBox {
+  readonly x: readonly [number, number];
+  readonly y: readonly [number, number];
+}
+
+/**
+ * The box the graph is framed on — sigma's `customBBox`.
+ *
+ * ## Why a box is frozen at all
+ *
+ * Sigma's default `autoRescale` recomputes the graph→viewport normalization
+ * from the **current extent on every refresh**, and a drag repaints every
+ * frame. The consequence, measured on this repository's graph: the moment a
+ * dragged node crosses the extent boundary — at the edge of the view — the
+ * whole graph rescales under the cursor, so the view "suddenly makes a
+ * distance" and the node ends up dragged very far from the centre while the
+ * user chases it. A frozen box makes the coordinates stable for the whole
+ * session: the node stays under the cursor, the canvas bounds the drag, and
+ * `[fit]` re-frames onto whatever the current positions are.
+ *
+ * The box is the exact extent of the rendered positions — no padding of its
+ * own, because sigma's `stagePadding` (in pixels) already insets the fit, and
+ * the same box handed back on `fit()` re-frames dragged-apart graphs.
+ *
+ * `null` for an empty graph: there is nothing to frame, and the caller
+ * clears the override so sigma falls back to its own behaviour.
+ */
+export function frameBox(points: readonly Point[]): ViewBox | null {
+  let minX = Infinity;
+  let minY = Infinity;
+  let maxX = -Infinity;
+  let maxY = -Infinity;
+  let seen = 0;
+  for (const p of points) {
+    if (!Number.isFinite(p.x) || !Number.isFinite(p.y)) continue;
+    seen++;
+    if (p.x < minX) minX = p.x;
+    if (p.x > maxX) maxX = p.x;
+    if (p.y < minY) minY = p.y;
+    if (p.y > maxY) maxY = p.y;
+  }
+  if (seen === 0) return null;
+  return { x: [minX, maxX], y: [minY, maxY] };
 }
 
 /** The empty graph. What the column renders before the first payload lands. */

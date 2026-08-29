@@ -25,16 +25,19 @@
 
 import { useEffect, useMemo, useRef, useState } from "preact/hooks";
 import { fetchJson } from "../api.dom";
+import type { ColorScheme } from "../graph/graph.model";
+import { schemeOf, watchScheme } from "../graph/scheme";
 import { createSigmaRenderer } from "../graph/renderer.dom";
 import { domEventSource } from "../live";
 import { createEditor, watchUnload, type EditorHandle } from "../note/editor.controller";
 import { editorPrompt, editorToolbar, initialEditorState, shouldBlockUnload } from "../note/editor.model";
 import { SearchPalette } from "../search/SearchPalette";
 import { restoreSelection, saveSelection } from "../selection.storage";
-import { connection, graph, noteBody, selectedId } from "../state";
+import { connection, graph, graphFailed, noteBody, selectedId } from "../state";
 import type { WorkspaceHandle } from "../workspace";
 import { observeNotes, select, startWorkspace } from "../workspace";
 import { Columns } from "./Columns";
+import { deeplinkSelection, formatHash } from "./deeplink.model";
 import { dividerHandlers } from "./drag.model";
 import { Header } from "./Header";
 import { HelpOverlay } from "./HelpOverlay";
@@ -45,7 +48,20 @@ import { breakpointFor, loadLayout, resolveColumns, saveLayout } from "./layout.
 import { StatusBar } from "./StatusBar";
 import type { OverlayId } from "./shell.model";
 import { connectionView, looksApple, searchShortcut, statusBarModel, summarize } from "./shell.model";
+import { cycleTheme, effectiveScheme, loadTheme, saveTheme, themeAttr, themeButton } from "./theme.model";
+import type { ThemeChoice } from "./theme.model";
 import { watchViewport } from "./viewport";
+
+/**
+ * Write the choice onto `<html>`, so the sheet's attribute branch and the
+ * media query agree on who is in charge (see `theme.model.ts`'s header). The
+ * one DOM write the theme needs, and it is here rather than in the model for
+ * the same reason `applyVars` is: it is an effect, not a decision.
+ */
+function applyThemeAttr(choice: ReturnType<typeof themeAttr>): void {
+  if (choice === null) delete document.documentElement.dataset.weaveTheme;
+  else document.documentElement.dataset.weaveTheme = choice;
+}
 
 export interface ShellProps {
   /** From the page bootstrap. Shown in the status bar. */
@@ -61,6 +77,12 @@ export function Shell(props: ShellProps) {
   const [overlay, setOverlay] = useState<OverlayId>(null);
   const [layout, setLayout] = useState<LayoutState>(() => loadLayout(localStorage, props.initialWidth));
   const [editorState, setEditorState] = useState(initialEditorState);
+  // The theme: what the user picked, and what the OS is currently saying. Two
+  // states because they answer different questions — `theme` changes on a
+  // button press or the `t` key, `systemScheme` on an OS flip while the user
+  // is in system mode — and `effectiveScheme` is where the two resolve.
+  const [theme, setTheme] = useState<ThemeChoice>(() => loadTheme(localStorage) ?? "system");
+  const [systemScheme, setSystemScheme] = useState<ColorScheme>(() => schemeOf(window));
   const workspace = useRef<WorkspaceHandle | null>(null);
   // Filled by the graph column at mount, cleared on unmount. The global `g`
   // key's only route to the renderer — see `Graph.tsx`'s `fit` prop.
@@ -88,16 +110,31 @@ export function Shell(props: ShellProps) {
   // gated on the restore decision so the mount-time `null` cannot wipe the
   // saved id before the first graph arrives to validate it against.
   const selectionRestored = useRef(false);
+  // The deep link is read once, at mount, into a ref — the URL is an input
+  // to boot only, and the hash-write effect below must never clear a link
+  // this effect has not read yet.
+  const bootHash = useRef(location.hash);
   useEffect(() => {
     if (!selectionRestored.current) return;
     saveSelection(localStorage, selectedId.value);
+    // replaceState, not pushState: the address bar mirrors the note on
+    // screen, and reading three notes is not three history entries. The
+    // *string* is the model's (`formatHash`); this is the write itself.
+    history.replaceState(null, "", formatHash(selectedId.value));
   }, [selectedId.value]);
   useEffect(() => {
     if (selectionRestored.current || graph.value === null) return;
     selectionRestored.current = true;
     if (selectedId.value !== null) return;
-    const saved = restoreSelection(graph.value, localStorage);
-    if (saved !== null) void select(fetchJson, saved);
+    // A link wins over storage: the address bar is an explicit instruction,
+    // the saved note is a habit. A link to a note the graph does not hold is
+    // refused (see `deeplink.model.ts`) and continuity falls through.
+    const linked = deeplinkSelection(bootHash.current, graph.value);
+    if (linked !== null) void select(fetchJson, linked);
+    else {
+      const saved = restoreSelection(graph.value, localStorage);
+      if (saved !== null) void select(fetchJson, saved);
+    }
   }, [graph.value]);
 
   // Every note that arrives, from any of the three directions it can arrive
@@ -111,6 +148,18 @@ export function Shell(props: ShellProps) {
   useEffect(() => watchUnload(window, () => shouldBlockUnload(editor.state())), []);
 
   useEffect(() => watchViewport(window, setWidth), []);
+
+  // The theme's two effects: the attribute decides what the sheet paints, the
+  // save decides what a reload restores. Both keyed on the choice alone — a
+  // system-scheme flip touches neither, because the media query repaints the
+  // stylesheet by itself and the shell only re-resolves the graph's scheme.
+  useEffect(() => applyThemeAttr(themeAttr(theme)), [theme]);
+  useEffect(() => void saveTheme(localStorage, theme), [theme]);
+  // Live OS flips, needed only in system mode but harmless always: the
+  // stylesheet follows the OS on its own; this is what lets the *graph* (and
+  // the header button, which shows the resolved scheme nowhere — it shows the
+  // choice) keep up while the choice is "system".
+  useEffect(() => watchScheme(window, setSystemScheme), []);
 
   useEffect(
     () =>
@@ -128,6 +177,7 @@ export function Shell(props: ShellProps) {
             clearSelection: () => editor.send({ type: "navigate", id: null }),
             toggleEdit: () => editor.send({ type: "toggle" }),
             saveNote: () => editor.send({ type: "save" }),
+            cycleTheme: () => setTheme((current) => cycleTheme(current)),
           }),
       }),
     [],
@@ -156,6 +206,8 @@ export function Shell(props: ShellProps) {
         shortcut={searchShortcut(looksApple(props.platform))}
         onRefresh={() => workspace.current?.refresh()}
         onSearch={() => setOverlay("search")}
+        theme={themeButton(theme)}
+        onTheme={() => setTheme((current) => cycleTheme(current))}
       />
       <Columns
         resolved={resolved}
@@ -163,6 +215,8 @@ export function Shell(props: ShellProps) {
         onMove={drag.onMove}
         onUp={drag.onUp}
         onKey={drag.onKey}
+        scheme={effectiveScheme(theme, systemScheme)}
+        bootFailed={graphFailed.value}
         graph={graph.value}
         note={noteBody.value}
         selectedId={selectedId.value}
@@ -197,7 +251,10 @@ export function Shell(props: ShellProps) {
       {overlay === "search" ? (
         <SearchPalette
           graph={graph.value}
-          onSelect={(id) => void select(fetchJson, id)}
+          // Through the editor, like every column's `onSelect`: choosing a hit
+          // while a draft is dirty must park behind the UNSAVED prompt, not
+          // wipe it. This was the one navigation path that skipped the guard.
+          onSelect={(id) => editor.send({ type: "navigate", id })}
           onClose={() => setOverlay(null)}
           ports={{ fetch: fetchJson, now: Date.now, delay: (run, ms) => void setTimeout(run, ms) }}
         />

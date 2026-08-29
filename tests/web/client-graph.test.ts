@@ -41,6 +41,7 @@ import {
   edgeColor,
   edgeKey,
   edgeReducer,
+  frameBox,
   graphSettings,
   kindColor,
   nodeLabel,
@@ -56,6 +57,7 @@ import type {
   RenderEdge,
   RenderGraph,
   RenderNode,
+  ViewBox,
 } from "../../src/web/client/graph/graph.model";
 import { emptyProjection, positionsOf, project, syncPositions } from "../../src/web/client/graph/project";
 import { nullRenderer, sigmaRenderer } from "../../src/web/client/graph/renderer";
@@ -119,20 +121,41 @@ describe("the graph palette is the shell's palette (§7.4)", () => {
     }
   });
 
-  it("uses the TUI's kind vocabulary rather than a second one", () => {
-    // Mirrors `kindStyle` in `src/pi/viewer/tui/theme.ts`, which the client
-    // tier may not import. Spot-checked on the assignments that carry meaning:
-    // containers are the accent, code is success, plumbing is a warning, and a
-    // note defers to its provenance badge.
+  it("keeps the design language: anchors accent, notes foreground, code grey", () => {
+    // The shell's design language is three greys doing structural work and a
+    // single accent (shell/theme.ts), so the canvas has exactly three colours:
+    // violet anchors for the two knowledge scopes, foreground for notes (the
+    // product), and dim — the grey a `generated` tree row takes — for
+    // generated code. The TUI's success/warning mapping is deliberately not
+    // copied: those are *status* colours here (provenance badges, the
+    // connection dot), and a graph full of green and amber modules read as a
+    // different app inside the workspace.
     expect(KIND_SLOT.vault).toBe("accent");
     expect(KIND_SLOT.repository).toBe("accent");
-    expect(KIND_SLOT.module).toBe("success");
-    expect(KIND_SLOT.package).toBe("success");
-    expect(KIND_SLOT.gitState).toBe("warning");
-    expect(KIND_SLOT.external).toBe("warning");
-    expect(KIND_SLOT.entryPoint).toBe("warning");
+    expect(KIND_SLOT.module).toBe("dim");
+    expect(KIND_SLOT.package).toBe("dim");
+    expect(KIND_SLOT.gitState).toBe("dim");
+    expect(KIND_SLOT.external).toBe("dim");
+    expect(KIND_SLOT.entryPoint).toBe("dim");
     expect(KIND_SLOT.file).toBe("dim");
     expect(KIND_SLOT.note).toBe("text");
+  });
+
+  it("recedes structural edges, accents association edges", () => {
+    // Containment was `line` (`--weave-line-strong`), a 1.46:1 contrast
+    // against the dark background — invisible until something was selected,
+    // which is the bug this mapping exists to prevent. `dim` is above the
+    // 3:1 non-text minimum in both schemes; the accent belongs to the
+    // content associations, with weight (`links-to` at 1.4) and §1.3's rail
+    // telling `links-to` from `mentions`.
+    expect(EDGE_SLOT.contains).toBe("dim");
+    expect(EDGE_SLOT["anchored-at"]).toBe("dim");
+    expect(EDGE_SLOT["links-to"]).toBe("accent");
+    expect(EDGE_SLOT.mentions).toBe("accent");
+    // Association edges keep their weight advantage over the hairline
+    // scaffolding, so a wikilink still reads through a containment web.
+    expect(EDGE_SIZE["links-to"]).toBeGreaterThan(EDGE_SIZE.contains);
+    expect(EDGE_SIZE["links-to"]).toBeGreaterThan(EDGE_SIZE.mentions);
   });
 
   it("dims to a colour, never to the background", () => {
@@ -441,6 +464,33 @@ describe("the highlight reducers (§7.4)", () => {
 
 // --- settings (§7.4) ----------------------------------------------------------------------
 
+describe("frameBox — the frozen view box", () => {
+  it("is the exact extent of the positions", () => {
+    const box = frameBox([
+      { x: -10, y: 5 },
+      { x: 30, y: -2 },
+      { x: 7, y: 9 },
+    ]);
+    expect(box).toEqual({ x: [-10, 30], y: [-2, 9] });
+  });
+
+  it("is null for no finite positions", () => {
+    // The degenerate inputs must not produce a box of ±Infinity — the caller
+    // clears sigma's override instead and lets the default take over.
+    expect(frameBox([])).toBeNull();
+    expect(frameBox([{ x: Number.NaN, y: 0 }, { x: 0, y: Number.POSITIVE_INFINITY }])).toBeNull();
+  });
+
+  it("keeps finite positions and drops poisoned ones", () => {
+    const box = frameBox([
+      { x: 1, y: 1 },
+      { x: Number.NaN, y: 4 },
+      { x: 5, y: -3 },
+    ]);
+    expect(box).toEqual({ x: [1, 5], y: [-3, 1] });
+  });
+});
+
 describe("sigma settings (§7.4)", () => {
   it("sets every §7.4 semantic-zoom lever", () => {
     const settings = graphSettings("dark");
@@ -674,6 +724,8 @@ function fakeSigma() {
   let resets = 0;
   const panning: boolean[] = [];
   let prevented = 0;
+  /** The boxes handed to `setCustomBBox`, in order — `null` means cleared. */
+  const boxes: Array<ViewBox | null> = [];
 
   const instance: SigmaLike = {
     on(event: string, handler: unknown) {
@@ -696,6 +748,11 @@ function fakeSigma() {
     setGraph(next) {
       calls.push("setGraph");
       graph = next;
+      return instance;
+    },
+    setCustomBBox(box) {
+      calls.push("setCustomBBox");
+      boxes.push(box);
       return instance;
     },
     refresh() {
@@ -733,6 +790,7 @@ function fakeSigma() {
     resets: () => resets,
     graph: () => graph,
     panning: () => panning,
+    boxes: () => boxes,
     nodeReducer: () => nodes,
     edgeReducer: () => edges,
     clickNode: (id: string) => handlers.node?.({ node: id }),
@@ -805,6 +863,58 @@ describe("sigmaRenderer over the injected constructor (§7.5)", () => {
     renderer.mount(container);
     renderer.mount(container);
     expect(fake.created).toHaveLength(1);
+  });
+
+  it("freezes the view box onto the graph it mounts with", () => {
+    // The first frame is already framed: the box is set at mount for whatever
+    // graph arrived before it, so the view does not start on sigma's moving
+    // auto-fit and then snap once the box lands.
+    const fake = fakeSigma();
+    const renderer = sigmaRenderer(fake.factory, "dark");
+    renderer.setGraph(model);
+    renderer.mount(container);
+    expect(fake.boxes()).toEqual([{ x: [0, 10], y: [0, 10] }]);
+  });
+
+  it("re-frames the box on a new graph, and never while the sim settles", () => {
+    // A shape change legitimately changes the extent (new nodes). A settling
+    // simulation does not — `setPositions` must leave the box alone, or every
+    // drag frame would move the view under the cursor again, which is exactly
+    // the autoRescale behaviour the box exists to replace.
+    const fake = fakeSigma();
+    const renderer = sigmaRenderer(fake.factory, "dark");
+    renderer.mount(container);
+    renderer.setGraph(model);
+    expect(fake.boxes().length).toBe(2); // mount (empty) + setGraph
+    renderer.setPositions(
+      new Map([
+        ["a", { x: 500, y: 0 }],
+        ["b", { x: 510, y: 0 }],
+        ["c", { x: 500, y: 10 }],
+      ]),
+    );
+    expect(fake.boxes().length).toBe(2);
+  });
+
+  it("fit re-frames onto the current positions, then resets the camera", () => {
+    // A graph the user has pulled apart wants its dragged nodes inside the
+    // view: `fit` recomputes the box from what is on screen now, rather than
+    // reusing the box the graph arrived with.
+    const fake = fakeSigma();
+    const renderer = sigmaRenderer(fake.factory, "dark");
+    renderer.setGraph(model);
+    renderer.mount(container);
+    renderer.setPositions(
+      new Map([
+        ["a", { x: 100, y: 0 }],
+        ["b", { x: 110, y: 0 }],
+        ["c", { x: 100, y: 10 }],
+      ]),
+    );
+    renderer.fit();
+    const last = fake.boxes()[fake.boxes().length - 1];
+    expect(last).toEqual({ x: [100, 110], y: [0, 10] });
+    expect(fake.resets()).toBe(1);
   });
 
   it("routes a node click and a stage click to the §1.3 bus", () => {

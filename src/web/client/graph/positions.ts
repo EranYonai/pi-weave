@@ -202,7 +202,7 @@ export interface PositionStorage {
 }
 
 /** The `localStorage` key. Namespaced and versioned, like the layout's. */
-export const POSITIONS_STORAGE_KEY = "pi-weave.graph.positions.v1";
+export const POSITIONS_STORAGE_KEY = "pi-weave.graph.positions.v2";
 
 /**
  * Coordinates are rounded to **one** decimal before storage.
@@ -229,7 +229,11 @@ function round1(value: number): number {
 export function serializePositions(key: string, positions: ReadonlyMap<string, Point>): string {
   const at: Record<string, [number, number]> = {};
   for (const [id, point] of positions) at[id] = [round1(point.x), round1(point.y)];
-  return JSON.stringify({ v: 1, key, at });
+  // `v: 2` — the branch-anchor layout (separated sibling blobs). A v1 entry
+  // is a tangled arrangement from the single-centre recipe, and the shape key
+  // cannot tell the two apart because the recipe changed under the same node
+  // and edge set. The version can.
+  return JSON.stringify({ v: 2, key, at });
 }
 
 /**
@@ -261,7 +265,7 @@ export function deserializePositions(raw: string | null, key: string): Map<strin
   if (typeof parsed !== "object" || parsed === null || Array.isArray(parsed)) return null;
 
   const record = parsed as Record<string, unknown>;
-  if (record["v"] !== 1) return null;
+  if (record["v"] !== 2) return null;
   if (record["key"] !== key) return null;
 
   const at = record["at"];

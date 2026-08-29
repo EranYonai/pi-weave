@@ -729,7 +729,7 @@ export function tagLabel(tag: string): string {
  */
 export function noteEmptyMessage(selectedId: string | null, note: ViewNote | null): string | null {
   if (note !== null) return null;
-  if (selectedId === null) return "Select a note to read it here.";
+  if (selectedId === null) return "Nothing open — search with ⌘K, or walk the tree with j and k.";
   if (selectedId.startsWith(NOTE_PREFIX)) return "Loading…";
   // A module, a file, a package, the git state: real nodes with no prose
   // behind them. The context rail beside this column is where their

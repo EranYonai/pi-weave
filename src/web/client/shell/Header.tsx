@@ -14,6 +14,7 @@
  */
 
 import { LOGO_MARK_B64, LOGO_MARK_MIME } from "../../shared/logo";
+import type { ThemeButtonView } from "./theme.model";
 import type { ConnectionView, HeaderSummary } from "./shell.model";
 import { SEARCH_PLACEHOLDER, searchHint, summaryParts } from "./shell.model";
 
@@ -24,6 +25,10 @@ export interface HeaderProps {
   onRefresh: () => void;
   /** Opens the ⌘K palette. The same action the global key performs. */
   onSearch: () => void;
+  /** The theme control's face (glyph + hint), from `shell.model.ts`'s friend in `theme.model.ts`. */
+  theme: ThemeButtonView;
+  /** Advance the theme choice one step in its cycle. The same action the `t` key performs. */
+  onTheme: () => void;
 }
 
 export function Header(props: HeaderProps) {
@@ -50,6 +55,15 @@ export function Header(props: HeaderProps) {
           </span>
         ))}
       </span>
+      <button
+        type="button"
+        class="weave-theme"
+        onClick={props.onTheme}
+        title={props.theme.hint}
+        aria-label={props.theme.hint}
+      >
+        {props.theme.glyph}
+      </button>
       <button type="button" class="weave-refresh" onClick={props.onRefresh} title="Refetch everything">
         ⟳
       </button>

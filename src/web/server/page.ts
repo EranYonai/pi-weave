@@ -204,13 +204,13 @@ export interface RenderedPage {
  */
 const THEME_CSS = [
   ":root{color-scheme:light dark;",
-  "--weave-bg:#faf9f7;--weave-fg:#1c1b19;--weave-dim:#6f6b66;",
-  "--weave-line:#e3e0dc;--weave-accent:#7a5cff;--weave-warn:#c2410c;",
+  "--weave-bg:#f8ede3;--weave-fg:#43303a;--weave-dim:#7c6257;",
+  "--weave-line:#dfd3c3;--weave-accent:#85586f;--weave-warn:#a05a1c;",
   "--weave-mono:ui-monospace,SFMono-Regular,Menlo,monospace;",
   "--weave-sans:ui-sans-serif,system-ui,-apple-system,Segoe UI,sans-serif}",
   "@media(prefers-color-scheme:dark){:root{",
-  "--weave-bg:#16151a;--weave-fg:#eceaf0;--weave-dim:#9a95a3;",
-  "--weave-line:#2c2a33;--weave-accent:#a48cff;--weave-warn:#fb923c}}",
+  "--weave-bg:#2a2f4f;--weave-fg:#fde2f3;--weave-dim:#bb9ecf;",
+  "--weave-line:#3b4266;--weave-accent:#b79fdd;--weave-warn:#e8b04c}}",
   "*{box-sizing:border-box}",
   "html,body{height:100%}",
   "body{margin:0;background:var(--weave-bg);color:var(--weave-fg);",

@@ -34,7 +34,7 @@
 import type { GraphPayload, NotePayload } from "../shared/wire";
 import type { ApiResult, FetchLike } from "./api";
 import { fetchGraph, fetchNote } from "./api";
-import { recentIds } from "./state";
+import { graphFailed, recentIds } from "./state";
 import type { EventSourceFactory, LiveHandle } from "./live";
 import { startLive } from "./live";
 import type { RefetchPlan } from "./live.model";
@@ -135,7 +135,14 @@ async function loadGraph(
   // was looking at when the update landed.
   const previous = graph.value;
   const result = await fetchGraph(fetchImpl, graph.value);
-  if (!result.ok) return result;
+  if (!result.ok) {
+    // Only a *boot* failure is news: with a graph already published, the
+    // stale value is deliberately left standing and the failure would be a
+    // downgrade dressed as an error. The next frame or the ⟳ button retries.
+    if (graph.value === null) graphFailed.value = true;
+    return result;
+  }
+  graphFailed.value = false;
   if (!result.cached) {
     graph.value = result.data;
     onPublished?.(previous, result.data);
@@ -273,6 +280,7 @@ export function resetWorkspace(): void {
   selectedId.value = null;
   graph.value = null;
   noteBody.value = null;
+  graphFailed.value = false;
   connection.value = "live";
   recentIds.value = NO_IDS;
 }

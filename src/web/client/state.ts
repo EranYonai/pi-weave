@@ -61,6 +61,17 @@ export const selectedId = signal<string | null>(null);
 export const graph = signal<GraphPayload | null>(null);
 
 /**
+ * Whether the *first* graph fetch failed.
+ *
+ * Distinct from {@link connection} on purpose: the socket can be live while a
+ * fetch 500s, and "offline" is then the wrong sentence. With a graph already
+ * on screen a failed refetch leaves the stale value standing (see
+ * `workspace.ts`'s header — a stale graph beats a blank one), so this only
+ * ever describes the boot, which is the one moment there is nothing to show.
+ */
+export const graphFailed = signal(false);
+
+/**
  * Derived: fetched when {@link selectedId} names a note.
  *
  * A {@link NotePayload} rather than a bare `ViewNote` as of P5. The revision

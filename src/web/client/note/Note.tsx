@@ -24,6 +24,7 @@
  */
 
 import DOMPurify from "dompurify";
+import { useMemo } from "preact/hooks";
 import type { GraphPayload, NotePayload } from "../../shared/wire";
 import type { EditorEvent, EditorPrompt, EditorToolbar } from "./editor.model";
 import { Editor, EditorBar } from "./Editor";
@@ -74,28 +75,60 @@ function Header({ view }: { view: NoteHeaderView }) {
 export function Note(props: NoteProps) {
   const note = props.note?.note ?? null;
   const empty = noteEmptyMessage(props.selectedId, note);
-  if (note === null) return <p class="weave-note-empty">{empty}</p>;
 
-  const index = wikiIndex(props.graph, note.slug);
+  // Both hook calls sit before the empty-return so the hook order cannot
+  // depend on whether a note is loaded. The memoization is cheap insurance:
+  // one marked parse + DOMPurify pass + O(nodes) index per *body or vault*
+  // instead of per shell render (every editor keystroke and divider pixel
+  // re-renders the shell). The instance the render builds —
+  // `markdownRenderer(index)` inside `renderNote` — stays per-call by design;
+  // only the *result* is memoized.
+  const index = useMemo(() => (note === null ? null : wikiIndex(props.graph, note.slug)), [note, props.graph]);
+  const html = useMemo(
+    () => (note === null || index === null ? "" : renderNote(DOMPurify, note.body, index)),
+    [note, index],
+  );
+
+  if (note === null || index === null) return <p class="weave-note-empty">{empty}</p>;
+
   // Bound once so TypeScript narrows it for both uses below: `toolbar.editing`
   // is what decides whether the textarea renders, and reading it twice off
   // `props` would need a non-null assertion at the second read.
   const toolbar = props.toolbar;
   const shell = { draft: props.draft, prompt: props.prompt, send: props.send };
+  // Keyed on the slug, not the body digest: the article is the scroll
+  // container, so an in-place swap would open every note at the previous
+  // note's scroll offset. A key change remounts it, and a fresh container
+  // starts at the top — no scroll-API effect to untest. The provenance
+  // class is the page's spine: the left rule takes the source's colour,
+  // which is how the desk says who wrote what a glance away from the text.
+  const header = noteHeader(note, props.now);
   return (
-    <article class="weave-note">
-      <Header view={noteHeader(note, props.now)} />
+    <article key={note.slug} class={`weave-note weave-note-${header.provenance}`}>
+      <Header view={header} />
       {toolbar === null ? null : <EditorBar toolbar={toolbar} {...shell} />}
       {toolbar !== null && toolbar.editing ? (
         <Editor toolbar={toolbar} {...shell} />
       ) : (
         <div
           class="weave-note-body"
+          // Programmatic focus target for `⌘2`: without a `tabindex`,
+          // `focusSelector`'s `.focus()` is a silent no-op. `-1` keeps it out
+          // of the Tab order (the workspace moves by `j/k` and `⌘1/2/3`, and
+          // Tab must stay the user's).
+          tabIndex={-1}
           onClick={(event) => {
             // A wikilink carries no href, so nothing is navigating; this only
-            // has to route the click onto the §1.3 context bus.
+            // has to route the click onto the §1.3 context bus. Anywhere else
+            // on the page *is* the edit affordance: a click on the prose opens
+            // the editor. The two never fight, because the link check reads
+            // the exact element the click landed on.
             const target = wikilinkTargetOf(event.target as unknown as Parameters<typeof wikilinkTargetOf>[0]);
-            if (target !== null) props.onSelect(target);
+            if (target !== null) {
+              props.onSelect(target);
+              return;
+            }
+            if (props.toolbar !== null) props.send({ type: "toggle" });
           }}
           onKeyDown={(event) => {
             if (event.key !== "Enter" && event.key !== " ") return;
@@ -105,7 +138,7 @@ export function Note(props: NoteProps) {
             props.onSelect(target);
           }}
           // Sanitised by `renderNote`'s three layers — see note.model.ts.
-          dangerouslySetInnerHTML={{ __html: renderNote(DOMPurify, note.body, index) }}
+          dangerouslySetInnerHTML={{ __html: html }}
         />
       )}
     </article>

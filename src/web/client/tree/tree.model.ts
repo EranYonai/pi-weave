@@ -288,14 +288,24 @@ export function normalizeTreeKey(key: string): string {
  * `preventDefault` a key it did not consume — swallowing Tab would trap
  * keyboard users in the column, which is the accessibility bug P4 is meant to
  * be fixing rather than introducing.
+ *
+ * `typing` closes the one path the first version missed: the filter box lives
+ * inside the listened element, so typing `j` into a query like "jack" arrived
+ * here as an alias and moved the cursor instead of entering the character.
+ * The caller passes whether the event's target is a text field (the same
+ * `isTextEntry` question the global map asks), and a keystroke that belongs
+ * to the input is refused here — the decision in the model, not a DOM check
+ * in the `.tsx`.
  */
 export function treeKey(
   rows: readonly TreeRow[],
   state: TreeViewState,
   selectedId: string | null,
   rawKey: string,
+  typing = false,
 ): TreeKeyResult {
   const unchanged = { state, selectedId, handled: false } as const;
+  if (typing) return unchanged;
   const moved = (id: string | null): TreeKeyResult => ({ state, selectedId: id, handled: true });
   const key = normalizeTreeKey(rawKey);
 
@@ -662,7 +672,8 @@ export function treeEmptyMessage(
   const hint = treeEmptyHint(viewModel(payload));
   if (hint !== null) return hint;
   if (rows.length > 0) return null;
-  if (state.query.length > 0 || state.provFilter !== null) return "nothing matches this filter";
+  if (state.query.length > 0 || state.provFilter !== null)
+    return "nothing matches this filter — clear it to see the whole vault";
   // No rows, no filter, and core had no opinion — a payload with no roots at
   // all, which the server does not produce but a truncated response could.
   return "nothing to show";

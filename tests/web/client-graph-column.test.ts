@@ -19,7 +19,7 @@ import { angularOccupancy, clusterSeparation, minPairwiseDistance, variance } fr
 import { clusterAggregate, focusNeighborhood } from "../../src/web/shared/view";
 import type { GraphPayload, WireGraphEdge, WireGraphNode } from "../../src/web/shared/wire";
 import {
-  AUTO_COLLAPSE_ABOVE,
+  BOOT_FAILED_MESSAGE,
   EMPTY_COLUMN,
   FIT_HINT,
   FIT_LABEL,
@@ -43,7 +43,7 @@ import {
 } from "../../src/web/client/graph/column.model";
 import type { GraphViewState } from "../../src/web/client/graph/column.model";
 import type { PositionStorage } from "../../src/web/client/graph/positions";
-import { LIGHT_QUERY, schemeOf } from "../../src/web/client/graph/scheme";
+import { LIGHT_QUERY, type SchemeList, schemeOf } from "../../src/web/client/graph/scheme";
 import { viewModel } from "../../src/web/client/tree/tree.model";
 import { REPO_LIKE_ROOTS, repoLikeGraph } from "../fixtures/graphShapes";
 
@@ -122,18 +122,21 @@ describe("initialGraphView", () => {
     expect(view.expanded.has("module:src")).toBe(true);
   });
 
-  it("opens a large graph as its clusters", () => {
-    // Above the bound a force layout of a containment tree is a disc of
-    // overlapping labels however you draw it, and the honest first frame is
-    // the roots with their counts.
+  it("opens a large graph whole too", () => {
+    // The expanded view is the *starting* frame at any size. The collapsed
+    // alternative (more than 120 nodes → bare roots — "2 of 237 nodes" on
+    // this repository) read as an empty column the tree had just shown whole.
+    // §8's budget puts the expanded first frame at tens of milliseconds, and
+    // the one [collapse] press undoes it for anyone who wants the overview.
     const nodes = [node("repository", "repository")];
     const edges: WireGraphEdge[] = [];
-    for (let i = 0; i <= AUTO_COLLAPSE_ABOVE; i++) {
+    for (let i = 0; i < 130; i++) {
       nodes.push(node(`file:f${i}`, "file"));
       edges.push(edge("repository", `file:f${i}`));
     }
-    expect(nodes.length).toBeGreaterThan(AUTO_COLLAPSE_ABOVE);
-    expect(initialGraphView(viewModel(payloadOf(nodes, edges))).expanded.size).toBe(0);
+    expect(nodes.length).toBeGreaterThan(120);
+    const view = initialGraphView(viewModel(payloadOf(nodes, edges)));
+    expect([...view.expanded]).toEqual(["repository"]);
   });
 
   it("names the clusters rather than carrying an 'all' flag", () => {
@@ -330,6 +333,13 @@ describe("graphEmptyMessage", () => {
     expect(graphEmptyMessage(SMALL, 0)).toContain("expansion");
     expect(graphEmptyMessage(SMALL, 6)).toBeNull();
   });
+
+  it("says the boot-failure sentence when the boot fetch failed", () => {
+    // The column's one first impression: a failure at boot names the
+    // recovery, it does not sit in a "Loading…" that will never resolve.
+    expect(graphColumnModel(null, null, initialGraphView(SMALL_MODEL), storage(), "dark", true).empty).toBe(BOOT_FAILED_MESSAGE);
+    expect(graphColumnModel(null, null, initialGraphView(SMALL_MODEL), storage(), "dark", false).empty).toBe("Loading…");
+  });
 });
 
 // --- clicking (§7.4) ---------------------------------------------------------------------------
@@ -406,8 +416,16 @@ describe("tooltips", () => {
 
 describe("schemeOf", () => {
   it("reads prefers-color-scheme", () => {
-    expect(schemeOf({ matchMedia: (q) => ({ matches: q === LIGHT_QUERY }) })).toBe("light");
-    expect(schemeOf({ matchMedia: () => ({ matches: false }) })).toBe("dark");
+    // A fake list is an object literal with a listener slot, exactly as
+    // `SchemeList`'s header promises: the real platform list satisfies the
+    // interface structurally, so the fakes do too.
+    const list = (matches: boolean): SchemeList => ({
+      matches,
+      addEventListener: () => {},
+      removeEventListener: () => {},
+    });
+    expect(schemeOf({ matchMedia: (q) => list(q === LIGHT_QUERY) })).toBe("light");
+    expect(schemeOf({ matchMedia: () => list(false) })).toBe("dark");
   });
 
   it("defaults to dark, matching the sheet the user ends up looking at", () => {

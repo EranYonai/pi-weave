@@ -9,6 +9,7 @@
 
 import { useState } from "preact/hooks";
 import { recentIds } from "../state";
+import { isTextEntry, type KeyTarget } from "../shell/keys.model";
 import type { GraphPayload } from "../../shared/wire";
 import type { TreeRowView, TreeViewState } from "./tree.model";
 import {
@@ -92,7 +93,12 @@ export function Tree(props: TreeProps) {
     <div
       class="weave-tree"
       onKeyDown={(event) => {
-        const next = treeKey(rows, state, props.selectedId, event.key);
+        // The filter box sits inside this listener, so its keystrokes arrive
+        // here too: a `j` meant for the query must stay a character, not an
+        // alias the tree consumes. The model refuses when `typing` is true.
+        const target = event.target as KeyTarget;
+        const typing = isTextEntry(target?.tagName ?? null, target?.isContentEditable === true);
+        const next = treeKey(rows, state, props.selectedId, event.key, typing);
         if (!next.handled) return;
         event.preventDefault();
         setState(next.state);
