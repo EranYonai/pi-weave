@@ -42,8 +42,17 @@
  * graph's copy goes red on the same commit.
  */
 
-import { COLLIDE_RADIUS, NODE_RADIUS } from "../../shared/layout";
+import { COLLIDE_RADIUS, MAX_NODE_SIZE, MIN_NODE_SIZE, nodeSize } from "../../shared/layout";
 import type { Point } from "../../shared/layout";
+/* Re-exported for the renderer and the tests, under the render model's name.
+   The definition stays in `shared/layout.ts` — see the sizes section below. */
+export {
+  DEGREE_AT_MAX_SIZE,
+  MAX_NODE_SIZE,
+  MIN_NODE_SIZE,
+  NODE_RADIUS,
+  nodeSize,
+} from "../../shared/layout";
 import { listLabel } from "../../shared/view";
 import type { WireEdgeKind, WireGraphEdge, WireGraphNode, WireNodeKind, WireNoteSource } from "../../shared/wire";
 import { provenanceGlyph } from "../tree/tree.model";
@@ -51,7 +60,7 @@ import { provenanceGlyph } from "../tree/tree.model";
 // --- the palette ----------------------------------------------------------------
 
 /** Which theme colour a thing is painted in. The TUI's slot names, verbatim. */
-export type ColorSlot = "accent" | "success" | "warning" | "dim" | "text" | "muted" | "line";
+export type ColorSlot = "accent" | "success" | "warning" | "dim" | "text" | "muted" | "line" | "ground";
 
 /** Dark or light. Chosen by the shell from `prefers-color-scheme`, never read here. */
 export type ColorScheme = "dark" | "light";
@@ -62,27 +71,32 @@ export type ColorScheme = "dark" | "light";
  * Every value is copied from `shell/theme.ts`'s `THEME_CSS`:
  * `accent`→`--weave-accent`, `success`→`--weave-ok`, `warning`→`--weave-warn`,
  * `dim`→`--weave-dim`, `text`→`--weave-fg`, `muted`→`--weave-faint`,
- * `line`→`--weave-line-strong`. The dark block is `:root`; the light block is
- * the `prefers-color-scheme: light` override.
+ * `line`→`--weave-line-strong`, `ground`→`--weave-bg` (the canvas the WebGL
+ * floats on, which no slot previously named because nothing painted it — the
+ * recession blend below needs it as a *value*, not as a contrast judgement).
+ * The dark block is `:root`; the light block is the
+ * `prefers-color-scheme: light` override.
  */
 export const GRAPH_PALETTE: Readonly<Record<ColorScheme, Readonly<Record<ColorSlot, string>>>> = {
   dark: {
-    accent: "#b79fdd",
-    success: "#7fc49a",
-    warning: "#e8b04c",
-    dim: "#bb9ecf",
-    text: "#fde2f3",
-    muted: "#aca3d4",
-    line: "#4a527e",
+    accent: "#c6a0f6",
+    success: "#a6da95",
+    warning: "#eed49f",
+    dim: "#a5adcb",
+    text: "#cad3f5",
+    muted: "#939ab7",
+    line: "#494d64",
+    ground: "#24273a",
   },
   light: {
-    accent: "#85586f",
-    success: "#3f704e",
-    warning: "#a05a1c",
-    dim: "#7c6257",
-    text: "#43303a",
-    muted: "#7f6455",
-    line: "#d0b8a8",
+    accent: "#7113ec",
+    success: "#28641b",
+    warning: "#7c4f10",
+    dim: "#56586a",
+    text: "#4c4f69",
+    muted: "#606274",
+    line: "#bcc0cc",
+    ground: "#eff1f5",
   },
 };
 
@@ -125,7 +139,7 @@ export const KIND_SLOT: Readonly<Record<WireNodeKind, ColorSlot>> = {
  * "Recedes" used to mean `line` (`--weave-line-strong`), which read as
  * *absent* — 1.5:1 against either background, below the 3:1 non-text minimum,
  * and the reason the skeleton of the graph was invisible until something was
- * selected. The `dim` slot is 5.5:1 against the dark background and 4.9:1
+ * selected. The `dim` slot is 6.6:1 against the dark ground and 6.2:1
  * against the light one, so containment reads as the hairline scaffolding it
  * is without vanishing.
  *
@@ -151,50 +165,116 @@ export function edgeColor(kind: WireEdgeKind, scheme: ColorScheme): string {
   return GRAPH_PALETTE[scheme][EDGE_SLOT[kind]];
 }
 
+/**
+ * The colour an edge kind is *painted* in — its slot colour, recessed toward
+ * the ground when it is structural.
+ *
+ * Two edge populations share the canvas and they are not equally important.
+ * The containment web is the skeleton — always on, one pixel wide, and at the
+ * old full-strength `dim` the brightest thing on the stage when nothing was
+ * selected, which is most of the time. So structure draws at
+ * {@link EDGE_RECESS_STRENGTH} toward the ground: still a hairline you can
+ * follow, no longer louder than the nodes it connects. Association keeps its
+ * exact slot colour — the accent is the only chroma voice the sheet has, and
+ * a wikilink is what the eye is here to find.
+ */
+export function edgeDrawColor(kind: WireEdgeKind, scheme: ColorScheme): string {
+  return isStructuralEdge(kind) ? recessColor(edgeColor(kind, scheme), scheme, EDGE_RECESS_STRENGTH) : edgeColor(kind, scheme);
+}
+
+/** Containment and anchoring are the hairline scaffolding; the rest is content. */
+function isStructuralEdge(kind: WireEdgeKind): boolean {
+  return kind === "contains" || kind === "anchored-at";
+}
+
+// --- receding a colour, without changing its hue -----------------------------------
+
+/**
+ * How far an unrelated node recedes toward the ground, as a linear blend.
+ *
+ * 85 % toward the ground is what reads as "still there, but gone from the
+ * conversation": 100 % would delete the context the highlight exists to place
+ * a selection inside, and the old 0 % (a repaint to `muted`) *swapped the
+ * hue* — every unrelated node turned the same grey, so the cloud lost the
+ * colour identities that told you what you were looking past, and dimming
+ * read as "different" rather than "further away". 15 % of a node's own colour
+ * is a whisper of its identity from the ground it stands on.
+ */
+export const RECESS_STRENGTH = 0.85;
+
+/**
+ * Structural edges recede less than nodes do.
+ *
+ * An edge has no identity to lose (it is hairline scaffolding, drawn from the
+ * same slot whether related or not) but it must keep the 3:1 non-text minimum
+ * against the ground, or the skeleton disappears with the rest. The Catppuccin
+ * palettes cap this per scheme: the light blend crosses the 3:1 non-text
+ * minimum at 0.33 of the way to the `#eff1f5` ground, dark at 0.46, and one
+ * constant serves both at **0.30** — light `dim` lands at 3.2:1, dark at
+ * 4.0:1. Below this, see `edgeDrawColor` for what it buys.
+ */
+export const EDGE_RECESS_STRENGTH = 0.3;
+
+/**
+ * Hex `#rrggbb` → hex `#rrggbb`, each channel blended `t` of the way to
+ * `toward`.
+ *
+ * RGB-channel (not HSL, not alpha) because the consumers are concrete
+ * colours sigma feeds to WebGL — `renderGraph` pre-multiplies nothing, sigma
+ * has no per-item alpha, and a hex is the one format every participant
+ * already understands. Returns the input untouched when it is not a six-digit
+ * hex, so the highlight's well-formed palette and a hand-mangled colour can
+ * never meet in the middle.
+ */
+export function blendHex(color: string, toward: string, t: number): string {
+  const parse = (hex: string): readonly [number, number, number] | null => {
+    if (!/^#[0-9a-f]{6}$/.test(hex)) return null;
+    return [
+      Number.parseInt(hex.slice(1, 3), 16),
+      Number.parseInt(hex.slice(3, 5), 16),
+      Number.parseInt(hex.slice(5, 7), 16),
+    ];
+  };
+  const from = parse(color);
+  const to = parse(toward);
+  if (from === null || to === null) return color;
+  const clamped = Math.min(1, Math.max(0, Number.isFinite(t) ? t : 0));
+  const channel = (a: number, b: number): string => Math.round(a + (b - a) * clamped).toString(16).padStart(2, "0");
+  return `#${channel(from[0], to[0])}${channel(from[1], to[1])}${channel(from[2], to[2])}`;
+}
+
+/**
+ * Blend a colour toward its scheme's ground — the one direction "dimmer"
+ * is allowed to mean here.
+ *
+ * WebGL has no per-node opacity to dial, so recession is arithmetic on the
+ * concrete colour: the node keeps its hue, loses its contrast. The scheme
+ * rather than the caller owns the destination because the ground is a
+ * *palette* fact, and the palette-mirror test already ties this module's hexes
+ * to the stylesheet's.
+ */
+export function recessColor(color: string, scheme: ColorScheme, t: number = RECESS_STRENGTH): string {
+  return blendHex(color, GRAPH_PALETTE[scheme].ground, t);
+}
+
 // --- sizes ------------------------------------------------------------------------
 
 /**
- * The smallest a node is ever drawn, in layout units.
+ * The degree → radius ramp lives in `shared/layout.ts` and is re-exported
+ * under its render name, not copied.
  *
- * A leaf still has to be clickable, and sigma's hit test is the drawn radius —
- * at fit zoom a leaf renders at `MIN_NODE_SIZE · cameraCorrection`, so a floor
- * of 6 is what keeps every node inside a pointer's reach at overview zoom.
- * (The d3 gallery's force-directed graphs draw every node the same radius for
- * exactly this reason; size still varies by degree up to the ceiling.)
+ * It has to be *one* function in one place, because the collision force and
+ * the drawn circles are the same question: a size the layout did not reserve
+ * room for makes §8's `minPairwiseDistance > 2 · NODE_RADIUS` assertion true
+ * of the positions and false of the screen — the exact gap Tier 0 closed the
+ * other way. The ramp moved there (leaf floor 6, base 9, hub ceiling 18 at
+ * degree 32) when the Tier 6 "graph as hero" pass widened it; the renderer's
+ * view of the decision is unchanged, and {@link renderGraph} still calls it
+ * per node with its incident-edge degree.
+ *
+ * The re-export itself sits with the imports at the top of the file — the
+ * render model's sizes section is a *pointer*, not a second definition.
  */
-export const MIN_NODE_SIZE = 6;
-
-/**
- * The degree at which a node reaches {@link NODE_RADIUS}.
- *
- * 32 rather than "the maximum degree in this graph": a size that depends on
- * the largest hub would make every other node shrink when one module gains a
- * file, so the same note would render at two sizes on two loads of the same
- * vault. A fixed ceiling keeps size comparable across graphs and across
- * sessions.
- */
-export const DEGREE_AT_MAX_SIZE = 32;
-
-/**
- * Node radius from incident-edge degree.
- *
- * **Never larger than `NODE_RADIUS`**, and that ceiling is load-bearing rather
- * than tasteful. `layout.ts` separates nodes with a collision radius of
- * `COLLIDE_RADIUS = NODE_RADIUS + 9` and its header states the contract: *"the
- * renderer must not draw larger than this"*. §8's gate then asserts
- * `minPairwiseDistance > 2 · NODE_RADIUS` on the computed positions — which is
- * a statement about *pixels not overlapping* only for as long as this function
- * honours the same bound. Draw a hub at 24 units and the dynamics gate is
- * still green while the screen is a hairball.
- *
- * Logarithmic, so a 60-child hub reads as bigger than a 6-child module without
- * a 3-node vault becoming invisible next to it.
- */
-export function nodeSize(degree: number): number {
-  const d = Number.isFinite(degree) && degree > 0 ? degree : 0;
-  const share = Math.min(1, Math.log2(1 + d) / Math.log2(1 + DEGREE_AT_MAX_SIZE));
-  return MIN_NODE_SIZE + (NODE_RADIUS - MIN_NODE_SIZE) * share;
-}
 
 /** Edge thickness by kind. A wikilink keeps its weight; structure is hairline. */
 export const EDGE_SIZE: Readonly<Record<WireEdgeKind, number>> = {
@@ -204,7 +284,66 @@ export const EDGE_SIZE: Readonly<Record<WireEdgeKind, number>> = {
   mentions: 1,
 };
 
+/**
+ * How much more presence an in-neighbourhood edge has when a selection dims
+ * the rest, as a size multiplier.
+ *
+ * The neighbourhood's edges are the one thing a redraw is *about* — they are
+ * what "related" means drawn — and a 1-unit hairline at the recessed rest
+ * colour would tell that story at the same volume as the background. 1.6× plus
+ * the full slot colour (the reducer's job) is a visible step at every zoom,
+ * and it multiplies rather than adds so a wikilink keeps its 1.4 weight
+ * advantage over the hairline it rides.
+ */
+export const EDGE_PRESENCE = 1.6;
+
 // --- labels -------------------------------------------------------------------------
+
+/**
+ * The character budget a drawn node label may spend, provenance badge included.
+ *
+ * Sigma draws node labels whole and their canvas keeps painting past the
+ * column edge, so a long note title was not truncated at all — it was *clipped
+ * by the container's* `overflow:hidden` mid-word, which is how "…we are working
+ * besides oth…" reached the screenshot. Budgeting here puts the cut where we
+ * can make it a decision: 32 characters is about what a column-width overview
+ * can read next to its node before the canvas edge starts doing the cutting,
+ * short enough that a full row of labels stays inside the stage, and above
+ * core's longest composite name (the disambiguated package, 29) so
+ * `listLabel`'s one-name-everywhere contract survives the budget.
+ */
+export const LABEL_BUDGET = 32;
+
+/** Half of the budget, kept as the floor of a word boundary's usefulness. */
+const LABEL_MIN_KEEP = LABEL_BUDGET / 2;
+
+/**
+ * Truncate to `budget` characters on a **word boundary**.
+ *
+ * Sigma's own truncation (its edge-label helper) walks backwards one character
+ * at a time — correct about the pixels, and the reason truncation reads as a
+ * hard cut: it lands wherever the width runs out, which is mid-word as often
+ * as not. Here the ellipsis is placed on the last word break inside the
+ * budget, so the reader keeps whole words; only a label with no break at all
+ * (a slug, a hash) falls back to the character cut, because half of an
+ * unbroken token is the best reading there is.
+ *
+ * Guaranteed: the result is never longer than `budget` (the cut plus the
+ * ellipsis character), it ends in `…`, and idempotent — truncating an already
+ * truncated label cannot truncate again, because the ellipsis rides inside the
+ * last budget.
+ */
+export function truncateLabel(text: string, budget: number = LABEL_BUDGET): string {
+  if (budget <= 0) return text.length > 0 ? "…" : text;
+  if (text.length <= budget) return text;
+  // `budget - 1` for the ellipsis this result will carry, so the *whole*
+  // drawn string stays inside the budget rather than the visible text alone.
+  const room = budget - 1;
+  const head = text.slice(0, room);
+  const break_ = head.lastIndexOf(" ");
+  const cutAt = break_ >= LABEL_MIN_KEEP ? break_ : room;
+  return `${text.slice(0, cutAt).trimEnd()}…`;
+}
 
 /**
  * The label sigma draws.
@@ -215,6 +354,8 @@ export const EDGE_SIZE: Readonly<Record<WireEdgeKind, number>> = {
  * for the same reason and for AGENTS.md rule 4: agent-written content must
  * never look human-authored, and a filled/half/hollow shape survives
  * greyscale, colour-blindness and a WebGL colour ramp in a way a hue does not.
+ * The word-boundary budget keeps the canvas's clip from making that vocabulary
+ * look mid-word — see {@link truncateLabel}.
  *
  * ## Why a badge rather than the ring §7.4 sketches
  *
@@ -229,7 +370,7 @@ export const EDGE_SIZE: Readonly<Record<WireEdgeKind, number>> = {
 export function nodeLabel(node: WireGraphNode): string {
   const badge = provenanceGlyph(node.provenance);
   const label = listLabel(node);
-  return badge === "" ? label : `${badge} ${label}`;
+  return truncateLabel(badge === "" ? label : `${badge} ${label}`);
 }
 
 // --- the render model -------------------------------------------------------------
@@ -423,10 +564,10 @@ export function renderGraph(
       source: edge.source,
       target: edge.target,
       size: EDGE_SIZE[edge.kind],
-      color: edgeColor(edge.kind, scheme),
+      color: edgeDrawColor(edge.kind, scheme),
       kind: edge.kind,
       // Under every node, always: an edge painted over a hub reads as a line
-      // through it. Node zIndexes start at `MIN_NODE_SIZE` rounded, i.e. 3.
+      // through it. Node zIndexes start at the leaf floor rounded, i.e. 6.
       zIndex: 0,
       type: "line",
     });
@@ -448,19 +589,8 @@ export interface NodeDisplayOverride {
 /** What sigma's `edgeReducer` may override. */
 export interface EdgeDisplayOverride {
   readonly color?: string;
-  readonly hidden?: boolean;
   readonly zIndex?: number;
-}
-
-/**
- * The colour everything outside the neighbourhood fades to.
- *
- * `muted` in both schemes — the faintest slot that is still a colour rather
- * than the background. Dimming to the background would *delete* the context
- * the highlight exists to place the selection inside.
- */
-export function dimColor(scheme: ColorScheme): string {
-  return GRAPH_PALETTE[scheme].muted;
+  readonly size?: number;
 }
 
 /**
@@ -469,13 +599,18 @@ export function dimColor(scheme: ColorScheme): string {
  * `highlight` is `null` when nothing is selected, and that is deliberately not
  * the same as an empty set: nothing selected means *everything* renders
  * normally, where an empty neighbourhood (a selection that is not in this
- * graph) means everything is outside it and dims. Collapsing the two would
+ * graph) means everything is outside it and recedes. Collapsing the two would
  * make a stale selection silently blank the column.
  *
- * Nodes outside the neighbourhood keep their position and their size and lose
- * their colour and their label. Hiding them instead would make the graph
- * *move* on selection — sigma's autoscale reframes on the visible extent — and
- * a graph that reflows when you click it is unusable.
+ * Outside nodes **recede, they do not change colour** (§8's P6.2): their own
+ * colour is blended {@link RECESS_STRENGTH} toward the ground, so the cloud
+ * keeps every node's identity at a whisper of its contrast instead of being
+ * repainted to one grey — the old hue-swap made an unrelated module, note and
+ * file three copies of the same grey, and "dim" read as "different" rather
+ * than "further away". Position and size are untouched, and the label is gone:
+ * hiding nodes outright would make the graph *move* on selection — sigma's
+ * autoscale reframes on the visible extent — and a graph that reflows when you
+ * click it is unusable.
  */
 export function nodeReducer(
   highlight: ReadonlySet<string> | null,
@@ -483,18 +618,18 @@ export function nodeReducer(
   return (id, data, scheme) => {
     if (highlight === null) return {};
     if (highlight.has(id)) return { zIndex: data.zIndex + HIGHLIGHT_Z_LIFT };
-    return { color: dimColor(scheme), label: null, zIndex: 0 };
+    return { color: recessColor(data.color, scheme), label: null, zIndex: 0 };
   };
 }
 
 /**
  * How far a highlighted node is lifted above the rest.
  *
- * Above every unhighlighted node's z (which is at most `NODE_RADIUS` rounded)
- * so the neighbourhood paints as one layer rather than interleaved with the
- * cloud it is standing out from.
+ * Above every unhighlighted node's z (which is the degree ramp's ceiling
+ * rounded) so the neighbourhood paints as one layer rather than interleaved
+ * with the cloud it is standing out from.
  */
-export const HIGHLIGHT_Z_LIFT = NODE_RADIUS + 1;
+export const HIGHLIGHT_Z_LIFT = MAX_NODE_SIZE + 1;
 
 /**
  * sigma's `edgeReducer` (§7.4).
@@ -505,17 +640,23 @@ export const HIGHLIGHT_Z_LIFT = NODE_RADIUS + 1;
  * selection, plus any edge that happens to join two of its neighbours — which
  * is information about the selection's neighbourhood and belongs in it.
  *
- * Outside edges are `hidden`, not dimmed. An edge is one pixel wide: a dimmed
- * one is visually indistinguishable from a drawn one at any zoom where the
- * highlight matters, and the whole point is to empty the canvas around the
- * selection.
+ * The two halves get a **step between them** rather than a binary presence:
+ * in-neighbourhood edges lift their z above the background's and thicken by
+ * {@link EDGE_PRESENCE}, while the rest recede to their own colour blended
+ * toward the ground — the same recession the cloud's nodes take, so the
+ * selection's story (its relationships) is the only thing at full contrast.
+ * Hiding the background outright was tried; the highlight then deleted the
+ * context it exists to place the selection inside, and a receded edge is
+ * still the hairline it ever was.
  */
 export function edgeReducer(
   highlight: ReadonlySet<string> | null,
-): (key: string, data: RenderEdge) => EdgeDisplayOverride {
-  return (_key, data) => {
+): (key: string, data: RenderEdge, scheme: ColorScheme) => EdgeDisplayOverride {
+  return (_key, data, scheme) => {
     if (highlight === null) return {};
-    return highlight.has(data.source) && highlight.has(data.target) ? { zIndex: 1 } : { hidden: true };
+    return highlight.has(data.source) && highlight.has(data.target)
+      ? { zIndex: 1, size: data.size * EDGE_PRESENCE }
+      : { color: recessColor(data.color, scheme) };
   };
 }
 
@@ -554,12 +695,15 @@ export interface GraphSettings {
  * Semantic zoom: the rendered size below which a label is suppressed (§7.4).
  *
  * Derived, not tuned. {@link nodeSize} maps degree 0 onto
- * {@link MIN_NODE_SIZE} and `DEGREE_AT_MAX_SIZE` onto `NODE_RADIUS`, so a
- * threshold placed at the midpoint of that range means "label the nodes that
- * are structurally significant at this zoom" — hubs first, leaves once you
- * have zoomed in far enough that their rendered size crosses the line.
+ * {@link MIN_NODE_SIZE} and `DEGREE_AT_MAX_SIZE` onto {@link MAX_NODE_SIZE},
+ * so a threshold placed at the midpoint of that range means "label the nodes
+ * that are structurally significant at this zoom" — hubs first, leaves once
+ * you have zoomed in far enough that their rendered size crosses the line.
+ * The midpoint of the *widened* ramp (12 units, degree ≈ 5) labels
+ * structurally significant nodes at overview, which is what the "hero" pass
+ * wants the labels to say: names for the places, not every leaf.
  */
-export const LABEL_SIZE_THRESHOLD = (MIN_NODE_SIZE + NODE_RADIUS) / 2;
+export const LABEL_SIZE_THRESHOLD = (MIN_NODE_SIZE + MAX_NODE_SIZE) / 2;
 
 /**
  * Label collision grid, in screen pixels.
@@ -600,10 +744,10 @@ export function graphSettings(scheme: ColorScheme): GraphSettings {
     // Required for `RenderNode.zIndex` to mean anything at all.
     zIndex: true,
     // Sizes are in **layout units**, not screen pixels. This is what ties
-    // `nodeSize`'s `NODE_RADIUS` ceiling to §8's `minPairwiseDistance`
-    // assertion: under the default (`"screen"`) a node keeps its pixel size as
-    // you zoom out, so a provably non-overlapping layout still renders as a
-    // solid blob at low zoom.
+    // `nodeSize`'s ramp to §8's `minPairwiseDistance` assertion: under the
+    // default (`"screen"`) a node keeps its pixel size as you zoom out, so a
+    // provably non-overlapping layout still renders as a solid blob at low
+    // zoom.
     itemSizesReference: "positions",
     zoomToSizeRatioFunction: (ratio) => ratio,
     stagePadding: COLLIDE_RADIUS,

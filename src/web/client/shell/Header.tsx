@@ -13,10 +13,11 @@
  * opened would be a worse lie than the disabled version it replaced.
  */
 
+import { useState } from "preact/hooks";
 import { LOGO_MARK_B64, LOGO_MARK_MIME } from "../../shared/logo";
 import type { ThemeButtonView } from "./theme.model";
 import type { ConnectionView, HeaderSummary } from "./shell.model";
-import { SEARCH_PLACEHOLDER, searchHint, summaryParts } from "./shell.model";
+import { REFRESH_ICON_PATHS, SEARCH_PLACEHOLDER, searchHint, summaryParts } from "./shell.model";
 
 export interface HeaderProps {
   summary: HeaderSummary;
@@ -29,6 +30,56 @@ export interface HeaderProps {
   theme: ThemeButtonView;
   /** Advance the theme choice one step in its cycle. The same action the `t` key performs. */
   onTheme: () => void;
+}
+
+/**
+ * The refresh control, drawn rather than typed.
+ *
+ * The `⟳` it replaces was a text character, so its weight and shape were
+ * whatever the platform's font felt like — the one glyph in the header that
+ * the theme did not own. These two strokes (`REFRESH_ICON_PATHS`, in
+ * `shell.model.ts`) are stroked in `currentColor`, so hover recolours them
+ * like any other text glyph.
+ *
+ * The spin is one 600 ms turn on click, restarted only by the next click —
+ * it says "the request left", which is the truth, and stops rather than
+ * pretending to know when the refetch lands (the refetch is fire-and-forget
+ * by §7's register, and a spinner that waits for a signal a 304 may never
+ * fire would hang forever). Reduced-motion users get the static glyph back,
+ * as everywhere else in the sheet.
+ */
+function RefreshButton({ onRefresh }: { onRefresh: () => void }) {
+  const [spinning, setSpinning] = useState(false);
+  return (
+    <button
+      type="button"
+      class="weave-refresh"
+      onClick={() => {
+        onRefresh();
+        setSpinning(true);
+      }}
+      onAnimationEnd={() => setSpinning(false)}
+      title="Refetch everything"
+      aria-busy={spinning ? "true" : undefined}
+    >
+      <svg
+        class={spinning ? "weave-refresh-glyph weave-refresh-spinning" : "weave-refresh-glyph"}
+        viewBox="0 0 24 24"
+        width={14}
+        height={14}
+        fill="none"
+        stroke="currentColor"
+        stroke-width={2}
+        stroke-linecap="round"
+        stroke-linejoin="round"
+        aria-hidden="true"
+      >
+        {REFRESH_ICON_PATHS.map((d) => (
+          <path key={d} d={d} />
+        ))}
+      </svg>
+    </button>
+  );
 }
 
 export function Header(props: HeaderProps) {
@@ -64,9 +115,7 @@ export function Header(props: HeaderProps) {
       >
         {props.theme.glyph}
       </button>
-      <button type="button" class="weave-refresh" onClick={props.onRefresh} title="Refetch everything">
-        ⟳
-      </button>
+      <RefreshButton onRefresh={props.onRefresh} />
       <span class={`weave-conn weave-conn-${props.connection.tone}`} title={props.connection.hint}>
         <span class="weave-conn-dot" aria-hidden="true">
           ●

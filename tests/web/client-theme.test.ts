@@ -143,6 +143,9 @@ describe("THEME_CSS", () => {
       "weave-row",
       "weave-row-new",
       "weave-row-on",
+      "weave-row-muted",
+      "weave-icon",
+      "weave-icon-open",
       "weave-twisty",
       "weave-kind",
       "weave-prov",
@@ -170,6 +173,15 @@ describe("THEME_CSS", () => {
       "weave-note-body",
       "weave-wiki",
       "weave-wiki-ghost",
+      // The P6.3 wikilink hover card: `Note.tsx` mounts it with a fixed id
+      // (`PREVIEW_ID`), so it is classed and asserted here like any other.
+      // Ghost links add `weave-preview-ghost`, which carries the no-note
+      // offer's dashed frame.
+      "weave-preview",
+      "weave-preview-ghost",
+      "weave-preview-kind",
+      "weave-preview-title",
+      "weave-preview-text",
       // The P5 editor. `weave-note-prompt-{conflict,collision,external,discard}`
       // are generated from `EditorPromptKind`, so they get their own
       // assertion below rather than four entries here.
@@ -188,7 +200,10 @@ describe("THEME_CSS", () => {
       "weave-note-editor",
       "weave-ctx-empty",
       "weave-ctx-group",
+      "weave-ctx-head",
       "weave-ctx-heading",
+      "weave-ctx-chevron",
+      "weave-ctx-count",
       "weave-ctx-rows",
       "weave-ctx-row",
       "weave-ctx-link",
@@ -249,22 +264,26 @@ describe("THEME_CSS", () => {
 
   it("stays dense: no card shadows, no oversized gutters", () => {
     // §1.2 asks for "dense but calm" and the failure mode is a marketing
-    // page. Shadows and 24 px padding are the tells.
-    expect(THEME_CSS).not.toContain("box-shadow");
+    // page. Shadows and 24 px padding are the tells. Tier 6 narrows the
+    // shadow refusal to *elevation* only: the selection's inset accent bar
+    // (`box-shadow:inset 2px 0 0 …`) is a hairline edge, not a shadow — it
+    // projects no elevation and the anti-card intent is untouched.
+    expect(THEME_CSS).not.toMatch(/box-shadow\s*:\s*(?!inset)/);
     expect(THEME_CSS).not.toMatch(/padding:\s*2[0-9]px/);
     expect(THEME_CSS).not.toMatch(/font-size:\s*(1[6-9]|[2-9]\d)px/);
   });
 
   it("draws every size from the named type ramp, never an ad-hoc pixel", () => {
-    // Tier 4's ramp: seven role-named tokens, and every `font-size:` in the
-    // sheet is one of them. A literal px here is a size the ramp does not
-    // govern — the exact drift (9/10/11/11.5/…) this gate exists to stop.
-    const steps = ["9.5px", "10.5px", "11.5px", "12px", "13px", "14px", "15px"];
+    // Tier 4's ramp, extended by P6.3 (`body`, `display`): every role-named
+    // token, and every `font-size:` in the sheet is one of them. A literal px
+    // here is a size the ramp does not govern — the exact drift
+    // (9/10/11/11.5/…) this gate exists to stop.
+    const steps = ["9.5px", "10.5px", "11.5px", "12px", "13px", "13.5px", "14px", "15px", "20px"];
     const declared = [...THEME_CSS.matchAll(/--weave-px-([a-z]+):(\d+(?:\.\d+)?px)/g)].map((m) => m[2]!);
     expect(new Set(declared)).toEqual(new Set(steps));
     const stray = [...THEME_CSS.matchAll(/font-size:\s*([^;}]+)/g)]
       .map((m) => m[1]!.trim())
-      .filter((size) => !/^var\(--weave-px-(prov|caption|ui|row|base|subhead|title)\)$/.test(size));
+      .filter((size) => !/^var\(--weave-px-(prov|caption|ui|row|base|body|subhead|title|display)\)$/.test(size));
     expect(stray).toEqual([]);
   });
 

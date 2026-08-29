@@ -13,11 +13,19 @@
 
 import { describe, expect, it } from "vitest";
 import type { GraphPayload, WireGraphEdge, WireGraphNode, WireNodeKind, WireNoteSource } from "../../src/web/shared/wire";
+import type { ContextGroup } from "../../src/web/client/context/context.model";
 import {
   HEADINGS,
+  RAIL_COLLAPSE_THRESHOLD,
   RAIL_EMPTY,
   contextModel,
+  emptyRailToggles,
   incomingMentions,
+  railCollapsed,
+  railPanelId,
+  railSectionView,
+  railTagsView,
+  railToggled,
   rowFor,
   rowFromDetail,
   slugOf,
@@ -185,12 +193,21 @@ describe("context rows", () => {
     expect(new Set(ids).size).toBe(ids.length);
   });
 
-  it("carries the kind and provenance glyphs the tree uses, not a second set", () => {
+  it("carries the kind icon and provenance glyph the tree uses, not a second set", () => {
     const backlink = contextModel(GRAPH, "note:alpha").groups.find((g) => g.heading === HEADINGS.backlinks)?.rows[0];
     expect(backlink?.provenance).toBe("generated");
     expect(backlink?.provenanceGlyph).toBe("○");
     expect(backlink?.provenanceTitle).toBe("generated-authored");
-    expect(backlink?.kindGlyph).toBe("▪");
+    expect(backlink?.kindIcon).toBe("note");
+  });
+
+  it("draws a session-memory note with the session icon, so the two columns agree", () => {
+    // A session note reaching the rail through a LINKS edge is the same object
+    // it is in the tree; the rail saying so is how the two columns read as one
+    // surface.
+    const session = { ...NODES[1]!, id: "note:sessions/2026-08-29" };
+    expect(rowFor("x", session, null).kindIcon).toBe("session");
+    expect(rowFor("x", NODES[1]!, null).kindIcon).toBe("note");
   });
 
   it("labels a row by the node, not by core's terminal-composed string", () => {
@@ -327,5 +344,149 @@ describe("incomingMentions", () => {
 
   it("is empty for a node nothing mentions", () => {
     expect(incomingMentions(model, "note:lonely", byId, null)).toEqual([]);
+  });
+});
+
+// --- counts and collapse (Tier 6, §8 P6.4) -------------------------------------------------
+
+/** A group of `n` unselected rows, for the collapse rules below. */
+function groupOf(n: number): ContextGroup {
+  return {
+    heading: HEADINGS.links,
+    count: n,
+    rows: Array.from({ length: n }, (_, i) => ({
+      id: `row${i}`,
+      target: `note:${i}`,
+      label: String(i),
+      kind: "note" as const,
+      kindIcon: "note" as const,
+      provenance: null,
+      provenanceGlyph: "",
+      provenanceTitle: "",
+      selected: false,
+    })),
+  };
+}
+/** The group above re-headed — same shape, different name, since a toggle is keyed by heading. */
+function rehead(group: ContextGroup, heading: string): ContextGroup {
+  return { ...group, heading, count: group.count };
+}
+
+describe("counts", () => {
+  it("carries each group's size, so the heading never recounts", () => {
+    expect(contextModel(GRAPH, "module:src/core").groups.map((g) => [g.heading, g.count])).toEqual([[HEADINGS.mentions, 2]]);
+  });
+
+  it("counts the tags themselves, not their sibling rows", () => {
+    // "3 tags" is what a scanner wants from a heading; the sibling count is
+    // already the rail's row count and would double-count a note twice.
+    expect(contextModel(GRAPH, "note:alpha").tagsCount).toBe(3);
+    expect(contextModel(GRAPH, "note:lonely").tagsCount).toBe(0);
+    // Every empty state reports 0 rather than leaving the field undefined.
+    expect(contextModel(null, "note:alpha").tagsCount).toBe(0);
+  });
+});
+
+describe("railCollapsed", () => {
+  const none = emptyRailToggles();
+  const LINKS = HEADINGS.links;
+
+  it("leaves a short section open — collapsing three rows would be ceremony", () => {
+    expect(railCollapsed(none, LINKS, 3, false)).toBe(false);
+  });
+
+  it("collapses a section past the threshold", () => {
+    expect(RAIL_COLLAPSE_THRESHOLD).toBe(8);
+    expect(railCollapsed(none, LINKS, RAIL_COLLAPSE_THRESHOLD, false)).toBe(false);
+    expect(railCollapsed(none, LINKS, RAIL_COLLAPSE_THRESHOLD + 1, false)).toBe(true);
+  });
+
+  it("never collapses a section holding the selection, however the user toggled it", () => {
+    // The selection is §1.3's bus and can arrive from the graph's stage click;
+    // a selection that vanished into a fold reads as "the click did nothing".
+    const everything = { open: new Set<string>(), closed: new Set([LINKS]) };
+    expect(railCollapsed(everything, LINKS, 40, true)).toBe(false);
+    expect(railCollapsed(everything, LINKS, 40, false)).toBe(true);
+  });
+
+  it("gives the user's explicit words the precedence, in order", () => {
+    // A close beats the default; an open beats a large default; the two sets
+    // can never both answer while a heading sits in both.
+    const closed = { open: new Set<string>(["TAGS"]), closed: new Set<string>([LINKS]) };
+    expect(railCollapsed(closed, LINKS, 3, false)).toBe(true);
+    expect(railCollapsed(closed, "TAGS", 40, false)).toBe(false);
+  });
+});
+
+describe("railSectionView", () => {
+  const none = emptyRailToggles();
+
+  it("empties the rows when collapsed, so the fold is decided here, not in the .tsx", () => {
+    const view = railSectionView(groupOf(RAIL_COLLAPSE_THRESHOLD + 1), none);
+    expect(view.collapsed).toBe(true);
+    expect(view.rows).toEqual([]);
+    expect(view.count).toBe(RAIL_COLLAPSE_THRESHOLD + 1);
+    // The count survives the fold: a closed section that reads "0" would be a
+    // lie about what it holds.
+  });
+});
+
+describe("railTagsView", () => {
+  const none = emptyRailToggles();
+  const tags = contextModel(GRAPH, "note:alpha").tags;
+
+  it("routes through the same collapse rule as the link sections", () => {
+    // Three tags is far under the threshold, twice over.
+    expect(railTagsView(tags, none).collapsed).toBe(false);
+    expect(railTagsView(tags, none).count).toBe(3);
+    expect(railTagsView(tags, none).heading).toBe(HEADINGS.tags);
+  });
+
+  it("stays open when the selection is one of the tag's siblings", () => {
+    const shut = { open: new Set<string>(), closed: new Set<string>([HEADINGS.tags]) };
+    expect(railTagsView(tags, shut).collapsed).toBe(true);
+    // `architecture`'s siblings include Beta; making that row the selection
+    // forces the section open again.
+    const withSelection = tags.map((tag) =>
+      tag.tag === "architecture" ? { ...tag, siblings: tag.siblings.map((row) => ({ ...row, selected: true })) } : tag,
+    );
+    expect(railTagsView(withSelection, shut).collapsed).toBe(false);
+  });
+});
+
+describe("railToggled", () => {
+  const none = emptyRailToggles();
+  const LINKS = HEADINGS.links;
+
+  it("records an open against a collapsed section, and a close against an open one", () => {
+    const opened = railToggled(none, LINKS, true);
+    expect(opened.open.has(LINKS)).toBe(true);
+    expect(railCollapsed(opened, LINKS, 3, false)).toBe(false);
+    const shut = railToggled(opened, LINKS, false);
+    expect(railCollapsed(shut, LINKS, 3, false)).toBe(true);
+    expect(shut.open.has(LINKS)).toBe(false);
+  });
+
+  it("never leaves a heading in both sets, however many times it is flicked", () => {
+    let toggles = none;
+    for (let i = 0; i < 6; i++) toggles = railToggled(toggles, LINKS, i % 2 === 0);
+    expect(toggles.open.has(LINKS) && toggles.closed.has(LINKS)).toBe(false);
+  });
+
+  it("leaves the other headings' words untouched", () => {
+    const toggles = railToggled(railToggled(none, LINKS, true), HEADINGS.mentions, false);
+    expect(toggles.open.has(LINKS)).toBe(true);
+    expect(toggles.closed.has(HEADINGS.mentions)).toBe(true);
+  });
+});
+
+describe("railPanelId", () => {
+  it("is a stable id for aria-controls to name", () => {
+    // Headings are a fixed vocabulary, so the id is derived rather than
+    // invented — and identical across re-renders, which is what the reference
+    // being a *promise about the DOM* requires.
+    expect(railPanelId(HEADINGS.backlinks)).toBe("weave-ctx-panel-backlinks");
+    expect(railPanelId(HEADINGS.backlinks)).toBe(railPanelId(HEADINGS.backlinks));
+    expect(railSectionView(rehead(groupOf(1), HEADINGS.backlinks), emptyRailToggles()).heading).toBe(HEADINGS.backlinks);
   });
 });

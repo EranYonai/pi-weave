@@ -201,8 +201,17 @@ export interface PositionStorage {
   removeItem(key: string): void;
 }
 
-/** The `localStorage` key. Namespaced and versioned, like the layout's. */
-export const POSITIONS_STORAGE_KEY = "pi-weave.graph.positions.v2";
+/**
+ * The `localStorage` key. Namespaced and versioned, like the layout's.
+ *
+ * `v3` is the Tier 6 gravity/size change: stronger centre gravity, shorter
+ * relation springs and degree-sized collision discs moved every resting
+ * position the old recipe settled to. A v2 entry is a valid layout of the
+ * *old* physics, and the shape key has no way to know that — so the version
+ * does what it did for the branch-anchor change: one whole generation of
+ * stored arrangements is a miss rather than a half-forgotten map.
+ */
+export const POSITIONS_STORAGE_KEY = "pi-weave.graph.positions.v3";
 
 /**
  * Coordinates are rounded to **one** decimal before storage.
@@ -229,11 +238,11 @@ function round1(value: number): number {
 export function serializePositions(key: string, positions: ReadonlyMap<string, Point>): string {
   const at: Record<string, [number, number]> = {};
   for (const [id, point] of positions) at[id] = [round1(point.x), round1(point.y)];
-  // `v: 2` — the branch-anchor layout (separated sibling blobs). A v1 entry
-  // is a tangled arrangement from the single-centre recipe, and the shape key
-  // cannot tell the two apart because the recipe changed under the same node
-  // and edge set. The version can.
-  return JSON.stringify({ v: 2, key, at });
+  // `v: 3` — the Tier 6 gravity/size recipe. A v2 entry is an arrangement from
+  // the previous force constants, and the shape key cannot tell the two
+  // recipes apart because they changed under the same node and edge set. The
+  // version can, exactly as it did for the branch-anchor change before it.
+  return JSON.stringify({ v: 3, key, at });
 }
 
 /**
@@ -265,7 +274,7 @@ export function deserializePositions(raw: string | null, key: string): Map<strin
   if (typeof parsed !== "object" || parsed === null || Array.isArray(parsed)) return null;
 
   const record = parsed as Record<string, unknown>;
-  if (record["v"] !== 2) return null;
+  if (record["v"] !== 3) return null;
   if (record["key"] !== key) return null;
 
   const at = record["at"];

@@ -10,6 +10,8 @@
 import { useState } from "preact/hooks";
 import { recentIds } from "../state";
 import { isTextEntry, type KeyTarget } from "../shell/keys.model";
+import { ICON_BOX, ICON_STROKE, ICONS } from "../shell/icons.model";
+import type { IconName } from "../shell/icons.model";
 import type { GraphPayload } from "../../shared/wire";
 import type { TreeRowView, TreeViewState } from "./tree.model";
 import {
@@ -43,11 +45,44 @@ export interface TreeProps {
   now: number;
 }
 
+/**
+ * One sprite glyph, as a real `<svg>`.
+ *
+ * The element is built from {@link ICONS}' path data rather than injected as
+ * an HTML string — CSP-identical (neither path touches a `script-src` hook),
+ * but the string form would carry a whole `<svg>` per row and Preact can
+ * branch the two paint modes with a spread and no `if`. Every attribute here
+ * is a presentation *attribute*, not a `style` one: `style-src` never sees it.
+ * Sizing rides the width/height attributes rather than CSS for the same
+ * reason — the box is part of the icon, not of its context.
+ */
+export function Icon({ name, class: className }: { name: IconName; class?: string }) {
+  const def = ICONS[name];
+  return (
+    <svg
+      class={className}
+      width={ICON_BOX}
+      height={ICON_BOX}
+      viewBox={`0 0 ${ICON_BOX} ${ICON_BOX}`}
+      fill={def.filled ? "currentColor" : "none"}
+      stroke={def.filled ? undefined : "currentColor"}
+      stroke-width={def.filled ? undefined : def.width ?? ICON_STROKE}
+      stroke-linecap="round"
+      stroke-linejoin="round"
+      aria-hidden="true"
+    >
+      {def.d.map((d) => (
+        <path d={d} />
+      ))}
+    </svg>
+  );
+}
+
 function Row({ view, onSelect, onToggle }: { view: TreeRowView; onSelect: () => void; onToggle: () => void }) {
   return (
     <li
       id={view.domId}
-      class={`weave-row weave-row-${view.kind}${view.selected ? " weave-row-on" : ""}${
+      class={`weave-row weave-row-${view.kind}${view.selected ? " weave-row-on" : ""}${view.muted ? " weave-row-muted" : ""}${
         recentIds.value.has(view.id) ? " weave-row-new" : ""
       }`}
       role="treeitem"
@@ -61,7 +96,9 @@ function Row({ view, onSelect, onToggle }: { view: TreeRowView; onSelect: () => 
     >
       {/* The glyphs are decoration: the twisty duplicates `aria-expanded`,
           the kind glyph duplicates nothing a screen reader needs, and the
-          provenance shape is announced through its `title` instead. */}
+          provenance shape is announced through its `title` instead. The
+          chevron rotates through CSS, so "open" is a class, not a different
+          sprite. */}
       <span
         class="weave-twisty"
         aria-hidden="true"
@@ -70,10 +107,10 @@ function Row({ view, onSelect, onToggle }: { view: TreeRowView; onSelect: () => 
           onToggle();
         }}
       >
-        {view.twistyGlyph}
+        {view.hasKids ? <Icon name="chevron" class={view.expanded ? "weave-icon weave-icon-open" : "weave-icon"} /> : null}
       </span>
       <span class="weave-kind" aria-hidden="true">
-        {view.kindGlyph}
+        <Icon name={view.kindIcon} class="weave-icon" />
       </span>
       <span class={`weave-prov weave-prov-${view.provenance ?? "none"}`} title={view.provenanceTitle}>
         {view.provenanceGlyph}

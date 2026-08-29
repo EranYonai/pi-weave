@@ -14,14 +14,16 @@
 
 import { describe, expect, it } from "vitest";
 import { treeRows } from "../../src/web/shared/view";
+import type { TreeRow } from "../../src/web/shared/view";
 import type { GraphPayload, WireGraphEdge, WireGraphNode, WireNodeKind, WireNoteSource } from "../../src/web/shared/wire";
+import { ICONS } from "../../src/web/client/shell/icons.model";
 import {
   FILTER_HINT,
   FILTER_LABEL,
   FILTER_PLACEHOLDER,
   PROVENANCE_CYCLE,
+  SESSION_DIR,
   TREE_LABEL,
-  TWISTY_GLYPHS,
   collapse,
   cycleProvenance,
   depthVar,
@@ -31,7 +33,9 @@ import {
   initialTreeView,
   internalsHint,
   internalsLabel,
-  kindGlyph,
+  isMuted,
+  isSessionNote,
+  kindIcon,
   moveSelection,
   parentOf,
   provenanceGlyph,
@@ -107,6 +111,24 @@ const GRAPH: GraphPayload = payloadOf(
 
 /** Epoch ms matching the fixture's `generatedAt`, for stable relative times. */
 const NOW = Date.parse("2026-03-04T09:00:00Z");
+
+/**
+ * A hand-built row for the presentation functions.
+ *
+ * `rowView` and its helpers never touch the graph — they read one flattened
+ * `TreeRow` — so a literal is a more honest fixture for them than `rowsFor(...)`
+ * on the whole payload: it names exactly the fields the presentation reads.
+ */
+const ALPHA_ROW: TreeRow = {
+  id: "note:alpha",
+  depth: 1,
+  hasKids: false,
+  expanded: false,
+  label: "Alpha",
+  kind: "note",
+  provenance: "human",
+  meta: null,
+};
 
 function ids(payload: GraphPayload, state: TreeViewState): string[] {
   return rowsFor(payload, state).map((row) => row.id);
@@ -459,12 +481,51 @@ describe("treeKey", () => {
 
 // --- presentation -----------------------------------------------------------------------------
 
-describe("kindGlyph", () => {
-  it("has a distinct glyph for every node kind", () => {
+describe("kindIcon", () => {
+  it("has a distinct sprite glyph for every node kind", () => {
     const kinds: WireNodeKind[] = ["vault", "note", "repository", "module", "package", "entryPoint", "gitState", "external", "file"];
-    const glyphs = kinds.map(kindGlyph);
-    expect(glyphs.every((g) => g.length > 0)).toBe(true);
-    expect(new Set(glyphs).size).toBe(kinds.length);
+    const icons = kinds.map(kindIcon);
+    expect(new Set(icons).size).toBe(kinds.length);
+    // And every name is one the sprite can actually draw — a kind added to
+    // core and not to icons.model.ts is a missing glyph, not an `undefined`
+    // reaching the .tsx.
+    for (const icon of icons) expect(ICONS[icon], icon).toBeDefined();
+  });
+
+  it("keeps the solid/hollow pair the TUI uses for the two roots", () => {
+    // `vault` ◆ against `gitState` ◇ is the one filled/outline distinction the
+    // old text glyphs carried; losing it would cost a real distinction.
+    expect(ICONS[kindIcon("vault")].filled).toBe(true);
+    expect(ICONS[kindIcon("gitState")].filled).toBe(false);
+   });
+});
+
+describe("session rows (the synthesized sessions fold)", () => {
+  it("recognises a session note by path, not by kind — core reuses the module kind", () => {
+    expect(isSessionNote("note:sessions/2026-08-29")).toBe(true);
+    expect(isSessionNote("note:sessions/deep/note")).toBe(true);
+    expect(isSessionNote("note:alpha")).toBe(false);
+    expect(isSessionNote("module:sessions")).toBe(false);
+    expect(isSessionNote("note:sessions")).toBe(false);
+  });
+
+  it("names the folder the same spelling core's graph builder uses", () => {
+    // The id format is a cross-tier contract; a typo here would mute nothing
+    // and nobody would notice without this pin.
+    expect(SESSION_DIR).toBe("sessions");
+  });
+
+  it("mutes session notes so forty near-duplicates stop competing with notes", () => {
+    expect(isMuted({ ...ALPHA_ROW, id: "note:sessions/2026-08-29" }, null)).toBe(true);
+  });
+
+  it("never mutes the selected row, wherever the selection came from", () => {
+    // `selectedId` is §1.3's bus: the graph's stage click can select a session
+    // row while the tree is scrolled elsewhere. Dimming a row the user just
+    // chose would read as "the click did nothing".
+    const session = { ...ALPHA_ROW, id: "note:sessions/2026-08-29" };
+    expect(isMuted(session, "note:sessions/2026-08-29")).toBe(false);
+    expect(isMuted(ALPHA_ROW, "note:alpha")).toBe(false);
   });
 });
 
@@ -497,20 +558,20 @@ describe("rowView", () => {
   it("resolves an expanded parent to an open twisty", () => {
     const view = rowView(vault, null, NOW);
     expect(view.twisty).toBe("open");
-    expect(view.twistyGlyph).toBe(TWISTY_GLYPHS.open);
     expect(view.hasKids).toBe(true);
   });
 
   it("resolves a collapsed parent to a closed twisty", () => {
     const collapsed = rowsFor(GRAPH, toggleExpanded(initialTreeView(), "vault"))[0]!;
     expect(rowView(collapsed, null, NOW).twisty).toBe("closed");
-    expect(rowView(collapsed, null, NOW).twistyGlyph).toBe("▸");
   });
 
   it("resolves a leaf to no twisty at all", () => {
     const view = rowView(alpha, null, NOW);
     expect(view.twisty).toBe("leaf");
-    expect(view.twistyGlyph).toBe("");
+    // The leaf still carries the slot — the .tsx renders the `<span>`, the
+    // model just says there is nothing in it.
+    expect(view.hasKids).toBe(false);
   });
 
   it("marks the selected row and only that row", () => {
@@ -535,11 +596,18 @@ describe("rowView", () => {
     expect(rowView(alpha, null, NOW).depth).toBe(1);
   });
 
-  it("carries the kind and provenance glyphs the list item renders", () => {
+  it("carries the kind icon and provenance glyph the list item renders", () => {
     const view = rowView(alpha, null, NOW);
-    expect(view.kindGlyph).toBe(kindGlyph("note"));
+    expect(view.kindIcon).toBe("note");
     expect(view.provenanceGlyph).toBe("●");
     expect(view.label).toBe("Alpha");
+  });
+
+  it("mutes a session note and unmutes it when selected — via the view, not a .tsx branch", () => {
+    const session: TreeRow = { ...ALPHA_ROW, id: "note:sessions/2026-08-29" };
+    expect(rowView(session, null, NOW).muted).toBe(true);
+    expect(rowView(session, "note:sessions/2026-08-29", NOW).muted).toBe(false);
+    expect(rowView(ALPHA_ROW, null, NOW).muted).toBe(false);
   });
 });
 

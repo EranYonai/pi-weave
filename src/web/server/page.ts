@@ -204,13 +204,13 @@ export interface RenderedPage {
  */
 const THEME_CSS = [
   ":root{color-scheme:light dark;",
-  "--weave-bg:#f8ede3;--weave-fg:#43303a;--weave-dim:#7c6257;",
-  "--weave-line:#dfd3c3;--weave-accent:#85586f;--weave-warn:#a05a1c;",
+  "--weave-bg:#eff1f5;--weave-fg:#4c4f69;--weave-dim:#56586a;",
+  "--weave-line:#ccd0da;--weave-accent:#7113ec;--weave-warn:#7c4f10;",
   "--weave-mono:ui-monospace,SFMono-Regular,Menlo,monospace;",
   "--weave-sans:ui-sans-serif,system-ui,-apple-system,Segoe UI,sans-serif}",
   "@media(prefers-color-scheme:dark){:root{",
-  "--weave-bg:#2a2f4f;--weave-fg:#fde2f3;--weave-dim:#bb9ecf;",
-  "--weave-line:#3b4266;--weave-accent:#b79fdd;--weave-warn:#e8b04c}}",
+  "--weave-bg:#24273a;--weave-fg:#cad3f5;--weave-dim:#a5adcb;",
+  "--weave-line:#363a4f;--weave-accent:#c6a0f6;--weave-warn:#eed49f}}",
   "*{box-sizing:border-box}",
   "html,body{height:100%}",
   "body{margin:0;background:var(--weave-bg);color:var(--weave-fg);",

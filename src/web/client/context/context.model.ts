@@ -39,7 +39,8 @@
 import type { DetailLinkRow, ViewGraphModel } from "../../shared/view";
 import { deriveBacklinks, detailModel, listLabel } from "../../shared/view";
 import type { GraphPayload, WireGraphNode, WireNodeKind, WireNoteSource } from "../../shared/wire";
-import { kindGlyph, provenanceGlyph, provenanceTitle, viewModel } from "../tree/tree.model";
+import { isSessionNote, kindIcon, provenanceGlyph, provenanceTitle, viewModel } from "../tree/tree.model";
+import type { IconName } from "../shell/icons.model";
 
 // --- rows and groups ---------------------------------------------------------------
 
@@ -51,7 +52,8 @@ export interface ContextRow {
   readonly target: string;
   readonly label: string;
   readonly kind: WireNodeKind;
-  readonly kindGlyph: string;
+  /** Which sprite glyph the row draws; the `.tsx` builds the `<svg>`. */
+  readonly kindIcon: IconName;
   readonly provenance: WireNoteSource | null;
   readonly provenanceGlyph: string;
   readonly provenanceTitle: string;
@@ -63,6 +65,8 @@ export interface ContextRow {
 export interface ContextGroup {
   /** `LINKS`, `BACKLINKS`, `TAGS`, `MENTIONS`. */
   readonly heading: string;
+  /** How many rows the section holds — the heading's badge and the collapse default's input. */
+  readonly count: number;
   /** Shown when the group is present but empty. Never rendered when hidden. */
   readonly rows: readonly ContextRow[];
 }
@@ -83,6 +87,15 @@ export interface ContextModel {
    * shape.
    */
   readonly tags: readonly TagGroupRow[];
+  /**
+   * How many tags TAGS holds — the heading's count.
+   *
+   * Carried next to `tags` rather than derived in the component for the same
+   * reason {@link ContextGroup.count} exists: the number is a *decision* about
+   * what the heading says, and an empty rail reports `0` where a group-less
+   * `tags.length` would report nothing to talk about.
+   */
+  readonly tagsCount: number;
   /** Present instead of groups when there is nothing to show. */
   readonly empty: string | null;
 }
@@ -92,14 +105,21 @@ export const HEADINGS = { links: "LINKS", backlinks: "BACKLINKS", tags: "TAGS", 
 
 // --- building rows ------------------------------------------------------------------
 
-/** A row from a node. The rail's one place that reads a node's presentation. */
+/**
+ * A row from a node. The rail's one place that reads a node's presentation.
+ *
+ * The icon follows the tree's rule, not the bare kind: a session-memory note
+ * appears in LINKS just as often as in the tree, and the rail repeating the
+ * tree's icon is how "this is the same thing" is communicated across the two
+ * columns.
+ */
 export function rowFor(id: string, node: WireGraphNode, selectedId: string | null): ContextRow {
   return {
     id,
     target: node.id,
     label: listLabel(node),
     kind: node.kind,
-    kindGlyph: kindGlyph(node.kind),
+    kindIcon: isSessionNote(node.id) ? "session" : kindIcon(node.kind),
     provenance: node.provenance,
     provenanceGlyph: provenanceGlyph(node.provenance),
     provenanceTitle: provenanceTitle(node.provenance),
@@ -250,7 +270,7 @@ export const RAIL_EMPTY = {
 
 /** The rail with nothing to show, and a reason. */
 function emptyRail(reason: string): ContextModel {
-  return { subject: null, groups: [], tags: [], empty: reason };
+  return { subject: null, groups: [], tags: [], tagsCount: 0, empty: reason };
 }
 
 /**
@@ -278,7 +298,7 @@ export function contextModel(payload: GraphPayload | null, selectedId: string | 
   const byId = nodesById(model);
   const groups: ContextGroup[] = [];
   const push = (heading: string, rows: readonly ContextRow[]): void => {
-    if (rows.length > 0) groups.push({ heading, rows });
+    if (rows.length > 0) groups.push({ heading, count: rows.length, rows });
   };
 
   const resolve = (rows: readonly DetailLinkRow[]): ContextRow[] =>
@@ -307,7 +327,134 @@ export function contextModel(payload: GraphPayload | null, selectedId: string | 
   const tags = slug === null ? [] : tagsFor(payload, slug, byId, selectedId);
 
   if (groups.length === 0 && tags.length === 0) {
-    return { subject: detail.label, groups: [], tags: [], empty: RAIL_EMPTY.isolated };
+    return { subject: detail.label, groups: [], tags: [], tagsCount: 0, empty: RAIL_EMPTY.isolated };
   }
-  return { subject: detail.label, groups, tags, empty: null };
+  return { subject: detail.label, groups, tags, tagsCount: tags.length, empty: null };
+}
+
+// --- counts and collapse (Tier 6, §8 P6.4) ---------------------------------------------
+
+/**
+ * A rail section as the component renders it: the heading's count, whether it
+ * is open, and the rows to show under it.
+ *
+ * Collapsed is a rendering state, not a data state, so `rows` is emptied here
+ * rather than the component filtering — otherwise the collapsed decision
+ * would be an untestable branch in a `.tsx`.
+ */
+export interface RailSectionView {
+  readonly heading: string;
+  readonly count: number;
+  readonly collapsed: boolean;
+  /** The rows, `[]` when collapsed. */
+  readonly rows: readonly ContextRow[];
+}
+
+/**
+ * Which sections the user has explicitly opened or closed.
+ *
+ * Two sets rather than one because "collapsed" has three origins — the user,
+ * the >8 default, and the selection's force-expand — and a single Set cannot
+ * say which of them a heading is in. `open` and `closed` are the user's word;
+ * the other two are computed by {@link railCollapsed}.
+ */
+export interface RailToggles {
+  /** Sections the user explicitly opened. */
+  readonly open: ReadonlySet<string>;
+  /** Sections the user explicitly closed. */
+  readonly closed: ReadonlySet<string>;
+}
+
+/** No user opinion yet — the rail's state on mount. */
+export function emptyRailToggles(): RailToggles {
+  return { open: new Set(), closed: new Set() };
+}
+
+/**
+ * A section longer than this opens collapsed.
+ *
+ * Eight is where a list stops being scannable without scrolling: the rail has
+ * a fixed fraction of a fixed column (§1.2), so a MENTIONS section with forty
+ * entries would push the sections below it out of the viewport entirely —
+ * which is how a rail meant to show *everything at once* ends up showing one
+ * group. Under eight the rhythm would cost more than it saved.
+ */
+export const RAIL_COLLAPSE_THRESHOLD = 8;
+
+/**
+ * Whether a section is collapsed.
+ *
+ * Order of precedence, most specific wins:
+ *
+ *  1. **The selection is never hidden.** If the selected row lives in this
+ *     section, force-expand — `selectedId` is the §1.3 bus and can change a
+ *     hundred times a minute while the user is reading something else; a
+ *     selection that vanished into a fold would be a bug the user experiences
+ *     as "clicking did nothing" and never connects to a toggle 40px away.
+ *  2. The user's explicit *close* beats the default but not the selection.
+ *  3. The user's explicit *open* beats the default.
+ *  4. Otherwise, the {@link RAIL_COLLAPSE_THRESHOLD} default.
+ */
+export function railCollapsed(toggles: RailToggles, heading: string, count: number, holdsSelection: boolean): boolean {
+  if (holdsSelection) return false;
+  if (toggles.closed.has(heading)) return true;
+  if (toggles.open.has(heading)) return false;
+  return count > RAIL_COLLAPSE_THRESHOLD;
+}
+
+/** Whether the selection itself is one of this section's rows. */
+function holdsSelection(rows: readonly ContextRow[]): boolean {
+  return rows.some((row) => row.selected);
+}
+
+/**
+ * Resolve one section for rendering.
+ *
+ * The heading identifies the toggle, and headings are a fixed vocabulary
+ * ({@link HEADINGS}), so a per-render id is stable across re-renders and
+ * remounts — which is what `aria-controls` needs to stay a true promise about
+ * the DOM.
+ */
+export function railSectionView(group: ContextGroup, toggles: RailToggles): RailSectionView {
+  const collapsed = railCollapsed(toggles, group.heading, group.count, holdsSelection(group.rows));
+  return { heading: group.heading, count: group.count, collapsed, rows: collapsed ? [] : group.rows };
+}
+
+/**
+ * The TAGS section through the same vocabulary as the link sections.
+ *
+ * `TAGS` is not a {@link ContextGroup} — its rows are tag groups — but it
+ * toggles and counts exactly the same way, so it goes through the same
+ * predicate rather than growing a second collapse rule. The count is the
+ * number of *tags*, not sibling rows: the heading names the category, and
+ * "3 tags" is what a scanner wants before deciding whether to open it.
+ */
+export function railTagsView(tags: readonly TagGroupRow[], toggles: RailToggles): RailSectionView {
+  const collapsed = railCollapsed(toggles, HEADINGS.tags, tags.length, tags.some((tag) => tag.siblings.some((row) => row.selected)));
+  return { heading: HEADINGS.tags, count: tags.length, collapsed, rows: [] };
+}
+
+/**
+ * Move one section to the other state.
+ *
+ * Both sets are updated per toggle so a heading can never sit in both: the
+ * user asking twice (click, selection moves it, click) always lands on a
+ * consistent single-word answer.
+ */
+export function railToggled(toggles: RailToggles, heading: string, collapsed: boolean): RailToggles {
+  const open = new Set(toggles.open);
+  const closed = new Set(toggles.closed);
+  if (collapsed) {
+    open.add(heading);
+    closed.delete(heading);
+  } else {
+    closed.add(heading);
+    open.delete(heading);
+  }
+  return { open, closed };
+}
+
+/** The `id` of a section's row list, for `aria-controls` to point at. */
+export function railPanelId(heading: string): string {
+  return `weave-ctx-panel-${heading.toLowerCase()}`;
 }

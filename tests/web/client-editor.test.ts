@@ -34,6 +34,8 @@ import {
   EXTERNAL_MESSAGE,
   KEEP_LABEL,
   OPEN_FAILED_MESSAGE,
+  OPEN_ICON,
+  OPEN_LABEL,
   OPENED_MESSAGE,
   OVERWRITE_LABEL,
   READ_LABEL,
@@ -43,6 +45,7 @@ import {
   SAVING_LABEL,
   UNSAVED_MESSAGE,
   canSave,
+  editorBarVisible,
   editorPrompt,
   editorToolbar,
   initialEditorState,
@@ -590,6 +593,40 @@ describe("open in $EDITOR", () => {
       status: "error",
       message: OPEN_FAILED_MESSAGE,
     });
+  });
+});
+
+describe("the demoted Open in $EDITOR control (P6.3)", () => {
+  it("ships an icon that carries nothing the CSP or a screen reader needs to guess", () => {
+    // The icon is inserted as markup, so it is CSP-legal, and it is hidden
+    // from the accessibility tree because the button's name is OPEN_LABEL —
+    // an icon that spoke and a label that spoke would both announce.
+    expect(OPEN_ICON).toContain("aria-hidden=\"true\"");
+    expect(OPEN_ICON).toContain("currentColor");
+    expect(OPEN_ICON).not.toContain("http");
+  });
+
+  it("is not text the note head would render as a label", () => {
+    // The demotion's whole point: no label text, so the control can no longer
+    // out-shout the prose it serves.
+    expect(OPEN_ICON).not.toContain(OPEN_LABEL);
+  });
+
+  it("renders no bar in read mode when there is nothing to say", () => {
+    // P6.3 removed the bar's only read-mode inhabitant; an empty ruled strip
+    // between the head and the prose describes nothing.
+    const reading = editorToolbar(run({ type: "loaded", payload: LOADED }));
+    expect(editorBarVisible(reading, null)).toBe(false);
+   });
+
+  it("keeps the bar while editing, or whenever it has news", () => {
+    const editing = editorToolbar(typing("x"));
+    expect(editorBarVisible(editing, null)).toBe(true);
+    const reading = editorToolbar(run({ type: "loaded", payload: LOADED }));
+    const acked = reduceEditor(run({ type: "loaded", payload: LOADED }), { type: "opened", ok: true }).state;
+    expect(editorBarVisible(editorToolbar(acked), null)).toBe(true);
+    expect(editorBarVisible(reading, editorPrompt(reduceEditor(typing("x"), { type: "navigate", id: "note:b" }).state))).toBe(true);
+    expect(reading.editing).toBe(false);
   });
 });
 

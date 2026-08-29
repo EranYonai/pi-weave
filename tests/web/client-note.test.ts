@@ -28,15 +28,26 @@
 import { describe, expect, it } from "vitest";
 import type { GraphPayload, ViewNote, WireGraphNode } from "../../src/web/shared/wire";
 import {
+  EDITED_WORD,
+  EMPTY_PREVIEW,
   EMPTY_WIKI_INDEX,
+  GHOST_KIND,
+  PREVIEW_GAP,
+  PREVIEW_LIMIT,
   SAFE_SCHEMES,
   SANITIZE_CONFIG,
   WIKILINK_ATTR,
+  CREATED_WORD,
   escapeHtml,
+  excerptOf,
   isGhost,
   noteEmptyMessage,
   noteHeader,
   parseWikilink,
+  previewAnchorOf,
+  previewCard,
+  previewPlacement,
+  reducePreview,
   renderMarkdown,
   renderNote,
   renderWikilink,
@@ -44,11 +55,12 @@ import {
   resolveWikilink,
   safeUrl,
   slugOfNode,
+  stripMarkdown,
   tagLabel,
   wikiIndex,
   wikilinkTargetOf,
 } from "../../src/web/client/note/note.model";
-import type { ClosestElement, Purifier } from "../../src/web/client/note/note.model";
+import type { ClosestElement, PreviewAnchor, PreviewElement, PreviewState, Purifier } from "../../src/web/client/note/note.model";
 
 // --- fixtures -------------------------------------------------------------------------
 
@@ -774,6 +786,14 @@ describe("noteHeader", () => {
     expect(noteHeader(NOTE, NOW + 86_400_000).updated).toBe("1d ago");
   });
 
+  it("says what the timestamp is to a human: edited, created", () => {
+    // "updated" was the git-adjacent word for the same fact; the meta row is
+    // a sentence, so the constants are asserted here the way every other
+    // string in this module is.
+    expect(EDITED_WORD).toBe("edited");
+    expect(CREATED_WORD).toBe("created");
+   });
+
   it("keeps the ISO strings, for a `<time datetime>` and a precise tooltip", () => {
     const view = noteHeader(NOTE, NOW);
     expect(view.updatedIso).toBe("2026-03-04T08:00:00Z");
@@ -808,5 +828,289 @@ describe("noteEmptyMessage", () => {
     for (const id of ["repository", "module:src/core", "gitState", "package:package.json"]) {
       expect(noteEmptyMessage(id, null), id).toBe("This node has no note body — see the context rail for what it connects to.");
     }
+  });
+});
+
+// --- the wikilink preview (P6.3) ---------------------------------------------------------------
+
+/**
+ * A note node carrying the `detail.preview` core's graph builder writes.
+ *
+ * `preview` is what feeds the hover card, so a fixture without one previews a
+ * card about nothing.
+ */
+function noteNodeWithPreview(slug: string, title: string, preview: string): WireGraphNode {
+  return { ...noteNode(slug, title), detail: { preview } };
+}
+
+describe("stripMarkdown", () => {
+  it("leaves plain prose alone", () => {
+    expect(stripMarkdown("The release ships on Friday.")).toBe("The release ships on Friday.");
+  });
+
+  it("drops heading, emphasis and code markers, keeping the words", () => {
+    expect(stripMarkdown("# Release\n\nSome **bold** and _quiet_ text with `code`.")).toBe(
+      "Release Some bold and quiet text with code.",
+    );
+  });
+
+  it("reads a wikilink as its alias, or its target", () => {
+    expect(stripMarkdown("See [[Graph Architecture|the plan]].")).toBe("See the plan.");
+    expect(stripMarkdown("See [[Graph Architecture]].")).toBe("See Graph Architecture.");
+  });
+
+  it("collapses an image to its alt and a link to its label", () => {
+    expect(stripMarkdown("![the diagram](x.png) then [a link](https://a.example)")).toBe("the diagram then a link");
+  });
+
+  it("drops a fenced block rather than quoting it", () => {
+    expect(stripMarkdown("before\n\n```ts\nconst x = 1;\n```\n\nafter")).toBe("before after");
+  });
+
+  it("reads list and blockquote markers as text, not furniture", () => {
+    expect(stripMarkdown("> a quote\n\n- first\n- second")).toBe("a quote first second");
+  });
+
+  it("flattens every whitespace run, including newlines", () => {
+    expect(stripMarkdown("one\ntwo\tthree\n\nfour")).toBe("one two three four");
+  });
+
+  it("removes tag-shaped runs wholesale, so nothing markup-like survives", () => {
+    // The result is drawn as a text node, so this is legibility rather than
+    // security — but the same property holds: a hostile note's markup never
+    // reaches the card as markup *or* as a string that looks like it.
+    for (const hostile of ["a <img src=x onerror=alert(1)> b", "x <script>alert(1)</script> y"]) {
+      const plain = stripMarkdown(hostile);
+      expect(plain, hostile).not.toContain("<");
+      expect(plain, hostile).not.toMatch(/on\w+=/);
+    }
+  });
+
+  it("returns an empty string for a note with no prose at all", () => {
+    expect(stripMarkdown("```\n```\n\n- - -")).toBe("");
+  });
+});
+
+describe("excerptOf", () => {
+  const WORD = "loremipsum "; // 11 chars, deliberately longer than a word
+
+  it("returns a short note whole, with no ellipsis", () => {
+    expect(excerptOf("# Plan\n\nShip it.")).toBe("Plan Ship it.");
+  });
+
+  it("cuts at a word boundary, never mid-word", () => {
+    // 20 chars of "the quick brown fox jumps" lands inside the space
+    // before "jumps", so the cut must stop at "fox" — a `pla…` would read as
+    // broken text in the one place the product shows a teaser.
+    expect(excerptOf("the quick brown fox jumps", 20)).toBe("the quick brown fox…");
+  });
+
+  it("cuts hard when there is no boundary to cut at", () => {
+    // One long token — a URL — still has to fit the card.
+    expect(excerptOf("abcdefghijklmno", 5)).toBe("abcde…");
+  });
+
+  it("defaults to the declared preview limit", () => {
+    const long = WORD.repeat(60); // 660 chars
+    const out = excerptOf(long);
+    expect(out.length).toBeLessThanOrEqual(PREVIEW_LIMIT + 1);
+    expect(out.endsWith("…")).toBe(true);
+  });
+
+  it("re-uses the same strip on the way through", () => {
+    expect(excerptOf("# A\n\n**Bold** text follows here.", 10)).toBe("A Bold…");
+  });
+});
+
+describe("previewAnchorOf", () => {
+  function element(
+    attrs: Record<string, string> = {},
+    parent: PreviewElement | null = null,
+    extra: Partial<Pick<PreviewElement, "className" | "textContent">> = {},
+  ): PreviewElement {
+    return {
+      getAttribute: (name) => attrs[name] ?? null,
+      parentElement: parent,
+      className: "",
+      textContent: "",
+      ...extra,
+    };
+  }
+
+  it("reads the target off the element itself", () => {
+    const anchor = previewAnchorOf(element({ [WIKILINK_ATTR]: "release-plan" }, null, { textContent: "the plan" }));
+    expect(anchor).toEqual({ slug: "release-plan", text: "the plan" });
+  });
+
+  it("walks up to the anchor, because the pointer lands on the text's parent", () => {
+    const anchor = previewAnchorOf(element({}, element({ [WIKILINK_ATTR]: "release-plan" })));
+    expect(anchor?.slug).toBe("release-plan");
+  });
+
+  it("answers a ghost with no slug, because a ghost is an answer too", () => {
+    // A ghost span carries no `data-weave-target` — `wikilinkTargetOf`
+    // correctly reports "not a link" — but the preview exists to say what a
+    // link names, and "there is no note behind this" is that answer.
+    const ghost: PreviewElement = {
+      getAttribute: () => null,
+      parentElement: null,
+      className: "weave-wiki weave-wiki-ghost",
+      textContent: "Ghost Note",
+    };
+    expect(previewAnchorOf(ghost)).toEqual({ slug: null, text: "Ghost Note" });
+  });
+
+  it("matches the ghost class as a class, not as a substring", () => {
+    // `includes("ghost")` over the raw string would half-match a future
+    // `weave-wiki-ghost-note` class and preview a link as a ghost.
+    const nearMiss: PreviewElement = {
+      getAttribute: () => null,
+      parentElement: null,
+      className: "weave-wiki-ghosted",
+      textContent: "x",
+    };
+    expect(previewAnchorOf(nearMiss)).toBeNull();
+  });
+
+  it("is null for ordinary prose", () => {
+    expect(previewAnchorOf(element({}, element()))).toBeNull();
+    expect(previewAnchorOf(null)).toBeNull();
+  });
+
+  it("ignores an empty target attribute and keeps walking", () => {
+    const outer = element({ "data-something": "1" });
+    expect(previewAnchorOf(element({ [WIKILINK_ATTR]: "" }, outer))).toBeNull();
+  });
+
+  it("terminates on a parent cycle instead of hanging the tab", () => {
+    // The hover card walks inside a pointer handler; a hostile DOM must cost
+    // a null, exactly as the click walk does. The cycle is built with a
+    // getter because `parentElement` is declared `readonly` — the model must
+    // never *write* the chain it walks, so the fixture is what lies.
+    const cyclic: PreviewElement = {
+      getAttribute: () => null,
+      get parentElement() {
+        return this;
+      },
+      className: "",
+      textContent: "",
+    };
+    expect(previewAnchorOf(cyclic)).toBeNull();
+  });
+});
+
+describe("previewCard", () => {
+  const PREVIEWED = payloadOf([
+    noteNodeWithPreview("release-plan", "Release Plan", "# Plan\n\nShip the **weave** view."),
+    { id: "repository", kind: "repository", label: "pi-weave", provenance: null, detail: {} },
+  ]);
+
+  it("names the target, kinds it with its provenance, and excerpts its preview", () => {
+    const card = previewCard(PREVIEWED, { slug: "release-plan", text: "the plan" });
+    expect(card).toEqual({
+      ghost: false,
+      title: "Release Plan",
+      kind: "note · human-authored",
+      text: "Plan Ship the weave view.",
+    });
+  });
+
+  it("kinds a structural target without a provenance word", () => {
+    const plain = payloadOf([{ ...noteNodeWithPreview("a", "A", "body"), provenance: null }]);
+    expect(previewCard(plain, { slug: "a", text: "A" })?.kind).toBe("note");
+  });
+
+  it("is null when the payload has no such note — a card about nothing", () => {
+    // The anchor's slug comes off a rendered attribute and the payload is the
+    // only authority on what a note is; refusing to render beats inventing a
+    // card the payload does not describe.
+    expect(previewCard(null, { slug: "release-plan", text: "x" })).toBeNull();
+    expect(previewCard(payloadOf([]), { slug: "release-plan", text: "x" })).toBeNull();
+  });
+
+  it("shows a ghost as an offer, in the vocabulary the ghost link already uses", () => {
+    const card = previewCard(PREVIEWED, { slug: null, text: "Ghost Note" });
+    expect(card?.ghost).toBe(true);
+    expect(card?.kind).toBe(GHOST_KIND);
+    expect(card?.text).toBe("no note named “Ghost Note” yet");
+   });
+
+  it("keeps the long preview inside the limit", () => {
+    const long = payloadOf([noteNodeWithPreview("a", "A", "word ".repeat(400))]);
+    const card = previewCard(long, { slug: "a", text: "A" });
+    expect(card?.text.endsWith("…")).toBe(true);
+    expect((card?.text.length ?? 0)).toBeLessThanOrEqual(PREVIEW_LIMIT + 1);
+  });
+});
+
+describe("previewPlacement", () => {
+  const OPEN = (x: number, y: number) => previewPlacement(x, y, 280, 120, 1000, 800);
+
+  it("prefers below-right of the pointer", () => {
+    // The reading direction for left-aligned prose: the card drops into the
+    // space the eye is heading towards, not over the line being read.
+    expect(OPEN(100, 100)).toEqual({ x: 108, y: 108 });
+  });
+
+  it("flips left when the card would leave the right edge", () => {
+    const spot = OPEN(890, 100);
+    expect(spot.x).toBe(890 - 8 - 280);
+  });
+
+  it("flips up when the card would leave the bottom edge", () => {
+    const spot = OPEN(100, 780);
+    expect(spot.y).toBe(780 - 8 - 120);
+  });
+
+  it("clamps both edges, so a card never leaves the viewport", () => {
+    // A card in a small window is pinned at the gap rather than rendered
+    // off-screen with nothing available to correct it.
+    const squeezed = previewPlacement(400, 500, 280, 120, 300, 100);
+    expect(squeezed.x).toBeGreaterThanOrEqual(PREVIEW_GAP);
+    expect(squeezed.y).toBeGreaterThanOrEqual(PREVIEW_GAP);
+  });
+
+  it("uses the injected gap, so the card reads as attached to its link", () => {
+    expect(previewPlacement(100, 100, 280, 120, 1000, 800, 0)).toEqual({ x: 100, y: 100 });
+  });
+});
+
+describe("reducePreview", () => {
+  const ANCHOR: PreviewAnchor = { slug: "release-plan", text: "the plan" };
+  const OTHER: PreviewAnchor = { slug: "other", text: "other" };
+
+  it("opens with the anchor and the coordinates that asked for it", () => {
+    expect(reducePreview(EMPTY_PREVIEW, { type: "show", anchor: ANCHOR, x: 4, y: 5 })).toEqual({
+      anchor: ANCHOR,
+      pointerX: 4,
+      pointerY: 5,
+    });
+  });
+
+  it("replaces an open card when the pointer crosses to another link", () => {
+    const open = reducePreview(EMPTY_PREVIEW, { type: "show", anchor: ANCHOR, x: 1, y: 2 });
+    expect(reducePreview(open, { type: "show", anchor: OTHER, x: 3, y: 4 }).anchor).toEqual(OTHER);
+  });
+
+  it("ignores a show that names nothing, leaving the card exactly as it was", () => {
+    // `mouseover` on plain prose produces a null anchor on its way anywhere,
+    // and an empty anchor is a hoverable nothing the tokenizer cannot emit.
+    const open: PreviewState = { anchor: ANCHOR, pointerX: 1, pointerY: 2 };
+    expect(reducePreview(open, { type: "show", anchor: { slug: null, text: "" }, x: 9, y: 9 })).toBe(open);
+    expect(reducePreview(EMPTY_PREVIEW, { type: "show", anchor: { slug: null, text: "" }, x: 9, y: 9 })).toBe(EMPTY_PREVIEW);
+  });
+
+  it("closes, and is a no-op when nothing is open", () => {
+    // The no-op is what makes a body-wide mouseover stream cheap: prose
+    // costs no re-render.
+    expect(reducePreview(EMPTY_PREVIEW, { type: "hide" })).toBe(EMPTY_PREVIEW);
+    const open = reducePreview(EMPTY_PREVIEW, { type: "show", anchor: ANCHOR, x: 1, y: 2 });
+    expect(open.anchor).toEqual(ANCHOR);
+    expect(reducePreview(open, { type: "hide" })).toBe(EMPTY_PREVIEW);
+  });
+
+  it("dismiss closes the card on Escape by the same route", () => {
+    const open: PreviewState = { anchor: ANCHOR, pointerX: 1, pointerY: 2 };
+    expect(reducePreview(open, { type: "dismiss" })).toBe(EMPTY_PREVIEW);
   });
 });
