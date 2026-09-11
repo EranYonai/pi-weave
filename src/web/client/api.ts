@@ -440,8 +440,18 @@ export function saveNote(fetchImpl: FetchLike, slug: string, input: SaveNoteRequ
  * taken. The server refuses rather than uniquifying, because landing
  * somewhere other than where the user asked hides their mistake.
  */
-export function renameNote(fetchImpl: FetchLike, slug: string, target: string): Promise<WriteResult<NotePayload>> {
-  return write(fetchImpl, noteUrl(slug, "/rename"), isNotePayload, writeInit("POST", { slug: target }));
+export function renameNote(
+  fetchImpl: FetchLike,
+  slug: string,
+  target: string,
+  title?: string,
+): Promise<WriteResult<NotePayload>> {
+  return write(
+    fetchImpl,
+    noteUrl(slug, "/rename"),
+    isNotePayload,
+    writeInit("POST", { slug: target, ...(title !== undefined ? { title } : {}) }),
+  );
 }
 
 /** `POST /api/note/:slug/move`. Moves note into a folder and updates tags. */

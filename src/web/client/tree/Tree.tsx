@@ -12,7 +12,7 @@ import { recentIds } from "../state";
 import { isTextEntry, type KeyTarget } from "../shell/keys.model";
 import { ICON_BOX, ICON_STROKE, ICONS } from "../shell/icons.model";
 import type { IconName } from "../shell/icons.model";
-import type { GraphPayload } from "../../shared/wire";
+import type { GraphPayload, WireNodeKind } from "../../shared/wire";
 import type { TreeContextMenuState, TreeRowView, TreeViewState } from "./tree.model";
 import type { FetchLike } from "../api";
 import { fetchJson } from "../api.dom";
@@ -96,7 +96,6 @@ function Row({
   onSelect,
   onToggle,
   onDelete,
-  onContextMenu,
   onDragStart,
   onDragOver,
   onDragLeave,
@@ -107,7 +106,6 @@ function Row({
   onSelect: () => void;
   onToggle: () => void;
   onDelete?: (() => void) | undefined;
-  onContextMenu?: ((event: MouseEvent) => void) | undefined;
   onDragStart?: (event: DragEvent) => void;
   onDragOver?: (event: DragEvent) => void;
   onDragLeave?: (event: DragEvent) => void;
@@ -117,6 +115,9 @@ function Row({
   return (
     <li
       id={view.domId}
+      data-row-id={view.id}
+      data-row-label={view.label}
+      data-row-kind={view.kind}
       class={`weave-row weave-row-${view.kind}${view.selected ? " weave-row-on" : ""}${view.muted ? " weave-row-muted" : ""}${
         recentIds.value.has(view.id) ? " weave-row-new" : ""
       }${isDragOver ? " weave-row-droptarget" : ""}`}
@@ -128,7 +129,6 @@ function Row({
       aria-expanded={view.hasKids ? view.expanded : undefined}
       style={depthVar(view.depth)}
       onClick={onSelect}
-      onContextMenu={onContextMenu}
       draggable={isDraggableNote(view.kind, view.id)}
       onDragStart={onDragStart}
       onDragOver={onDragOver}
@@ -276,18 +276,6 @@ export function Tree(props: TreeProps) {
   return (
     <div
       class="weave-tree"
-      onContextMenu={(event: MouseEvent) => {
-        const target = event.target as HTMLElement | null;
-        if (target?.closest(".weave-row")) return;
-        event.preventDefault();
-        setMenu({
-          x: event.clientX,
-          y: event.clientY,
-          rowId: "vault",
-          rowLabel: "Vault",
-          kind: "vault",
-        });
-      }}
       onKeyDown={(event) => {
         // The filter box sits inside this listener, so its keystrokes arrive
         // here too: a `j` meant for the query must stay a character, not an
@@ -373,6 +361,33 @@ export function Tree(props: TreeProps) {
           role="tree"
           tabIndex={0}
           aria-label={TREE_LABEL}
+          onContextMenu={(event: MouseEvent) => {
+            event.preventDefault();
+            const target = event.target as HTMLElement | null;
+            const rowEl = target?.closest(".weave-row") as HTMLElement | null;
+            if (rowEl) {
+              const rowId = rowEl.getAttribute("data-row-id");
+              const rowLabel = rowEl.getAttribute("data-row-label") ?? "";
+              const rowKind = (rowEl.getAttribute("data-row-kind") ?? "note") as WireNodeKind;
+              if (rowId) {
+                setMenu({
+                  x: event.clientX,
+                  y: event.clientY,
+                  rowId,
+                  rowLabel,
+                  kind: rowKind,
+                });
+                return;
+              }
+            }
+            setMenu({
+              x: event.clientX,
+              y: event.clientY,
+              rowId: "vault",
+              rowLabel: "Vault",
+              kind: "vault",
+            });
+          }}
           // Focus stays on the `<ul>` and the *active* row is named by
           // reference — the alternative, a roving `tabindex`, would put every
           // row in the Tab order and make Tab a fourth way to walk the tree.
@@ -383,20 +398,14 @@ export function Tree(props: TreeProps) {
             <Row
               key={view.id}
               view={view}
-              onSelect={() => props.onSelect(view.id)}
+              onSelect={() => {
+                props.onSelect(view.id);
+                if (view.hasKids || view.id.startsWith("vfolder:")) {
+                  setState((curr) => toggleExpanded(curr, view.id));
+                }
+              }}
               onToggle={() => setState(toggleExpanded(state, view.id))}
               onDelete={deletableTarget(view.id) ? () => confirmDeleteRow(view.id, view.label) : undefined}
-              onContextMenu={(event: MouseEvent) => {
-                event.preventDefault();
-                event.stopPropagation();
-                setMenu({
-                  x: event.clientX,
-                  y: event.clientY,
-                  rowId: view.id,
-                  rowLabel: view.label,
-                  kind: view.kind,
-                });
-              }}
               isDragOver={dragOverId === view.id}
               onDragStart={(event) => {
                 event.dataTransfer?.setData("text/plain", view.id);
@@ -522,10 +531,7 @@ export function Tree(props: TreeProps) {
                 e.preventDefault();
                 const name = pendingRename.value.trim();
                 if (name && name !== pendingRename.currentName) {
-                  const prefix = pendingRename.slug.includes("/")
-                    ? pendingRename.slug.split("/").slice(0, -1).join("/") + "/"
-                    : "";
-                  await renameNote(fetcher, pendingRename.slug, prefix + name);
+                  await renameNote(fetcher, pendingRename.slug, name, name);
                 }
                 setPendingRename(null);
               }}

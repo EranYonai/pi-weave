@@ -1122,6 +1122,22 @@ describe("POST /api/note/:slug/rename", () => {
     await expect(readNoteFile(vaultRoot, "note")).resolves.toContain("Alpha Note");
   });
 
+  it("renames a nested note while keeping it in the same folder", async () => {
+    const { server, vaultRoot } = await bootWritable();
+    await post(server, "/api/folder", { path: "coverageathon" });
+    await post(server, "/api/note/alpha-note/move", { targetFolder: "coverageathon" });
+    const res = await post(server, "/api/note/coverageathon/alpha-note/rename", {
+      slug: "Beta Renamed",
+      title: "Beta Renamed",
+    });
+    expect(res.status).toBe(200);
+    const payload = (await res.json()) as NotePayload;
+    expect(payload.note.slug).toBe("coverageathon/beta-renamed");
+    expect(payload.note.title).toBe("Beta Renamed");
+    await expect(readNoteFile(vaultRoot, "coverageathon/beta-renamed")).resolves.toContain("Beta Renamed");
+    await expect(readNoteFile(vaultRoot, "coverageathon/alpha-note")).rejects.toThrow();
+  });
+
   it("400s a body that is not { slug: string }", async () => {
     const { server } = await bootWritable();
     for (const body of ["{}", '{"slug":1}', '{"slug":""}', "[]", "not json", ""]) {

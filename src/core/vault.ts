@@ -11,7 +11,7 @@ import {
 } from "./frontmatter";
 import { withMutationQueue } from "./mutex";
 import { NOTES_DIR, OKF_MANIFEST } from "./paths";
-import { slugify, uniqueSlug } from "./slug";
+import { slugify, slugifyPath, uniqueSlug } from "./slug";
 import type {
   Note,
   NoteFrontMatter,
@@ -563,16 +563,28 @@ export async function renameNote(
   oldSlug: string,
   newSlug: string,
   now: Date = new Date(),
+  newTitle?: string,
 ): Promise<MutationResult> {
   const from = resolveNotePath(root, oldSlug);
   if (!from) return { ok: false, reason: "missing" };
-  const target = slugify(newSlug);
+
+  const rawTarget = newSlug.trim();
+  if (rawTarget.length === 0) return { ok: false, reason: "missing" };
+
+  const oldFolder = oldSlug.includes("/") ? oldSlug.split("/").slice(0, -1).join("/") : "";
+  const hasSlash = /[\/\\]/.test(rawTarget);
+  const target = hasSlash
+    ? slugifyPath(rawTarget)
+    : oldFolder.length > 0
+    ? `${oldFolder}/${slugify(rawTarget)}`
+    : slugify(rawTarget);
+
   const to = resolveNotePath(root, target);
-  // `slugify` cannot emit a traversing slug, but the guard is applied anyway:
+  // `slugify`/`slugifyPath` cannot emit a traversing slug, but the guard is applied anyway:
   // "this input is already safe" is exactly the assumption that stops being
   // true when someone changes the other function.
   if (!to) return { ok: false, reason: "missing" };
-  if (target === oldSlug) {
+  if (target === oldSlug && (newTitle === undefined || newTitle.trim().length === 0)) {
     const note = await getNote(root, oldSlug);
     return note === null ? { ok: false, reason: "missing" } : { ok: true, note };
   }
@@ -586,9 +598,16 @@ export async function renameNote(
     // asked hides it. `fs.rename` would overwrite the destination outright.
     if (await exists(to)) return { ok: false, reason: "collision", slug: target };
 
-    await fs.rename(from, to);
+    await fs.mkdir(dirname(to), { recursive: true });
+    if (from !== to) {
+      await fs.rename(from, to);
+    }
+
+    const title =
+      newTitle !== undefined && newTitle.trim().length > 0 ? newTitle.trim() : note.title;
+
     // The slug is the note's identity, so a rename is a change to the note.
-    const meta: NoteMeta = { ...note, updated: now.toISOString() };
+    const meta: NoteMeta = { ...note, title, updated: now.toISOString() };
     return { ok: true, note: await writeNote(to, target, meta, note.body, note.frontMatter) };
   });
 }

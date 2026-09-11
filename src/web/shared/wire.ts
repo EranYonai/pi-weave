@@ -267,6 +267,7 @@ export interface RenameNoteRequest {
    * as acceptable as a slug and both land on the same file name.
    */
   slug: string;
+  title?: string;
 }
 
 /** `POST /api/note/:slug/move` request body. */

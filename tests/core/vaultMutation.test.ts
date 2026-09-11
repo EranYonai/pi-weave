@@ -246,6 +246,23 @@ describe("renameNote", () => {
     expect(result.ok && result.note.slug).toBe("a-much-better-name");
   });
 
+  it("preserves folder nesting when renaming a nested note and updates title", async () => {
+    await createFolder(vault, "coverageathon");
+    await addNote(vault, { title: "Alpha", body: "body" });
+    await moveNoteToFolder(vault, "alpha", "coverageathon");
+    expect(await getNote(vault, "coverageathon/alpha")).not.toBeNull();
+
+    const res = await renameNote(vault, "coverageathon/alpha", "Beta", T1, "Beta");
+    expect(res.ok).toBe(true);
+    if (!res.ok) return;
+    expect(res.note.slug).toBe("coverageathon/beta");
+    expect(res.note.title).toBe("Beta");
+    expect(await getNote(vault, "coverageathon/alpha")).toBeNull();
+    const loaded = await getNote(vault, "coverageathon/beta");
+    expect(loaded?.title).toBe("Beta");
+    expect(loaded?.slug).toBe("coverageathon/beta");
+  });
+
   it("refuses a collision instead of overwriting or uniquifying", async () => {
     await addNote(vault, { title: "Taken", body: "do not clobber" });
     expect(await renameNote(vault, "old-name", "taken", T1)).toEqual({

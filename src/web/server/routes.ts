@@ -90,7 +90,7 @@ import { readOkfFileForView } from "../../core/graph/current";
 import type { GraphModel as CoreGraphModel } from "../../core/graph/model";
 import { openNoteInEditor } from "../../core/openInEditor";
 import type { MutationResult, RevisionedNote } from "../../core/vault";
-import { slugify } from "../../core/slug";
+import { slugify, slugifyPath } from "../../core/slug";
 import {
   createFolder,
   deleteFolder,
@@ -887,22 +887,21 @@ async function saveNote(deps: RouteDeps, slug: string, req: IncomingMessage, res
 async function moveNote(deps: RouteDeps, slug: string, req: IncomingMessage, res: ServerResponse): Promise<void> {
   const body = await readJsonBody(req);
   const target = typeof body === "object" && body !== null ? (body as Partial<RenameNoteRequest>).slug : undefined;
+  const newTitle = typeof body === "object" && body !== null ? (body as Partial<RenameNoteRequest>).title : undefined;
   if (typeof target !== "string" || target.length === 0) {
     sendJson(res, 400, { error: "expected { slug: string }" });
     return;
   }
-  // Both ends: the file disappears from one path and appears at another, and
-  // the watcher sees two events. Suppressing only the source would broadcast
-  // the arrival, which is the same feedback loop with an extra step.
-  //
-  // `slugify` on the destination, because that is what `renameNote` will
-  // apply before it touches the disk. Suppressing the *requested* string
-  // would open the window over `notes/Alpha Renamed.md` while the write went
-  // to `notes/alpha-renamed.md` — a suppression that is present, plausible
-  // and useless, which is worse than an absent one.
+  const oldFolder = slug.includes("/") ? slug.split("/").slice(0, -1).join("/") : "";
+  const targetSlug = /[\/\\]/.test(target)
+    ? slugifyPath(target)
+    : oldFolder.length > 0
+    ? `${oldFolder}/${slugify(target)}`
+    : slugify(target);
+
   suppressSlug(deps, slug);
-  suppressSlug(deps, slugify(target));
-  await sendMutation(deps, await renameNote(deps.vaultRoot, slug, target), res);
+  suppressSlug(deps, targetSlug);
+  await sendMutation(deps, await renameNote(deps.vaultRoot, slug, target, undefined, newTitle), res);
 }
 
 async function moveNoteToFolderHandler(
