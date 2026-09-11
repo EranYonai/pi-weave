@@ -16,6 +16,19 @@ export function slugify(title: string): string {
 }
 
 /**
+ * Slugify each segment of a relative path while preserving directory separators.
+ */
+export function slugifyPath(path: string): string {
+  const parts = path
+    .split(/[\/\\]+/)
+    .map((s) => s.trim())
+    .filter((s) => s.length > 0)
+    .map(slugify)
+    .filter((s) => s.length > 0);
+  return parts.length > 0 ? parts.join("/") : "note";
+}
+
+/**
  * Find a free slug in the vault given a desired base, appending -2, -3, ...
  * `exists` is injected so this stays pure and trivially testable.
  */

@@ -82,20 +82,36 @@
 import { createHash } from "node:crypto";
 import { readFile } from "node:fs/promises";
 import type { IncomingMessage, ServerResponse } from "node:http";
+import { join } from "node:path";
+import { NOTES_DIR } from "../../core/paths";
 import type { WorkspaceSnapshot } from "../../core/cache/workspace";
 import { WorkspaceCache } from "../../core/cache/workspace";
 import { readOkfFileForView } from "../../core/graph/current";
 import type { GraphModel as CoreGraphModel } from "../../core/graph/model";
 import { openNoteInEditor } from "../../core/openInEditor";
 import type { MutationResult, RevisionedNote } from "../../core/vault";
-import { slugify } from "../../core/slug";
-import { deleteNote, getNoteWithRevision, renameNote, resolveNotePath, searchNotes, updateNote } from "../../core/vault";
+import { slugify, slugifyPath } from "../../core/slug";
+import {
+  createFolder,
+  deleteFolder,
+  deleteNote,
+  getNoteWithRevision,
+  moveNoteToFolder,
+  renameFolder,
+  renameNote,
+  resolveNotePath,
+  searchNotes,
+  updateNote,
+} from "../../core/vault";
 import { deriveTagIndex, type TaggedNote } from "../../core/view/links";
 import type {
   ChangeEvent,
   ConflictPayload,
+  CreateFolderRequest,
+  CreateFolderResult,
   DeleteNoteResult,
   GraphPayload,
+  MoveNoteRequest,
   NotePayload,
   OkfFilePayload,
   OpenResult,
@@ -499,6 +515,20 @@ async function route(
   if (method === "GET" && path === "/") return sendShell(deps, res);
   if (method === "GET" && path === "/app.js") return sendBundle(deps, res);
   if (method === "GET" && path === "/api/graph") return sendGraph(deps, req, res);
+  if (path === "/api/folder" || path.startsWith("/api/folder/")) {
+    if (method === "POST" && path.endsWith("/rename")) {
+      await handleRenameFolder(deps, path, req, res);
+      return;
+    }
+    if (method === "POST" && path === "/api/folder") {
+      await handleCreateFolder(deps, req, res);
+      return;
+    }
+    if (method === "DELETE") {
+      await handleDeleteFolder(deps, path, req, res);
+      return;
+    }
+  }
   if (path.startsWith("/api/note/")) {
     const handled = await routeNote(deps, method, path.slice("/api/note/".length), req, res);
     if (handled) return;
@@ -671,6 +701,7 @@ function normalizeEtag(value: string): string {
  * `resolveNotePath` remains the traversal guard for whatever slug arrives.
  */
 const renameSuffix = "/rename";
+const moveSuffix = "/move";
 
 async function routeNote(
   deps: RouteDeps,
@@ -679,11 +710,16 @@ async function routeNote(
   req: IncomingMessage,
   res: ServerResponse,
 ): Promise<boolean> {
-  // One sub-resource, matched at the end: a nested slug can itself contain
+  // Sub-resources matched at the end: a nested slug can itself contain
   // slashes, so the split is anchored at the end, not the first slash.
   const isRename = target.endsWith(renameSuffix);
-  const slug = isRename ? target.slice(0, target.length - renameSuffix.length) : target;
-  const rest = isRename ? renameSuffix : "";
+  const isMove = target.endsWith(moveSuffix);
+  const slug = isRename
+    ? target.slice(0, target.length - renameSuffix.length)
+    : isMove
+    ? target.slice(0, target.length - moveSuffix.length)
+    : target;
+  const rest = isRename ? renameSuffix : isMove ? moveSuffix : "";
 
   if (rest === "" && method === "GET") {
     await sendNote(deps, slug, res);
@@ -699,6 +735,10 @@ async function routeNote(
   }
   if (rest === "/rename" && method === "POST") {
     await moveNote(deps, slug, req, res);
+    return true;
+  }
+  if (rest === "/move" && method === "POST") {
+    await moveNoteToFolderHandler(deps, slug, req, res);
     return true;
   }
   return false;
@@ -847,22 +887,130 @@ async function saveNote(deps: RouteDeps, slug: string, req: IncomingMessage, res
 async function moveNote(deps: RouteDeps, slug: string, req: IncomingMessage, res: ServerResponse): Promise<void> {
   const body = await readJsonBody(req);
   const target = typeof body === "object" && body !== null ? (body as Partial<RenameNoteRequest>).slug : undefined;
+  const newTitle = typeof body === "object" && body !== null ? (body as Partial<RenameNoteRequest>).title : undefined;
   if (typeof target !== "string" || target.length === 0) {
     sendJson(res, 400, { error: "expected { slug: string }" });
     return;
   }
-  // Both ends: the file disappears from one path and appears at another, and
-  // the watcher sees two events. Suppressing only the source would broadcast
-  // the arrival, which is the same feedback loop with an extra step.
-  //
-  // `slugify` on the destination, because that is what `renameNote` will
-  // apply before it touches the disk. Suppressing the *requested* string
-  // would open the window over `notes/Alpha Renamed.md` while the write went
-  // to `notes/alpha-renamed.md` — a suppression that is present, plausible
-  // and useless, which is worse than an absent one.
+  const oldFolder = slug.includes("/") ? slug.split("/").slice(0, -1).join("/") : "";
+  const targetSlug = /[\/\\]/.test(target)
+    ? slugifyPath(target)
+    : oldFolder.length > 0
+    ? `${oldFolder}/${slugify(target)}`
+    : slugify(target);
+
   suppressSlug(deps, slug);
-  suppressSlug(deps, slugify(target));
-  await sendMutation(deps, await renameNote(deps.vaultRoot, slug, target), res);
+  suppressSlug(deps, targetSlug);
+  await sendMutation(deps, await renameNote(deps.vaultRoot, slug, target, undefined, newTitle), res);
+}
+
+async function moveNoteToFolderHandler(
+  deps: RouteDeps,
+  slug: string,
+  req: IncomingMessage,
+  res: ServerResponse,
+): Promise<void> {
+  const body = await readJsonBody(req);
+  const targetFolder =
+    typeof body === "object" && body !== null
+      ? (body as Partial<MoveNoteRequest>).targetFolder ?? null
+      : null;
+  suppressSlug(deps, slug);
+  const result = await moveNoteToFolder(deps.vaultRoot, slug, targetFolder);
+  if (result.ok) {
+    suppressSlug(deps, result.note.slug);
+  }
+  await sendMutation(deps, result, res);
+}
+
+async function handleCreateFolder(deps: RouteDeps, req: IncomingMessage, res: ServerResponse): Promise<void> {
+  const body = await readJsonBody(req);
+  const path =
+    typeof body === "object" && body !== null
+      ? ((body as Partial<CreateFolderRequest>).path ?? (body as { name?: string }).name)
+      : undefined;
+  if (typeof path !== "string" || path.trim().length === 0) {
+    sendJson(res, 400, { error: "expected { path: string }" });
+    return;
+  }
+  const result = await createFolder(deps.vaultRoot, path);
+  if (!result.ok) {
+    if (result.reason === "collision") {
+      sendJson(res, 409, { error: "a file already exists with that path", reason: "collision" });
+      return;
+    }
+    sendJson(res, 400, { error: "invalid folder path", reason: "invalid-name" });
+    return;
+  }
+  sendJson(res, 200, { ok: true, path: result.path });
+}
+
+async function handleDeleteFolder(
+  deps: RouteDeps,
+  urlPath: string,
+  req: IncomingMessage,
+  res: ServerResponse,
+): Promise<void> {
+  let folderPath: string | undefined;
+  if (urlPath.startsWith("/api/folder/")) {
+    folderPath = decodeURIComponent(urlPath.slice("/api/folder/".length));
+  } else {
+    const body = await readJsonBody(req);
+    folderPath = typeof body === "object" && body !== null ? (body as { path?: string }).path : undefined;
+  }
+  if (typeof folderPath !== "string" || folderPath.trim().length === 0) {
+    sendJson(res, 400, { error: "expected { path: string }" });
+    return;
+  }
+  const result = await deleteFolder(deps.vaultRoot, folderPath);
+  if (!result.ok) {
+    if (result.reason === "invalid-name") {
+      sendJson(res, 400, { error: "invalid folder path", reason: "invalid-name" });
+      return;
+    }
+    sendJson(res, 404, { error: "no such folder" });
+    return;
+  }
+  deps.suppress?.(join(deps.vaultRoot, NOTES_DIR, folderPath));
+  sendJson(res, 200, { deleted: true });
+}
+
+async function handleRenameFolder(
+  deps: RouteDeps,
+  urlPath: string,
+  req: IncomingMessage,
+  res: ServerResponse,
+): Promise<void> {
+  const suffix = "/rename";
+  const oldPathRaw = urlPath.slice("/api/folder/".length, urlPath.length - suffix.length);
+  const oldPath = decodeURIComponent(oldPathRaw);
+  const body = await readJsonBody(req);
+  const newPath =
+    typeof body === "object" && body !== null
+      ? ((body as { newPath?: string; path?: string; target?: string }).newPath ??
+         (body as { path?: string }).path ??
+         (body as { target?: string }).target)
+      : undefined;
+  if (typeof newPath !== "string" || newPath.trim().length === 0) {
+    sendJson(res, 400, { error: "expected { newPath: string }" });
+    return;
+  }
+  const result = await renameFolder(deps.vaultRoot, oldPath, newPath);
+  if (!result.ok) {
+    if (result.reason === "collision") {
+      sendJson(res, 409, { error: "a folder or file already exists with that path", reason: "collision" });
+      return;
+    }
+    if (result.reason === "invalid-name") {
+      sendJson(res, 400, { error: "invalid folder path", reason: "invalid-name" });
+      return;
+    }
+    sendJson(res, 404, { error: "no such folder" });
+    return;
+  }
+  deps.suppress?.(join(deps.vaultRoot, NOTES_DIR, oldPath));
+  deps.suppress?.(join(deps.vaultRoot, NOTES_DIR, result.path));
+  sendJson(res, 200, { ok: true, path: result.path });
 }
 
 async function removeNote(deps: RouteDeps, slug: string, res: ServerResponse): Promise<void> {

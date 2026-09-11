@@ -257,7 +257,7 @@ describe("inferScope", () => {
     // Reusing `classifyPath` rather than re-deriving "is this a note?" is what
     // guarantees the watcher and the cache cannot disagree.
     expect(inferScope(vaultRoot, "okf.json", opts)).toBeNull();
-    expect(inferScope(vaultRoot, join(NOTES_DIR, "nested", "deep.md"), opts)).toBeNull();
+    expect(inferScope(vaultRoot, join(NOTES_DIR, "notes.txt"), opts)).toBeNull();
   });
 });
 

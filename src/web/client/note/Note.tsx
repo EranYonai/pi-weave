@@ -54,6 +54,7 @@ import {
   EMPTY_PREVIEW,
   PREVIEW_ID,
   WIKILINK_ATTR,
+  hasTextSelection,
   noteEmptyMessage,
   noteHeader,
   previewAnchorOf,
@@ -101,11 +102,22 @@ export interface NoteProps {
  * rides the `title` attribute so the icon never has to explain itself on
  * screen.
  */
-function Header({ view, open }: { view: NoteHeaderView; open: (() => void) | null }) {
+function Header({
+  view,
+  open,
+}: {
+  view: NoteHeaderView;
+  open: (() => void) | null;
+}) {
   return (
     <header class="weave-note-head">
       <h3 class="weave-note-title">{view.title}</h3>
       <p class="weave-note-meta">
+        {open === null ? null : (
+          <button type="button" class="weave-note-open" title={OPEN_HINT} aria-label={OPEN_LABEL} onClick={open}>
+            <span class="weave-note-open-mark" aria-hidden="true" dangerouslySetInnerHTML={{ __html: OPEN_ICON }} />
+          </button>
+        )}
         <span class={`weave-prov weave-prov-${view.provenance}`} title={view.provenanceTitle}>
           {view.provenanceGlyph} {view.provenance}
         </span>
@@ -115,11 +127,6 @@ function Header({ view, open }: { view: NoteHeaderView; open: (() => void) | nul
         <span class="weave-note-time" title={view.createdIso}>
           {CREATED_WORD} {view.created}
         </span>
-        {open === null ? null : (
-          <button type="button" class="weave-note-open" title={OPEN_HINT} aria-label={OPEN_LABEL} onClick={open}>
-            <span class="weave-note-open-mark" aria-hidden="true" dangerouslySetInnerHTML={{ __html: OPEN_ICON }} />
-          </button>
-        )}
       </p>
       <p class="weave-note-tags">
         {view.tags.map((tag) => (
@@ -219,7 +226,10 @@ export function Note(props: NoteProps) {
   const header = noteHeader(note, props.now);
   return (
     <article key={note.slug} class={`weave-note weave-note-${header.provenance}`}>
-      <Header view={header} open={toolbar === null ? null : () => props.send({ type: "open" })} />
+      <Header
+        view={header}
+        open={toolbar === null ? null : () => props.send({ type: "open" })}
+      />
       {toolbar === null ? null : <EditorBar toolbar={toolbar} {...shell} />}
       {toolbar !== null && toolbar.editing ? (
         <Editor toolbar={toolbar} {...shell} />
@@ -255,6 +265,15 @@ export function Note(props: NoteProps) {
           }}
           onBlur={() => dispatch({ type: "hide" })}
           onClick={(event) => {
+            // Selecting text to copy (or mouse drag) must not flip into edit
+            // mode or trigger wikilink navigation. Only a clean click with no
+            // active selection routes the gesture.
+            const selection =
+              typeof window !== "undefined" && typeof window.getSelection === "function"
+                ? window.getSelection()
+                : null;
+            if (hasTextSelection(selection)) return;
+
             // A wikilink carries no href, so nothing is navigating; this only
             // has to route the click onto the §1.3 context bus. Anywhere else
             // on the page *is* the edit affordance: a click on the prose opens

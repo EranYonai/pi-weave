@@ -137,6 +137,112 @@ export function collapse(state: TreeViewState, id: string): TreeViewState {
   return { ...state, expanded };
 }
 
+// --- drag & drop and folder helpers -------------------------------------------
+
+export const FOLDER_BTN_HINT = "Create a new folder in the vault";
+export const FOLDER_PLACEHOLDER = "Folder name…";
+
+/** True when a tree row can accept dropped notes (the vault root or a folder). */
+export function isDropTarget(id: string): boolean {
+  return id === "vault" || id.startsWith("vfolder:");
+}
+
+/** Extract folder path relative to notes/ from a drop target row id, or null for root. */
+export function folderPathFromId(id: string): string | null {
+  if (id === "vault") return null;
+  if (id.startsWith("vfolder:")) return id.slice("vfolder:".length);
+  return null;
+}
+
+/** True when a tree row represents a note that can be dragged into folders. */
+export function isDraggableNote(kind: WireNodeKind, id: string): boolean {
+  return kind === "note" && id.startsWith("note:");
+}
+
+/** Target descriptor for a deletable row (vault note or folder). */
+export type DeletableTarget =
+  | { readonly type: "note"; readonly slug: string }
+  | { readonly type: "folder"; readonly path: string };
+
+/** Extract deletable target descriptor, or null if the row is protected / non-deletable. */
+export function deletableTarget(id: string): DeletableTarget | null {
+  if (id.startsWith("note:")) return { type: "note", slug: id.slice("note:".length) };
+  if (id.startsWith("vfolder:")) return { type: "folder", path: id.slice("vfolder:".length) };
+  return null;
+}
+
+// --- context menu -------------------------------------------------------------
+
+export type TreeContextMenuItem =
+  | {
+      readonly kind: "action";
+      readonly id: string;
+      readonly label: string;
+      readonly icon?: string;
+      readonly destructive?: boolean;
+    }
+  | { readonly kind: "separator" };
+
+export interface TreeContextMenuState {
+  readonly x: number;
+  readonly y: number;
+  readonly rowId: string;
+  readonly rowLabel: string;
+  readonly kind: WireNodeKind;
+}
+
+/** Actions available in the context menu for a given tree row. */
+export function contextMenuItemsForRow(rowId: string, kind: WireNodeKind): readonly TreeContextMenuItem[] {
+  if (rowId === "vault") {
+    return [
+      { kind: "action", id: "new-folder", label: "New folder", icon: "📁" },
+      { kind: "separator" },
+      { kind: "action", id: "collapse-all", label: "Collapse all" },
+    ];
+  }
+  if (rowId.startsWith("vfolder:")) {
+    return [
+      { kind: "action", id: "new-subfolder", label: "New subfolder…", icon: "📁" },
+      { kind: "action", id: "rename-folder", label: "Rename folder…", icon: "✏️" },
+      { kind: "separator" },
+      { kind: "action", id: "delete-folder", label: "Delete folder", icon: "🗑", destructive: true },
+    ];
+  }
+  if (kind === "note" && rowId.startsWith("note:")) {
+    return [
+      { kind: "action", id: "open", label: "Open note", icon: "📄" },
+      { kind: "action", id: "rename", label: "Rename note…", icon: "✏️" },
+      { kind: "separator" },
+      { kind: "action", id: "delete-note", label: "Delete note", icon: "🗑", destructive: true },
+    ];
+  }
+  if (rowId.startsWith("module:") || rowId.startsWith("file:") || rowId.startsWith("entryPoint:")) {
+    return [{ kind: "action", id: "copy-id", label: "Copy node id", icon: "📋" }];
+  }
+  return [];
+}
+
+/** Calculate clamped viewport placement for the context menu. */
+export function contextMenuPlacement(
+  x: number,
+  y: number,
+  menuWidth: number,
+  menuHeight: number,
+  viewportWidth: number,
+  viewportHeight: number,
+  margin = 8,
+): { x: number; y: number } {
+  let left = x;
+  let top = y;
+  if (left + menuWidth > viewportWidth - margin) {
+    left = Math.max(margin, viewportWidth - menuWidth - margin);
+  }
+  if (top + menuHeight > viewportHeight - margin) {
+    top = Math.max(margin, viewportHeight - menuHeight - margin);
+  }
+  return { x: left, y: top };
+}
+
 /**
  * Set the substring filter.
  *

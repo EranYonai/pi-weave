@@ -316,6 +316,8 @@ body{font-size:var(--weave-px-base)}
   border:1px solid var(--weave-line-strong);border-radius:var(--weave-radius);
 }
 .weave-chip:hover{color:var(--weave-fg);border-color:var(--weave-accent)}
+.weave-chip-bad{color:var(--weave-bad);border-color:var(--weave-bad)}
+.weave-chip-bad:hover{color:var(--weave-fg);background:var(--weave-bad);border-color:var(--weave-bad)}
 .weave-rows{
   flex:1;min-height:0;overflow:auto;margin:0;padding:3px 0;list-style:none;
 }
@@ -327,6 +329,20 @@ body{font-size:var(--weave-px-base)}
   cursor:default;white-space:nowrap;
 }
 .weave-row:hover{background:var(--weave-line)}
+.weave-row.weave-row-droptarget{
+  background:var(--weave-new);outline:1px dashed var(--weave-accent);outline-offset:-1px;
+}
+.weave-tree-new-folder{
+  display:flex;align-items:center;gap:6px;padding:4px var(--weave-gutter);
+  border-bottom:1px solid var(--weave-line);background:var(--weave-panel);
+}
+.weave-row-del{
+  display:none;margin-left:auto;padding:0 4px;font:inherit;font-size:var(--weave-px-row);
+  line-height:1;color:var(--weave-faint);background:none;border:0;cursor:pointer;
+  border-radius:var(--weave-radius);
+}
+.weave-row:hover .weave-row-del{display:inline-flex;align-items:center}
+.weave-row-del:hover{color:var(--weave-bad);background:var(--weave-panel)}
 /* A hover changes two things, in this order: the ground appears under the
    row, then the label steps up to fg. The second half is what stops the
    hover from reading as a stray grey rectangle — the row answers the pointer
@@ -429,7 +445,7 @@ body{font-size:var(--weave-px-base)}
    the \`title\`/\`aria-label\` (\`editor.model.ts\`'s OPEN_HINT/OPEN_LABEL), and
    the control is quiet until the pointer asks for it. */
 .weave-note-open{
-  margin-left:auto;display:inline-flex;align-items:center;justify-content:center;
+  display:inline-flex;align-items:center;justify-content:center;
   width:22px;height:22px;padding:0;font:inherit;color:var(--weave-faint);
   background:none;border:0;border-radius:var(--weave-radius);cursor:pointer;
 }
@@ -721,11 +737,31 @@ body{font-size:var(--weave-px-base)}
 @media (prefers-color-scheme: light){
   :root:not([data-weave-theme="dark"]) .weave-scrim{background:rgba(76,79,105,.30)}
 }
-.weave-palette,.weave-help{
+.weave-palette,.weave-help,.weave-dialog{
   display:flex;flex-direction:column;width:100%;max-width:560px;max-height:72vh;
   overflow:hidden;background:var(--weave-panel);color:var(--weave-fg);
   border:1px solid var(--weave-line-strong);border-radius:var(--weave-radius-pop);
 }
+.weave-dialog{max-width:380px;padding:16px;overflow:visible}
+.weave-dialog-title{margin:0 0 8px;font-size:var(--weave-px-subhead);font-weight:600;color:var(--weave-fg)}
+.weave-dialog-body{margin:0 0 16px;font-size:var(--weave-px-row);line-height:1.5;color:var(--weave-dim)}
+.weave-dialog-input{width:100%;margin-bottom:12px;box-sizing:border-box}
+.weave-dialog-actions{display:flex;justify-content:flex-end;gap:8px}
+.weave-menu-backdrop{position:fixed;inset:0;z-index:9}
+.weave-menu{
+  position:fixed;left:var(--weave-menu-x,0);top:var(--weave-menu-y,0);z-index:10;
+  min-width:160px;padding:4px 0;background:var(--weave-panel);
+  border:1px solid var(--weave-line-strong);border-radius:var(--weave-radius-pop);
+}
+.weave-menu-item{
+  display:flex;align-items:center;gap:8px;width:100%;height:26px;padding:0 10px;
+  font:inherit;font-size:var(--weave-px-row);text-align:left;color:var(--weave-fg);
+  background:none;border:0;cursor:pointer;white-space:nowrap;
+}
+.weave-menu-item:hover{background:var(--weave-line)}
+.weave-menu-item-bad{color:var(--weave-bad)}
+.weave-menu-item-bad:hover{color:var(--weave-bad);background:var(--weave-line)}
+.weave-menu-sep{height:1px;margin:4px 0;background:var(--weave-line);border:0}
 .weave-palette-input{
   flex:none;height:34px;padding:0 11px;font:inherit;font-size:var(--weave-px-subhead);
   color:var(--weave-fg);background:transparent;border:0;

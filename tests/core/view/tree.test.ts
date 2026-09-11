@@ -63,6 +63,35 @@ describe("treeRows", () => {
     expect(rows.find((r) => r.id === "repository")?.expanded).toBe(true);
   });
 
+  it("sorts folders before notes in the vault view", () => {
+    const model = graph(
+      [
+        node("vault", "vault", "Vault", null),
+        node("note:aaa", "note", "Aaa", "human"),
+        node("vfolder:zzz-folder", "module", "zzz-folder", null, { path: "zzz-folder" }),
+        node("vfolder:aaa-folder", "module", "aaa-folder", null, { path: "aaa-folder" }),
+        node("note:bbb", "note", "Bbb", "human"),
+      ],
+      [
+        { source: "vault", target: "note:aaa", kind: "contains" },
+        { source: "vault", target: "vfolder:zzz-folder", kind: "contains" },
+        { source: "vault", target: "vfolder:aaa-folder", kind: "contains" },
+        { source: "vault", target: "note:bbb", kind: "contains" },
+      ],
+    );
+    const rows = treeRows(model, treeState({ expanded: new Set(["vault"]) }));
+    const ids = rows.map((r) => r.id);
+    const idxAaaFolder = ids.indexOf("vfolder:aaa-folder");
+    const idxZzzFolder = ids.indexOf("vfolder:zzz-folder");
+    const idxAaaNote = ids.indexOf("note:aaa");
+    const idxBbbNote = ids.indexOf("note:bbb");
+
+    // Both folders come before notes, and each group is sorted alphabetically
+    expect(idxAaaFolder).toBeLessThan(idxZzzFolder);
+    expect(idxZzzFolder).toBeLessThan(idxAaaNote);
+    expect(idxAaaNote).toBeLessThan(idxBbbNote);
+  });
+
   it("collapses unexpanded branches", () => {
     const model = graph(
       [

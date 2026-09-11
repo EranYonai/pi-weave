@@ -33,6 +33,14 @@ import {
   initialTreeView,
   internalsHint,
   internalsLabel,
+  isDraggableNote,
+  isDropTarget,
+  folderPathFromId,
+  deletableTarget,
+  contextMenuItemsForRow,
+  contextMenuPlacement,
+  FOLDER_BTN_HINT,
+  FOLDER_PLACEHOLDER,
   isMuted,
   isSessionNote,
   kindIcon,
@@ -832,5 +840,75 @@ describe("rowCountLabel", () => {
   it("says `1 row` for one", () => {
     const one = payloadOf([node("vault", "vault", "Vault")], []);
     expect(rowCountLabel(rowsFor(one, initialTreeView()))).toBe("1 row");
+  });
+});
+
+describe("drag & drop and folder helpers", () => {
+  it("recognizes drop targets", () => {
+    expect(isDropTarget("vault")).toBe(true);
+    expect(isDropTarget("vfolder:projects")).toBe(true);
+    expect(isDropTarget("vfolder:work/deep")).toBe(true);
+    expect(isDropTarget("note:alpha")).toBe(false);
+    expect(isDropTarget("module:src")).toBe(false);
+  });
+
+  it("extracts folder path from drop target id", () => {
+    expect(folderPathFromId("vault")).toBeNull();
+    expect(folderPathFromId("vfolder:projects")).toBe("projects");
+    expect(folderPathFromId("vfolder:work/deep")).toBe("work/deep");
+    expect(folderPathFromId("other:id")).toBeNull();
+  });
+
+  it("identifies draggable notes", () => {
+    expect(isDraggableNote("note", "note:alpha")).toBe(true);
+    expect(isDraggableNote("module", "vfolder:projects")).toBe(false);
+    expect(isDraggableNote("vault", "vault")).toBe(false);
+  });
+
+  it("exports folder creation button constants", () => {
+    expect(typeof FOLDER_BTN_HINT).toBe("string");
+    expect(typeof FOLDER_PLACEHOLDER).toBe("string");
+  });
+
+  it("identifies deletable targets", () => {
+    expect(deletableTarget("note:my-note")).toEqual({ type: "note", slug: "my-note" });
+    expect(deletableTarget("note:work/my-note")).toEqual({ type: "note", slug: "work/my-note" });
+    expect(deletableTarget("vfolder:work")).toEqual({ type: "folder", path: "work" });
+    expect(deletableTarget("vfolder:work/sub")).toEqual({ type: "folder", path: "work/sub" });
+    expect(deletableTarget("vault")).toBeNull();
+    expect(deletableTarget("repository")).toBeNull();
+    expect(deletableTarget("module:src")).toBeNull();
+  });
+
+  it("provides context menu items for different row kinds", () => {
+    const noteItems = contextMenuItemsForRow("note:foo", "note");
+    expect(noteItems.some((i) => i.kind === "action" && i.id === "open")).toBe(true);
+    expect(noteItems.some((i) => i.kind === "action" && i.id === "rename")).toBe(true);
+    expect(noteItems.some((i) => i.kind === "action" && i.id === "delete-note")).toBe(true);
+
+    const folderItems = contextMenuItemsForRow("vfolder:work", "module");
+    expect(folderItems.some((i) => i.kind === "action" && i.id === "new-subfolder")).toBe(true);
+    expect(folderItems.some((i) => i.kind === "action" && i.id === "rename-folder")).toBe(true);
+    expect(folderItems.some((i) => i.kind === "action" && i.id === "delete-folder")).toBe(true);
+
+    const vaultItems = contextMenuItemsForRow("vault", "vault");
+    expect(vaultItems.some((i) => i.kind === "action" && i.id === "new-folder")).toBe(true);
+    expect(vaultItems.some((i) => i.kind === "action" && i.id === "collapse-all")).toBe(true);
+
+    const repoItems = contextMenuItemsForRow("module:src", "module");
+    expect(repoItems.some((i) => i.kind === "action" && i.id === "copy-id")).toBe(true);
+
+    expect(contextMenuItemsForRow("unknown:item", "external")).toEqual([]);
+  });
+
+  it("calculates clamped placement for context menu", () => {
+    // Normal case: plenty of room
+    const normal = contextMenuPlacement(100, 100, 150, 100, 1000, 800);
+    expect(normal).toEqual({ x: 100, y: 100 });
+
+    // Edge overflow: clamps to viewport minus margin
+    const overflow = contextMenuPlacement(950, 750, 150, 100, 1000, 800, 8);
+    expect(overflow.x).toBe(1000 - 150 - 8);
+    expect(overflow.y).toBe(800 - 100 - 8);
   });
 });

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { slugify, uniqueSlug } from "../../src/core/slug";
+import { slugify, slugifyPath, uniqueSlug } from "../../src/core/slug";
 
 describe("slugify", () => {
   it("lowercases and dashes basic titles", () => {
@@ -21,6 +21,25 @@ describe("slugify", () => {
   it("falls back to 'note' when nothing usable remains", () => {
     expect(slugify("🔥🔥")).toBe("note");
     expect(slugify("   ")).toBe("note");
+  });
+});
+
+describe("slugifyPath", () => {
+  it("slugifies each segment preserving forward slash", () => {
+    expect(slugifyPath("Coverageathon/My Note")).toBe("coverageathon/my-note");
+    expect(slugifyPath("Folder 1/Folder 2/Note")).toBe("folder-1/folder-2/note");
+  });
+
+  it("handles single-segment paths identically to slugify", () => {
+    expect(slugifyPath("My Note")).toBe("my-note");
+  });
+
+  it("filters empty segments from leading or trailing slashes", () => {
+    expect(slugifyPath("/a//b/")).toBe("a/b");
+  });
+
+  it("falls back to note for empty input", () => {
+    expect(slugifyPath("   ")).toBe("note");
   });
 });
 

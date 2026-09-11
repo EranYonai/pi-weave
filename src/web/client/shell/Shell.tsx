@@ -25,6 +25,7 @@
 
 import { useEffect, useMemo, useRef, useState } from "preact/hooks";
 import { fetchJson } from "../api.dom";
+import { deleteNote } from "../api";
 import type { ColorScheme } from "../graph/graph.model";
 import { schemeOf, watchScheme } from "../graph/scheme";
 import { createSigmaRenderer } from "../graph/renderer.dom";
@@ -248,6 +249,7 @@ export function Shell(props: ShellProps) {
         renderer={createSigmaRenderer}
         storage={localStorage}
         host={window}
+        fetch={fetchJson}
         fit={fit}
       />
       {/*

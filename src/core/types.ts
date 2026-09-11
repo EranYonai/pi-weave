@@ -174,6 +174,7 @@ export interface VaultStatus {
   root: string;
   exists: boolean;
   noteCount: number;
+  folders?: string[];
 }
 
 /** Status of the repository half of the workspace. */

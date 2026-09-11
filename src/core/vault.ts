@@ -11,7 +11,7 @@ import {
 } from "./frontmatter";
 import { withMutationQueue } from "./mutex";
 import { NOTES_DIR, OKF_MANIFEST } from "./paths";
-import { slugify, uniqueSlug } from "./slug";
+import { slugify, slugifyPath, uniqueSlug } from "./slug";
 import type {
   Note,
   NoteFrontMatter,
@@ -563,16 +563,28 @@ export async function renameNote(
   oldSlug: string,
   newSlug: string,
   now: Date = new Date(),
+  newTitle?: string,
 ): Promise<MutationResult> {
   const from = resolveNotePath(root, oldSlug);
   if (!from) return { ok: false, reason: "missing" };
-  const target = slugify(newSlug);
+
+  const rawTarget = newSlug.trim();
+  if (rawTarget.length === 0) return { ok: false, reason: "missing" };
+
+  const oldFolder = oldSlug.includes("/") ? oldSlug.split("/").slice(0, -1).join("/") : "";
+  const hasSlash = /[\/\\]/.test(rawTarget);
+  const target = hasSlash
+    ? slugifyPath(rawTarget)
+    : oldFolder.length > 0
+    ? `${oldFolder}/${slugify(rawTarget)}`
+    : slugify(rawTarget);
+
   const to = resolveNotePath(root, target);
-  // `slugify` cannot emit a traversing slug, but the guard is applied anyway:
+  // `slugify`/`slugifyPath` cannot emit a traversing slug, but the guard is applied anyway:
   // "this input is already safe" is exactly the assumption that stops being
   // true when someone changes the other function.
   if (!to) return { ok: false, reason: "missing" };
-  if (target === oldSlug) {
+  if (target === oldSlug && (newTitle === undefined || newTitle.trim().length === 0)) {
     const note = await getNote(root, oldSlug);
     return note === null ? { ok: false, reason: "missing" } : { ok: true, note };
   }
@@ -586,9 +598,16 @@ export async function renameNote(
     // asked hides it. `fs.rename` would overwrite the destination outright.
     if (await exists(to)) return { ok: false, reason: "collision", slug: target };
 
-    await fs.rename(from, to);
+    await fs.mkdir(dirname(to), { recursive: true });
+    if (from !== to) {
+      await fs.rename(from, to);
+    }
+
+    const title =
+      newTitle !== undefined && newTitle.trim().length > 0 ? newTitle.trim() : note.title;
+
     // The slug is the note's identity, so a rename is a change to the note.
-    const meta: NoteMeta = { ...note, updated: now.toISOString() };
+    const meta: NoteMeta = { ...note, title, updated: now.toISOString() };
     return { ok: true, note: await writeNote(to, target, meta, note.body, note.frontMatter) };
   });
 }
@@ -624,6 +643,202 @@ export async function deleteNote(root: string, slug: string): Promise<DeleteResu
       return { ok: false, reason: "missing" };
     }
   });
+}
+
+/**
+ * Move a note to a folder (or root when targetFolder is null/empty/"vault").
+ * Automatically ensures the note carries the folder's name in its #tags
+ * so that notes filed in the folder are graph-connected.
+ */
+export async function moveNoteToFolder(
+  root: string,
+  slug: string,
+  targetFolder: string | null,
+  now: Date = new Date(),
+): Promise<MutationResult> {
+  const from = resolveNotePath(root, slug);
+  if (!from) return { ok: false, reason: "missing" };
+
+  const noteBaseName = slug.split("/").pop() ?? slug;
+  let newSlug: string;
+  let folderTag: string | null = null;
+
+  if (targetFolder !== null && targetFolder.trim().length > 0 && targetFolder !== "vault") {
+    const cleanedFolder = targetFolder.trim().replace(/^[\/\\]+|[\/\\]+$/g, "");
+    const folderSegments = cleanedFolder.split(/[\/\\]+/).map(slugify).filter((s) => s.length > 0);
+    if (folderSegments.length === 0) return { ok: false, reason: "missing" };
+    const folderPath = folderSegments.join("/");
+    newSlug = `${folderPath}/${noteBaseName}`;
+    folderTag = folderSegments[folderSegments.length - 1] ?? null;
+  } else {
+    newSlug = noteBaseName;
+  }
+
+  const to = resolveNotePath(root, newSlug);
+  if (!to) return { ok: false, reason: "missing" };
+
+  return withNoteLocks([from, to], async () => {
+    const note = await getNote(root, slug);
+    if (!note) return { ok: false, reason: "missing" };
+
+    if (newSlug !== slug && (await exists(to))) {
+      return { ok: false, reason: "collision", slug: newSlug };
+    }
+
+    await fs.mkdir(dirname(to), { recursive: true });
+    if (from !== to) {
+      await fs.rename(from, to);
+    }
+
+    const tags = [...note.tags];
+    if (folderTag && !tags.includes(folderTag)) {
+      tags.push(folderTag);
+    }
+
+    const meta: NoteMeta = {
+      ...note,
+      tags,
+      updated: now.toISOString(),
+    };
+    const written = await writeNote(to, newSlug, meta, note.body, note.frontMatter);
+    return { ok: true, note: written };
+  });
+}
+
+/**
+ * Create a folder under the vault's notes directory.
+ */
+export async function createFolder(
+  root: string,
+  folderName: string,
+): Promise<{ ok: true; path: string } | { ok: false; reason: "invalid-name" | "collision" }> {
+  await ensureVault(root);
+  const trimmed = folderName.trim().replace(/^[\/\\]+|[\/\\]+$/g, "");
+  if (trimmed.length === 0) return { ok: false, reason: "invalid-name" };
+  const segments = trimmed.split(/[\/\\]+/).map(slugify).filter((s) => s.length > 0);
+  if (segments.length === 0) return { ok: false, reason: "invalid-name" };
+  const relPath = segments.join("/");
+  const notesDir = join(root, NOTES_DIR);
+  const fullPath = join(notesDir, relPath);
+  const rel = relative(notesDir, fullPath);
+  if (rel.startsWith("..") || isAbsolute(rel) || rel.length === 0) {
+    return { ok: false, reason: "invalid-name" };
+  }
+  try {
+    const stat = await fs.stat(fullPath);
+    if (!stat.isDirectory()) return { ok: false, reason: "collision" };
+    return { ok: true, path: relPath };
+  } catch {
+    // does not exist yet
+  }
+  await fs.mkdir(fullPath, { recursive: true });
+  return { ok: true, path: relPath };
+}
+
+/**
+ * Delete a folder under <vault>/notes/.
+ * Deletes the directory and any notes/subdirectories within it.
+ */
+export async function deleteFolder(
+  root: string,
+  folderName: string,
+): Promise<{ ok: true } | { ok: false; reason: "invalid-name" | "missing" }> {
+  const trimmed = folderName.trim().replace(/^[\/\\]+|[\/\\]+$/g, "");
+  if (trimmed.length === 0) return { ok: false, reason: "invalid-name" };
+  const segments = trimmed.split(/[\/\\]+/).map(slugify).filter((s) => s.length > 0);
+  if (segments.length === 0) return { ok: false, reason: "invalid-name" };
+  const relPath = segments.join("/");
+  const notesDir = join(root, NOTES_DIR);
+  const fullPath = join(notesDir, relPath);
+  const rel = relative(notesDir, fullPath);
+  if (rel.startsWith("..") || isAbsolute(rel) || rel.length === 0) {
+    return { ok: false, reason: "invalid-name" };
+  }
+  try {
+    const stat = await fs.stat(fullPath);
+    if (!stat.isDirectory()) return { ok: false, reason: "invalid-name" };
+    await fs.rm(fullPath, { recursive: true, force: true });
+    return { ok: true };
+  } catch {
+    return { ok: false, reason: "missing" };
+  }
+}
+
+/**
+ * Rename a folder under <vault>/notes/.
+ * Moves the directory on disk and updates frontmatter #tags on all contained
+ * notes so the tag reflects the new folder name.
+ */
+export async function renameFolder(
+  root: string,
+  oldPath: string,
+  newPath: string,
+  now: Date = new Date(),
+): Promise<{ ok: true; path: string } | { ok: false; reason: "missing" | "collision" | "invalid-name" }> {
+  await ensureVault(root);
+  const cleanOld = oldPath.trim().replace(/^[\/\\]+|[\/\\]+$/g, "");
+  const cleanNew = newPath.trim().replace(/^[\/\\]+|[\/\\]+$/g, "");
+  if (cleanOld.length === 0 || cleanNew.length === 0) return { ok: false, reason: "invalid-name" };
+
+  const oldSegments = cleanOld.split(/[\/\\]+/).map(slugify).filter((s) => s.length > 0);
+  const newSegments = cleanNew.split(/[\/\\]+/).map(slugify).filter((s) => s.length > 0);
+  if (oldSegments.length === 0 || newSegments.length === 0) return { ok: false, reason: "invalid-name" };
+
+  const oldRel = oldSegments.join("/");
+  const newRel = newSegments.join("/");
+  if (oldRel === newRel) return { ok: true, path: oldRel };
+
+  const notesDir = join(root, NOTES_DIR);
+  const fromDir = join(notesDir, oldRel);
+  const toDir = join(notesDir, newRel);
+
+  const relFrom = relative(notesDir, fromDir);
+  const relTo = relative(notesDir, toDir);
+  if (relFrom.startsWith("..") || isAbsolute(relFrom) || relTo.startsWith("..") || isAbsolute(relTo)) {
+    return { ok: false, reason: "invalid-name" };
+  }
+
+  try {
+    const stat = await fs.stat(fromDir);
+    if (!stat.isDirectory()) return { ok: false, reason: "missing" };
+  } catch {
+    return { ok: false, reason: "missing" };
+  }
+
+  if (await exists(toDir)) {
+    return { ok: false, reason: "collision" };
+  }
+
+  await fs.mkdir(dirname(toDir), { recursive: true });
+  await fs.rename(fromDir, toDir);
+
+  const oldLeaf = oldSegments[oldSegments.length - 1]!;
+  const newLeaf = newSegments[newSegments.length - 1]!;
+  const updateNotesInDir = async (dir: string, prefix: string) => {
+    let entries;
+    try {
+      entries = await fs.readdir(dir, { withFileTypes: true });
+    } catch {
+      return;
+    }
+    for (const entry of entries) {
+      if (entry.isDirectory()) {
+        await updateNotesInDir(join(dir, entry.name), `${prefix}/${entry.name}`);
+      } else if (entry.isFile() && entry.name.endsWith(".md")) {
+        const noteSlug = `${prefix}/${entry.name.slice(0, -".md".length)}`;
+        const notePath = join(dir, entry.name);
+        const note = await getNote(root, noteSlug);
+        if (!note) continue;
+        const tags = note.tags.map((t) => (t === oldLeaf ? newLeaf : t));
+        if (!tags.includes(newLeaf)) tags.push(newLeaf);
+        const meta: NoteMeta = { ...note, tags, updated: now.toISOString() };
+        await writeNote(notePath, noteSlug, meta, note.body, note.frontMatter);
+      }
+    }
+  };
+  await updateNotesInDir(toDir, newRel);
+
+  return { ok: true, path: newRel };
 }
 
 // ---------------------------------------------------------------------------
@@ -832,6 +1047,28 @@ function byUpdatedDesc(a: { updated: string }, b: { updated: string }): number {
   return b.updated.localeCompare(a.updated);
 }
 
+export async function listNoteFolders(root: string): Promise<string[]> {
+  const dir = join(root, NOTES_DIR);
+  const out: string[] = [];
+  async function walk(prefix: string): Promise<void> {
+    let entries;
+    try {
+      entries = await fs.readdir(prefix.length > 0 ? join(dir, prefix) : dir, { withFileTypes: true });
+    } catch {
+      return;
+    }
+    for (const entry of entries) {
+      if (entry.isDirectory() && !entry.name.startsWith(".")) {
+        const folder = prefix.length > 0 ? `${prefix}/${entry.name}` : entry.name;
+        out.push(folder);
+        await walk(folder);
+      }
+    }
+  }
+  await walk("");
+  return out.sort();
+}
+
 /**
  * Everything one pass over the vault can tell you: every readable note with
  * its body, plus how many `.md` files exist.
@@ -848,18 +1085,24 @@ export interface VaultSnapshot {
    * `notes.length` can be smaller; this is the honest on-disk count.
    */
   fileCount: number;
+  /** Subdirectories present in <vault>/notes/, including empty ones. */
+  folders?: string[];
 }
 
 /** Read the whole vault in one pass: one readdir, one read per note. */
 export async function readVault(root: string): Promise<VaultSnapshot> {
-  const files = await listNoteFiles(root);
+  const [files, folders] = await Promise.all([listNoteFiles(root), listNoteFolders(root)]);
   const notes: Note[] = [];
   for (const file of files) {
     const note = await getNote(root, file.slice(0, -".md".length));
     if (!note) continue; // unreadable/malformed files are skipped, not fatal
     notes.push(note);
   }
-  return { notes: notes.sort(byUpdatedDesc), fileCount: files.length };
+  return {
+    notes: notes.sort(byUpdatedDesc),
+    fileCount: files.length,
+    ...(folders.length > 0 ? { folders } : {}),
+  };
 }
 
 /** One note's identity and change-detection stamp, without reading its content. */

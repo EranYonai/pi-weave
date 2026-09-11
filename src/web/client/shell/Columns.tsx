@@ -29,6 +29,7 @@ import type { ColorScheme } from "../graph/graph.model";
 import type { PositionStorage } from "../graph/positions";
 import type { RendererFactory } from "../graph/renderer";
 import type { SchemeHost } from "../graph/scheme";
+import type { FetchLike } from "../api";
 import type { EditorEvent, EditorPrompt, EditorToolbar } from "../note/editor.model";
 import { Note } from "../note/Note";
 import { Tree } from "../tree/Tree";
@@ -74,6 +75,7 @@ export interface ColumnsProps {
   renderer: RendererFactory;
   storage: PositionStorage;
   host: SchemeHost;
+  fetch?: FetchLike | undefined;
   /**
    * The scheme the shell resolved from the user's theme choice
    * (`shell/theme.model.ts`'s `effectiveScheme`), or `null` to let the column
@@ -106,7 +108,7 @@ function Column({ id, props }: { id: ColumnId; props: ColumnsProps }) {
   return (
     <section class={`weave-col weave-col-${id}`} aria-label={copy.title}>
       <h2 class="weave-col-title">{copy.title}</h2>
-      {id === "tree" ? <Tree graph={props.graph} selectedId={props.selectedId} onSelect={props.onSelect} now={props.now} /> : null}
+      {id === "tree" ? <Tree graph={props.graph} selectedId={props.selectedId} onSelect={props.onSelect} now={props.now} fetch={props.fetch} /> : null}
       {id === "note" ? (
         <Note
           note={props.note}

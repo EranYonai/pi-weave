@@ -267,6 +267,24 @@ export interface RenameNoteRequest {
    * as acceptable as a slug and both land on the same file name.
    */
   slug: string;
+  title?: string;
+}
+
+/** `POST /api/note/:slug/move` request body. */
+export interface MoveNoteRequest {
+  /** Target folder path relative to notes/, or null/empty/"vault" for root. */
+  readonly targetFolder: string | null;
+}
+
+/** `POST /api/folder` request body. */
+export interface CreateFolderRequest {
+  readonly path: string;
+}
+
+/** `POST /api/folder` response. */
+export interface CreateFolderResult {
+  readonly ok: true;
+  readonly path: string;
 }
 
 /** `DELETE /api/note/:slug` response. Hard delete — there is no trash. */

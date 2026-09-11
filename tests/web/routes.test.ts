@@ -1122,6 +1122,22 @@ describe("POST /api/note/:slug/rename", () => {
     await expect(readNoteFile(vaultRoot, "note")).resolves.toContain("Alpha Note");
   });
 
+  it("renames a nested note while keeping it in the same folder", async () => {
+    const { server, vaultRoot } = await bootWritable();
+    await post(server, "/api/folder", { path: "coverageathon" });
+    await post(server, "/api/note/alpha-note/move", { targetFolder: "coverageathon" });
+    const res = await post(server, "/api/note/coverageathon/alpha-note/rename", {
+      slug: "Beta Renamed",
+      title: "Beta Renamed",
+    });
+    expect(res.status).toBe(200);
+    const payload = (await res.json()) as NotePayload;
+    expect(payload.note.slug).toBe("coverageathon/beta-renamed");
+    expect(payload.note.title).toBe("Beta Renamed");
+    await expect(readNoteFile(vaultRoot, "coverageathon/beta-renamed")).resolves.toContain("Beta Renamed");
+    await expect(readNoteFile(vaultRoot, "coverageathon/alpha-note")).rejects.toThrow();
+  });
+
   it("400s a body that is not { slug: string }", async () => {
     const { server } = await bootWritable();
     for (const body of ["{}", '{"slug":1}', '{"slug":""}', "[]", "not json", ""]) {
@@ -1129,6 +1145,100 @@ describe("POST /api/note/:slug/rename", () => {
       expect(res.status, body).toBe(400);
       expect(await res.json()).toEqual({ error: "expected { slug: string }" });
     }
+  });
+});
+
+describe("POST /api/note/:slug/move", () => {
+  it("moves note to a folder and automatically adds the folder tag", async () => {
+    const { server, vaultRoot } = await bootWritable();
+    const res = await post(server, "/api/note/alpha-note/move", { targetFolder: "projects" });
+    expect(res.status).toBe(200);
+    const payload = (await res.json()) as NotePayload;
+    expect(payload.note.slug).toBe("projects/alpha-note");
+    expect(payload.note.tags).toContain("projects");
+    await expect(readNoteFile(vaultRoot, "projects/alpha-note")).resolves.toContain("Alpha Note");
+    await expect(readNoteFile(vaultRoot, "alpha-note")).rejects.toThrow();
+
+    // move back to root
+    const back = await post(server, "/api/note/projects/alpha-note/move", { targetFolder: null });
+    expect(back.status).toBe(200);
+    const backPayload = (await back.json()) as NotePayload;
+    expect(backPayload.note.slug).toBe("alpha-note");
+    await expect(readNoteFile(vaultRoot, "alpha-note")).resolves.toContain("Alpha Note");
+  });
+
+  it("404s for a missing source note", async () => {
+    const { server } = await bootWritable();
+    const res = await post(server, "/api/note/nonexistent/move", { targetFolder: "projects" });
+    expect(res.status).toBe(404);
+  });
+});
+
+describe("POST /api/folder", () => {
+  it("creates a folder under notes/", async () => {
+    const { server, vaultRoot } = await bootWritable();
+    const res = await post(server, "/api/folder", { path: "my-folder" });
+    expect(res.status).toBe(200);
+    expect(await res.json()).toEqual({ ok: true, path: "my-folder" });
+    const stat = await fs.stat(join(vaultRoot, "notes", "my-folder"));
+    expect(stat.isDirectory()).toBe(true);
+  });
+
+  it("400s an empty or invalid folder path", async () => {
+    const { server } = await bootWritable();
+    const res = await post(server, "/api/folder", { path: "   " });
+    expect(res.status).toBe(400);
+  });
+
+  it("409s if destination is an existing non-directory file", async () => {
+    const { server, vaultRoot } = await bootWritable();
+    await fs.writeFile(join(vaultRoot, "notes", "file-collision"), "content", "utf8");
+    const res = await post(server, "/api/folder", { path: "file-collision" });
+    expect(res.status).toBe(409);
+  });
+});
+
+describe("DELETE /api/folder", () => {
+  it("deletes a folder under notes/", async () => {
+    const { server, vaultRoot } = await bootWritable();
+    await post(server, "/api/folder", { path: "temp-folder" });
+    expect((await fs.stat(join(vaultRoot, "notes", "temp-folder"))).isDirectory()).toBe(true);
+
+    const res = await send(server, "DELETE", "/api/folder/temp-folder");
+    expect(res.status).toBe(200);
+    expect(await res.json()).toEqual({ deleted: true });
+    await expect(fs.stat(join(vaultRoot, "notes", "temp-folder"))).rejects.toThrow();
+  });
+
+  it("404s for a non-existent folder", async () => {
+    const { server } = await bootWritable();
+    const res = await send(server, "DELETE", "/api/folder/nonexistent");
+    expect(res.status).toBe(404);
+  });
+});
+
+describe("POST /api/folder/:path/rename", () => {
+  it("renames a folder and moves its contents", async () => {
+    const { server, vaultRoot } = await bootWritable();
+    await post(server, "/api/folder", { path: "source-dir" });
+    const res = await post(server, "/api/folder/source-dir/rename", { newPath: "dest-dir" });
+    expect(res.status).toBe(200);
+    expect(await res.json()).toEqual({ ok: true, path: "dest-dir" });
+    expect((await fs.stat(join(vaultRoot, "notes", "dest-dir"))).isDirectory()).toBe(true);
+    await expect(fs.stat(join(vaultRoot, "notes", "source-dir"))).rejects.toThrow();
+  });
+
+  it("404s for a non-existent folder", async () => {
+    const { server } = await bootWritable();
+    const res = await post(server, "/api/folder/nonexistent/rename", { newPath: "new-dest" });
+    expect(res.status).toBe(404);
+  });
+
+  it("400s an empty newPath", async () => {
+    const { server } = await bootWritable();
+    await post(server, "/api/folder", { path: "another-dir" });
+    const res = await post(server, "/api/folder/another-dir/rename", { newPath: "   " });
+    expect(res.status).toBe(400);
   });
 });
 

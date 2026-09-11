@@ -29,6 +29,11 @@ import {
   getNoteWithRevision,
   renameNote,
   updateNote,
+  createFolder,
+  deleteFolder,
+  moveNoteToFolder,
+  renameFolder,
+  listNoteFolders,
 } from "../../src/core/vault";
 import { makeTempDir } from "../helpers";
 
@@ -239,6 +244,23 @@ describe("renameNote", () => {
   it("slugifies the target, so a human title is accepted", async () => {
     const result = await renameNote(vault, "old-name", "A Much Better Name!", T1);
     expect(result.ok && result.note.slug).toBe("a-much-better-name");
+  });
+
+  it("preserves folder nesting when renaming a nested note and updates title", async () => {
+    await createFolder(vault, "coverageathon");
+    await addNote(vault, { title: "Alpha", body: "body" });
+    await moveNoteToFolder(vault, "alpha", "coverageathon");
+    expect(await getNote(vault, "coverageathon/alpha")).not.toBeNull();
+
+    const res = await renameNote(vault, "coverageathon/alpha", "Beta", T1, "Beta");
+    expect(res.ok).toBe(true);
+    if (!res.ok) return;
+    expect(res.note.slug).toBe("coverageathon/beta");
+    expect(res.note.title).toBe("Beta");
+    expect(await getNote(vault, "coverageathon/alpha")).toBeNull();
+    const loaded = await getNote(vault, "coverageathon/beta");
+    expect(loaded?.title).toBe("Beta");
+    expect(loaded?.slug).toBe("coverageathon/beta");
   });
 
   it("refuses a collision instead of overwriting or uniquifying", async () => {
@@ -514,5 +536,135 @@ describe("concurrent mutations serialize", () => {
     } else {
       expect(update.ok).toBe(false);
     }
+  });
+
+  describe("folders and moveNoteToFolder", () => {
+    it("creates folders and discovers them with listNoteFolders", async () => {
+      const created = await createFolder(vault, "projects");
+      expect(created.ok).toBe(true);
+      if (created.ok) expect(created.path).toBe("projects");
+
+      const nested = await createFolder(vault, "projects/sub");
+      expect(nested.ok).toBe(true);
+      if (nested.ok) expect(nested.path).toBe("projects/sub");
+
+      const folders = await listNoteFolders(vault);
+      expect(folders).toContain("projects");
+      expect(folders).toContain("projects/sub");
+
+      // Idempotent creation
+      const existing = await createFolder(vault, "projects");
+      expect(existing.ok).toBe(true);
+
+      // Invalid names
+      const invalid = await createFolder(vault, "  ");
+      expect(invalid.ok).toBe(false);
+    });
+
+    it("moves a note to a folder and automatically tags it", async () => {
+      await addNote(vault, { title: "My Task", body: "body", tags: ["important"] });
+      const moved = await moveNoteToFolder(vault, "my-task", "projects", T1);
+      expect(moved.ok).toBe(true);
+      if (moved.ok) {
+        expect(moved.note.slug).toBe("projects/my-task");
+        expect(moved.note.tags).toContain("projects");
+        expect(moved.note.tags).toContain("important");
+      }
+
+      // Old path is gone, new path is readable
+      expect(await getNote(vault, "my-task")).toBeNull();
+      const loaded = await getNote(vault, "projects/my-task");
+      expect(loaded).not.toBeNull();
+      expect(loaded?.tags).toContain("projects");
+
+      // Moving back to root
+      const back = await moveNoteToFolder(vault, "projects/my-task", null, T1);
+      expect(back.ok).toBe(true);
+      if (back.ok) {
+        expect(back.note.slug).toBe("my-task");
+      }
+      expect(await getNote(vault, "projects/my-task")).toBeNull();
+      expect(await getNote(vault, "my-task")).not.toBeNull();
+    });
+
+    it("refuses move when destination collides", async () => {
+      await addNote(vault, { title: "Note One", body: "one" });
+      await createFolder(vault, "projects");
+      await addNote(vault, { title: "Note One", body: "two" });
+      // move note-one into projects where it already exists
+      const targetPath = join(vault, "notes", "projects", "note-one.md");
+      await fs.writeFile(targetPath, "collision", "utf8");
+
+      const res = await moveNoteToFolder(vault, "note-one", "projects", T1);
+      expect(res.ok).toBe(false);
+      if (!res.ok) {
+        expect(res.reason).toBe("collision");
+      }
+    });
+
+    it("returns missing when moving non-existent note", async () => {
+      const res = await moveNoteToFolder(vault, "nonexistent", "projects");
+      expect(res.ok).toBe(false);
+      if (!res.ok) {
+        expect(res.reason).toBe("missing");
+      }
+    });
+
+    it("deletes a folder and all its contents", async () => {
+      await createFolder(vault, "to-delete");
+      await addNote(vault, { title: "Inner", body: "inner" });
+      await moveNoteToFolder(vault, "inner", "to-delete");
+      expect(await getNote(vault, "to-delete/inner")).not.toBeNull();
+
+      const deleted = await deleteFolder(vault, "to-delete");
+      expect(deleted.ok).toBe(true);
+      expect(await getNote(vault, "to-delete/inner")).toBeNull();
+      const folders = await listNoteFolders(vault);
+      expect(folders).not.toContain("to-delete");
+
+      // Deleting a non-existent folder
+      const missing = await deleteFolder(vault, "nonexistent-folder");
+      expect(missing.ok).toBe(false);
+      if (!missing.ok) expect(missing.reason).toBe("missing");
+
+      // Invalid names
+      const invalid = await deleteFolder(vault, "  ");
+      expect(invalid.ok).toBe(false);
+      if (!invalid.ok) expect(invalid.reason).toBe("invalid-name");
+    });
+
+    it("renames a folder and updates tags on its notes", async () => {
+      await createFolder(vault, "old-name");
+      await addNote(vault, { title: "Doc", body: "body" });
+      await moveNoteToFolder(vault, "doc", "old-name");
+      expect(await getNote(vault, "old-name/doc")).not.toBeNull();
+      expect((await getNote(vault, "old-name/doc"))?.tags).toContain("old-name");
+
+      const renamed = await renameFolder(vault, "old-name", "new-name");
+      expect(renamed.ok).toBe(true);
+      if (renamed.ok) expect(renamed.path).toBe("new-name");
+
+      expect(await getNote(vault, "old-name/doc")).toBeNull();
+      const updatedNote = await getNote(vault, "new-name/doc");
+      expect(updatedNote).not.toBeNull();
+      expect(updatedNote?.tags).toContain("new-name");
+      expect(updatedNote?.tags).not.toContain("old-name");
+
+      // Collisions
+      await createFolder(vault, "taken");
+      const collide = await renameFolder(vault, "new-name", "taken");
+      expect(collide.ok).toBe(false);
+      if (!collide.ok) expect(collide.reason).toBe("collision");
+
+      // Missing
+      const missing = await renameFolder(vault, "nonexistent", "other");
+      expect(missing.ok).toBe(false);
+      if (!missing.ok) expect(missing.reason).toBe("missing");
+
+      // Invalid name
+      const invalid = await renameFolder(vault, "new-name", "   ");
+      expect(invalid.ok).toBe(false);
+      if (!invalid.ok) expect(invalid.reason).toBe("invalid-name");
+    });
   });
 });
