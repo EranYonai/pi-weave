@@ -54,6 +54,7 @@ import {
   EMPTY_PREVIEW,
   PREVIEW_ID,
   WIKILINK_ATTR,
+  hasTextSelection,
   noteEmptyMessage,
   noteHeader,
   previewAnchorOf,
@@ -255,6 +256,15 @@ export function Note(props: NoteProps) {
           }}
           onBlur={() => dispatch({ type: "hide" })}
           onClick={(event) => {
+            // Selecting text to copy (or mouse drag) must not flip into edit
+            // mode or trigger wikilink navigation. Only a clean click with no
+            // active selection routes the gesture.
+            const selection =
+              typeof window !== "undefined" && typeof window.getSelection === "function"
+                ? window.getSelection()
+                : null;
+            if (hasTextSelection(selection)) return;
+
             // A wikilink carries no href, so nothing is navigating; this only
             // has to route the click onto the §1.3 context bus. Anywhere else
             // on the page *is* the edit affordance: a click on the prose opens

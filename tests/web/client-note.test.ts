@@ -37,6 +37,7 @@ import {
   SAFE_SCHEMES,
   SANITIZE_CONFIG,
   WIKILINK_ATTR,
+  hasTextSelection,
   CREATED_WORD,
   escapeHtml,
   excerptOf,
@@ -757,6 +758,27 @@ describe("wikilinkTargetOf", () => {
 
   it("returns a node id, not a slug — the inverse of workspace.ts's noteSlug", () => {
     expect(wikilinkTargetOf(element({ [WIKILINK_ATTR]: "a" }))).toBe("note:a");
+  });
+});
+
+describe("hasTextSelection", () => {
+  it("returns false for null or undefined selection", () => {
+    expect(hasTextSelection(null)).toBe(false);
+    expect(hasTextSelection(undefined)).toBe(false);
+  });
+
+  it("returns false when selection is collapsed", () => {
+    expect(hasTextSelection({ isCollapsed: true, toString: () => "some text" })).toBe(false);
+  });
+
+  it("returns false when selected text is empty", () => {
+    expect(hasTextSelection({ isCollapsed: false, toString: () => "" })).toBe(false);
+    expect(hasTextSelection({ isCollapsed: false })).toBe(false);
+  });
+
+  it("returns true when there is a non-empty selection range", () => {
+    expect(hasTextSelection({ isCollapsed: false, toString: () => "selected prose" })).toBe(true);
+    expect(hasTextSelection({ toString: () => "selected prose" })).toBe(true);
   });
 });
 

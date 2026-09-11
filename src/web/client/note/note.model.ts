@@ -670,6 +670,29 @@ export function wikilinkTargetOf(from: ClosestElement | null): string | null {
   return null;
 }
 
+/**
+ * A minimal selection interface for detecting active text selection.
+ * Abstracted so callers pass `window.getSelection()` and tests stay pure.
+ */
+export interface SelectionLike {
+  readonly isCollapsed?: boolean | undefined;
+  toString?(): string;
+}
+
+/**
+ * Whether the user has an active, non-empty text selection.
+ *
+ * Selecting text to copy (mouse drag, keyboard range) must neither flip the
+ * note into edit mode nor navigate a wikilink the selection happens to cross.
+ */
+export function hasTextSelection(selection: SelectionLike | null | undefined): boolean {
+  if (!selection) return false;
+  if (selection.isCollapsed === true) return false;
+  const toString = selection.toString;
+  const text = typeof toString === "function" && toString !== Object.prototype.toString ? toString.call(selection) : "";
+  return text.length > 0;
+}
+
 // --- the front-matter header --------------------------------------------------------------
 
 /**
