@@ -30,6 +30,7 @@ import {
   renameNote,
   updateNote,
   createFolder,
+  deleteFolder,
   moveNoteToFolder,
   listNoteFolders,
 } from "../../src/core/vault";
@@ -589,6 +590,29 @@ describe("concurrent mutations serialize", () => {
       if (!res.ok) {
         expect(res.reason).toBe("missing");
       }
+    });
+
+    it("deletes a folder and all its contents", async () => {
+      await createFolder(vault, "to-delete");
+      await addNote(vault, { title: "Inner", body: "inner" });
+      await moveNoteToFolder(vault, "inner", "to-delete");
+      expect(await getNote(vault, "to-delete/inner")).not.toBeNull();
+
+      const deleted = await deleteFolder(vault, "to-delete");
+      expect(deleted.ok).toBe(true);
+      expect(await getNote(vault, "to-delete/inner")).toBeNull();
+      const folders = await listNoteFolders(vault);
+      expect(folders).not.toContain("to-delete");
+
+      // Deleting a non-existent folder
+      const missing = await deleteFolder(vault, "nonexistent-folder");
+      expect(missing.ok).toBe(false);
+      if (!missing.ok) expect(missing.reason).toBe("missing");
+
+      // Invalid names
+      const invalid = await deleteFolder(vault, "  ");
+      expect(invalid.ok).toBe(false);
+      if (!invalid.ok) expect(invalid.reason).toBe("invalid-name");
     });
   });
 });

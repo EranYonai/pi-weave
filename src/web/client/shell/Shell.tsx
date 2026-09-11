@@ -25,6 +25,7 @@
 
 import { useEffect, useMemo, useRef, useState } from "preact/hooks";
 import { fetchJson } from "../api.dom";
+import { deleteNote } from "../api";
 import type { ColorScheme } from "../graph/graph.model";
 import { schemeOf, watchScheme } from "../graph/scheme";
 import { createSigmaRenderer } from "../graph/renderer.dom";
@@ -197,6 +198,18 @@ export function Shell(props: ShellProps) {
 
   const resolved = useMemo(() => resolveColumns(layout, width, breakpointFor(width)), [layout, width]);
 
+  const handleDeleteCurrentNote = async () => {
+    if (!noteBody.value?.note) return;
+    const current = noteBody.value.note;
+    const confirmed =
+      typeof window !== "undefined" && typeof window.confirm === "function"
+        ? window.confirm(`Delete note "${current.title}"?`)
+        : true;
+    if (!confirmed) return;
+    await deleteNote(fetchJson, current.slug);
+    editor.send({ type: "navigate", id: null });
+  };
+
   // Built once: the handlers read state through `live`, so they never go
   // stale and never need to be rebuilt.
   const drag = useMemo(
@@ -249,6 +262,7 @@ export function Shell(props: ShellProps) {
         storage={localStorage}
         host={window}
         fetch={fetchJson}
+        onDeleteNote={handleDeleteCurrentNote}
         fit={fit}
       />
       {/*

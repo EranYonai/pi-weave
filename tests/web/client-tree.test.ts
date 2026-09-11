@@ -36,6 +36,7 @@ import {
   isDraggableNote,
   isDropTarget,
   folderPathFromId,
+  deletableTarget,
   FOLDER_BTN_HINT,
   FOLDER_PLACEHOLDER,
   isMuted,
@@ -865,5 +866,15 @@ describe("drag & drop and folder helpers", () => {
   it("exports folder creation button constants", () => {
     expect(typeof FOLDER_BTN_HINT).toBe("string");
     expect(typeof FOLDER_PLACEHOLDER).toBe("string");
+  });
+
+  it("identifies deletable targets", () => {
+    expect(deletableTarget("note:my-note")).toEqual({ type: "note", slug: "my-note" });
+    expect(deletableTarget("note:work/my-note")).toEqual({ type: "note", slug: "work/my-note" });
+    expect(deletableTarget("vfolder:work")).toEqual({ type: "folder", path: "work" });
+    expect(deletableTarget("vfolder:work/sub")).toEqual({ type: "folder", path: "work/sub" });
+    expect(deletableTarget("vault")).toBeNull();
+    expect(deletableTarget("repository")).toBeNull();
+    expect(deletableTarget("module:src")).toBeNull();
   });
 });

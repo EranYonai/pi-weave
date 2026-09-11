@@ -35,6 +35,7 @@ import {
   renameNote,
   moveNote,
   createFolder,
+  deleteFolder,
   isCreateFolderResult,
   saveNote,
 } from "../../src/web/client/api";
@@ -655,6 +656,16 @@ describe("moveNote", () => {
     expect(impl.calls[0]?.url).toBe("/api/note/alpha/move");
     expect(impl.calls[0]?.init?.method).toBe("POST");
     expect(JSON.parse(impl.calls[0]?.init?.body ?? "{}")).toEqual({ targetFolder: "projects" });
+    expect(result.ok).toBe(true);
+  });
+});
+
+describe("deleteFolder", () => {
+  it("sends DELETE to /api/folder/:path", async () => {
+    const impl = respondsWith({ deleted: true });
+    const result = await deleteFolder(impl, "projects/sub");
+    expect(impl.calls[0]?.url).toBe("/api/folder/projects/sub");
+    expect(impl.calls[0]?.init?.method).toBe("DELETE");
     expect(result.ok).toBe(true);
   });
 });

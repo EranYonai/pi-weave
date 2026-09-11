@@ -334,6 +334,13 @@ body{font-size:var(--weave-px-base)}
   display:flex;align-items:center;gap:6px;padding:4px var(--weave-gutter);
   border-bottom:1px solid var(--weave-line);background:var(--weave-panel);
 }
+.weave-row-del{
+  display:none;margin-left:auto;padding:0 4px;font:inherit;font-size:var(--weave-px-row);
+  line-height:1;color:var(--weave-faint);background:none;border:0;cursor:pointer;
+  border-radius:var(--weave-radius);
+}
+.weave-row:hover .weave-row-del{display:inline-flex;align-items:center}
+.weave-row-del:hover{color:var(--weave-bad);background:var(--weave-panel)}
 /* A hover changes two things, in this order: the ground appears under the
    row, then the label steps up to fg. The second half is what stops the
    hover from reading as a stray grey rectangle — the row answers the pointer
@@ -441,6 +448,8 @@ body{font-size:var(--weave-px-base)}
   background:none;border:0;border-radius:var(--weave-radius);cursor:pointer;
 }
 .weave-note-open:hover{color:var(--weave-fg);background:var(--weave-line)}
+.weave-note-del:hover{color:var(--weave-bad)}
+.weave-note-del-mark{display:inline-flex;line-height:1;font-size:var(--weave-px-ui)}
 .weave-note-open-mark{display:inline-flex;line-height:0}
 .weave-note-tags{margin:6px 0 0;display:flex;gap:5px;flex-wrap:wrap}
 .weave-tag{

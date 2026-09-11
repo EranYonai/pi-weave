@@ -716,6 +716,35 @@ export async function createFolder(
   return { ok: true, path: relPath };
 }
 
+/**
+ * Delete a folder under <vault>/notes/.
+ * Deletes the directory and any notes/subdirectories within it.
+ */
+export async function deleteFolder(
+  root: string,
+  folderName: string,
+): Promise<{ ok: true } | { ok: false; reason: "invalid-name" | "missing" }> {
+  const trimmed = folderName.trim().replace(/^[\/\\]+|[\/\\]+$/g, "");
+  if (trimmed.length === 0) return { ok: false, reason: "invalid-name" };
+  const segments = trimmed.split(/[\/\\]+/).map(slugify).filter((s) => s.length > 0);
+  if (segments.length === 0) return { ok: false, reason: "invalid-name" };
+  const relPath = segments.join("/");
+  const notesDir = join(root, NOTES_DIR);
+  const fullPath = join(notesDir, relPath);
+  const rel = relative(notesDir, fullPath);
+  if (rel.startsWith("..") || isAbsolute(rel) || rel.length === 0) {
+    return { ok: false, reason: "invalid-name" };
+  }
+  try {
+    const stat = await fs.stat(fullPath);
+    if (!stat.isDirectory()) return { ok: false, reason: "invalid-name" };
+    await fs.rm(fullPath, { recursive: true, force: true });
+    return { ok: true };
+  } catch {
+    return { ok: false, reason: "missing" };
+  }
+}
+
 // ---------------------------------------------------------------------------
 // Generated-note upsert (weave-scan sessions; docs/session-scan.md)
 // ---------------------------------------------------------------------------

@@ -138,12 +138,24 @@ function hiddenInternalKind(kind: NodeKind): boolean {
   return kind === "gitState" || kind === "external" || kind === "package" || kind === "entryPoint";
 }
 
+function isFolderNode(node: GraphNode | undefined): boolean {
+  if (!node) return false;
+  return node.kind === "module" || node.id.startsWith("vfolder:");
+}
+
 function sortKids(ids: string[], byId: Map<string, GraphNode>): string[] {
   return ids
     .slice()
     .sort((a, b) => {
-      const la = listLabel(byId.get(a)!);
-      const lb = listLabel(byId.get(b)!);
+      const nodeA = byId.get(a);
+      const nodeB = byId.get(b);
+      const isFoldA = isFolderNode(nodeA);
+      const isFoldB = isFolderNode(nodeB);
+      if (isFoldA !== isFoldB) {
+        return isFoldA ? -1 : 1;
+      }
+      const la = listLabel(nodeA!);
+      const lb = listLabel(nodeB!);
       return la.localeCompare(lb);
     });
 }

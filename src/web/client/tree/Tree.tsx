@@ -16,7 +16,7 @@ import type { GraphPayload } from "../../shared/wire";
 import type { TreeRowView, TreeViewState } from "./tree.model";
 import type { FetchLike } from "../api";
 import { fetchJson } from "../api.dom";
-import { createFolder, moveNote } from "../api";
+import { createFolder, deleteFolder, deleteNote, moveNote } from "../api";
 import {
   FILTER_HINT,
   FILTER_LABEL,
@@ -26,6 +26,7 @@ import {
   TREE_LABEL,
   treeActiveDescendant,
   cycleProvenance,
+  deletableTarget,
   depthVar,
   expand,
   folderPathFromId,
@@ -92,6 +93,7 @@ function Row({
   view,
   onSelect,
   onToggle,
+  onDelete,
   onDragStart,
   onDragOver,
   onDragLeave,
@@ -101,6 +103,7 @@ function Row({
   view: TreeRowView;
   onSelect: () => void;
   onToggle: () => void;
+  onDelete?: (() => void) | undefined;
   onDragStart?: (event: DragEvent) => void;
   onDragOver?: (event: DragEvent) => void;
   onDragLeave?: (event: DragEvent) => void;
@@ -150,6 +153,20 @@ function Row({
       </span>
       <span class="weave-label">{view.label}</span>
       <span class="weave-meta">{view.meta}</span>
+      {onDelete ? (
+        <button
+          type="button"
+          class="weave-row-del"
+          title={`Delete ${view.label}`}
+          aria-label={`Delete ${view.label}`}
+          onClick={(event) => {
+            event.stopPropagation();
+            onDelete();
+          }}
+        >
+          ×
+        </button>
+      ) : null}
     </li>
   );
 }
@@ -163,6 +180,29 @@ export function Tree(props: TreeProps) {
   const rows = rowsFor(props.graph, state);
   const empty = treeEmptyMessage(props.graph, rows, state);
   const fetcher = props.fetch ?? fetchJson;
+
+  const handleDeleteRow = async (id: string, label: string) => {
+    const target = deletableTarget(id);
+    if (!target) return;
+    const isFolder = target.type === "folder";
+    const confirmed =
+      typeof window !== "undefined" && typeof window.confirm === "function"
+        ? window.confirm(`Delete ${isFolder ? "folder" : "note"} "${label}"?`)
+        : true;
+    if (!confirmed) return;
+
+    if (target.type === "note") {
+      await deleteNote(fetcher, target.slug);
+      if (props.selectedId === id) {
+        props.onSelect("");
+      }
+    } else {
+      await deleteFolder(fetcher, target.path);
+      if (props.selectedId && props.selectedId.startsWith(`note:${target.path}/`)) {
+        props.onSelect("");
+      }
+    }
+  };
 
   return (
     <div
@@ -264,6 +304,7 @@ export function Tree(props: TreeProps) {
               view={view}
               onSelect={() => props.onSelect(view.id)}
               onToggle={() => setState(toggleExpanded(state, view.id))}
+              onDelete={deletableTarget(view.id) ? () => void handleDeleteRow(view.id, view.label) : undefined}
               isDragOver={dragOverId === view.id}
               onDragStart={(event) => {
                 event.dataTransfer?.setData("text/plain", view.id);

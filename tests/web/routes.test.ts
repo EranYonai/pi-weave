@@ -1182,6 +1182,25 @@ describe("POST /api/folder", () => {
   });
 });
 
+describe("DELETE /api/folder", () => {
+  it("deletes a folder under notes/", async () => {
+    const { server, vaultRoot } = await bootWritable();
+    await post(server, "/api/folder", { path: "temp-folder" });
+    expect((await fs.stat(join(vaultRoot, "notes", "temp-folder"))).isDirectory()).toBe(true);
+
+    const res = await send(server, "DELETE", "/api/folder/temp-folder");
+    expect(res.status).toBe(200);
+    expect(await res.json()).toEqual({ deleted: true });
+    await expect(fs.stat(join(vaultRoot, "notes", "temp-folder"))).rejects.toThrow();
+  });
+
+  it("404s for a non-existent folder", async () => {
+    const { server } = await bootWritable();
+    const res = await send(server, "DELETE", "/api/folder/nonexistent");
+    expect(res.status).toBe(404);
+  });
+});
+
 describe("DELETE /api/note/:slug", () => {
   it("unlinks the file", async () => {
     const { server, vaultRoot } = await bootWritable();

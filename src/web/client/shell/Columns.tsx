@@ -76,6 +76,7 @@ export interface ColumnsProps {
   storage: PositionStorage;
   host: SchemeHost;
   fetch?: FetchLike | undefined;
+  onDeleteNote?: (() => void) | undefined;
   /**
    * The scheme the shell resolved from the user's theme choice
    * (`shell/theme.model.ts`'s `effectiveScheme`), or `null` to let the column
@@ -120,6 +121,7 @@ function Column({ id, props }: { id: ColumnId; props: ColumnsProps }) {
           prompt={props.prompt}
           draft={props.draft}
           send={props.send}
+          onDelete={props.onDeleteNote}
         />
       ) : null}
       {id === "graph" ? (

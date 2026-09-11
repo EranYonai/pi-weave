@@ -159,6 +159,18 @@ export function isDraggableNote(kind: WireNodeKind, id: string): boolean {
   return kind === "note" && id.startsWith("note:");
 }
 
+/** Target descriptor for a deletable row (vault note or folder). */
+export type DeletableTarget =
+  | { readonly type: "note"; readonly slug: string }
+  | { readonly type: "folder"; readonly path: string };
+
+/** Extract deletable target descriptor, or null if the row is protected / non-deletable. */
+export function deletableTarget(id: string): DeletableTarget | null {
+  if (id.startsWith("note:")) return { type: "note", slug: id.slice("note:".length) };
+  if (id.startsWith("vfolder:")) return { type: "folder", path: id.slice("vfolder:".length) };
+  return null;
+}
+
 /**
  * Set the substring filter.
  *

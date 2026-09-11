@@ -90,6 +90,7 @@ export interface NoteProps {
   /** The `<textarea>`'s content. Rendered only while `toolbar.editing`. */
   draft: string;
   send: (event: EditorEvent) => void;
+  onDelete?: (() => void) | undefined;
 }
 
 /**
@@ -102,7 +103,15 @@ export interface NoteProps {
  * rides the `title` attribute so the icon never has to explain itself on
  * screen.
  */
-function Header({ view, open }: { view: NoteHeaderView; open: (() => void) | null }) {
+function Header({
+  view,
+  open,
+  onDelete,
+}: {
+  view: NoteHeaderView;
+  open: (() => void) | null;
+  onDelete: (() => void) | null;
+}) {
   return (
     <header class="weave-note-head">
       <h3 class="weave-note-title">{view.title}</h3>
@@ -119,6 +128,11 @@ function Header({ view, open }: { view: NoteHeaderView; open: (() => void) | nul
         {open === null ? null : (
           <button type="button" class="weave-note-open" title={OPEN_HINT} aria-label={OPEN_LABEL} onClick={open}>
             <span class="weave-note-open-mark" aria-hidden="true" dangerouslySetInnerHTML={{ __html: OPEN_ICON }} />
+          </button>
+        )}
+        {onDelete === null ? null : (
+          <button type="button" class="weave-note-open weave-note-del" title="Delete note" aria-label="Delete note" onClick={onDelete}>
+            <span class="weave-note-del-mark" aria-hidden="true">🗑</span>
           </button>
         )}
       </p>
@@ -220,7 +234,11 @@ export function Note(props: NoteProps) {
   const header = noteHeader(note, props.now);
   return (
     <article key={note.slug} class={`weave-note weave-note-${header.provenance}`}>
-      <Header view={header} open={toolbar === null ? null : () => props.send({ type: "open" })} />
+      <Header
+        view={header}
+        open={toolbar === null ? null : () => props.send({ type: "open" })}
+        onDelete={props.onDelete ?? null}
+      />
       {toolbar === null ? null : <EditorBar toolbar={toolbar} {...shell} />}
       {toolbar !== null && toolbar.editing ? (
         <Editor toolbar={toolbar} {...shell} />

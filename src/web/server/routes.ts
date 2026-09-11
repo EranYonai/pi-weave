@@ -82,6 +82,8 @@
 import { createHash } from "node:crypto";
 import { readFile } from "node:fs/promises";
 import type { IncomingMessage, ServerResponse } from "node:http";
+import { join } from "node:path";
+import { NOTES_DIR } from "../../core/paths";
 import type { WorkspaceSnapshot } from "../../core/cache/workspace";
 import { WorkspaceCache } from "../../core/cache/workspace";
 import { readOkfFileForView } from "../../core/graph/current";
@@ -91,6 +93,7 @@ import type { MutationResult, RevisionedNote } from "../../core/vault";
 import { slugify } from "../../core/slug";
 import {
   createFolder,
+  deleteFolder,
   deleteNote,
   getNoteWithRevision,
   moveNoteToFolder,
@@ -511,9 +514,15 @@ async function route(
   if (method === "GET" && path === "/") return sendShell(deps, res);
   if (method === "GET" && path === "/app.js") return sendBundle(deps, res);
   if (method === "GET" && path === "/api/graph") return sendGraph(deps, req, res);
-  if (method === "POST" && path === "/api/folder") {
-    await handleCreateFolder(deps, req, res);
-    return;
+  if (path === "/api/folder" || path.startsWith("/api/folder/")) {
+    if (method === "POST" && path === "/api/folder") {
+      await handleCreateFolder(deps, req, res);
+      return;
+    }
+    if (method === "DELETE") {
+      await handleDeleteFolder(deps, path, req, res);
+      return;
+    }
   }
   if (path.startsWith("/api/note/")) {
     const handled = await routeNote(deps, method, path.slice("/api/note/".length), req, res);
@@ -930,6 +939,36 @@ async function handleCreateFolder(deps: RouteDeps, req: IncomingMessage, res: Se
     return;
   }
   sendJson(res, 200, { ok: true, path: result.path });
+}
+
+async function handleDeleteFolder(
+  deps: RouteDeps,
+  urlPath: string,
+  req: IncomingMessage,
+  res: ServerResponse,
+): Promise<void> {
+  let folderPath: string | undefined;
+  if (urlPath.startsWith("/api/folder/")) {
+    folderPath = decodeURIComponent(urlPath.slice("/api/folder/".length));
+  } else {
+    const body = await readJsonBody(req);
+    folderPath = typeof body === "object" && body !== null ? (body as { path?: string }).path : undefined;
+  }
+  if (typeof folderPath !== "string" || folderPath.trim().length === 0) {
+    sendJson(res, 400, { error: "expected { path: string }" });
+    return;
+  }
+  const result = await deleteFolder(deps.vaultRoot, folderPath);
+  if (!result.ok) {
+    if (result.reason === "invalid-name") {
+      sendJson(res, 400, { error: "invalid folder path", reason: "invalid-name" });
+      return;
+    }
+    sendJson(res, 404, { error: "no such folder" });
+    return;
+  }
+  deps.suppress?.(join(deps.vaultRoot, NOTES_DIR, folderPath));
+  sendJson(res, 200, { deleted: true });
 }
 
 async function removeNote(deps: RouteDeps, slug: string, res: ServerResponse): Promise<void> {

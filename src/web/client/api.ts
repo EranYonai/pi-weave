@@ -463,6 +463,12 @@ export function deleteNote(fetchImpl: FetchLike, slug: string): Promise<WriteRes
   return write(fetchImpl, noteUrl(slug), isDeleteResult, { method: "DELETE" });
 }
 
+/** `DELETE /api/folder/:path`. Deletes a folder and its contents. */
+export function deleteFolder(fetchImpl: FetchLike, path: string): Promise<WriteResult<DeleteNoteResult>> {
+  const encoded = path.split("/").map(encodeURIComponent).join("/");
+  return write(fetchImpl, `/api/folder/${encoded}`, isDeleteResult, { method: "DELETE" });
+}
+
 /** `GET /api/okf/:rel`. Anchored under `<cwd>/.okf` by the server. */
 export function fetchOkfFile(fetchImpl: FetchLike, rel: string): Promise<ApiResult<OkfFilePayload>> {
   // Per segment: `encodeURIComponent` would escape the separators of a
