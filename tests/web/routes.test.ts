@@ -1132,6 +1132,56 @@ describe("POST /api/note/:slug/rename", () => {
   });
 });
 
+describe("POST /api/note/:slug/move", () => {
+  it("moves note to a folder and automatically adds the folder tag", async () => {
+    const { server, vaultRoot } = await bootWritable();
+    const res = await post(server, "/api/note/alpha-note/move", { targetFolder: "projects" });
+    expect(res.status).toBe(200);
+    const payload = (await res.json()) as NotePayload;
+    expect(payload.note.slug).toBe("projects/alpha-note");
+    expect(payload.note.tags).toContain("projects");
+    await expect(readNoteFile(vaultRoot, "projects/alpha-note")).resolves.toContain("Alpha Note");
+    await expect(readNoteFile(vaultRoot, "alpha-note")).rejects.toThrow();
+
+    // move back to root
+    const back = await post(server, "/api/note/projects/alpha-note/move", { targetFolder: null });
+    expect(back.status).toBe(200);
+    const backPayload = (await back.json()) as NotePayload;
+    expect(backPayload.note.slug).toBe("alpha-note");
+    await expect(readNoteFile(vaultRoot, "alpha-note")).resolves.toContain("Alpha Note");
+  });
+
+  it("404s for a missing source note", async () => {
+    const { server } = await bootWritable();
+    const res = await post(server, "/api/note/nonexistent/move", { targetFolder: "projects" });
+    expect(res.status).toBe(404);
+  });
+});
+
+describe("POST /api/folder", () => {
+  it("creates a folder under notes/", async () => {
+    const { server, vaultRoot } = await bootWritable();
+    const res = await post(server, "/api/folder", { path: "my-folder" });
+    expect(res.status).toBe(200);
+    expect(await res.json()).toEqual({ ok: true, path: "my-folder" });
+    const stat = await fs.stat(join(vaultRoot, "notes", "my-folder"));
+    expect(stat.isDirectory()).toBe(true);
+  });
+
+  it("400s an empty or invalid folder path", async () => {
+    const { server } = await bootWritable();
+    const res = await post(server, "/api/folder", { path: "   " });
+    expect(res.status).toBe(400);
+  });
+
+  it("409s if destination is an existing non-directory file", async () => {
+    const { server, vaultRoot } = await bootWritable();
+    await fs.writeFile(join(vaultRoot, "notes", "file-collision"), "content", "utf8");
+    const res = await post(server, "/api/folder", { path: "file-collision" });
+    expect(res.status).toBe(409);
+  });
+});
+
 describe("DELETE /api/note/:slug", () => {
   it("unlinks the file", async () => {
     const { server, vaultRoot } = await bootWritable();

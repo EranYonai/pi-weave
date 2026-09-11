@@ -14,17 +14,26 @@ import { ICON_BOX, ICON_STROKE, ICONS } from "../shell/icons.model";
 import type { IconName } from "../shell/icons.model";
 import type { GraphPayload } from "../../shared/wire";
 import type { TreeRowView, TreeViewState } from "./tree.model";
+import type { FetchLike } from "../api";
+import { fetchJson } from "../api.dom";
+import { createFolder, moveNote } from "../api";
 import {
   FILTER_HINT,
   FILTER_LABEL,
   FILTER_PLACEHOLDER,
+  FOLDER_BTN_HINT,
+  FOLDER_PLACEHOLDER,
   TREE_LABEL,
   treeActiveDescendant,
   cycleProvenance,
   depthVar,
+  expand,
+  folderPathFromId,
   initialTreeView,
   internalsHint,
   internalsLabel,
+  isDraggableNote,
+  isDropTarget,
   provenanceHint,
   provenanceLabel,
   rowCountLabel,
@@ -43,6 +52,7 @@ export interface TreeProps {
   onSelect: (id: string) => void;
   /** Epoch ms for relative times. Injected so the render is deterministic. */
   now: number;
+  fetch?: FetchLike | undefined;
 }
 
 /**
@@ -78,13 +88,31 @@ export function Icon({ name, class: className }: { name: IconName; class?: strin
   );
 }
 
-function Row({ view, onSelect, onToggle }: { view: TreeRowView; onSelect: () => void; onToggle: () => void }) {
+function Row({
+  view,
+  onSelect,
+  onToggle,
+  onDragStart,
+  onDragOver,
+  onDragLeave,
+  onDrop,
+  isDragOver,
+}: {
+  view: TreeRowView;
+  onSelect: () => void;
+  onToggle: () => void;
+  onDragStart?: (event: DragEvent) => void;
+  onDragOver?: (event: DragEvent) => void;
+  onDragLeave?: (event: DragEvent) => void;
+  onDrop?: (event: DragEvent) => void;
+  isDragOver?: boolean;
+}) {
   return (
     <li
       id={view.domId}
       class={`weave-row weave-row-${view.kind}${view.selected ? " weave-row-on" : ""}${view.muted ? " weave-row-muted" : ""}${
         recentIds.value.has(view.id) ? " weave-row-new" : ""
-      }`}
+      }${isDragOver ? " weave-row-droptarget" : ""}`}
       role="treeitem"
       aria-level={view.level}
       aria-posinset={view.posinset}
@@ -93,6 +121,11 @@ function Row({ view, onSelect, onToggle }: { view: TreeRowView; onSelect: () => 
       aria-expanded={view.hasKids ? view.expanded : undefined}
       style={depthVar(view.depth)}
       onClick={onSelect}
+      draggable={isDraggableNote(view.kind, view.id)}
+      onDragStart={onDragStart}
+      onDragOver={onDragOver}
+      onDragLeave={onDragLeave}
+      onDrop={onDrop}
     >
       {/* The glyphs are decoration: the twisty duplicates `aria-expanded`,
           the kind glyph duplicates nothing a screen reader needs, and the
@@ -123,8 +156,13 @@ function Row({ view, onSelect, onToggle }: { view: TreeRowView; onSelect: () => 
 
 export function Tree(props: TreeProps) {
   const [state, setState] = useState<TreeViewState>(initialTreeView);
+  const [creatingFolder, setCreatingFolder] = useState(false);
+  const [folderName, setFolderName] = useState("");
+  const [dragOverId, setDragOverId] = useState<string | null>(null);
+
   const rows = rowsFor(props.graph, state);
   const empty = treeEmptyMessage(props.graph, rows, state);
+  const fetcher = props.fetch ?? fetchJson;
 
   return (
     <div
@@ -158,7 +196,56 @@ export function Tree(props: TreeProps) {
         <button type="button" class="weave-chip" title={internalsHint(state.showInternals)} onClick={() => setState(toggleInternals(state))}>
           ◧ {internalsLabel(state.showInternals)}
         </button>
+        <button
+          type="button"
+          class="weave-chip"
+          title={FOLDER_BTN_HINT}
+          onClick={() => setCreatingFolder((prev) => !prev)}
+        >
+          + folder
+        </button>
       </div>
+      {creatingFolder ? (
+        <form
+          class="weave-tree-new-folder"
+          onSubmit={async (event) => {
+            event.preventDefault();
+            const name = folderName.trim();
+            if (name) {
+              await createFolder(fetcher, name);
+              setCreatingFolder(false);
+              setFolderName("");
+            }
+          }}
+        >
+          <input
+            type="text"
+            class="weave-filter"
+            placeholder={FOLDER_PLACEHOLDER}
+            value={folderName}
+            onInput={(event) => setFolderName(event.currentTarget.value)}
+            onKeyDown={(event) => {
+              if (event.key === "Escape") {
+                event.stopPropagation();
+                setCreatingFolder(false);
+                setFolderName("");
+              }
+            }}
+            autoFocus
+          />
+          <button type="submit" class="weave-chip">Create</button>
+          <button
+            type="button"
+            class="weave-chip"
+            onClick={() => {
+              setCreatingFolder(false);
+              setFolderName("");
+            }}
+          >
+            Cancel
+          </button>
+        </form>
+      ) : null}
       {empty === null ? (
         <ul
           class="weave-rows"
@@ -172,7 +259,39 @@ export function Tree(props: TreeProps) {
           aria-activedescendant={treeActiveDescendant(rows, props.selectedId) ?? undefined}
         >
           {rowViews(rows, props.selectedId, props.now).map((view) => (
-            <Row key={view.id} view={view} onSelect={() => props.onSelect(view.id)} onToggle={() => setState(toggleExpanded(state, view.id))} />
+            <Row
+              key={view.id}
+              view={view}
+              onSelect={() => props.onSelect(view.id)}
+              onToggle={() => setState(toggleExpanded(state, view.id))}
+              isDragOver={dragOverId === view.id}
+              onDragStart={(event) => {
+                event.dataTransfer?.setData("text/plain", view.id);
+                if (event.dataTransfer) event.dataTransfer.effectAllowed = "move";
+              }}
+              onDragOver={(event) => {
+                if (isDropTarget(view.id)) {
+                  event.preventDefault();
+                  if (event.dataTransfer) event.dataTransfer.dropEffect = "move";
+                  setDragOverId(view.id);
+                }
+              }}
+              onDragLeave={() => {
+                if (dragOverId === view.id) setDragOverId(null);
+              }}
+              onDrop={async (event) => {
+                event.preventDefault();
+                setDragOverId(null);
+                const draggedId = event.dataTransfer?.getData("text/plain");
+                if (!draggedId || !draggedId.startsWith("note:")) return;
+                const noteSlug = draggedId.slice("note:".length);
+                const targetFolder = folderPathFromId(view.id);
+                await moveNote(fetcher, noteSlug, targetFolder);
+                if (view.id.startsWith("vfolder:")) {
+                  setState((current) => expand(current, view.id));
+                }
+              }}
+            />
           ))}
         </ul>
       ) : (

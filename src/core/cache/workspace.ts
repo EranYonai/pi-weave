@@ -33,7 +33,7 @@ import { buildGraph, DEFAULT_MAX_NOTES, type BuildGraphInput } from "../graph/bu
 import type { GraphModel } from "../graph/model";
 import { readRepositorySide } from "../graph/current";
 import { withMutationQueue } from "../mutex";
-import { getNote, statNotes } from "../vault";
+import { getNote, listNoteFolders, statNotes } from "../vault";
 import type { Note } from "../types";
 
 /**
@@ -136,11 +136,16 @@ function classify(
 ): { scope: InvalidationScope; slug: string | null } {
   const path = resolve(absPath);
   const rel = relative(resolve(opts.vaultRoot, NOTES_DIR), path);
-  // Directly inside the notes dir (flat vault: no separator in the relative
-  // path) and Markdown — anything else in there is not a note.
-  if (rel.length > 0 && !rel.startsWith("..") && !isAbsolute(rel) && !rel.includes(sep)) {
-    if (rel.endsWith(".md")) return { scope: "vault", slug: rel.slice(0, -".md".length) };
-    return { scope: "none", slug: null };
+  if (rel.length > 0 && !rel.startsWith("..") && !isAbsolute(rel)) {
+    if (rel.endsWith(".md")) {
+      const slug = rel.slice(0, -".md".length).split(sep).join("/");
+      return { scope: "vault", slug };
+    }
+    const base = rel.split(sep).pop() ?? rel;
+    if (base.startsWith(".") || (base.includes(".") && !base.endsWith(".md"))) {
+      return { scope: "none", slug: null };
+    }
+    return { scope: "vault", slug: null };
   }
   return { scope: within(path, resolve(opts.cwd)) ? "repo" : "none", slug: null };
 }
@@ -179,6 +184,7 @@ export class WorkspaceCache {
    * matches the uncached build exactly.
    */
   private fileCount = 0;
+  private folders: string[] = [];
   private repo: CachedRepo | null = null;
   /**
    * The last snapshot handed out, reused verbatim when a build proves nothing
@@ -368,7 +374,12 @@ export class WorkspaceCache {
       // graph has no node for (§4.3).
       const kept = notes.slice(0, DEFAULT_MAX_NOTES);
       const input: BuildGraphInput = {
-        vault: { root: this.vaultRoot, exists: true, noteCount: this.fileCount },
+        vault: {
+          root: this.vaultRoot,
+          exists: true,
+          noteCount: this.fileCount,
+          ...(this.folders.length > 0 ? { folders: this.folders } : {}),
+        },
         notes: kept,
         repository: repo?.repository ?? null,
       };
@@ -418,7 +429,9 @@ export class WorkspaceCache {
    * that disappeared are evicted, so the map never outgrows the vault.
    */
   private async refreshNotes(): Promise<Note[]> {
-    const stats = await statNotes(this.vaultRoot);
+    const previousFolders = this.folders;
+    const [stats, folders] = await Promise.all([statNotes(this.vaultRoot), listNoteFolders(this.vaultRoot)]);
+    this.folders = folders;
     const previousCount = this.notes.size;
     const previousFileCount = this.fileCount;
     this.fileCount = stats.length;
@@ -446,7 +459,11 @@ export class WorkspaceCache {
     // A note vanished if the map shrank without a compensating read; the
     // file count moving covers a malformed file appearing or disappearing,
     // which changes the vault node's `notes` detail without ever parsing.
-    this.notesChanged = read > 0 || next.size !== previousCount || this.fileCount !== previousFileCount;
+    const foldersChanged =
+      folders.length !== previousFolders.length ||
+      folders.some((f, i) => f !== previousFolders[i]);
+    this.notesChanged =
+      read > 0 || next.size !== previousCount || this.fileCount !== previousFileCount || foldersChanged;
     this.notes = next;
     // `statNotes` yields readdir (slug-ascending) order and sort is stable,
     // so ties break by slug — identical to `readVault`.

@@ -29,6 +29,9 @@ import {
   getNoteWithRevision,
   renameNote,
   updateNote,
+  createFolder,
+  moveNoteToFolder,
+  listNoteFolders,
 } from "../../src/core/vault";
 import { makeTempDir } from "../helpers";
 
@@ -514,5 +517,78 @@ describe("concurrent mutations serialize", () => {
     } else {
       expect(update.ok).toBe(false);
     }
+  });
+
+  describe("folders and moveNoteToFolder", () => {
+    it("creates folders and discovers them with listNoteFolders", async () => {
+      const created = await createFolder(vault, "projects");
+      expect(created.ok).toBe(true);
+      if (created.ok) expect(created.path).toBe("projects");
+
+      const nested = await createFolder(vault, "projects/sub");
+      expect(nested.ok).toBe(true);
+      if (nested.ok) expect(nested.path).toBe("projects/sub");
+
+      const folders = await listNoteFolders(vault);
+      expect(folders).toContain("projects");
+      expect(folders).toContain("projects/sub");
+
+      // Idempotent creation
+      const existing = await createFolder(vault, "projects");
+      expect(existing.ok).toBe(true);
+
+      // Invalid names
+      const invalid = await createFolder(vault, "  ");
+      expect(invalid.ok).toBe(false);
+    });
+
+    it("moves a note to a folder and automatically tags it", async () => {
+      await addNote(vault, { title: "My Task", body: "body", tags: ["important"] });
+      const moved = await moveNoteToFolder(vault, "my-task", "projects", T1);
+      expect(moved.ok).toBe(true);
+      if (moved.ok) {
+        expect(moved.note.slug).toBe("projects/my-task");
+        expect(moved.note.tags).toContain("projects");
+        expect(moved.note.tags).toContain("important");
+      }
+
+      // Old path is gone, new path is readable
+      expect(await getNote(vault, "my-task")).toBeNull();
+      const loaded = await getNote(vault, "projects/my-task");
+      expect(loaded).not.toBeNull();
+      expect(loaded?.tags).toContain("projects");
+
+      // Moving back to root
+      const back = await moveNoteToFolder(vault, "projects/my-task", null, T1);
+      expect(back.ok).toBe(true);
+      if (back.ok) {
+        expect(back.note.slug).toBe("my-task");
+      }
+      expect(await getNote(vault, "projects/my-task")).toBeNull();
+      expect(await getNote(vault, "my-task")).not.toBeNull();
+    });
+
+    it("refuses move when destination collides", async () => {
+      await addNote(vault, { title: "Note One", body: "one" });
+      await createFolder(vault, "projects");
+      await addNote(vault, { title: "Note One", body: "two" });
+      // move note-one into projects where it already exists
+      const targetPath = join(vault, "notes", "projects", "note-one.md");
+      await fs.writeFile(targetPath, "collision", "utf8");
+
+      const res = await moveNoteToFolder(vault, "note-one", "projects", T1);
+      expect(res.ok).toBe(false);
+      if (!res.ok) {
+        expect(res.reason).toBe("collision");
+      }
+    });
+
+    it("returns missing when moving non-existent note", async () => {
+      const res = await moveNoteToFolder(vault, "nonexistent", "projects");
+      expect(res.ok).toBe(false);
+      if (!res.ok) {
+        expect(res.reason).toBe("missing");
+      }
+    });
   });
 });

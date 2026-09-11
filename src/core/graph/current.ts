@@ -102,10 +102,10 @@ export async function readRepositorySide(
  * a third readdir) is now N reads and one readdir (weave-workspace §4.1).
  */
 export async function buildCurrentGraph(cwd: string, vaultRoot: string = resolveVaultRoot()): Promise<GraphModel> {
-  const { notes, fileCount } = await readVault(vaultRoot);
+  const { notes, fileCount, folders } = await readVault(vaultRoot);
 
   const input: BuildGraphInput = {
-    vault: { root: vaultRoot, exists: true, noteCount: fileCount },
+    vault: { root: vaultRoot, exists: true, noteCount: fileCount, ...(folders ? { folders } : {}) },
     notes: notes.slice(0, DEFAULT_MAX_NOTES),
     repository: null,
   };

@@ -33,6 +33,9 @@ import {
   messageForStatus,
   openNote,
   renameNote,
+  moveNote,
+  createFolder,
+  isCreateFolderResult,
   saveNote,
 } from "../../src/web/client/api";
 import type { FetchLike, HttpRequest, HttpResponse } from "../../src/web/client/api";
@@ -624,5 +627,34 @@ describe("deleteNote", () => {
     for (const body of [{}, { deleted: false }, { deleted: "yes" }]) {
       expect(await deleteNote(respondsWith(body), "alpha"), JSON.stringify(body)).toMatchObject({ ok: false, kind: "malformed" });
     }
+  });
+});
+
+describe("createFolder", () => {
+  it("sends POST to /api/folder with { path }", async () => {
+    const impl = respondsWith({ ok: true, path: "projects" });
+    const result = await createFolder(impl, "projects");
+    expect(impl.calls[0]?.url).toBe("/api/folder");
+    expect(impl.calls[0]?.init?.method).toBe("POST");
+    expect(result.ok).toBe(true);
+    if (result.ok) expect(result.data.path).toBe("projects");
+  });
+
+  it("validates isCreateFolderResult correctly", () => {
+    expect(isCreateFolderResult({ ok: true, path: "dir" })).toBe(true);
+    expect(isCreateFolderResult({ ok: false })).toBe(false);
+    expect(isCreateFolderResult(null)).toBe(false);
+    expect(isCreateFolderResult("string")).toBe(false);
+  });
+});
+
+describe("moveNote", () => {
+  it("sends POST to /api/note/:slug/move with { targetFolder }", async () => {
+    const impl = respondsWith(PAYLOAD);
+    const result = await moveNote(impl, "alpha", "projects");
+    expect(impl.calls[0]?.url).toBe("/api/note/alpha/move");
+    expect(impl.calls[0]?.init?.method).toBe("POST");
+    expect(JSON.parse(impl.calls[0]?.init?.body ?? "{}")).toEqual({ targetFolder: "projects" });
+    expect(result.ok).toBe(true);
   });
 });

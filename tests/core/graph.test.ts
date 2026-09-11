@@ -526,4 +526,19 @@ describe("buildGraph — nested vault notes", () => {
     expect(contains).toContainEqual({ source: "vfolder:a/b", target: "note:a/b/deep", kind: "contains" });
     expect(contains).toContainEqual({ source: "vfolder:a", target: "note:a/shallow", kind: "contains" });
   });
+
+  it("surfaces empty folders from vault.folders", async () => {
+    const { buildGraph } = await import("../../src/core/graph/build");
+    const model = buildGraph({
+      vault: { root: "/v", exists: true, noteCount: 0, folders: ["empty-folder"] },
+      notes: [],
+      repository: null,
+    });
+    const folder = model.nodes.find((n) => n.id === "vfolder:empty-folder");
+    expect(folder).toBeDefined();
+    expect(folder?.label).toBe("empty-folder");
+    expect(folder?.detail.notes).toBe("0");
+    const contains = model.edges.filter((e) => e.kind === "contains");
+    expect(contains).toContainEqual({ source: "vault", target: "vfolder:empty-folder", kind: "contains" });
+  });
 });

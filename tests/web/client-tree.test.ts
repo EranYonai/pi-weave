@@ -33,6 +33,11 @@ import {
   initialTreeView,
   internalsHint,
   internalsLabel,
+  isDraggableNote,
+  isDropTarget,
+  folderPathFromId,
+  FOLDER_BTN_HINT,
+  FOLDER_PLACEHOLDER,
   isMuted,
   isSessionNote,
   kindIcon,
@@ -832,5 +837,33 @@ describe("rowCountLabel", () => {
   it("says `1 row` for one", () => {
     const one = payloadOf([node("vault", "vault", "Vault")], []);
     expect(rowCountLabel(rowsFor(one, initialTreeView()))).toBe("1 row");
+  });
+});
+
+describe("drag & drop and folder helpers", () => {
+  it("recognizes drop targets", () => {
+    expect(isDropTarget("vault")).toBe(true);
+    expect(isDropTarget("vfolder:projects")).toBe(true);
+    expect(isDropTarget("vfolder:work/deep")).toBe(true);
+    expect(isDropTarget("note:alpha")).toBe(false);
+    expect(isDropTarget("module:src")).toBe(false);
+  });
+
+  it("extracts folder path from drop target id", () => {
+    expect(folderPathFromId("vault")).toBeNull();
+    expect(folderPathFromId("vfolder:projects")).toBe("projects");
+    expect(folderPathFromId("vfolder:work/deep")).toBe("work/deep");
+    expect(folderPathFromId("other:id")).toBeNull();
+  });
+
+  it("identifies draggable notes", () => {
+    expect(isDraggableNote("note", "note:alpha")).toBe(true);
+    expect(isDraggableNote("module", "vfolder:projects")).toBe(false);
+    expect(isDraggableNote("vault", "vault")).toBe(false);
+  });
+
+  it("exports folder creation button constants", () => {
+    expect(typeof FOLDER_BTN_HINT).toBe("string");
+    expect(typeof FOLDER_PLACEHOLDER).toBe("string");
   });
 });

@@ -140,7 +140,12 @@ function buildVaultSide(
   // the tree renders any `contains` chain, so the kind reuse needs no client
   // change. Deterministic: dirs sorted, parents before children.
   const folderIds = new Map<string, string>();
-  const noteDirs = [...new Set(kept.map((n) => n.slug.split("/").slice(0, -1).join("/")))]
+  const noteDirs = [
+    ...new Set([
+      ...(input.vault.folders ?? []),
+      ...kept.map((n) => n.slug.split("/").slice(0, -1).join("/")),
+    ]),
+  ]
     .filter((d) => d.length > 0)
     .sort();
   const notesIn = (dir: string): number => kept.filter((n) => n.slug.startsWith(`${dir}/`)).length;

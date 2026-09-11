@@ -137,6 +137,28 @@ export function collapse(state: TreeViewState, id: string): TreeViewState {
   return { ...state, expanded };
 }
 
+// --- drag & drop and folder helpers -------------------------------------------
+
+export const FOLDER_BTN_HINT = "Create a new folder in the vault";
+export const FOLDER_PLACEHOLDER = "Folder name…";
+
+/** True when a tree row can accept dropped notes (the vault root or a folder). */
+export function isDropTarget(id: string): boolean {
+  return id === "vault" || id.startsWith("vfolder:");
+}
+
+/** Extract folder path relative to notes/ from a drop target row id, or null for root. */
+export function folderPathFromId(id: string): string | null {
+  if (id === "vault") return null;
+  if (id.startsWith("vfolder:")) return id.slice("vfolder:".length);
+  return null;
+}
+
+/** True when a tree row represents a note that can be dragged into folders. */
+export function isDraggableNote(kind: WireNodeKind, id: string): boolean {
+  return kind === "note" && id.startsWith("note:");
+}
+
 /**
  * Set the substring filter.
  *

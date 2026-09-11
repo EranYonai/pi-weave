@@ -327,6 +327,13 @@ body{font-size:var(--weave-px-base)}
   cursor:default;white-space:nowrap;
 }
 .weave-row:hover{background:var(--weave-line)}
+.weave-row.weave-row-droptarget{
+  background:var(--weave-new);outline:1px dashed var(--weave-accent);outline-offset:-1px;
+}
+.weave-tree-new-folder{
+  display:flex;align-items:center;gap:6px;padding:4px var(--weave-gutter);
+  border-bottom:1px solid var(--weave-line);background:var(--weave-panel);
+}
 /* A hover changes two things, in this order: the ground appears under the
    row, then the label steps up to fg. The second half is what stops the
    hover from reading as a stray grey rectangle — the row answers the pointer

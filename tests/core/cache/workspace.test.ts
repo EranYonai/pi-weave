@@ -421,8 +421,8 @@ describe("classifyPath", () => {
     expect(classifyPath("/work/repo/src/../src/a.ts", opts)).toBe("repo");
   });
 
-  it("ignores a note in a subdirectory — the vault is flat", () => {
-    expect(classifyPath("/home/u/.okf/notes/nested/a.md", opts)).toBe("none");
+  it("classifies a note in a subdirectory as vault", () => {
+    expect(classifyPath("/home/u/.okf/notes/nested/a.md", opts)).toBe("vault");
   });
 });
 

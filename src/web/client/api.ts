@@ -38,6 +38,7 @@
 
 import type {
   ConflictPayload,
+  CreateFolderResult,
   DeleteNoteResult,
   GraphPayload,
   NotePayload,
@@ -286,6 +287,12 @@ export function isSearchPayload(value: unknown): value is SearchPayload {
 }
 
 /** `OpenResult`. */
+export function isCreateFolderResult(value: unknown): value is CreateFolderResult {
+  if (typeof value !== "object" || value === null) return false;
+  const candidate = value as Record<string, unknown>;
+  return candidate.ok === true && typeof candidate.path === "string";
+}
+
 export function isOpenResult(value: unknown): value is OpenResult {
   return isObject(value) && typeof value["opened"] === "boolean";
 }
@@ -435,6 +442,20 @@ export function saveNote(fetchImpl: FetchLike, slug: string, input: SaveNoteRequ
  */
 export function renameNote(fetchImpl: FetchLike, slug: string, target: string): Promise<WriteResult<NotePayload>> {
   return write(fetchImpl, noteUrl(slug, "/rename"), isNotePayload, writeInit("POST", { slug: target }));
+}
+
+/** `POST /api/note/:slug/move`. Moves note into a folder and updates tags. */
+export function moveNote(fetchImpl: FetchLike, slug: string, targetFolder: string | null): Promise<WriteResult<NotePayload>> {
+  return write(fetchImpl, noteUrl(slug, "/move"), isNotePayload, writeInit("POST", { targetFolder }));
+}
+
+/** `POST /api/folder`. Creates a folder under notes/. */
+export function createFolder(fetchImpl: FetchLike, path: string): Promise<ApiResult<CreateFolderResult>> {
+  return request(fetchImpl, "/api/folder", isCreateFolderResult, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ path }),
+  });
 }
 
 /** `DELETE /api/note/:slug`. Hard delete — the vault has no trash. */

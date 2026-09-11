@@ -144,6 +144,8 @@ describe("THEME_CSS", () => {
       "weave-row-new",
       "weave-row-on",
       "weave-row-muted",
+      "weave-row-droptarget",
+      "weave-tree-new-folder",
       "weave-icon",
       "weave-icon-open",
       "weave-twisty",

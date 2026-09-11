@@ -626,6 +626,96 @@ export async function deleteNote(root: string, slug: string): Promise<DeleteResu
   });
 }
 
+/**
+ * Move a note to a folder (or root when targetFolder is null/empty/"vault").
+ * Automatically ensures the note carries the folder's name in its #tags
+ * so that notes filed in the folder are graph-connected.
+ */
+export async function moveNoteToFolder(
+  root: string,
+  slug: string,
+  targetFolder: string | null,
+  now: Date = new Date(),
+): Promise<MutationResult> {
+  const from = resolveNotePath(root, slug);
+  if (!from) return { ok: false, reason: "missing" };
+
+  const noteBaseName = slug.split("/").pop() ?? slug;
+  let newSlug: string;
+  let folderTag: string | null = null;
+
+  if (targetFolder !== null && targetFolder.trim().length > 0 && targetFolder !== "vault") {
+    const cleanedFolder = targetFolder.trim().replace(/^[\/\\]+|[\/\\]+$/g, "");
+    const folderSegments = cleanedFolder.split(/[\/\\]+/).map(slugify).filter((s) => s.length > 0);
+    if (folderSegments.length === 0) return { ok: false, reason: "missing" };
+    const folderPath = folderSegments.join("/");
+    newSlug = `${folderPath}/${noteBaseName}`;
+    folderTag = folderSegments[folderSegments.length - 1] ?? null;
+  } else {
+    newSlug = noteBaseName;
+  }
+
+  const to = resolveNotePath(root, newSlug);
+  if (!to) return { ok: false, reason: "missing" };
+
+  return withNoteLocks([from, to], async () => {
+    const note = await getNote(root, slug);
+    if (!note) return { ok: false, reason: "missing" };
+
+    if (newSlug !== slug && (await exists(to))) {
+      return { ok: false, reason: "collision", slug: newSlug };
+    }
+
+    await fs.mkdir(dirname(to), { recursive: true });
+    if (from !== to) {
+      await fs.rename(from, to);
+    }
+
+    const tags = [...note.tags];
+    if (folderTag && !tags.includes(folderTag)) {
+      tags.push(folderTag);
+    }
+
+    const meta: NoteMeta = {
+      ...note,
+      tags,
+      updated: now.toISOString(),
+    };
+    const written = await writeNote(to, newSlug, meta, note.body, note.frontMatter);
+    return { ok: true, note: written };
+  });
+}
+
+/**
+ * Create a folder under the vault's notes directory.
+ */
+export async function createFolder(
+  root: string,
+  folderName: string,
+): Promise<{ ok: true; path: string } | { ok: false; reason: "invalid-name" | "collision" }> {
+  await ensureVault(root);
+  const trimmed = folderName.trim().replace(/^[\/\\]+|[\/\\]+$/g, "");
+  if (trimmed.length === 0) return { ok: false, reason: "invalid-name" };
+  const segments = trimmed.split(/[\/\\]+/).map(slugify).filter((s) => s.length > 0);
+  if (segments.length === 0) return { ok: false, reason: "invalid-name" };
+  const relPath = segments.join("/");
+  const notesDir = join(root, NOTES_DIR);
+  const fullPath = join(notesDir, relPath);
+  const rel = relative(notesDir, fullPath);
+  if (rel.startsWith("..") || isAbsolute(rel) || rel.length === 0) {
+    return { ok: false, reason: "invalid-name" };
+  }
+  try {
+    const stat = await fs.stat(fullPath);
+    if (!stat.isDirectory()) return { ok: false, reason: "collision" };
+    return { ok: true, path: relPath };
+  } catch {
+    // does not exist yet
+  }
+  await fs.mkdir(fullPath, { recursive: true });
+  return { ok: true, path: relPath };
+}
+
 // ---------------------------------------------------------------------------
 // Generated-note upsert (weave-scan sessions; docs/session-scan.md)
 // ---------------------------------------------------------------------------
@@ -832,6 +922,28 @@ function byUpdatedDesc(a: { updated: string }, b: { updated: string }): number {
   return b.updated.localeCompare(a.updated);
 }
 
+export async function listNoteFolders(root: string): Promise<string[]> {
+  const dir = join(root, NOTES_DIR);
+  const out: string[] = [];
+  async function walk(prefix: string): Promise<void> {
+    let entries;
+    try {
+      entries = await fs.readdir(prefix.length > 0 ? join(dir, prefix) : dir, { withFileTypes: true });
+    } catch {
+      return;
+    }
+    for (const entry of entries) {
+      if (entry.isDirectory() && !entry.name.startsWith(".")) {
+        const folder = prefix.length > 0 ? `${prefix}/${entry.name}` : entry.name;
+        out.push(folder);
+        await walk(folder);
+      }
+    }
+  }
+  await walk("");
+  return out.sort();
+}
+
 /**
  * Everything one pass over the vault can tell you: every readable note with
  * its body, plus how many `.md` files exist.
@@ -848,18 +960,24 @@ export interface VaultSnapshot {
    * `notes.length` can be smaller; this is the honest on-disk count.
    */
   fileCount: number;
+  /** Subdirectories present in <vault>/notes/, including empty ones. */
+  folders?: string[];
 }
 
 /** Read the whole vault in one pass: one readdir, one read per note. */
 export async function readVault(root: string): Promise<VaultSnapshot> {
-  const files = await listNoteFiles(root);
+  const [files, folders] = await Promise.all([listNoteFiles(root), listNoteFolders(root)]);
   const notes: Note[] = [];
   for (const file of files) {
     const note = await getNote(root, file.slice(0, -".md".length));
     if (!note) continue; // unreadable/malformed files are skipped, not fatal
     notes.push(note);
   }
-  return { notes: notes.sort(byUpdatedDesc), fileCount: files.length };
+  return {
+    notes: notes.sort(byUpdatedDesc),
+    fileCount: files.length,
+    ...(folders.length > 0 ? { folders } : {}),
+  };
 }
 
 /** One note's identity and change-detection stamp, without reading its content. */

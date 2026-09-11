@@ -248,6 +248,7 @@ export function Shell(props: ShellProps) {
         renderer={createSigmaRenderer}
         storage={localStorage}
         host={window}
+        fetch={fetchJson}
         fit={fit}
       />
       {/*
