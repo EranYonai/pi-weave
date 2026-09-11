@@ -193,8 +193,6 @@ describe("THEME_CSS", () => {
       "weave-note-toggle",
       "weave-note-save",
       "weave-note-open",
-      "weave-note-del",
-      "weave-note-del-mark",
       "weave-note-action",
       "weave-note-dirty",
       "weave-note-status",

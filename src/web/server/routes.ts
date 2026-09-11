@@ -97,6 +97,7 @@ import {
   deleteNote,
   getNoteWithRevision,
   moveNoteToFolder,
+  renameFolder,
   renameNote,
   resolveNotePath,
   searchNotes,
@@ -515,6 +516,10 @@ async function route(
   if (method === "GET" && path === "/app.js") return sendBundle(deps, res);
   if (method === "GET" && path === "/api/graph") return sendGraph(deps, req, res);
   if (path === "/api/folder" || path.startsWith("/api/folder/")) {
+    if (method === "POST" && path.endsWith("/rename")) {
+      await handleRenameFolder(deps, path, req, res);
+      return;
+    }
     if (method === "POST" && path === "/api/folder") {
       await handleCreateFolder(deps, req, res);
       return;
@@ -969,6 +974,44 @@ async function handleDeleteFolder(
   }
   deps.suppress?.(join(deps.vaultRoot, NOTES_DIR, folderPath));
   sendJson(res, 200, { deleted: true });
+}
+
+async function handleRenameFolder(
+  deps: RouteDeps,
+  urlPath: string,
+  req: IncomingMessage,
+  res: ServerResponse,
+): Promise<void> {
+  const suffix = "/rename";
+  const oldPathRaw = urlPath.slice("/api/folder/".length, urlPath.length - suffix.length);
+  const oldPath = decodeURIComponent(oldPathRaw);
+  const body = await readJsonBody(req);
+  const newPath =
+    typeof body === "object" && body !== null
+      ? ((body as { newPath?: string; path?: string; target?: string }).newPath ??
+         (body as { path?: string }).path ??
+         (body as { target?: string }).target)
+      : undefined;
+  if (typeof newPath !== "string" || newPath.trim().length === 0) {
+    sendJson(res, 400, { error: "expected { newPath: string }" });
+    return;
+  }
+  const result = await renameFolder(deps.vaultRoot, oldPath, newPath);
+  if (!result.ok) {
+    if (result.reason === "collision") {
+      sendJson(res, 409, { error: "a folder or file already exists with that path", reason: "collision" });
+      return;
+    }
+    if (result.reason === "invalid-name") {
+      sendJson(res, 400, { error: "invalid folder path", reason: "invalid-name" });
+      return;
+    }
+    sendJson(res, 404, { error: "no such folder" });
+    return;
+  }
+  deps.suppress?.(join(deps.vaultRoot, NOTES_DIR, oldPath));
+  deps.suppress?.(join(deps.vaultRoot, NOTES_DIR, result.path));
+  sendJson(res, 200, { ok: true, path: result.path });
 }
 
 async function removeNote(deps: RouteDeps, slug: string, res: ServerResponse): Promise<void> {

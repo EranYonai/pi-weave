@@ -1201,6 +1201,31 @@ describe("DELETE /api/folder", () => {
   });
 });
 
+describe("POST /api/folder/:path/rename", () => {
+  it("renames a folder and moves its contents", async () => {
+    const { server, vaultRoot } = await bootWritable();
+    await post(server, "/api/folder", { path: "source-dir" });
+    const res = await post(server, "/api/folder/source-dir/rename", { newPath: "dest-dir" });
+    expect(res.status).toBe(200);
+    expect(await res.json()).toEqual({ ok: true, path: "dest-dir" });
+    expect((await fs.stat(join(vaultRoot, "notes", "dest-dir"))).isDirectory()).toBe(true);
+    await expect(fs.stat(join(vaultRoot, "notes", "source-dir"))).rejects.toThrow();
+  });
+
+  it("404s for a non-existent folder", async () => {
+    const { server } = await bootWritable();
+    const res = await post(server, "/api/folder/nonexistent/rename", { newPath: "new-dest" });
+    expect(res.status).toBe(404);
+  });
+
+  it("400s an empty newPath", async () => {
+    const { server } = await bootWritable();
+    await post(server, "/api/folder", { path: "another-dir" });
+    const res = await post(server, "/api/folder/another-dir/rename", { newPath: "   " });
+    expect(res.status).toBe(400);
+  });
+});
+
 describe("DELETE /api/note/:slug", () => {
   it("unlinks the file", async () => {
     const { server, vaultRoot } = await bootWritable();

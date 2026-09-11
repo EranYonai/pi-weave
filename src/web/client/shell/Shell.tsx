@@ -198,14 +198,6 @@ export function Shell(props: ShellProps) {
 
   const resolved = useMemo(() => resolveColumns(layout, width, breakpointFor(width)), [layout, width]);
 
-  const [pendingDeleteNote, setPendingDeleteNote] = useState<{ slug: string; title: string } | null>(null);
-
-  const handleDeleteCurrentNote = () => {
-    if (!noteBody.value?.note) return;
-    const current = noteBody.value.note;
-    setPendingDeleteNote({ slug: current.slug, title: current.title });
-  };
-
   // Built once: the handlers read state through `live`, so they never go
   // stale and never need to be rebuilt.
   const drag = useMemo(
@@ -258,7 +250,6 @@ export function Shell(props: ShellProps) {
         storage={localStorage}
         host={window}
         fetch={fetchJson}
-        onDeleteNote={handleDeleteCurrentNote}
         fit={fit}
       />
       {/*
@@ -284,42 +275,6 @@ export function Shell(props: ShellProps) {
       ) : null}
       {overlay === "help" ? (
         <HelpOverlay shortcut={searchShortcut(looksApple(props.platform))} onClose={() => setOverlay(null)} />
-      ) : null}
-      {pendingDeleteNote !== null ? (
-        <div class="weave-scrim" onClick={() => setPendingDeleteNote(null)}>
-          <div
-            class="weave-dialog"
-            role="alertdialog"
-            aria-modal="true"
-            aria-label="Confirm deletion"
-            onClick={(e) => e.stopPropagation()}
-            onKeyDown={(e) => {
-              if (e.key === "Escape") setPendingDeleteNote(null);
-            }}
-          >
-            <h3 class="weave-dialog-title">Delete note?</h3>
-            <p class="weave-dialog-body">
-              Are you sure you want to delete <strong>“{pendingDeleteNote.title}”</strong>? This cannot be undone.
-            </p>
-            <div class="weave-dialog-actions">
-              <button type="button" class="weave-chip" onClick={() => setPendingDeleteNote(null)} autoFocus>
-                Cancel
-              </button>
-              <button
-                type="button"
-                class="weave-chip weave-chip-bad"
-                onClick={async () => {
-                  const target = pendingDeleteNote;
-                  setPendingDeleteNote(null);
-                  await deleteNote(fetchJson, target.slug);
-                  editor.send({ type: "navigate", id: null });
-                }}
-              >
-                Delete
-              </button>
-            </div>
-          </div>
-        </div>
       ) : null}
     </>
   );

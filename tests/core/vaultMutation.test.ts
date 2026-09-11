@@ -32,6 +32,7 @@ import {
   createFolder,
   deleteFolder,
   moveNoteToFolder,
+  renameFolder,
   listNoteFolders,
 } from "../../src/core/vault";
 import { makeTempDir } from "../helpers";
@@ -611,6 +612,40 @@ describe("concurrent mutations serialize", () => {
 
       // Invalid names
       const invalid = await deleteFolder(vault, "  ");
+      expect(invalid.ok).toBe(false);
+      if (!invalid.ok) expect(invalid.reason).toBe("invalid-name");
+    });
+
+    it("renames a folder and updates tags on its notes", async () => {
+      await createFolder(vault, "old-name");
+      await addNote(vault, { title: "Doc", body: "body" });
+      await moveNoteToFolder(vault, "doc", "old-name");
+      expect(await getNote(vault, "old-name/doc")).not.toBeNull();
+      expect((await getNote(vault, "old-name/doc"))?.tags).toContain("old-name");
+
+      const renamed = await renameFolder(vault, "old-name", "new-name");
+      expect(renamed.ok).toBe(true);
+      if (renamed.ok) expect(renamed.path).toBe("new-name");
+
+      expect(await getNote(vault, "old-name/doc")).toBeNull();
+      const updatedNote = await getNote(vault, "new-name/doc");
+      expect(updatedNote).not.toBeNull();
+      expect(updatedNote?.tags).toContain("new-name");
+      expect(updatedNote?.tags).not.toContain("old-name");
+
+      // Collisions
+      await createFolder(vault, "taken");
+      const collide = await renameFolder(vault, "new-name", "taken");
+      expect(collide.ok).toBe(false);
+      if (!collide.ok) expect(collide.reason).toBe("collision");
+
+      // Missing
+      const missing = await renameFolder(vault, "nonexistent", "other");
+      expect(missing.ok).toBe(false);
+      if (!missing.ok) expect(missing.reason).toBe("missing");
+
+      // Invalid name
+      const invalid = await renameFolder(vault, "new-name", "   ");
       expect(invalid.ok).toBe(false);
       if (!invalid.ok) expect(invalid.reason).toBe("invalid-name");
     });

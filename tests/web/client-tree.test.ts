@@ -888,6 +888,7 @@ describe("drag & drop and folder helpers", () => {
 
     const folderItems = contextMenuItemsForRow("vfolder:work", "module");
     expect(folderItems.some((i) => i.kind === "action" && i.id === "new-subfolder")).toBe(true);
+    expect(folderItems.some((i) => i.kind === "action" && i.id === "rename-folder")).toBe(true);
     expect(folderItems.some((i) => i.kind === "action" && i.id === "delete-folder")).toBe(true);
 
     const vaultItems = contextMenuItemsForRow("vault", "vault");

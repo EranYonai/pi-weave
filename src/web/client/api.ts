@@ -469,6 +469,16 @@ export function deleteFolder(fetchImpl: FetchLike, path: string): Promise<WriteR
   return write(fetchImpl, `/api/folder/${encoded}`, isDeleteResult, { method: "DELETE" });
 }
 
+/** `POST /api/folder/:path/rename`. Renames a folder and updates note tags. */
+export function renameFolder(fetchImpl: FetchLike, oldPath: string, newPath: string): Promise<ApiResult<CreateFolderResult>> {
+  const encoded = oldPath.split("/").map(encodeURIComponent).join("/");
+  return request(fetchImpl, `/api/folder/${encoded}/rename`, isCreateFolderResult, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ newPath }),
+  });
+}
+
 /** `GET /api/okf/:rel`. Anchored under `<cwd>/.okf` by the server. */
 export function fetchOkfFile(fetchImpl: FetchLike, rel: string): Promise<ApiResult<OkfFilePayload>> {
   // Per segment: `encodeURIComponent` would escape the separators of a

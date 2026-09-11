@@ -203,6 +203,7 @@ export function contextMenuItemsForRow(rowId: string, kind: WireNodeKind): reado
   if (rowId.startsWith("vfolder:")) {
     return [
       { kind: "action", id: "new-subfolder", label: "New subfolder…", icon: "📁" },
+      { kind: "action", id: "rename-folder", label: "Rename folder…", icon: "✏️" },
       { kind: "separator" },
       { kind: "action", id: "delete-folder", label: "Delete folder", icon: "🗑", destructive: true },
     ];

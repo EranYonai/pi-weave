@@ -90,7 +90,6 @@ export interface NoteProps {
   /** The `<textarea>`'s content. Rendered only while `toolbar.editing`. */
   draft: string;
   send: (event: EditorEvent) => void;
-  onDelete?: (() => void) | undefined;
 }
 
 /**
@@ -106,16 +105,19 @@ export interface NoteProps {
 function Header({
   view,
   open,
-  onDelete,
 }: {
   view: NoteHeaderView;
   open: (() => void) | null;
-  onDelete: (() => void) | null;
 }) {
   return (
     <header class="weave-note-head">
       <h3 class="weave-note-title">{view.title}</h3>
       <p class="weave-note-meta">
+        {open === null ? null : (
+          <button type="button" class="weave-note-open" title={OPEN_HINT} aria-label={OPEN_LABEL} onClick={open}>
+            <span class="weave-note-open-mark" aria-hidden="true" dangerouslySetInnerHTML={{ __html: OPEN_ICON }} />
+          </button>
+        )}
         <span class={`weave-prov weave-prov-${view.provenance}`} title={view.provenanceTitle}>
           {view.provenanceGlyph} {view.provenance}
         </span>
@@ -125,16 +127,6 @@ function Header({
         <span class="weave-note-time" title={view.createdIso}>
           {CREATED_WORD} {view.created}
         </span>
-        {open === null ? null : (
-          <button type="button" class="weave-note-open" title={OPEN_HINT} aria-label={OPEN_LABEL} onClick={open}>
-            <span class="weave-note-open-mark" aria-hidden="true" dangerouslySetInnerHTML={{ __html: OPEN_ICON }} />
-          </button>
-        )}
-        {onDelete === null ? null : (
-          <button type="button" class="weave-note-open weave-note-del" title="Delete note" aria-label="Delete note" onClick={onDelete}>
-            <span class="weave-note-del-mark" aria-hidden="true">🗑</span>
-          </button>
-        )}
       </p>
       <p class="weave-note-tags">
         {view.tags.map((tag) => (
@@ -237,7 +229,6 @@ export function Note(props: NoteProps) {
       <Header
         view={header}
         open={toolbar === null ? null : () => props.send({ type: "open" })}
-        onDelete={props.onDelete ?? null}
       />
       {toolbar === null ? null : <EditorBar toolbar={toolbar} {...shell} />}
       {toolbar !== null && toolbar.editing ? (

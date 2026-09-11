@@ -16,7 +16,7 @@ import type { GraphPayload } from "../../shared/wire";
 import type { TreeContextMenuState, TreeRowView, TreeViewState } from "./tree.model";
 import type { FetchLike } from "../api";
 import { fetchJson } from "../api.dom";
-import { createFolder, deleteFolder, deleteNote, moveNote, renameNote } from "../api";
+import { createFolder, deleteFolder, deleteNote, moveNote, renameFolder, renameNote } from "../api";
 import {
   FILTER_HINT,
   FILTER_LABEL,
@@ -184,6 +184,7 @@ export function Tree(props: TreeProps) {
   const [menu, setMenu] = useState<TreeContextMenuState | null>(null);
   const [pendingDelete, setPendingDelete] = useState<{ id: string; label: string; isFolder: boolean } | null>(null);
   const [pendingRename, setPendingRename] = useState<{ slug: string; currentName: string; value: string } | null>(null);
+  const [pendingRenameFolder, setPendingRenameFolder] = useState<{ oldPath: string; currentName: string; value: string } | null>(null);
   const [pendingSubfolder, setPendingSubfolder] = useState<{ parentPath: string; value: string } | null>(null);
   const menuRef = useRef<HTMLDivElement | null>(null);
 
@@ -248,6 +249,13 @@ export function Tree(props: TreeProps) {
         if (!current.rowId.startsWith("note:")) break;
         const currentSlug = current.rowId.slice("note:".length);
         setPendingRename({ slug: currentSlug, currentName: current.rowLabel, value: current.rowLabel });
+        break;
+      }
+      case "rename-folder": {
+        if (!current.rowId.startsWith("vfolder:")) break;
+        const folderPath = current.rowId.slice("vfolder:".length);
+        const currentLeaf = folderPath.split("/").pop() ?? current.rowLabel;
+        setPendingRenameFolder({ oldPath: folderPath, currentName: currentLeaf, value: currentLeaf });
         break;
       }
       case "delete-note":
@@ -537,6 +545,54 @@ export function Tree(props: TreeProps) {
               />
               <div class="weave-dialog-actions">
                 <button type="button" class="weave-chip" onClick={() => setPendingRename(null)}>
+                  Cancel
+                </button>
+                <button type="submit" class="weave-chip">
+                  Rename
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      ) : null}
+      {pendingRenameFolder !== null ? (
+        <div class="weave-scrim" onClick={() => setPendingRenameFolder(null)}>
+          <div
+            class="weave-dialog"
+            role="dialog"
+            aria-modal="true"
+            aria-label="Rename folder"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <h3 class="weave-dialog-title">Rename folder</h3>
+            <form
+              onSubmit={async (e) => {
+                e.preventDefault();
+                const name = pendingRenameFolder.value.trim();
+                if (name && name !== pendingRenameFolder.currentName) {
+                  const prefix = pendingRenameFolder.oldPath.includes("/")
+                    ? pendingRenameFolder.oldPath.split("/").slice(0, -1).join("/") + "/"
+                    : "";
+                  await renameFolder(fetcher, pendingRenameFolder.oldPath, prefix + name);
+                }
+                setPendingRenameFolder(null);
+              }}
+            >
+              <input
+                type="text"
+                class="weave-filter weave-dialog-input"
+                value={pendingRenameFolder.value}
+                onInput={(e) => setPendingRenameFolder({ ...pendingRenameFolder, value: e.currentTarget.value })}
+                onKeyDown={(e) => {
+                  if (e.key === "Escape") {
+                    e.stopPropagation();
+                    setPendingRenameFolder(null);
+                  }
+                }}
+                autoFocus
+              />
+              <div class="weave-dialog-actions">
+                <button type="button" class="weave-chip" onClick={() => setPendingRenameFolder(null)}>
                   Cancel
                 </button>
                 <button type="submit" class="weave-chip">

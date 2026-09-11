@@ -445,13 +445,11 @@ body{font-size:var(--weave-px-base)}
    the \`title\`/\`aria-label\` (\`editor.model.ts\`'s OPEN_HINT/OPEN_LABEL), and
    the control is quiet until the pointer asks for it. */
 .weave-note-open{
-  margin-left:auto;display:inline-flex;align-items:center;justify-content:center;
+  display:inline-flex;align-items:center;justify-content:center;
   width:22px;height:22px;padding:0;font:inherit;color:var(--weave-faint);
   background:none;border:0;border-radius:var(--weave-radius);cursor:pointer;
 }
 .weave-note-open:hover{color:var(--weave-fg);background:var(--weave-line)}
-.weave-note-del:hover{color:var(--weave-bad)}
-.weave-note-del-mark{display:inline-flex;line-height:1;font-size:var(--weave-px-ui)}
 .weave-note-open-mark{display:inline-flex;line-height:0}
 .weave-note-tags{margin:6px 0 0;display:flex;gap:5px;flex-wrap:wrap}
 .weave-tag{

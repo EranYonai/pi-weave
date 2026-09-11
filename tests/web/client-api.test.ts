@@ -36,6 +36,7 @@ import {
   moveNote,
   createFolder,
   deleteFolder,
+  renameFolder,
   isCreateFolderResult,
   saveNote,
 } from "../../src/web/client/api";
@@ -666,6 +667,17 @@ describe("deleteFolder", () => {
     const result = await deleteFolder(impl, "projects/sub");
     expect(impl.calls[0]?.url).toBe("/api/folder/projects/sub");
     expect(impl.calls[0]?.init?.method).toBe("DELETE");
+    expect(result.ok).toBe(true);
+  });
+});
+
+describe("renameFolder", () => {
+  it("sends POST to /api/folder/:path/rename with { newPath }", async () => {
+    const impl = respondsWith({ ok: true, path: "projects/new" });
+    const result = await renameFolder(impl, "projects/old", "projects/new");
+    expect(impl.calls[0]?.url).toBe("/api/folder/projects/old/rename");
+    expect(impl.calls[0]?.init?.method).toBe("POST");
+    expect(JSON.parse(impl.calls[0]?.init?.body ?? "{}")).toEqual({ newPath: "projects/new" });
     expect(result.ok).toBe(true);
   });
 });

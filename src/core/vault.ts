@@ -745,6 +745,83 @@ export async function deleteFolder(
   }
 }
 
+/**
+ * Rename a folder under <vault>/notes/.
+ * Moves the directory on disk and updates frontmatter #tags on all contained
+ * notes so the tag reflects the new folder name.
+ */
+export async function renameFolder(
+  root: string,
+  oldPath: string,
+  newPath: string,
+  now: Date = new Date(),
+): Promise<{ ok: true; path: string } | { ok: false; reason: "missing" | "collision" | "invalid-name" }> {
+  await ensureVault(root);
+  const cleanOld = oldPath.trim().replace(/^[\/\\]+|[\/\\]+$/g, "");
+  const cleanNew = newPath.trim().replace(/^[\/\\]+|[\/\\]+$/g, "");
+  if (cleanOld.length === 0 || cleanNew.length === 0) return { ok: false, reason: "invalid-name" };
+
+  const oldSegments = cleanOld.split(/[\/\\]+/).map(slugify).filter((s) => s.length > 0);
+  const newSegments = cleanNew.split(/[\/\\]+/).map(slugify).filter((s) => s.length > 0);
+  if (oldSegments.length === 0 || newSegments.length === 0) return { ok: false, reason: "invalid-name" };
+
+  const oldRel = oldSegments.join("/");
+  const newRel = newSegments.join("/");
+  if (oldRel === newRel) return { ok: true, path: oldRel };
+
+  const notesDir = join(root, NOTES_DIR);
+  const fromDir = join(notesDir, oldRel);
+  const toDir = join(notesDir, newRel);
+
+  const relFrom = relative(notesDir, fromDir);
+  const relTo = relative(notesDir, toDir);
+  if (relFrom.startsWith("..") || isAbsolute(relFrom) || relTo.startsWith("..") || isAbsolute(relTo)) {
+    return { ok: false, reason: "invalid-name" };
+  }
+
+  try {
+    const stat = await fs.stat(fromDir);
+    if (!stat.isDirectory()) return { ok: false, reason: "missing" };
+  } catch {
+    return { ok: false, reason: "missing" };
+  }
+
+  if (await exists(toDir)) {
+    return { ok: false, reason: "collision" };
+  }
+
+  await fs.mkdir(dirname(toDir), { recursive: true });
+  await fs.rename(fromDir, toDir);
+
+  const oldLeaf = oldSegments[oldSegments.length - 1]!;
+  const newLeaf = newSegments[newSegments.length - 1]!;
+  const updateNotesInDir = async (dir: string, prefix: string) => {
+    let entries;
+    try {
+      entries = await fs.readdir(dir, { withFileTypes: true });
+    } catch {
+      return;
+    }
+    for (const entry of entries) {
+      if (entry.isDirectory()) {
+        await updateNotesInDir(join(dir, entry.name), `${prefix}/${entry.name}`);
+      } else if (entry.isFile() && entry.name.endsWith(".md")) {
+        const noteSlug = `${prefix}/${entry.name.slice(0, -".md".length)}`;
+        const notePath = join(dir, entry.name);
+        const note = await getNote(root, noteSlug);
+        if (!note) continue;
+        const tags = note.tags.map((t) => (t === oldLeaf ? newLeaf : t));
+        if (!tags.includes(newLeaf)) tags.push(newLeaf);
+        const meta: NoteMeta = { ...note, tags, updated: now.toISOString() };
+        await writeNote(notePath, noteSlug, meta, note.body, note.frontMatter);
+      }
+    }
+  };
+  await updateNotesInDir(toDir, newRel);
+
+  return { ok: true, path: newRel };
+}
+
 // ---------------------------------------------------------------------------
 // Generated-note upsert (weave-scan sessions; docs/session-scan.md)
 // ---------------------------------------------------------------------------
