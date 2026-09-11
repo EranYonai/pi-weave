@@ -171,6 +171,77 @@ export function deletableTarget(id: string): DeletableTarget | null {
   return null;
 }
 
+// --- context menu -------------------------------------------------------------
+
+export type TreeContextMenuItem =
+  | {
+      readonly kind: "action";
+      readonly id: string;
+      readonly label: string;
+      readonly icon?: string;
+      readonly destructive?: boolean;
+    }
+  | { readonly kind: "separator" };
+
+export interface TreeContextMenuState {
+  readonly x: number;
+  readonly y: number;
+  readonly rowId: string;
+  readonly rowLabel: string;
+  readonly kind: WireNodeKind;
+}
+
+/** Actions available in the context menu for a given tree row. */
+export function contextMenuItemsForRow(rowId: string, kind: WireNodeKind): readonly TreeContextMenuItem[] {
+  if (rowId === "vault") {
+    return [
+      { kind: "action", id: "new-folder", label: "New folder", icon: "📁" },
+      { kind: "separator" },
+      { kind: "action", id: "collapse-all", label: "Collapse all" },
+    ];
+  }
+  if (rowId.startsWith("vfolder:")) {
+    return [
+      { kind: "action", id: "new-subfolder", label: "New subfolder…", icon: "📁" },
+      { kind: "separator" },
+      { kind: "action", id: "delete-folder", label: "Delete folder", icon: "🗑", destructive: true },
+    ];
+  }
+  if (kind === "note" && rowId.startsWith("note:")) {
+    return [
+      { kind: "action", id: "open", label: "Open note", icon: "📄" },
+      { kind: "action", id: "rename", label: "Rename note…", icon: "✏️" },
+      { kind: "separator" },
+      { kind: "action", id: "delete-note", label: "Delete note", icon: "🗑", destructive: true },
+    ];
+  }
+  if (rowId.startsWith("module:") || rowId.startsWith("file:") || rowId.startsWith("entryPoint:")) {
+    return [{ kind: "action", id: "copy-id", label: "Copy node id", icon: "📋" }];
+  }
+  return [];
+}
+
+/** Calculate clamped viewport placement for the context menu. */
+export function contextMenuPlacement(
+  x: number,
+  y: number,
+  menuWidth: number,
+  menuHeight: number,
+  viewportWidth: number,
+  viewportHeight: number,
+  margin = 8,
+): { x: number; y: number } {
+  let left = x;
+  let top = y;
+  if (left + menuWidth > viewportWidth - margin) {
+    left = Math.max(margin, viewportWidth - menuWidth - margin);
+  }
+  if (top + menuHeight > viewportHeight - margin) {
+    top = Math.max(margin, viewportHeight - menuHeight - margin);
+  }
+  return { x: left, y: top };
+}
+
 /**
  * Set the substring filter.
  *

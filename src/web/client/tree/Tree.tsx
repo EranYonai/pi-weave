@@ -7,16 +7,16 @@
  * survives a UI phase with no DOM test environment.
  */
 
-import { useState } from "preact/hooks";
+import { useLayoutEffect, useRef, useState } from "preact/hooks";
 import { recentIds } from "../state";
 import { isTextEntry, type KeyTarget } from "../shell/keys.model";
 import { ICON_BOX, ICON_STROKE, ICONS } from "../shell/icons.model";
 import type { IconName } from "../shell/icons.model";
 import type { GraphPayload } from "../../shared/wire";
-import type { TreeRowView, TreeViewState } from "./tree.model";
+import type { TreeContextMenuState, TreeRowView, TreeViewState } from "./tree.model";
 import type { FetchLike } from "../api";
 import { fetchJson } from "../api.dom";
-import { createFolder, deleteFolder, deleteNote, moveNote } from "../api";
+import { createFolder, deleteFolder, deleteNote, moveNote, renameNote } from "../api";
 import {
   FILTER_HINT,
   FILTER_LABEL,
@@ -25,6 +25,8 @@ import {
   FOLDER_PLACEHOLDER,
   TREE_LABEL,
   treeActiveDescendant,
+  contextMenuItemsForRow,
+  contextMenuPlacement,
   cycleProvenance,
   deletableTarget,
   depthVar,
@@ -94,6 +96,7 @@ function Row({
   onSelect,
   onToggle,
   onDelete,
+  onContextMenu,
   onDragStart,
   onDragOver,
   onDragLeave,
@@ -104,6 +107,7 @@ function Row({
   onSelect: () => void;
   onToggle: () => void;
   onDelete?: (() => void) | undefined;
+  onContextMenu?: ((event: MouseEvent) => void) | undefined;
   onDragStart?: (event: DragEvent) => void;
   onDragOver?: (event: DragEvent) => void;
   onDragLeave?: (event: DragEvent) => void;
@@ -124,6 +128,7 @@ function Row({
       aria-expanded={view.hasKids ? view.expanded : undefined}
       style={depthVar(view.depth)}
       onClick={onSelect}
+      onContextMenu={onContextMenu}
       draggable={isDraggableNote(view.kind, view.id)}
       onDragStart={onDragStart}
       onDragOver={onDragOver}
@@ -176,37 +181,105 @@ export function Tree(props: TreeProps) {
   const [creatingFolder, setCreatingFolder] = useState(false);
   const [folderName, setFolderName] = useState("");
   const [dragOverId, setDragOverId] = useState<string | null>(null);
+  const [menu, setMenu] = useState<TreeContextMenuState | null>(null);
+  const [pendingDelete, setPendingDelete] = useState<{ id: string; label: string; isFolder: boolean } | null>(null);
+  const [pendingRename, setPendingRename] = useState<{ slug: string; currentName: string; value: string } | null>(null);
+  const [pendingSubfolder, setPendingSubfolder] = useState<{ parentPath: string; value: string } | null>(null);
+  const menuRef = useRef<HTMLDivElement | null>(null);
 
   const rows = rowsFor(props.graph, state);
   const empty = treeEmptyMessage(props.graph, rows, state);
   const fetcher = props.fetch ?? fetchJson;
 
-  const handleDeleteRow = async (id: string, label: string) => {
+  useLayoutEffect(() => {
+    const el = menuRef.current;
+    if (!el || !menu) return;
+    const placement = contextMenuPlacement(
+      menu.x,
+      menu.y,
+      el.offsetWidth || 170,
+      el.offsetHeight || 130,
+      window.innerWidth,
+      window.innerHeight,
+    );
+    el.style.setProperty("--weave-menu-x", `${placement.x}px`);
+    el.style.setProperty("--weave-menu-y", `${placement.y}px`);
+  }, [menu]);
+
+  const confirmDeleteRow = (id: string, label: string) => {
     const target = deletableTarget(id);
     if (!target) return;
-    const isFolder = target.type === "folder";
-    const confirmed =
-      typeof window !== "undefined" && typeof window.confirm === "function"
-        ? window.confirm(`Delete ${isFolder ? "folder" : "note"} "${label}"?`)
-        : true;
-    if (!confirmed) return;
+    setPendingDelete({ id, label, isFolder: target.type === "folder" });
+  };
 
-    if (target.type === "note") {
-      await deleteNote(fetcher, target.slug);
-      if (props.selectedId === id) {
+  const executeDelete = async (target: { id: string; label: string; isFolder: boolean }) => {
+    const desc = deletableTarget(target.id);
+    if (!desc) return;
+    if (desc.type === "note") {
+      await deleteNote(fetcher, desc.slug);
+      if (props.selectedId === target.id) {
         props.onSelect("");
       }
     } else {
-      await deleteFolder(fetcher, target.path);
-      if (props.selectedId && props.selectedId.startsWith(`note:${target.path}/`)) {
+      await deleteFolder(fetcher, desc.path);
+      if (props.selectedId && props.selectedId.startsWith(`note:${desc.path}/`)) {
         props.onSelect("");
       }
+    }
+  };
+
+  const handleMenuAction = async (actionId: string) => {
+    if (!menu) return;
+    const current = menu;
+    setMenu(null);
+    switch (actionId) {
+      case "open":
+        props.onSelect(current.rowId);
+        break;
+      case "new-folder":
+        setCreatingFolder(true);
+        break;
+      case "new-subfolder": {
+        const parentPath = current.rowId.slice("vfolder:".length);
+        setPendingSubfolder({ parentPath, value: "" });
+        break;
+      }
+      case "rename": {
+        if (!current.rowId.startsWith("note:")) break;
+        const currentSlug = current.rowId.slice("note:".length);
+        setPendingRename({ slug: currentSlug, currentName: current.rowLabel, value: current.rowLabel });
+        break;
+      }
+      case "delete-note":
+      case "delete-folder":
+        confirmDeleteRow(current.rowId, current.rowLabel);
+        break;
+      case "collapse-all":
+        setState((curr) => ({ ...curr, expanded: new Set() }));
+        break;
+      case "copy-id":
+        if (typeof navigator !== "undefined" && navigator.clipboard) {
+          await navigator.clipboard.writeText(current.rowId);
+        }
+        break;
     }
   };
 
   return (
     <div
       class="weave-tree"
+      onContextMenu={(event: MouseEvent) => {
+        const target = event.target as HTMLElement | null;
+        if (target?.closest(".weave-row")) return;
+        event.preventDefault();
+        setMenu({
+          x: event.clientX,
+          y: event.clientY,
+          rowId: "vault",
+          rowLabel: "Vault",
+          kind: "vault",
+        });
+      }}
       onKeyDown={(event) => {
         // The filter box sits inside this listener, so its keystrokes arrive
         // here too: a `j` meant for the query must stay a character, not an
@@ -304,7 +377,18 @@ export function Tree(props: TreeProps) {
               view={view}
               onSelect={() => props.onSelect(view.id)}
               onToggle={() => setState(toggleExpanded(state, view.id))}
-              onDelete={deletableTarget(view.id) ? () => void handleDeleteRow(view.id, view.label) : undefined}
+              onDelete={deletableTarget(view.id) ? () => confirmDeleteRow(view.id, view.label) : undefined}
+              onContextMenu={(event: MouseEvent) => {
+                event.preventDefault();
+                event.stopPropagation();
+                setMenu({
+                  x: event.clientX,
+                  y: event.clientY,
+                  rowId: view.id,
+                  rowLabel: view.label,
+                  kind: view.kind,
+                });
+              }}
               isDragOver={dragOverId === view.id}
               onDragStart={(event) => {
                 event.dataTransfer?.setData("text/plain", view.id);
@@ -339,6 +423,177 @@ export function Tree(props: TreeProps) {
         <p class="weave-tree-empty">{empty}</p>
       )}
       <p class="weave-tree-count">{rowCountLabel(rows)}</p>
+      {menu !== null ? (
+        <>
+          <div
+            class="weave-menu-backdrop"
+            onClick={() => setMenu(null)}
+            onContextMenu={(e: MouseEvent) => {
+              e.preventDefault();
+              setMenu(null);
+            }}
+          />
+          <div
+            ref={menuRef}
+            class="weave-menu"
+            role="menu"
+            aria-label={`Context menu for ${menu.rowLabel}`}
+          >
+            {contextMenuItemsForRow(menu.rowId, menu.kind).map((item, idx) =>
+              item.kind === "separator" ? (
+                <hr key={idx} class="weave-menu-sep" />
+              ) : (
+                <button
+                  key={item.id}
+                  type="button"
+                  class={`weave-menu-item${item.destructive ? " weave-menu-item-bad" : ""}`}
+                  role="menuitem"
+                  onClick={() => void handleMenuAction(item.id)}
+                >
+                  {item.icon ? <span aria-hidden="true">{item.icon}</span> : null}
+                  <span>{item.label}</span>
+                </button>
+              ),
+            )}
+          </div>
+        </>
+      ) : null}
+      {pendingDelete !== null ? (
+        <div class="weave-scrim" onClick={() => setPendingDelete(null)}>
+          <div
+            class="weave-dialog"
+            role="alertdialog"
+            aria-modal="true"
+            aria-label="Confirm deletion"
+            onClick={(e) => e.stopPropagation()}
+            onKeyDown={(e) => {
+              if (e.key === "Escape") setPendingDelete(null);
+            }}
+          >
+            <h3 class="weave-dialog-title">Delete {pendingDelete.isFolder ? "folder" : "note"}?</h3>
+            <p class="weave-dialog-body">
+              Are you sure you want to delete <strong>“{pendingDelete.label}”</strong>?
+              {pendingDelete.isFolder ? " All notes inside will be permanently deleted." : " This cannot be undone."}
+            </p>
+            <div class="weave-dialog-actions">
+              <button
+                type="button"
+                class="weave-chip"
+                onClick={() => setPendingDelete(null)}
+                autoFocus
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                class="weave-chip weave-chip-bad"
+                onClick={async () => {
+                  const target = pendingDelete;
+                  setPendingDelete(null);
+                  await executeDelete(target);
+                }}
+              >
+                Delete
+              </button>
+            </div>
+          </div>
+        </div>
+      ) : null}
+      {pendingRename !== null ? (
+        <div class="weave-scrim" onClick={() => setPendingRename(null)}>
+          <div
+            class="weave-dialog"
+            role="dialog"
+            aria-modal="true"
+            aria-label="Rename note"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <h3 class="weave-dialog-title">Rename note</h3>
+            <form
+              onSubmit={async (e) => {
+                e.preventDefault();
+                const name = pendingRename.value.trim();
+                if (name && name !== pendingRename.currentName) {
+                  const prefix = pendingRename.slug.includes("/")
+                    ? pendingRename.slug.split("/").slice(0, -1).join("/") + "/"
+                    : "";
+                  await renameNote(fetcher, pendingRename.slug, prefix + name);
+                }
+                setPendingRename(null);
+              }}
+            >
+              <input
+                type="text"
+                class="weave-filter weave-dialog-input"
+                value={pendingRename.value}
+                onInput={(e) => setPendingRename({ ...pendingRename, value: e.currentTarget.value })}
+                onKeyDown={(e) => {
+                  if (e.key === "Escape") {
+                    e.stopPropagation();
+                    setPendingRename(null);
+                  }
+                }}
+                autoFocus
+              />
+              <div class="weave-dialog-actions">
+                <button type="button" class="weave-chip" onClick={() => setPendingRename(null)}>
+                  Cancel
+                </button>
+                <button type="submit" class="weave-chip">
+                  Rename
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      ) : null}
+      {pendingSubfolder !== null ? (
+        <div class="weave-scrim" onClick={() => setPendingSubfolder(null)}>
+          <div
+            class="weave-dialog"
+            role="dialog"
+            aria-modal="true"
+            aria-label="New subfolder"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <h3 class="weave-dialog-title">New subfolder under “{pendingSubfolder.parentPath}”</h3>
+            <form
+              onSubmit={async (e) => {
+                e.preventDefault();
+                const name = pendingSubfolder.value.trim();
+                if (name) {
+                  await createFolder(fetcher, `${pendingSubfolder.parentPath}/${name}`);
+                  setState((curr) => expand(curr, `vfolder:${pendingSubfolder.parentPath}`));
+                }
+                setPendingSubfolder(null);
+              }}
+            >
+              <input
+                type="text"
+                class="weave-filter weave-dialog-input"
+                placeholder="Subfolder name…"
+                value={pendingSubfolder.value}
+                onInput={(e) => setPendingSubfolder({ ...pendingSubfolder, value: e.currentTarget.value })}
+                onKeyDown={(e) => {
+                  if (e.key === "Escape") {
+                    e.stopPropagation();
+                    setPendingSubfolder(null);
+                  }
+                }}
+                autoFocus
+              />
+              <div class="weave-dialog-actions">
+                <button type="button" class="weave-chip" onClick={() => setPendingSubfolder(null)}>
+                  Cancel
+                </button>
+                <button type="submit" class="weave-chip">
+                  Create
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      ) : null}
     </div>
   );
 }
