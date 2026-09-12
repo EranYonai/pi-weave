@@ -5,15 +5,11 @@ import {
   collapseNestedColumns,
   collectPanes,
   defaultWorkspace,
-  defaultWorkspaces,
-  deserialize,
   findPane,
   focusNext,
-  movePane,
   newPaneId,
   resize,
   resetWorkspaceIds,
-  serialize,
   split,
   tripleWorkspace,
   wideWorkspace,
@@ -22,11 +18,6 @@ import {
 } from "../../src/pi/viewer/tui/workspace";
 import type { GraphModel } from "../../src/core/graph/model";
 import type { WorkspaceNode } from "../../src/pi/viewer/tui/workspace";
-
-function bindNodeId(node: WorkspaceNode, paneId: string | undefined, nodeId: string): WorkspaceNode {
-  if (node.type === "pane") return node.id === paneId ? { ...node, nodeId } : node;
-  return { ...node, children: node.children.map((c) => bindNodeId(c, paneId, nodeId)) };
-}
 
 function graph(): GraphModel {
   return { generatedAt: "2026-06-01T00:00:00.000Z", staleness: null, nodes: [], edges: [], danglingLinks: {}, contentDigest: "" };
@@ -51,9 +42,6 @@ describe("default workspaces", () => {
     expect(workspacePanes(t).map((p) => p.surface)).toEqual(["explore", "detail", "focus"]);
     const w = wideWorkspace();
     expect(workspacePanes(w).map((p) => p.surface)).toEqual(["explore", "health", "detail"]);
-  });
-  it("defaultWorkspaces returns Explore, Triple, Wide", () => {
-    expect(defaultWorkspaces(graph()).map((w) => w.name)).toEqual(["Explore", "Triple", "Wide"]);
   });
 });
 
@@ -136,23 +124,6 @@ describe("focusNext", () => {
   });
 });
 
-describe("movePane", () => {
-  it("swaps surfaces between adjacent panes on the matching axis", () => {
-    let ws = tripleWorkspace();
-    const [a, b] = workspacePanes(ws);
-    ws = movePane(ws, a!.id, "row");
-    const panes = workspacePanes(ws);
-    expect(panes[0]!.surface).toBe(b!.surface);
-    expect(panes[1]!.surface).toBe(a!.surface);
-  });
-  it("no-op when the axis doesn't match the split", () => {
-    let ws = tripleWorkspace();
-    const id = ws.activePaneId;
-    ws = movePane(ws, id, "column");
-    expect(workspacePanes(ws)[0]!.surface).toBe("explore");
-  });
-});
-
 describe("resize", () => {
   it("adjusts adjacent weights within a row split", () => {
     let ws = defaultWorkspace(graph());
@@ -211,28 +182,6 @@ describe("collapseForWidth", () => {
     const ws = tripleWorkspace();
     const out = collapseNestedColumns(ws.root);
     expect(collectPanes(out)).toHaveLength(3);
-  });
-});
-
-describe("serialize / deserialize", () => {
-  it("round-trips structure + surface + bound node, dropping nothing structural", () => {
-    let ws = defaultWorkspace(graph());
-    // bind a node id to the first pane (the detail pane would be set on open)
-    const panes = workspacePanes(ws);
-    ws = { ...ws, activePaneId: panes[1]?.id ?? ws.activePaneId, root: bindNodeId(ws.root, panes[1]?.id, "note:a") };
-    const json = serialize(ws);
-    const back = deserialize(json, defaultWorkspace(graph()));
-    expect(back.name).toBe(ws.name);
-    expect(workspacePanes(back).map((p) => ({ surface: p.surface, nodeId: p.nodeId }))).toEqual(
-      workspacePanes(ws).map((p) => ({ surface: p.surface, nodeId: p.nodeId })),
-    );
-    expect(back.activePaneId).toBe(ws.activePaneId);
-  });
-  it("deserialize with null/bad input falls back", () => {
-    const fb = defaultWorkspace(graph());
-    expect(deserialize(null, fb)).toBe(fb);
-    expect(deserialize({ name: "x", activePaneId: "", root: undefined as never }, fb)).toBe(fb);
-    expect(deserialize({ name: "x", activePaneId: "nope", root: { t: "split", d: "row", sizes: [], c: [] } }, fb)).toBe(fb);
   });
 });
 

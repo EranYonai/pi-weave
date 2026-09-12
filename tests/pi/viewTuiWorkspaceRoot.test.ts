@@ -1,7 +1,7 @@
 import { describe, expect, it, vi, afterEach } from "vitest";
 import { resetCapabilitiesCache, setCapabilities } from "@earendil-works/pi-tui";
 import { WeaveWorkspace, decodeWorkspaceKey } from "../../src/pi/viewer/tui/workspaceRoot";
-import type { WeaveTheme, WeaveTui, WeaveLoaders } from "../../src/pi/viewer/tui/explorer";
+import type { WeaveTheme, WeaveTui, WeaveLoaders } from "../../src/pi/viewer/tui/surface/base";
 import { collectPanes, paneNode, resetWorkspaceIds, splitNode, workspacePanes } from "../../src/pi/viewer/tui/workspace";
 import type { GraphModel, GraphNode } from "../../src/core/graph/model";
 import type { NoteSource } from "../../src/core/types";

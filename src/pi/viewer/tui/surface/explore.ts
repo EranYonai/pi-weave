@@ -8,8 +8,7 @@
  * the workspace root resolves (e.g. into the nearest Detail pane).
  */
 
-import { truncateToWidth } from "@earendil-works/pi-tui";
-import { decodeAction } from "../explorer";
+import { matchesKey, parseKey, truncateToWidth } from "@earendil-works/pi-tui";
 import {
   formatTreeMeta,
   graphRoots,
@@ -24,6 +23,43 @@ import { chevron, kindStyle, provenanceStyle, SELECTION_MARKER, type ThemeSlot }
 import type { GraphModel } from "../../../../core/graph/model";
 import type { NoteSource } from "../../../../core/types";
 import { windowLines, type Surface, type SurfaceEvent, type SurfaceInit, type SurfaceRender } from "./base";
+
+/** Decode terminal input into the Explore surface's state-machine actions. */
+export function decodeAction(data: string, state: Pick<ExplorerState, "searching">): Action | null {
+  if (matchesKey(data, "up")) return { type: "up" };
+  if (matchesKey(data, "down")) return { type: "down" };
+  if (matchesKey(data, "left")) return { type: "left" };
+  if (matchesKey(data, "right")) return { type: "right" };
+  if (matchesKey(data, "enter")) return { type: "enter" };
+  if (matchesKey(data, "escape")) return { type: "esc" };
+  if (matchesKey(data, "pageUp")) return { type: "pageUp" };
+  if (matchesKey(data, "pageDown")) return { type: "pageDown" };
+  if (matchesKey(data, "home")) return { type: "home" };
+  if (matchesKey(data, "end")) return { type: "end" };
+  if (state.searching) {
+    if (matchesKey(data, "backspace")) return { type: "searchBackspace" };
+    const ch = parseKey(data);
+    if (ch === undefined) return null;
+    if (ch === "space") return { type: "searchChar", ch: " " };
+    if (ch.length === 1) return { type: "searchChar", ch };
+    return null;
+  }
+  if (data === "k") return { type: "up" };
+  if (data === "j") return { type: "down" };
+  if (data === "h") return { type: "left" };
+  if (data === "l") return { type: "right" };
+  if (data === "/") return { type: "searchStart" };
+  if (data === "p") return { type: "cycleProvenance" };
+  if (data === "i") return { type: "toggleInternals" };
+  if (data === "f") return { type: "focus" };
+  if (data === "g") return { type: "focusExit" };
+  if (data === "1") return { type: "surfaceTree" };
+  if (data === "2") return { type: "surfaceHealth" };
+  if (data === "r") return { type: "refresh" };
+  if (data === "?") return { type: "toggleHelp" };
+  if (data === "q") return { type: "quit" };
+  return null;
+}
 
 /** The Explore surface's own state (wraps the v1 ExplorerState for the tree). */
 export interface ExploreSurfaceState {
@@ -77,11 +113,10 @@ export class ExploreSurface implements Surface {
     this.renderCache.clear();
   }
 
-  /** Navigate the tree with a key sequence (delegates to v1 decodeAction + reduce). */
+  /** Navigate the tree with a key sequence. */
   handleInput(data: string): void {
-    // o opens the selected node in the external editor (parity with v1's
-    // WeaveExplorer and the Detail surface; the workspace root resolves the
-    // event into loaders.openNote/openFile).
+    // o opens the selected node in the external editor; the workspace root
+    // resolves the event into loaders.openNote/openFile.
     if (data === "o" && !this.state.searching) {
       if (this.state.selectedId) this.onEvent?.({ type: "openEditor", id: this.state.selectedId });
       return;

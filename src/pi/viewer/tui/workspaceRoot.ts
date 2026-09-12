@@ -8,15 +8,13 @@
  * branded header + footer + narrow-mode tab bar (§9.2, decision 5), and
  * applies responsive collapse.
  *
- * It is drivable with a fake tui/theme/loaders exactly like v1's WeaveExplorer.
- * `WeaveExplorer` (v1 single-pane path) is kept intact for backward
- * compatibility; the workspace root is the v2 multi-pane path wired in run.ts.
+ * It is drivable with a fake tui/theme/loaders and is the path wired in run.ts.
  */
 
 import { HStack, matchesKey, truncateToWidth, visibleWidth, VStack, type Component } from "@earendil-works/pi-tui";
 import { BodyStore } from "./bodyStore";
 import { renderMark } from "./branding";
-import type { WeaveLoaders, WeaveTheme, WeaveTui } from "./explorer";
+import type { WeaveLoaders, WeaveTheme, WeaveTui } from "./surface/base";
 import { countProvenance } from "./model";
 import type { GraphModel, GraphNode } from "../../../core/graph/model";
 import { Pane } from "./surface/base";

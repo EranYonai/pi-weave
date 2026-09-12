@@ -21,12 +21,10 @@ import {
   deleteNote,
   fetchGraph,
   fetchNote,
-  fetchOkfFile,
   fetchSearch,
   isConflictPayload,
   isGraphPayload,
   isNotePayload,
-  isOkfFile,
   isOpenResult,
   isSearchPayload,
   isViewNote,
@@ -184,17 +182,13 @@ describe("isViewNote", () => {
   });
 });
 
-describe("isOkfFile / isSearchPayload / isOpenResult", () => {
+describe("isSearchPayload / isOpenResult", () => {
   it("accepts well-formed payloads", () => {
-    expect(isOkfFile({ path: "index/notes.md", body: "x" })).toBe(true);
     expect(isSearchPayload({ query: "a", hits: [] })).toBe(true);
     expect(isOpenResult({ opened: true })).toBe(true);
   });
 
   it.each([
-    ["okf without a body", isOkfFile, { path: "a" }],
-    ["okf with a numeric path", isOkfFile, { path: 1, body: "x" }],
-    ["okf null", isOkfFile, null],
     ["search without hits", isSearchPayload, { query: "a" }],
     ["search with object hits", isSearchPayload, { query: "a", hits: {} }],
     ["search with a numeric query", isSearchPayload, { query: 1, hits: [] }],
@@ -355,32 +349,6 @@ describe("fetchNote", () => {
 
   it("survives a non-Error rejection", async () => {
     expect(await fetchNote(() => Promise.reject(42), "alpha")).toMatchObject({ ok: false, kind: "network" });
-  });
-});
-
-// --- fetchOkfFile ------------------------------------------------------------------
-
-describe("fetchOkfFile", () => {
-  it("returns the file on 200", async () => {
-    const result = await fetchOkfFile(respondsWith({ path: "index/notes.md", body: "# x" }), "index/notes.md");
-    expect(result.ok).toBe(true);
-    if (result.ok) expect(result.data.body).toBe("# x");
-  });
-
-  it("preserves path separators while encoding each segment", async () => {
-    // `encodeURIComponent` on the whole string would turn the separators into
-    // %2F and guarantee a 404.
-    const impl = respondsWith({ path: "a/b c.md", body: "" });
-    await fetchOkfFile(impl, "a/b c.md");
-    expect(impl.calls[0]?.url).toBe("/api/okf/a/b%20c.md");
-  });
-
-  it("reports a missing file", async () => {
-    expect(await fetchOkfFile(respondsStatus(404), "nope.md")).toMatchObject({ ok: false, kind: "missing" });
-  });
-
-  it("reports a malformed payload", async () => {
-    expect(await fetchOkfFile(respondsWith({ path: "a" }), "a")).toMatchObject({ ok: false, kind: "malformed" });
   });
 });
 

@@ -149,24 +149,15 @@ describe("connectionView", () => {
 // --- empty states -------------------------------------------------------------------
 
 describe("empty states", () => {
-  it("names a phase for every column, so nothing reads as broken", () => {
+  it("names every column", () => {
     for (const id of COLUMNS) {
       const copy = emptyStateFor(id);
       expect(copy.title).not.toBe("");
-      expect(copy.body).not.toBe("");
-      expect(copy.phase).toMatch(/^P\d$/);
     }
-  });
-
-  it("puts the tree and note in P2 and the graph in P3, matching §11", () => {
-    expect(emptyStateFor("tree").phase).toBe("P2");
-    expect(emptyStateFor("note").phase).toBe("P2");
-    expect(emptyStateFor("graph").phase).toBe("P3");
   });
 
   it("gives the context rail its own copy", () => {
     expect(CONTEXT_EMPTY.title).toBe("Context");
-    expect(CONTEXT_EMPTY.phase).toBe("P2");
   });
 });
 

@@ -1,9 +1,9 @@
 /**
- * runWeaveViewTui — wires the WeaveExplorer into a pi session
+ * runWeaveViewTui — wires the workspace explorer into a pi session
  * (weave-view-tui-design §2, §4.1, §3.2).
  *
  * Guards (interactive terminal only), builds the graph from disk in the
- * handler, then hands a ready WeaveExplorer to `ctx.ui.custom` so the
+ * handler, then hands a ready workspace explorer to `ctx.ui.custom` so the
  * explorer owns input for its whole lifetime. After `done(null)` resolves,
  * the workspace status line is refreshed. Dependencies are injected so the
  * component never touches a real terminal directly.
@@ -20,7 +20,7 @@ import {
 import { openNoteInEditor } from "./openNote";
 import { bundledLogoImage, logoTier, renderMark } from "./branding";
 import { WeaveWorkspace } from "./workspaceRoot";
-import type { WeaveLoaders, WeaveTheme, WeaveTui } from "./explorer";
+import type { WeaveLoaders, WeaveTheme, WeaveTui } from "./surface/base";
 import { getWorkspaceStatus, formatStatusLine } from "../../../core";
 
 /** Open the in-terminal knowledge explorer. Returns when the explorer closes. */

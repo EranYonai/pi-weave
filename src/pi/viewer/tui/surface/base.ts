@@ -16,9 +16,30 @@
 import { truncateToWidth, visibleWidth, type Component } from "@earendil-works/pi-tui";
 import type { GraphModel } from "../../../../core/graph/model";
 import { BodyStore } from "../bodyStore";
-import type { WeaveLoaders, WeaveTheme } from "../explorer";
+import type { ViewNote } from "../../../../core/graph/current";
 import type { SurfaceKind } from "../workspace";
 import type { ThemeSlot } from "../theme";
+
+/** Minimal theme surface shared by the workspace root and its surfaces. */
+export interface WeaveTheme {
+  fg(slot: ThemeSlot, text: string): string;
+  bg(slot: "selectedBg", text: string): string;
+  bold(text: string): string;
+}
+
+/** Minimal TUI surface shared by the workspace root and its adapter. */
+export interface WeaveTui {
+  requestRender(force?: boolean): void;
+  terminal: { rows: number; columns: number };
+}
+
+/** Injected readers/actions bound to the vault and repository by run.ts. */
+export interface WeaveLoaders {
+  loadNote: (slug: string) => Promise<ViewNote | null>;
+  loadOkf: (rel: string) => Promise<{ path: string; body: string } | null>;
+  openNote: (slug: string) => Promise<boolean>;
+  rebuild: () => Promise<GraphModel>;
+}
 
 /** A cross-pane navigation request a surface emits (resolved by the root). */
 export type SurfaceEvent =

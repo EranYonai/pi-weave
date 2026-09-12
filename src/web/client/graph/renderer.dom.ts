@@ -29,24 +29,23 @@
 
 import Sigma from "sigma";
 import type { ColorScheme } from "./graph.model";
-import type { GraphRenderer, RendererFactory, SigmaFactory, SigmaLike } from "./renderer";
+import type { GraphRenderer, RendererFactory, SigmaLike } from "./renderer";
 import { sigmaRenderer } from "./renderer";
 
 /** Sigma's own container parameter type, recovered without naming the DOM. */
 type SigmaContainer = ConstructorParameters<typeof Sigma>[1];
 
 /**
- * `new Sigma(graph, container, settings)`, as a {@link SigmaFactory}.
- *
  * The real `Sigma` satisfies `SigmaLike` structurally — `on`, `setSetting`,
  * `setGraph`, `refresh`, `getCamera` and `kill` are all present with
  * compatible shapes — so the only work here is the container cast, which is
  * checked against sigma's own declared parameter type rather than against an
  * `HTMLElement` asserted from memory.
  */
-const createSigma: SigmaFactory = (graph, container, settings) =>
-  new Sigma(graph, container as unknown as SigmaContainer, settings) as unknown as SigmaLike;
-
 /** The browser's renderer factory. Passed to the graph column by the shell. */
 export const createSigmaRenderer: RendererFactory = (scheme: ColorScheme): GraphRenderer =>
-  sigmaRenderer(createSigma, scheme);
+  sigmaRenderer(
+    (graph, container, settings) =>
+      new Sigma(graph, container as unknown as SigmaContainer, settings) as unknown as SigmaLike,
+    scheme,
+  );

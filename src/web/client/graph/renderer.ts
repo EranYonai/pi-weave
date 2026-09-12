@@ -29,7 +29,7 @@
  * explicitly "not acceptable". A whole renderer sitting outside the gate would
  * be exactly the erosion that rule prevents.
  *
- * So the dependency is inverted. {@link SigmaLike} and {@link SigmaFactory}
+ * So the dependency is inverted. {@link SigmaLike}
  * are the two-and-a-half-method port sigma satisfies structurally;
  * {@link sigmaRenderer} is the entire renderer written against the port, and
  * it is covered by ordinary unit tests with a recording fake. The only thing
@@ -120,33 +120,6 @@ export interface RenderContainer {
 }
 
 /**
- * A renderer that draws nothing.
- *
- * Not a test double — a production path. The graph column renders before its
- * container exists (the first pass), may never mount at all (the `medium`
- * breakpoint collapses the column), and must keep working when it does not. A
- * null object removes the `renderer === null` check from every call site,
- * which is the check that is always missing from exactly one of them.
- */
-export function nullRenderer(): GraphRenderer {
-  return {
-    mount() {},
-    setGraph() {},
-    setPositions() {},
-    setHighlight() {},
-    onSelect() {},
-    fit() {},
-    onDragStart() {},
-    onDragMove() {},
-    onDragEnd() {},
-    positions() {
-      return new Map();
-    },
-    destroy() {},
-  };
-}
-
-/**
  * How a {@link GraphRenderer} is obtained.
  *
  * Injected at the column rather than imported by it, so the graph column is
@@ -212,8 +185,6 @@ export interface SigmaLike {
  * everything *around* it can be. `renderer.dom.ts` is the four-line adapter
  * that supplies the real constructor.
  */
-export type SigmaFactory = (graph: ProjectedGraph, container: RenderContainer, settings: GraphSettings) => SigmaLike;
-
 // --- the implementation --------------------------------------------------------------
 
 /**
@@ -230,7 +201,10 @@ export type SigmaFactory = (graph: ProjectedGraph, container: RenderContainer, s
  * every node colour and re-projecting — a second code path for a case nobody
  * hits.
  */
-export function sigmaRenderer(create: SigmaFactory, scheme: ColorScheme): GraphRenderer {
+export function sigmaRenderer(
+  create: (graph: ProjectedGraph, container: RenderContainer, settings: GraphSettings) => SigmaLike,
+  scheme: ColorScheme,
+): GraphRenderer {
   let sigma: SigmaLike | null = null;
   let graph: ProjectedGraph = project({ nodes: [], edges: [] });
   let highlight: ReadonlySet<string> | null = null;

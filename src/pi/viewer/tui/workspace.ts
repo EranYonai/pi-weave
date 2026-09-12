@@ -46,8 +46,7 @@ export interface Workspace {
   activePaneId: string;
 }
 
-/** Axis a resize/move direction acts on. */
-export type Axis = "row" | "column";
+/** Axis a resize direction acts on. */
 
 /** Split direction a `\`/`|` command produces. */
 export type SplitRequest = "vertical" | "horizontal";
@@ -95,10 +94,6 @@ export function findPane(node: WorkspaceNode, id: string): PaneNode | null {
   return null;
 }
 
-export function countPanes(ws: Workspace): number {
-  return workspacePanes(ws).length;
-}
-
 /** Cycle the active pane in layout order; `dir` is +1 (next) or -1 (prev). */
 export function focusNext(ws: Workspace, dir: 1 | -1): Workspace {
   const panes = workspacePanes(ws);
@@ -141,24 +136,6 @@ export function split(ws: Workspace, id: string, dir: SplitRequest, surface: Sur
   children[idx] = newSplit;
   const nextRoot = replaceChild(ws.root, parent, children);
   return { ...ws, root: nextRoot, activePaneId: fresh.id };
-}
-
-/** Swap two panes' surface + bound node within a split (the `move` command). */
-export function movePane(ws: Workspace, id: string, dir: Axis): Workspace {
-  const parent = findParent(ws.root, id);
-  if (!parent || parent.direction !== dir) return ws;
-  const idx = parent.children.findIndex((c) => c.type === "pane" && c.id === id);
-  if (idx < 0) return ws;
-  // swap with the adjacent pane (right sibling if present, else left)
-  const neighborIdx = parent.children[idx + 1] ? idx + 1 : idx - 1;
-  const neighbor = neighborIdx !== undefined ? parent.children[neighborIdx] : undefined;
-  if (neighbor === undefined || neighbor.type !== "pane") return ws;
-  const children = parent.children.slice();
-  const a = children[idx] as PaneNode;
-  const b = neighbor;
-  children[idx] = { ...a, surface: b.surface, nodeId: b.nodeId };
-  children[neighborIdx] = { ...b, surface: a.surface, nodeId: a.nodeId };
-  return { ...ws, root: replaceChild(ws.root, parent, children) };
 }
 
 /**
@@ -216,7 +193,7 @@ function setPaneNodeSurface(node: WorkspaceNode, id: string, surface: SurfaceKin
  * clamped to [1, 100]. Returns the same workspace when there is no sibling on
  * the axis.
  */
-export function resize(ws: Workspace, id: string, axis: Axis, delta: number): Workspace {
+export function resize(ws: Workspace, id: string, axis: SplitDir, delta: number): Workspace {
   const parent = findParent(ws.root, id);
   if (!parent || parent.direction !== axis) return ws;
   const idx = parent.children.findIndex((c) => c.type === "pane" && c.id === id);
@@ -268,11 +245,6 @@ export function wideWorkspace(name = "Wide"): Workspace {
   return { name, root, activePaneId: explore.id };
 }
 
-/** All three named defaults. */
-export function defaultWorkspaces(model: GraphModel): Workspace[] {
-  return [defaultWorkspace(model), tripleWorkspace(), wideWorkspace()];
-}
-
 // ---------------------------------------------------------------------------
 // Responsive collapse (design §9.2)
 // ---------------------------------------------------------------------------
@@ -304,50 +276,6 @@ export function collapseNestedColumns(node: WorkspaceNode, insideColumn = false)
     return children[0] ?? node;
   }
   return { ...node, children };
-}
-
-// ---------------------------------------------------------------------------
-// Serialize / deserialize (persistence shape; the component adds the vault IO)
-// ---------------------------------------------------------------------------
-
-export interface SerializedWorkspace {
-  name: string;
-  activePaneId: string;
-  root: SerializedNode;
-}
-export type SerializedNode = { t: "pane"; id: string; s: SurfaceKind; n: string | null } | { t: "split"; d: SplitDir; sizes: number[]; c: SerializedNode[] };
-
-export function serialize(ws: Workspace): SerializedWorkspace {
-  return { name: ws.name, activePaneId: ws.activePaneId, root: serializeNode(ws.root) };
-}
-
-function serializeNode(node: WorkspaceNode): SerializedNode {
-  if (node.type === "pane") return { t: "pane", id: node.id, s: node.surface, n: node.nodeId };
-  return { t: "split", d: node.direction, sizes: node.sizes, c: node.children.map(serializeNode) };
-}
-
-/** Deserialize a serialized workspace; degrades to a fresh Explore on bad shape. */
-export function deserialize(json: SerializedWorkspace | null, fallback: Workspace): Workspace {
-  if (!json || typeof json.name !== "string") return fallback;
-  const root = deserializeNode(json.root);
-  if (!root) return fallback;
-  const active = findPane(root, json.activePaneId);
-  return {
-    name: json.name,
-    root,
-    activePaneId: active ? active.id : workspacePanes({ name: json.name, root, activePaneId: json.activePaneId })[0]?.id ?? newPaneId(),
-  };
-}
-
-function deserializeNode(node: SerializedNode | undefined): WorkspaceNode | null {
-  if (!node) return null;
-  if (node.t === "pane") return { type: "pane", id: node.id || newPaneId(), surface: node.s, nodeId: node.n ?? null };
-  if (node.t === "split") {
-    const children = (node.c ?? []).map(deserializeNode).filter((c): c is WorkspaceNode => c !== null);
-    if (children.length === 0) return null;
-    return { type: "split", direction: node.d, sizes: node.sizes ?? children.map(() => 1), children };
-  }
-  return null;
 }
 
 // ---------------------------------------------------------------------------

@@ -14,8 +14,8 @@ import { FocusSurface } from "../../src/pi/viewer/tui/surface/focus";
 import { HealthSurface } from "../../src/pi/viewer/tui/surface/health";
 import type { SurfaceContext } from "../../src/pi/viewer/tui/surface/base";
 import { BodyStore } from "../../src/pi/viewer/tui/bodyStore";
-import type { WeaveTheme, WeaveTui, WeaveLoaders } from "../../src/pi/viewer/tui/explorer";
-import { workspacePanes, tripleWorkspace, wideWorkspace, split, close, movePane, resize, focusNext, deserialize, collapseEmptySplits, countPanes, setPaneSurface, collectPanes, collapseForWidth, serialize, defaultWorkspace, type Workspace } from "../../src/pi/viewer/tui/workspace";
+import type { WeaveTheme, WeaveTui, WeaveLoaders } from "../../src/pi/viewer/tui/surface/base";
+import { workspacePanes, tripleWorkspace, wideWorkspace, split, close, resize, focusNext, collapseEmptySplits, setPaneSurface, collectPanes, collapseForWidth, defaultWorkspace, type Workspace } from "../../src/pi/viewer/tui/workspace";
 import type { GraphModel, GraphNode } from "../../src/core/graph/model";
 import type { NoteSource } from "../../src/core/types";
 
@@ -534,62 +534,24 @@ describe("surface title + body branches via Pane", () => {
     expect(w2.render(110).length).toBeGreaterThan(0);
   });
 
-  it("workspace serialize/deserialize a nested split round-trips", () => {
-    const w = wideWorkspace();
-    const json = serialize(w);
-    const back = deserialize(json, defaultWorkspace(model()));
-    expect(back.name).toBe("Wide");
-    expect(collectPanes(back.root)).toHaveLength(3);
-  });
-
   it("workspace pure-function edge branches", () => {
     const single: Workspace = { name: "s", root: { type: "pane", id: "p1", surface: "explore", nodeId: null }, activePaneId: "p1" };
-    // split a pane whose parent is null (root pane) — covered; also resize/move with no matching axis
+    // split a pane whose parent is null (root pane) — covered; also resize with no matching axis
     expect(resize(single, "p1", "row", 2)).toBe(single);
-    expect(movePane(single, "p1", "row")).toBe(single);
     expect(split(single, "p1", "vertical").root.type).toBe("split");
     // focusNext on a single pane is a no-op
     expect(focusNext(single, 1)).toBe(single);
-    // countPanes helper
-    expect(countPanes(single)).toBe(1);
     // collapseEmptySplits unwraps single-child splits
     const nested: Workspace = { name: "n", root: { type: "split", direction: "row", sizes: [1], children: [single.root] }, activePaneId: "p1" };
     expect(collapseEmptySplits(nested.root).type).toBe("pane");
     // setPaneSurface on a pane node
     const swapped = setPaneSurface(single, "p1", "health");
     expect(collectPanes(swapped.root)[0]?.surface).toBe("health");
-    // deserialize a bogus node type falls back
-    const fb = wideWorkspace();
-    expect(deserialize({ name: "x", activePaneId: "p", root: { t: "bogus" } as never }, fb)).toBe(fb);
-    // movePane where a pane's sibling is a split (not a pane) is a no-op
-    const mixed: Workspace = {
-      name: "m",
-      root: {
-        type: "split",
-        direction: "row",
-        sizes: [1, 1],
-        children: [
-          { type: "split", direction: "row", sizes: [1, 1], children: [{ type: "pane", id: "px", surface: "explore", nodeId: null }, { type: "pane", id: "py", surface: "health", nodeId: null }] },
-          { type: "pane", id: "pz", surface: "detail", nodeId: null },
-        ],
-      },
-      activePaneId: "pz",
-    };
-    expect(movePane(mixed, "pz", "row")).toBe(mixed);
     // collapseForWidth with an unknown active pane falls back to an empty explore pane
     const gone: Workspace = { name: "g", root: { type: "split", direction: "row", sizes: [1, 1], children: [{ type: "pane", id: "p1", surface: "explore", nodeId: null }, { type: "pane", id: "p2", surface: "detail", nodeId: null }] }, activePaneId: "nope" };
     expect(workspacePanes(collapseForWidth(gone, 70))).toHaveLength(1);
-    // deserialize a pane with an empty id / null node + a split with missing sizes/c
-    const emptyId = deserialize({ name: "x", activePaneId: "", root: { t: "pane", id: "", s: "explore", n: null } }, wideWorkspace());
-    expect(collectPanes(emptyId.root)).toHaveLength(1);
-    const loose = deserialize({ name: "y", activePaneId: "", root: { t: "split", d: "row", sizes: undefined, c: undefined } as never }, wideWorkspace());
-    expect(collectPanes(loose.root)).toHaveLength(3); // invalid split falls back to Wide
-    // a split whose children are all invalid deserializes to fallback
-    const badSplit = deserialize({ name: "z", activePaneId: "", root: { t: "split", d: "row", sizes: [1], c: [{ t: "bogus" } as never] } }, wideWorkspace());
-    expect(collectPanes(badSplit.root)).toHaveLength(3); // fallback is Wide
-    // findParent on a root-pane workspace (via split/move) returns null safely
+    // findParent on a root-pane workspace (via split) returns null safely
     expect(split(single, "p1", "vertical").root.type).toBe("split");
-    expect(movePane(single, "p1", "row")).toBe(single);
     // collapseNestedColumns on a nested column-under-column collapses to the first pane
     const deep = wideWorkspace();
     const inner = collapseForWidth(deep, 90);

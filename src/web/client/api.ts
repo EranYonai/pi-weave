@@ -42,7 +42,6 @@ import type {
   DeleteNoteResult,
   GraphPayload,
   NotePayload,
-  OkfFilePayload,
   OpenResult,
   SaveNoteRequest,
   SearchPayload,
@@ -276,11 +275,6 @@ export function isConflictPayload(value: unknown): value is ConflictPayload {
   return isNotePayload(value["current"]);
 }
 
-/** `OkfFilePayload`. */
-export function isOkfFile(value: unknown): value is OkfFilePayload {
-  return isObject(value) && typeof value["path"] === "string" && typeof value["body"] === "string";
-}
-
 /** `SearchPayload`. Hits are checked as an array; ranking tolerates junk. */
 export function isSearchPayload(value: unknown): value is SearchPayload {
   return isObject(value) && typeof value["query"] === "string" && Array.isArray(value["hits"]);
@@ -487,14 +481,6 @@ export function renameFolder(fetchImpl: FetchLike, oldPath: string, newPath: str
     headers: { "content-type": "application/json" },
     body: JSON.stringify({ newPath }),
   });
-}
-
-/** `GET /api/okf/:rel`. Anchored under `<cwd>/.okf` by the server. */
-export function fetchOkfFile(fetchImpl: FetchLike, rel: string): Promise<ApiResult<OkfFilePayload>> {
-  // Per segment: `encodeURIComponent` would escape the separators of a
-  // relative path like `index/notes.md` into `%2F` and produce a 404.
-  const encoded = rel.split("/").map(encodeURIComponent).join("/");
-  return request(fetchImpl, `/api/okf/${encoded}`, isOkfFile);
 }
 
 /** `GET /api/search?q=`. An empty query is valid and returns no hits. */
