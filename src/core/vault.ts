@@ -1,17 +1,14 @@
-import { existsSync, readFileSync } from "node:fs";
+import { existsSync } from "node:fs";
 import { promises as fs } from "node:fs";
 import { dirname, isAbsolute, join, relative } from "node:path";
 import {
-  MANAGED_FRONT_MATTER_KEYS,
   parseFrontMatter,
   parseNoteFile,
-  quoteField,
   serializeNote,
-  upsertFrontMatterFields,
 } from "./frontmatter";
 import { withMutationQueue } from "./mutex";
 import { NOTES_DIR, OKF_MANIFEST } from "./paths";
-import { slugify, slugifyPath, uniqueSlug } from "./slug";
+import { slugify, uniqueSlug } from "./slug";
 import type {
   Note,
   NoteFrontMatter,
@@ -74,18 +71,16 @@ function notePath(root: string, slug: string): string {
  * Resolve a note slug to its on-disk path, or null when the slug is unsafe.
  * Slugs arrive from tool parameters, so they are untrusted: `../x` and
  * absolute escapes must never read or write outside `<vault>/notes/`
- * (subdirectories *within* it are legitimate — the sessions collection).
+ * (subdirectories *within* it are legitimate for nested notes).
  */
 export function resolveNotePath(root: string, slug: string): string | null {
   if (slug.trim().length === 0) return null;
   const notesDir = join(root, NOTES_DIR);
   const candidate = join(notesDir, `${slug}.md`);
   const rel = relative(notesDir, candidate);
-  // Slugs may nest (`sessions/foo`) — that is how session memory stays in an
-  // inner folder of the vault graph (docs/session-scan.md) — but they may
-  // never escape the collection: `..` segments and absolute paths resolve
-  // outside notes/ and are rejected here, at the one door every read and
-  // write walks through.
+  // Slugs may nest, but they may never escape the collection: `..` segments
+  // and absolute paths resolve outside notes/ and are rejected here, at the
+  // one door every read and write walks through.
   if (rel.startsWith("..") || isAbsolute(rel) || rel.length === 0) return null;
   return candidate;
 }
@@ -158,8 +153,8 @@ async function writeNote(
   frontMatter: NoteFrontMatter | undefined,
 ): Promise<Note> {
   const text = serializeNote(meta, body, frontMatter);
-  // Path-slugs (`sessions/foo`) may introduce a new subdirectory; every
-  // write path funnels through here, so this is the one mkdir that matters.
+  // Path-slugs may introduce a new subdirectory; every write path funnels
+  // through here, so this is the one mkdir that matters.
   await fs.mkdir(dirname(path), { recursive: true });
   await fs.writeFile(path, text, "utf8");
   const parsed = parseNoteFile(text);
@@ -188,17 +183,9 @@ const LOCK_NS = "vault:note:";
 /**
  * Run `task` with exclusive access to every given note path.
  *
- * Paths are locked in a fixed (sorted) order, which is what makes the
- * two-path case — `renameNote`, the only operation touching two files —
- * deadlock-free. Two concurrent renames in opposite directions (`a→b` and
- * `b→a`) would otherwise be able to take one lock each and wait forever;
- * with a total order on acquisition, one of them takes both and the other
- * takes neither.
- *
- * Every mutation in this module goes through here, not just the new ones. A
- * queue that half the writers ignore serializes nothing: an `appendToNote`
- * racing an `updateNote` on the same file is a lost update whether or not
- * the update took a lock.
+ * Paths are locked in a fixed order so callers that need multiple locks cannot
+ * deadlock. Every mutation in this module goes through here, keeping appends
+ * and finalization serialized with one another.
  */
 function withNoteLocks<T>(paths: readonly string[], task: () => Promise<T>): Promise<T> {
   const ordered = [...new Set(paths)].sort();
@@ -358,662 +345,21 @@ export async function finalizeNote(
   });
 }
 
-// ---------------------------------------------------------------------------
-// Mutation APIs (weave-workspace §11 P5.2, P5.3)
-// ---------------------------------------------------------------------------
-
-/**
- * A note plus the stamp that identifies the on-disk state it was read from.
- *
- * The read half of the conflict primitive (§11 P5.3). An editor reads this,
- * holds `revision` for as long as the user is typing, and hands it back on
- * save; a `revision` that no longer matches the file means someone else — a
- * `weave_note` tool call, `$EDITOR`, an Obsidian sync — wrote in between.
- */
-export interface RevisionedNote {
-  note: Note;
-  /**
-   * Opaque version stamp. **Compare it, do not interpret it.**
-   *
-   * It is currently `mtimeMs:size`, and the shape is deliberately not part
-   * of the contract: a caller that parses out the mtime is a caller that
-   * breaks when this becomes a content hash. Two fields rather than one
-   * because mtime alone has a real blind spot — the filesystem timestamp
-   * granularity. Two writes inside the same millisecond are indistinguishable
-   * by mtime, and "same millisecond" is not exotic when the writer is a
-   * program rather than a human; a size change catches the common case of
-   * such a pair differing in length.
-   *
-   * This does not make it a perfect detector. A same-millisecond write that
-   * preserves the byte count is invisible, which is the honest limitation of
-   * any stat-based scheme, and the reason this is typed as opaque: upgrading
-   * it to a digest is then a change here and nowhere else.
-   */
-  revision: string;
-}
-
-function revisionOf(st: { mtimeMs: number; size: number }): string {
-  return `${st.mtimeMs}:${st.size}`;
-}
-
-/**
- * Read a note together with its {@link RevisionedNote.revision}.
- *
- * Stat-then-read rather than read-then-stat: if a writer lands between the
- * two calls, the revision is of the *older* state than the content, so the
- * save that follows sees a mismatch and is rejected. The opposite order
- * yields a revision newer than the content, which would let a stale body be
- * written back under a revision that looks current — failing safe versus
- * failing silently.
- */
-export async function getNoteWithRevision(root: string, slug: string): Promise<RevisionedNote | null> {
-  const path = resolveNotePath(root, slug);
-  if (!path) return null;
-  let revision: string;
-  try {
-    revision = revisionOf(await fs.stat(path));
-  } catch {
-    return null;
-  }
-  const note = await getNote(root, slug);
-  return note === null ? null : { note, revision };
-}
-
-/**
- * Why a mutation did not happen. The server maps these to status codes —
- * `"missing"` → 404, `"conflict"` → 409, `"collision"` → 409 — but the
- * mapping is the server's business; core reports the *situation* (§11 P5.3).
- */
-export type MutationFailure =
-  /** No such note, or a slug that failed the traversal guard. */
-  | { ok: false; reason: "missing" }
-  /** The file moved since `expectedRevision` was read. */
-  | { ok: false; reason: "conflict"; current: RevisionedNote }
-  /** A rename whose destination slug is already taken. */
-  | { ok: false; reason: "collision"; slug: string };
-
-export type MutationResult = { ok: true; note: Note } | MutationFailure;
-
-/** A successful delete, or why it did not happen. */
-export type DeleteResult = { ok: true } | { ok: false; reason: "missing" };
-
-export interface UpdateNoteInput {
-  /** Replacement Markdown body. Omit to change only metadata. */
-  body?: string;
-  /**
-   * Metadata to merge over the note's current values. `created` is not
-   * accepted: it records when the note came into existence, and an edit is
-   * not a re-creation.
-   */
-  meta?: Partial<Pick<NoteMeta, "title" | "tags" | "source">>;
-  /**
-   * The {@link RevisionedNote.revision} the caller last read. When supplied
-   * and no longer current, the write is refused with `reason: "conflict"`
-   * and the caller is handed the note as it now is, so a UI can offer
-   * reload-or-overwrite without a second round trip. Omit for
-   * last-write-wins.
-   */
-  expectedRevision?: string;
-  /** Injectable clock for tests. */
-  now?: Date;
-}
-
-/**
- * Check `expectedRevision` against the file, inside the caller's lock.
- *
- * Returns the conflict to report, or null to proceed. Being inside the lock
- * is the whole point: a check-then-write with the check outside the mutex is
- * a race with a wider window than no check at all, because it looks like it
- * is doing something.
- */
-async function checkRevision(
-  root: string,
-  slug: string,
-  expected: string | undefined,
-): Promise<MutationFailure | null> {
-  if (expected === undefined) return null;
-  const current = await getNoteWithRevision(root, slug);
-  if (current === null) return { ok: false, reason: "missing" };
-  return current.revision === expected ? null : { ok: false, reason: "conflict", current };
-}
-
-/**
- * Update a note's body and/or metadata in place.
- *
- * Preserves unknown front-matter keys (they ride on `note.frontMatter`
- * through `writeNote`) and, when `body` is given, the append-only `## Raw`
- * tail: the replacement body is treated as the *editorial* region above the
- * tail, exactly as `finalizeNote` treats it. A caller replacing the body of
- * a dictated note therefore cannot delete the user's verbatim scribbles by
- * omitting them, which is the one thing `docs/notepad.md` §4 says must never
- * happen. A body that already carries its own `## Raw` tail is written as
- * given, so a round-trip through an editor that shows the whole file is not
- * penalised with a duplicated tail.
- *
- * `updated` is bumped on every successful call, including a metadata-only
- * one — a tag change is a change to the note.
- */
-export async function updateNote(
-  root: string,
-  slug: string,
-  input: UpdateNoteInput,
-  now: Date = new Date(),
-): Promise<MutationResult> {
-  const path = resolveNotePath(root, slug);
-  if (!path) return { ok: false, reason: "missing" };
-  return withNoteLocks([path], async () => {
-    const conflict = await checkRevision(root, slug, input.expectedRevision);
-    if (conflict) return conflict;
-    const note = await getNote(root, slug);
-    if (!note) return { ok: false, reason: "missing" };
-
-    const body = input.body === undefined ? note.body : preserveRawTail(note.body, input.body);
-    const meta: NoteMeta = {
-      ...note,
-      ...input.meta,
-      updated: (input.now ?? now).toISOString(),
-    };
-    return { ok: true, note: await writeNote(path, slug, meta, body, note.frontMatter) };
-  });
-}
-
-/** Re-attach the existing `## Raw` tail unless the replacement already has one. */
-function preserveRawTail(currentBody: string, nextBody: string): string {
-  const tail = extractRawTail(currentBody);
-  if (tail === "" || extractRawTail(nextBody) !== "") return nextBody.trim();
-  return nextBody.trim() + `\n\n${tail}`;
-}
-
-/**
- * Rename a note: move `oldSlug.md` to `newSlug.md`.
- *
- * `newSlug` is passed through `slugify`, so a caller may hand over either a
- * slug or a human title and get the same filesystem-safe result the rest of
- * the vault uses.
- *
- * ## Inbound `[[wikilinks]]` are deliberately NOT rewritten
- *
- * A rename can break links from other notes, and there are two honest
- * options. Rewriting every referring note is the bigger hammer, and it is
- * the wrong one here:
- *
- * - **It is a multi-file write with no transaction.** Renaming one note
- *   would rewrite N others; a failure partway leaves the vault half-updated,
- *   and there is no rollback. Trading one dangling link for an unknown
- *   number of half-edited files is a bad trade.
- * - **It edits prose to fix an index.** A wikilink lives in body text a
- *   human wrote, sometimes inside a quote, a code fence, or a `## Raw` tail
- *   that `docs/notepad.md` declares append-only and verbatim. A textual
- *   substitution across the vault cannot honour that; a rename would become
- *   the one operation allowed to modify preserved user input.
- * - **The alternative is already visible, not silent.** Dangling targets are
- *   a first-class concept: `buildGraph` collects `danglingLinks`, the wire
- *   payload ships them as `dangling`, and the note column renders an
- *   unresolved wikilink as an unfollowable ghost. A stale link therefore
- *   shows up in the UI as something to fix, which is a better failure than a
- *   silent bulk edit the user cannot review.
- *
- * So: renaming leaves inbound links pointing at the old slug, where they
- * render as dangling. If link-following-a-rename is wanted later, the right
- * shape is an explicit, previewable "update N referring notes?" step — a
- * separate operation the user opts into, not a side effect of this one.
- */
-export async function renameNote(
-  root: string,
-  oldSlug: string,
-  newSlug: string,
-  now: Date = new Date(),
-  newTitle?: string,
-): Promise<MutationResult> {
-  const from = resolveNotePath(root, oldSlug);
-  if (!from) return { ok: false, reason: "missing" };
-
-  const rawTarget = newSlug.trim();
-  if (rawTarget.length === 0) return { ok: false, reason: "missing" };
-
-  const oldFolder = oldSlug.includes("/") ? oldSlug.split("/").slice(0, -1).join("/") : "";
-  const hasSlash = /[\/\\]/.test(rawTarget);
-  const target = hasSlash
-    ? slugifyPath(rawTarget)
-    : oldFolder.length > 0
-    ? `${oldFolder}/${slugify(rawTarget)}`
-    : slugify(rawTarget);
-
-  const to = resolveNotePath(root, target);
-  // `slugify`/`slugifyPath` cannot emit a traversing slug, but the guard is applied anyway:
-  // "this input is already safe" is exactly the assumption that stops being
-  // true when someone changes the other function.
-  if (!to) return { ok: false, reason: "missing" };
-  if (target === oldSlug && (newTitle === undefined || newTitle.trim().length === 0)) {
-    const note = await getNote(root, oldSlug);
-    return note === null ? { ok: false, reason: "missing" } : { ok: true, note };
-  }
-
-  return withNoteLocks([from, to], async () => {
-    const note = await getNote(root, oldSlug);
-    if (!note) return { ok: false, reason: "missing" };
-    // Refuse rather than uniquify: `addNote` may silently pick `decision-2`
-    // because nobody named a file there, but a rename onto an existing note
-    // is a user mistake, and quietly landing somewhere other than where they
-    // asked hides it. `fs.rename` would overwrite the destination outright.
-    if (await exists(to)) return { ok: false, reason: "collision", slug: target };
-
-    await fs.mkdir(dirname(to), { recursive: true });
-    if (from !== to) {
-      await fs.rename(from, to);
-    }
-
-    const title =
-      newTitle !== undefined && newTitle.trim().length > 0 ? newTitle.trim() : note.title;
-
-    // The slug is the note's identity, so a rename is a change to the note.
-    const meta: NoteMeta = { ...note, title, updated: now.toISOString() };
-    return { ok: true, note: await writeNote(to, target, meta, note.body, note.frontMatter) };
-  });
-}
-
-/**
- * Delete a note. **Hard delete** — the file is unlinked.
- *
- * No trash directory, and that is a deliberate omission rather than an
- * oversight. A trash is a real feature: it needs a location that does not
- * pollute `notes/` (everything there is indexed and graphed), a retention
- * policy, a restore path, and an answer for what happens when a deleted slug
- * is later reused. Inventing all of that as a side effect of "P5 needs a
- * delete button" is how a vault grows a second, undocumented store of notes
- * that the index does not know about — and AGENTS.md rule 5 says nothing in
- * `.okf` may be the only copy of anything, which cuts both ways: a
- * half-designed trash becomes exactly such a place.
- *
- * The vault is plain files in a directory most users keep under version
- * control or a synced folder, so the recovery story is the one they already
- * have and understand. If a trash is wanted, it should arrive as its own
- * design decision with those questions answered.
- */
-export async function deleteNote(root: string, slug: string): Promise<DeleteResult> {
-  const path = resolveNotePath(root, slug);
-  if (!path) return { ok: false, reason: "missing" };
-  return withNoteLocks([path], async () => {
-    try {
-      await fs.unlink(path);
-      return { ok: true };
-    } catch {
-      // Already gone, or never existed. Both are "there is no such note",
-      // which is the caller's question — not "the unlink syscall failed".
-      return { ok: false, reason: "missing" };
-    }
-  });
-}
-
-/**
- * Move a note to a folder (or root when targetFolder is null/empty/"vault").
- * Automatically ensures the note carries the folder's name in its #tags
- * so that notes filed in the folder are graph-connected.
- */
-export async function moveNoteToFolder(
-  root: string,
-  slug: string,
-  targetFolder: string | null,
-  now: Date = new Date(),
-): Promise<MutationResult> {
-  const from = resolveNotePath(root, slug);
-  if (!from) return { ok: false, reason: "missing" };
-
-  const noteBaseName = slug.split("/").pop() ?? slug;
-  let newSlug: string;
-  let folderTag: string | null = null;
-
-  if (targetFolder !== null && targetFolder.trim().length > 0 && targetFolder !== "vault") {
-    const cleanedFolder = targetFolder.trim().replace(/^[\/\\]+|[\/\\]+$/g, "");
-    const folderSegments = cleanedFolder.split(/[\/\\]+/).map(slugify).filter((s) => s.length > 0);
-    if (folderSegments.length === 0) return { ok: false, reason: "missing" };
-    const folderPath = folderSegments.join("/");
-    newSlug = `${folderPath}/${noteBaseName}`;
-    folderTag = folderSegments[folderSegments.length - 1] ?? null;
-  } else {
-    newSlug = noteBaseName;
-  }
-
-  const to = resolveNotePath(root, newSlug);
-  if (!to) return { ok: false, reason: "missing" };
-
-  return withNoteLocks([from, to], async () => {
-    const note = await getNote(root, slug);
-    if (!note) return { ok: false, reason: "missing" };
-
-    if (newSlug !== slug && (await exists(to))) {
-      return { ok: false, reason: "collision", slug: newSlug };
-    }
-
-    await fs.mkdir(dirname(to), { recursive: true });
-    if (from !== to) {
-      await fs.rename(from, to);
-    }
-
-    const tags = [...note.tags];
-    if (folderTag && !tags.includes(folderTag)) {
-      tags.push(folderTag);
-    }
-
-    const meta: NoteMeta = {
-      ...note,
-      tags,
-      updated: now.toISOString(),
-    };
-    const written = await writeNote(to, newSlug, meta, note.body, note.frontMatter);
-    return { ok: true, note: written };
-  });
-}
-
-/**
- * Create a folder under the vault's notes directory.
- */
-export async function createFolder(
-  root: string,
-  folderName: string,
-): Promise<{ ok: true; path: string } | { ok: false; reason: "invalid-name" | "collision" }> {
-  await ensureVault(root);
-  const trimmed = folderName.trim().replace(/^[\/\\]+|[\/\\]+$/g, "");
-  if (trimmed.length === 0) return { ok: false, reason: "invalid-name" };
-  const segments = trimmed.split(/[\/\\]+/).map(slugify).filter((s) => s.length > 0);
-  if (segments.length === 0) return { ok: false, reason: "invalid-name" };
-  const relPath = segments.join("/");
-  const notesDir = join(root, NOTES_DIR);
-  const fullPath = join(notesDir, relPath);
-  const rel = relative(notesDir, fullPath);
-  if (rel.startsWith("..") || isAbsolute(rel) || rel.length === 0) {
-    return { ok: false, reason: "invalid-name" };
-  }
-  try {
-    const stat = await fs.stat(fullPath);
-    if (!stat.isDirectory()) return { ok: false, reason: "collision" };
-    return { ok: true, path: relPath };
-  } catch {
-    // does not exist yet
-  }
-  await fs.mkdir(fullPath, { recursive: true });
-  return { ok: true, path: relPath };
-}
-
-/**
- * Delete a folder under <vault>/notes/.
- * Deletes the directory and any notes/subdirectories within it.
- */
-export async function deleteFolder(
-  root: string,
-  folderName: string,
-): Promise<{ ok: true } | { ok: false; reason: "invalid-name" | "missing" }> {
-  const trimmed = folderName.trim().replace(/^[\/\\]+|[\/\\]+$/g, "");
-  if (trimmed.length === 0) return { ok: false, reason: "invalid-name" };
-  const segments = trimmed.split(/[\/\\]+/).map(slugify).filter((s) => s.length > 0);
-  if (segments.length === 0) return { ok: false, reason: "invalid-name" };
-  const relPath = segments.join("/");
-  const notesDir = join(root, NOTES_DIR);
-  const fullPath = join(notesDir, relPath);
-  const rel = relative(notesDir, fullPath);
-  if (rel.startsWith("..") || isAbsolute(rel) || rel.length === 0) {
-    return { ok: false, reason: "invalid-name" };
-  }
-  try {
-    const stat = await fs.stat(fullPath);
-    if (!stat.isDirectory()) return { ok: false, reason: "invalid-name" };
-    await fs.rm(fullPath, { recursive: true, force: true });
-    return { ok: true };
-  } catch {
-    return { ok: false, reason: "missing" };
-  }
-}
-
-/**
- * Rename a folder under <vault>/notes/.
- * Moves the directory on disk and updates frontmatter #tags on all contained
- * notes so the tag reflects the new folder name.
- */
-export async function renameFolder(
-  root: string,
-  oldPath: string,
-  newPath: string,
-  now: Date = new Date(),
-): Promise<{ ok: true; path: string } | { ok: false; reason: "missing" | "collision" | "invalid-name" }> {
-  await ensureVault(root);
-  const cleanOld = oldPath.trim().replace(/^[\/\\]+|[\/\\]+$/g, "");
-  const cleanNew = newPath.trim().replace(/^[\/\\]+|[\/\\]+$/g, "");
-  if (cleanOld.length === 0 || cleanNew.length === 0) return { ok: false, reason: "invalid-name" };
-
-  const oldSegments = cleanOld.split(/[\/\\]+/).map(slugify).filter((s) => s.length > 0);
-  const newSegments = cleanNew.split(/[\/\\]+/).map(slugify).filter((s) => s.length > 0);
-  if (oldSegments.length === 0 || newSegments.length === 0) return { ok: false, reason: "invalid-name" };
-
-  const oldRel = oldSegments.join("/");
-  const newRel = newSegments.join("/");
-  if (oldRel === newRel) return { ok: true, path: oldRel };
-
-  const notesDir = join(root, NOTES_DIR);
-  const fromDir = join(notesDir, oldRel);
-  const toDir = join(notesDir, newRel);
-
-  const relFrom = relative(notesDir, fromDir);
-  const relTo = relative(notesDir, toDir);
-  if (relFrom.startsWith("..") || isAbsolute(relFrom) || relTo.startsWith("..") || isAbsolute(relTo)) {
-    return { ok: false, reason: "invalid-name" };
-  }
-
-  try {
-    const stat = await fs.stat(fromDir);
-    if (!stat.isDirectory()) return { ok: false, reason: "missing" };
-  } catch {
-    return { ok: false, reason: "missing" };
-  }
-
-  if (await exists(toDir)) {
-    return { ok: false, reason: "collision" };
-  }
-
-  await fs.mkdir(dirname(toDir), { recursive: true });
-  await fs.rename(fromDir, toDir);
-
-  const oldLeaf = oldSegments[oldSegments.length - 1]!;
-  const newLeaf = newSegments[newSegments.length - 1]!;
-  const updateNotesInDir = async (dir: string, prefix: string) => {
-    let entries;
-    try {
-      entries = await fs.readdir(dir, { withFileTypes: true });
-    } catch {
-      return;
-    }
-    for (const entry of entries) {
-      if (entry.isDirectory()) {
-        await updateNotesInDir(join(dir, entry.name), `${prefix}/${entry.name}`);
-      } else if (entry.isFile() && entry.name.endsWith(".md")) {
-        const noteSlug = `${prefix}/${entry.name.slice(0, -".md".length)}`;
-        const notePath = join(dir, entry.name);
-        const note = await getNote(root, noteSlug);
-        if (!note) continue;
-        const tags = note.tags.map((t) => (t === oldLeaf ? newLeaf : t));
-        if (!tags.includes(newLeaf)) tags.push(newLeaf);
-        const meta: NoteMeta = { ...note, tags, updated: now.toISOString() };
-        await writeNote(notePath, noteSlug, meta, note.body, note.frontMatter);
-      }
-    }
-  };
-  await updateNotesInDir(toDir, newRel);
-
-  return { ok: true, path: newRel };
-}
-
-// ---------------------------------------------------------------------------
-// Generated-note upsert (weave-scan sessions; docs/session-scan.md)
-// ---------------------------------------------------------------------------
-
-export interface UpsertNoteInput {
-  /** Desired slug (already slug-safe); uniquified (`-2`, `-3`…) when creating. */
-  slug: string;
-  title: string;
-  body: string;
-  tags?: string[];
-  /** Defaults to `"generated"` — the safe direction for AGENTS.md rule 4. */
-  source?: NoteSource;
-  /**
-   * Extra **owned scalar** front-matter fields (e.g. `session_hash`) upserted
-   * on every write. Managed keys and syntactically unsafe keys are silently
-   * dropped: the note engine owns those, and this function will not fight it.
-   */
-  fields?: Record<string, string>;
-  /**
-   * Content identity of the generated note, when the slug alone must not
-   * decide ownership: on the create path, a candidate slug already occupied
-   * by a note carrying a **different** identity value is skipped (the slug
-   * uniquifies to `-2`, `-3`…), while a same-identity occupant is treated as
-   * ours. Without this, two generated artifacts that derive the same slug —
-   * two sessions that began with the same first message, say — would have
-   * the second silently overwrite the first, marker keys and all.
-   */
-  identity?: { field: string; value: string };
-  /** Injectable clock for tests. */
-  now?: Date;
-}
-
-/**
- * Idempotently create-or-update a note, for generated knowledge that is
- * re-derivable from a source of truth (a session transcript, a scan) and
- * keyed by content the note carries in its front matter.
- *
- * - **Create** (no file at `slug`): canonical managed block plus the extra
- *   fields, body as given, `created` = `updated` = now. The slug is passed
- *   through `uniqueSlug`, so a taken slug shifts to `-2` rather than
- *   overwriting a note the caller could not see.
- * - **Update** (file exists): replace the body and the extra fields, bump
- *   `updated`, and change nothing else — `title`, `created`, `tags`, unknown
- *   front-matter keys, and the append-only `## Raw` tail all survive, per
- *   the vault's round-trip guarantees. Title and tags are deliberately
- *   creation-time values: the human may have retitled or retagged the note,
- *   and a re-scan must not clobber that.
- *
- * Both paths hold the notes-**directory** lock (like `addNote`): the create
- * path runs a check-then-create slug allocation that must be atomic, and the
- * update path's `getNote`-then-write is the same lost-update window.
- */
-export async function upsertNote(root: string, input: UpsertNoteInput): Promise<Note> {
-  await ensureVault(root);
-  return withNoteLocks([join(root, NOTES_DIR)], async () => {
-    const now = (input.now ?? new Date()).toISOString();
-    const noteAt = (slug: string) => notePath(root, slug);
-    const identity = input.identity;
-    let existing = await getNote(root, input.slug);
-    if (
-      existing !== null &&
-      identity &&
-      fieldFromFrontMatter(existing.frontMatter, identity.field) !== identity.value
-    ) {
-      // The note at this slug belongs to a different identity (or to no
-      // identity at all — a human note): never update it in place. Fall
-      // through to the create path, whose guard picks the next free slug.
-      existing = null;
-    }
-    if (existing === null) {
-      const slug = uniqueSlug(input.slug, (candidate) => {
-        if (!existsSync(noteAt(candidate))) return false; // free
-        if (!identity) return true; // slug ownership is the caller's problem
-        return occupantIdentity(root, candidate, identity.field) !== identity.value;
-      });
-      const meta: NoteMeta = {
-        title: input.title,
-        created: now,
-        updated: now,
-        tags: input.tags ?? [],
-        source: input.source ?? "generated",
-      };
-      // The managed lines below are re-rendered from `meta` by `serializeNote`
-      // (replayBlock substitutes rendered values for managed keys in place);
-      // spelling them here just fixes the block's key order.
-      const fields = sanitizeUpsertFields(input.fields);
-      const frontMatter = [
-        `title: ${quoteField(meta.title)}`,
-        `created: ${meta.created}`,
-        `updated: ${meta.updated}`,
-        `tags: [${meta.tags.map(quoteField).join(", ")}]`,
-        `source: ${meta.source}`,
-        ...upsertFrontMatterFields([], fields),
-      ];
-      return writeNote(noteAt(slug), slug, meta, input.body, frontMatter);
-    }
-    const meta: NoteMeta = { ...existing, updated: now };
-    const fields = sanitizeUpsertFields(input.fields);
-    const frontMatter = upsertFrontMatterFields(existing.frontMatter ?? [], fields);
-    const body = preserveRawTail(existing.body, input.body);
-    return writeNote(noteAt(input.slug), input.slug, meta, body, frontMatter);
-  });
-}
-
-/**
- * The identity value carried in a note's own front-matter block, or null when
- * absent — an absent identity never matches, so unmarked notes are never
- * claimed as ours.
- */
-function fieldFromFrontMatter(lines: NoteFrontMatter | undefined, field: string): string | null {
-  if (!lines) return null;
-  const parsed = parseFrontMatter(["---", ...lines, "---", ""].join("\n"));
-  if (!parsed) return null;
-  return parsed.fields.get(field) ?? null;
-}
-
-/**
- * The identity value a note at `slug` carries in its front matter, or null
- * when the file is missing, malformed, or does not declare the field — a
- * null never equals a real identity value, so such a file blocks the slug.
- */
-function occupantIdentity(root: string, slug: string, field: string): string | null {
-  let text: string;
-  try {
-    text = readFileSync(notePath(root, slug), "utf8");
-  } catch {
-    return null;
-  }
-  const parsed = parseFrontMatter(text);
-  if (!parsed) return null;
-  return parsed.fields.get(field) ?? null;
-}
-
-/**
- * Drop fields this function has no business writing: managed keys (the note
- * engine renders those from `NoteMeta`) and keys that are not plain scalar
- * identifiers (a hostile key could smuggle newlines or `---` into the block).
- * Values are guarded by `quoteField` at render time.
- */
-function sanitizeUpsertFields(fields: Record<string, string> | undefined): Record<string, string> {
-  if (!fields) return {};
-  const managed = new Set<string>(MANAGED_FRONT_MATTER_KEYS);
-  const out: Record<string, string> = {};
-  for (const [key, value] of Object.entries(fields)) {
-    if (managed.has(key)) continue;
-    if (!/^[A-Za-z][A-Za-z0-9_-]*$/.test(key)) continue;
-    out[key] = value;
-  }
-  return out;
-}
-
 async function listNoteFiles(root: string): Promise<string[]> {
   const dir = join(root, NOTES_DIR);
   const out: string[] = [];
-  // Recursive by design: vault notes may nest (`sessions/<name>` — session
-  // memory lives in an inner folder of the graph, docs/session-scan.md), and
-  // every consumer above this function (list, search, graph, cache) speaks
-  // in slugs, so the relative path *is* the slug.
   async function walk(prefix: string): Promise<void> {
     let entries;
     try {
       entries = await fs.readdir(prefix.length > 0 ? join(dir, prefix) : dir, { withFileTypes: true });
     } catch {
-      return; // missing vault — nothing to list
+      return;
     }
     for (const entry of entries) {
       if (entry.isDirectory()) {
         await walk(prefix.length > 0 ? `${prefix}/${entry.name}` : entry.name);
-        continue;
-      }
-      if (entry.isFile() && entry.name.endsWith(".md")) {
-        const slug = prefix.length > 0 ? `${prefix}/${entry.name}` : entry.name;
-        out.push(slug);
+      } else if (entry.isFile() && entry.name.endsWith(".md")) {
+        out.push(prefix.length > 0 ? `${prefix}/${entry.name}` : entry.name);
       }
     }
   }
@@ -1021,17 +367,6 @@ async function listNoteFiles(root: string): Promise<string[]> {
   return out.sort();
 }
 
-/**
- * Derive the list-shaped summary of a note (drops the body, keeps its length).
- *
- * `frontMatter` is dropped along with the body, and explicitly rather than by
- * omission: a spread is exempt from TypeScript's excess-property check, so
- * carrying it would type-check fine and then ship every note's raw metadata
- * block through `listNotes` into the search results and the wire payload —
- * a field no consumer reads, on a shape the contract test pins.
- * Preservation is a property of the *write* path re-reading the file, not of
- * summaries carrying it around.
- */
 export function summarizeNote(note: Note): NoteSummary {
   const { body, frontMatter, ...rest } = note;
   void frontMatter;

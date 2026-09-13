@@ -25,18 +25,16 @@
 
 import { useEffect, useMemo, useRef, useState } from "preact/hooks";
 import { fetchJson } from "../api.dom";
-import { deleteNote } from "../api";
+import { openNote } from "../api";
 import type { ColorScheme } from "../graph/graph.model";
 import { schemeOf, watchScheme } from "../graph/scheme";
 import { createSigmaRenderer } from "../graph/renderer.dom";
 import { domEventSource } from "../live";
-import { createEditor, watchUnload, type EditorHandle } from "../note/editor.controller";
-import { editorPrompt, editorToolbar, initialEditorState, shouldBlockUnload } from "../note/editor.model";
 import { SearchPalette } from "../search/SearchPalette";
 import { restoreSelection, saveSelection } from "../selection.storage";
 import { connection, graph, graphFailed, noteBody, selectedId } from "../state";
 import type { WorkspaceHandle } from "../workspace";
-import { observeNotes, select, startWorkspace } from "../workspace";
+import { select, startWorkspace } from "../workspace";
 import { Columns } from "./Columns";
 import { deeplinkSelection, formatHash } from "./deeplink.model";
 import { dividerHandlers } from "./drag.model";
@@ -77,7 +75,6 @@ export function Shell(props: ShellProps) {
   const [width, setWidth] = useState(props.initialWidth);
   const [overlay, setOverlay] = useState<OverlayId>(null);
   const [layout, setLayout] = useState<LayoutState>(() => loadLayout(localStorage, props.initialWidth));
-  const [editorState, setEditorState] = useState(initialEditorState);
   // The theme: what the user picked, and what the OS is currently saying. Two
   // states because they answer different questions — `theme` changes on a
   // button press or the `t` key, `systemScheme` on an OS flip while the user
@@ -92,14 +89,6 @@ export function Shell(props: ShellProps) {
   // built on an early render still sees current state — see `DragHost`.
   const live = useRef({ layout, width, overlay });
   live.current = { layout, width, overlay };
-
-  // Built once and owned by the shell, not by the note column. The column is
-  // unmounted by a resize below 800 px, and an editor whose lifetime was the
-  // column's would lose an unsaved draft to a window drag.
-  const editor: EditorHandle = useMemo(
-    () => createEditor({ fetch: fetchJson, select: (id) => void select(fetchJson, id), onChange: setEditorState }),
-    [],
-  );
 
   useEffect(() => {
     const handle = startWorkspace({ fetch: fetchJson, open: domEventSource });
@@ -138,16 +127,6 @@ export function Shell(props: ShellProps) {
     }
   }, [graph.value]);
 
-  // Every note that arrives, from any of the three directions it can arrive
-  // from (mount, selection, SSE refetch), so the editor can decide whether it
-  // is news or an interruption — see `editor.model.ts`'s header.
-  useEffect(() => observeNotes((payload) => editor.send({ type: "loaded", payload })), []);
-
-  // Read through a thunk, not captured: a listener registered at mount
-  // outlives every render, so a captured state would always look clean and
-  // the guard would be installed but inert.
-  useEffect(() => watchUnload(window, () => shouldBlockUnload(editor.state())), []);
-
   useEffect(() => watchViewport(window, setWidth), []);
 
   // The relative-time clock. Every "8h ago" in the tree and the note meta is
@@ -183,13 +162,7 @@ export function Shell(props: ShellProps) {
             setOverlay,
             focusSelector: (selector) => focusSelector(document, selector),
             fitGraph: () => fit.current?.(),
-            // Through the editor, not straight to `select`: clearing the
-            // selection while a draft is dirty must be refused like any
-            // other navigation, and `Esc` is the easiest way to do it by
-            // accident.
-            clearSelection: () => editor.send({ type: "navigate", id: null }),
-            toggleEdit: () => editor.send({ type: "toggle" }),
-            saveNote: () => editor.send({ type: "save" }),
+            clearSelection: () => { selectedId.value = null; },
             cycleTheme: () => setTheme((current) => cycleTheme(current)),
           }),
       }),
@@ -233,23 +206,15 @@ export function Shell(props: ShellProps) {
         graph={graph.value}
         note={noteBody.value}
         selectedId={selectedId.value}
-        // Through the editor: a selection made while a draft is dirty is
-        // parked rather than performed, and the column then asks. Every
-        // column's `onSelect` routes here, so there is one guarded door
-        // rather than three that each had to remember.
-        onSelect={(id) => editor.send({ type: "navigate", id })}
+        onSelect={(id) => void select(fetchJson, id)}
+        onOpen={(slug) => void openNote(fetchJson, slug)}
         now={now}
-        toolbar={editorToolbar(editorState)}
-        prompt={editorPrompt(editorState)}
-        draft={editorState.draft}
-        send={editor.send}
         // The graph column's three ports (§7.5, §10). Supplied here, at the
         // one place that is already allowed to name browser globals, so
         // `Graph.tsx` and everything under it takes its world as parameters.
         renderer={createSigmaRenderer}
         storage={localStorage}
         host={window}
-        fetch={fetchJson}
         fit={fit}
       />
       {/*
@@ -265,10 +230,7 @@ export function Shell(props: ShellProps) {
       {overlay === "search" ? (
         <SearchPalette
           graph={graph.value}
-          // Through the editor, like every column's `onSelect`: choosing a hit
-          // while a draft is dirty must park behind the UNSAVED prompt, not
-          // wipe it. This was the one navigation path that skipped the guard.
-          onSelect={(id) => editor.send({ type: "navigate", id })}
+          onSelect={(id) => void select(fetchJson, id)}
           onClose={() => setOverlay(null)}
           ports={{ fetch: fetchJson, now: Date.now, delay: (run, ms) => void setTimeout(run, ms) }}
         />

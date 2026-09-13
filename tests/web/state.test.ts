@@ -143,14 +143,10 @@ describe("the remaining signals hold their payloads", () => {
     expect(graph.value.stamp).toBe(GRAPH.model.generatedAt);
   });
 
-  it("carries a note body and the revision the editor saves against", () => {
-    // A `NotePayload`, not a bare `ViewNote`, as of P5: the revision travels
-    // *with* the body because a revision fetched separately would describe a
-    // state the draft was not typed against.
-    noteBody.value = { note: NOTE, revision: "111:22" };
+  it("carries a note body", () => {
+    noteBody.value = { note: NOTE };
     expect(noteBody.value.note.body).toBe("# Alpha");
     expect(noteBody.value.note.source).toBe("human");
-    expect(noteBody.value.revision).toBe("111:22");
   });
 
   it("carries expanded tree rows", () => {

@@ -133,10 +133,9 @@ function buildVaultSide(
 
   const keptSlugs = new Set(kept.map((n) => n.slug));
 
-  // Nested notes (`sessions/foo` — session memory, docs/session-scan.md) nest
-  // under synthesized folder nodes so the vault tree groups them the way the
-  // repository tree groups directories. Ids are prefixed `vfolder:` because a
-  // repository module could legitimately share the path (`module:sessions`);
+  // Nested notes nest under synthesized folder nodes so the vault tree groups
+  // them the way the repository tree groups directories. Ids are prefixed
+  // `vfolder:` because a repository module could legitimately share the path;
   // the tree renders any `contains` chain, so the kind reuse needs no client
   // change. Deterministic: dirs sorted, parents before children.
   const folderIds = new Map<string, string>();

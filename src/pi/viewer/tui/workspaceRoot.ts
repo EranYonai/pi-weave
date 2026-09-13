@@ -1,22 +1,20 @@
 /**
  * workspaceRoot.ts — the v2 workspace ROOT component (weave-view-tui-v2 §4, §7).
  *
- * Sits above the pure `workspace.ts` split-tree model and the `surface/*`
+ * Sits above the pure fixed `workspace.ts` model and the `surface/*`
  * components. It composes panes from a `Workspace` value into a real pi-tui
- * tree (VStack/HStack/Pane), owns the single input listener, routes keys
- * (workspace §7.1 / pane §7.2) and cross-pane SurfaceEvents, renders the
+ * tree (HStack/Pane), owns the single input listener, routes keys and
+ * cross-pane SurfaceEvents, renders the
  * branded header + footer + narrow-mode tab bar (§9.2, decision 5), and
  * applies responsive collapse.
  *
- * It is drivable with a fake tui/theme/loaders exactly like v1's WeaveExplorer.
- * `WeaveExplorer` (v1 single-pane path) is kept intact for backward
- * compatibility; the workspace root is the v2 multi-pane path wired in run.ts.
+ * It is drivable with a fake tui/theme/loaders and is the path wired in run.ts.
  */
 
-import { HStack, matchesKey, truncateToWidth, visibleWidth, VStack, type Component } from "@earendil-works/pi-tui";
+import { HStack, matchesKey, truncateToWidth, visibleWidth, type Component } from "@earendil-works/pi-tui";
 import { BodyStore } from "./bodyStore";
 import { renderMark } from "./branding";
-import type { WeaveLoaders, WeaveTheme, WeaveTui } from "./explorer";
+import type { WeaveLoaders, WeaveTheme, WeaveTui } from "./surface/base";
 import { countProvenance } from "./model";
 import type { GraphModel, GraphNode } from "../../../core/graph/model";
 import { Pane } from "./surface/base";
@@ -25,19 +23,7 @@ import { ExploreSurface } from "./surface/explore";
 import { bindDetail, DetailSurface } from "./surface/detail";
 import { FocusSurface } from "./surface/focus";
 import { HealthSurface } from "./surface/health";
-import {
-  close,
-  collapseForWidth,
-  defaultWorkspace,
-  focusNext,
-  resize,
-  setPaneSurface,
-  split,
-  workspacePanes,
-  type PaneNode,
-  type Workspace,
-  type WorkspaceNode,
-} from "./workspace";
+import { collapseForWidth, defaultWorkspace, focusNext, workspacePanes, type PaneNode, type Workspace } from "./workspace";
 
 export interface WeaveWorkspaceOptions {
   model: GraphModel;
@@ -47,24 +33,10 @@ export interface WeaveWorkspaceOptions {
   done: (result: null) => void;
   rows?: number;
   now?: () => number;
-  /** Pre-rendered brand mark line (from branding.renderMark). */
-  logo?: string;
-  /**
-   * Raster kitty logo (branding.bundledLogoImage) rendered on its own row(s)
-   * above the header text strip when Kitty graphics are available. `null`/
-   * absent keeps the one-line glyph header (decision 1 favicon, not a splash).
-   */
-  logoImage?: Component | null;
-  /** Optional initial workspace (defaults to the Explore default). */
-  workspace?: Workspace;
 }
 
-/** Decode a workspace-level key (returns null when it's a pane key). */
+/** Decode the few root-level keys; all other input belongs to the active surface. */
 export function decodeWorkspaceKey(data: string): string | null {
-  if (data === "\\") return "splitV";
-  if (data === "|") return "splitH";
-  if (data === "x") return "close";
-  if (data === "w") return "workspace";
   if (data === "?") return "help";
   if (data === "q") return "quit";
   if (data === "r") return "refresh";
@@ -80,12 +52,11 @@ export class WeaveWorkspace implements Component {
   private readonly rows: number;
   private readonly nowFn: () => number;
   private readonly logo: string;
-  private readonly logoImage: Component | null;
   private readonly bodies: BodyStore;
   private ctx: SurfaceContext;
   /** paneId → surface instance. */
   private panes = new Map<string, Surface>();
-  /** The workspace split tree + focus. */
+  /** The fixed pane layout + focus. */
   workspace: Workspace;
   private helpOpen = false;
   refreshing = false;
@@ -101,8 +72,7 @@ export class WeaveWorkspace implements Component {
     this.done = opts.done;
     this.rows = opts.rows ?? 24;
     this.nowFn = opts.now ?? Date.now;
-    this.logo = opts.logo ?? renderMark("glyph", opts.theme, 20);
-    this.logoImage = opts.logoImage ?? null;
+    this.logo = renderMark(opts.theme, 20);
     this.bodies = new BodyStore({
       loaders: opts.loaders,
       onChange: () => this.invalidateAndRender(),
@@ -114,7 +84,7 @@ export class WeaveWorkspace implements Component {
       bodies: this.bodies,
       now: this.nowFn,
     };
-    this.workspace = opts.workspace ?? defaultWorkspace(opts.model);
+    this.workspace = defaultWorkspace(opts.model);
     this.syncPanes();
   }
 
@@ -192,17 +162,6 @@ export class WeaveWorkspace implements Component {
       this.applyWorkspaceKey(wsKey);
       return;
     }
-    if (data === "e" || data === "d" || data === "h") {
-      this.swapSurface(data);
-      return;
-    }
-    // Ctrl+letters resize — only the four resize bytes are intercepted so
-    // enter (\r/0x0d), esc (0x1b) and other control keys reach the pane.
-    const ctrl = charCode(data);
-    if (ctrl !== undefined && (ctrl === 0x08 || ctrl === 0x0a || ctrl === 0x0b || ctrl === 0x0c)) {
-      this.applyResize(ctrl);
-      return;
-    }
     const active = this.activePane();
     if (active?.handleInput) {
       active.handleInput(data);
@@ -225,21 +184,6 @@ export class WeaveWorkspace implements Component {
 
   private applyWorkspaceKey(key: string): void {
     switch (key) {
-      case "splitV":
-        this.workspace = split(this.workspace, this.workspace.activePaneId, "vertical");
-        this.syncPanes();
-        this.invalidateAndRender();
-        return;
-      case "splitH":
-        this.workspace = split(this.workspace, this.workspace.activePaneId, "horizontal");
-        this.syncPanes();
-        this.invalidateAndRender();
-        return;
-      case "close":
-        this.workspace = close(this.workspace, this.workspace.activePaneId);
-        this.syncPanes();
-        this.invalidateAndRender();
-        return;
       case "quit":
         this.quit();
         return;
@@ -255,38 +199,11 @@ export class WeaveWorkspace implements Component {
             this.invalidateAndRender();
           });
         return;
-      case "workspace":
-        // TODO(M5): named-workspace switcher overlay; for now toggles help.
-        this.helpOpen = !this.helpOpen;
-        this.invalidateAndRender();
-        return;
       case "help":
         this.helpOpen = !this.helpOpen;
         this.invalidateAndRender();
         return;
     }
-  }
-
-  /** Ctrl+h/l adjust row weights; Ctrl+j/k adjust column weights. */
-  private applyResize(byte: number): void {
-    const active = this.workspace.activePaneId;
-    const d = 2;
-    if (byte === 0x08) this.workspace = resize(this.workspace, active, "row", -d); // Ctrl-h
-    else if (byte === 0x0c) this.workspace = resize(this.workspace, active, "row", d); // Ctrl-l
-    else if (byte === 0x0a) this.workspace = resize(this.workspace, active, "column", d); // Ctrl-j
-    else if (byte === 0x0b) this.workspace = resize(this.workspace, active, "column", -d); // Ctrl-k
-    this.syncPanes();
-    this.invalidateAndRender();
-  }
-
-  /** e/d/h — swap the active pane's surface in place (f stays the pane focus key). */
-  private swapSurface(key: string): void {
-    const kind = key === "e" ? "explore" : key === "d" ? "detail" : "health";
-    const activeId = this.workspace.activePaneId;
-    this.workspace = setPaneSurface(this.workspace, activeId, kind);
-    const s = this.createSurface({ type: "pane", id: activeId, surface: kind, nodeId: null });
-    this.panes.set(activeId, s);
-    this.invalidateAndRender();
   }
 
   private cycleFocus(dir: 1 | -1): void {
@@ -331,27 +248,15 @@ export class WeaveWorkspace implements Component {
     if (node.detail.slug) void this.loaders.openNote(node.detail.slug);
   }
 
-  /** Obsidian "open in main": nearest Detail pane to the right, else split. */
+  /** Open a selected node in the fixed Detail pane. */
   private openDetail(id: string): void {
     // (The active Detail surface already rebinds itself on enter, so no
     // active-pane special case is needed here.)
     const panes = workspacePanes(this.workspace);
-    const activeIdx = panes.findIndex((p) => p.id === this.workspace.activePaneId);
-    const toRight = panes.slice(activeIdx + 1).find((p) => p.surface === "detail");
-    if (toRight) {
-      this.bindDetail(toRight.id, id);
-      this.setActive(toRight.id);
-      return;
-    }
-    // none to the right — split the active pane horizontally into a Detail
-    this.workspace = split(this.workspace, this.workspace.activePaneId, "horizontal", "detail");
-    this.syncPanes();
-    const detail = workspacePanes(this.workspace).find((p) => p.surface === "detail");
-    if (detail) {
-      this.bindDetail(detail.id, id);
-      this.setActive(detail.id);
-    }
-    this.invalidateAndRender();
+    const detail = panes.find((p) => p.surface === "detail");
+    if (!detail) return;
+    this.bindDetail(detail.id, id);
+    this.setActive(detail.id);
   }
 
   private bindDetail(paneId: string, id: string): void {
@@ -375,16 +280,7 @@ export class WeaveWorkspace implements Component {
       (this.panes.get(focus.id) as FocusSurface).setFocus(id);
       this.setActive(focus.id);
       this.invalidateAndRender();
-      return;
     }
-    this.workspace = split(this.workspace, this.workspace.activePaneId, "horizontal", "focus");
-    this.syncPanes();
-    const fp = workspacePanes(this.workspace).find((p) => p.surface === "focus");
-    if (fp) {
-      (this.panes.get(fp.id) as FocusSurface).setFocus(id);
-      this.setActive(fp.id);
-    }
-    this.invalidateAndRender();
   }
 
   private requestBody(id: string): void {
@@ -414,25 +310,11 @@ export class WeaveWorkspace implements Component {
     const repo = this.model.nodes.find((n) => n.kind === "repository");
     const repoState = repoStaleness(this.model, repo);
     const repoPart = repo ? ` · repo ${repo.label}:${repoState}` : "";
-    // Kitty: the raster logo leads on its own row(s) and replaces the glyph in
-    // the text strip (decision 1 favicon). Otherwise the one-line glyph header
-    // stays intact.
-    let imageLines: string[] | null = null;
-    if (this.logoImage) {
-      try {
-        const lines = this.logoImage.render(width);
-        if (lines && lines.length) imageLines = lines;
-      } catch {
-        imageLines = null;
-      }
-    }
-    const mark = imageLines ? "" : this.logo;
+    const mark = this.logo;
     const head = `${mark}${mark ? " " : ""}${t.bold("weave view")}`;
     const fill = "─".repeat(Math.max(1, width - visibleWidth(head) - 2));
     const line1 = `${head} ${fill} ${this.workspace.name} · ${workspacePanes(this.workspace).length} panes${repoPart}`;
-    const out: string[] = [];
-    if (imageLines) out.push(...imageLines);
-    out.push(truncateToWidth(line1, width));
+    const out: string[] = [truncateToWidth(line1, width)];
     const banner = this.bannerText();
     if (banner) out.push(t.fg("warning", truncateToWidth(banner, width)));
     const countsLine = `notes ${counts.total} (● ${counts.human} / ◐ ${counts.agent} / ○ ${counts.generated})`;
@@ -447,36 +329,19 @@ export class WeaveWorkspace implements Component {
   private renderBody(width: number): string[] {
     const effective = collapseForWidth(this.workspace, width);
     const bodyRows = Math.max(1, this.rows - 4);
-    const tree = this.buildSplit(effective.root, bodyRows);
-    return tree.render(width);
+    const stack = new HStack();
+    for (const pane of effective.panes) stack.addChild(this.buildPane(pane, bodyRows), { grow: 1 });
+    return stack.render(width);
   }
 
-  private buildSplit(node: WorkspaceNode, rows: number): Component {
-    if (node.type === "pane") {
-      const s = this.panes.get(node.id);
-      if (!s) return { render: () => [], invalidate: () => {} };
-      (s as { paneRows?: number }).paneRows = Math.max(1, rows - 3);
-      const p = new Pane(s, this.theme);
-      p.rows = rows;
-      p.setFocused(node.id === this.workspace.activePaneId);
-      return p;
-    }
-    const StackCtor = node.direction === "row" ? HStack : VStack;
-    const stack = new StackCtor();
-    // VStack stacks panes vertically, so each child's height must be its share
-    // of the available rows (by grow weight) — otherwise every child renders at
-    // full height, the stack overflows, and the render clamp leaves only the
-    // first pane visible (the "split hides the new pane" bug). HStack shares
-    // width, so its children keep the full height.
-    const vertical = node.direction !== "row";
-    const sizes = node.sizes.length ? node.sizes : node.children.map(() => 1);
-    const total = sizes.reduce((a, b) => a + b, 0) || node.children.length;
-    node.children.forEach((c, i) => {
-      const grow = sizes[i] ?? 1;
-      const childRows = vertical ? Math.max(1, Math.round((rows * grow) / total)) : rows;
-      stack.addChild(this.buildSplit(c, childRows), { grow });
-    });
-    return stack;
+  private buildPane(node: PaneNode, rows: number): Component {
+    const s = this.panes.get(node.id);
+    if (!s) return { render: () => [], invalidate: () => {} };
+    (s as { paneRows?: number }).paneRows = Math.max(1, rows - 3);
+    const p = new Pane(s, this.theme);
+    p.rows = rows;
+    p.setFocused(node.id === this.workspace.activePaneId);
+    return p;
   }
 
   private renderTabBar(width: number): string[] {
@@ -493,20 +358,14 @@ export class WeaveWorkspace implements Component {
     const t = this.theme;
     if (this.helpOpen) {
       const help = [
-        "Tab focus · \\ | split · Ctrl-hjkl resize · x close · e/d/f/h swap",
+        "Tab focus · ↑↓/jk move · ←→/hl expand · enter open · f focus · r refresh · ? help · q quit",
         "↑↓/jk move · ←→/hl expand · enter open · / filter · p prov · f focus · r refresh · ? help · q quit",
       ];
       return help.map((l) => t.fg("dim", truncateToWidth(l, width)));
     }
-    const hint = "Tab focus · \\ split · Ctrl-hjkl resize · e/d/f/h pane · r refresh · ? help · q quit";
+    const hint = "Tab focus · ↑↓/jk move · ←→/hl expand · enter open · f focus · r refresh · ? help · q quit";
     return [t.fg("dim", truncateToWidth(hint, width))];
   }
-}
-
-function charCode(data: string): number | undefined {
-  if (data.length !== 1) return undefined;
-  const c = data.charCodeAt(0);
-  return c >= 0 && c < 0x20 ? c : undefined;
 }
 
 /** True when the active surface is in a sub-mode that Esc should clear instead

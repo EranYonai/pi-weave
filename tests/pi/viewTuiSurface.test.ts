@@ -6,7 +6,7 @@ import { FocusSurface } from "../../src/pi/viewer/tui/surface/focus";
 import { HealthSurface } from "../../src/pi/viewer/tui/surface/health";
 import type { SurfaceContext, SurfaceEventHandler, SurfaceInit } from "../../src/pi/viewer/tui/surface/base";
 import { BodyStore } from "../../src/pi/viewer/tui/bodyStore";
-import type { WeaveTheme, WeaveLoaders } from "../../src/pi/viewer/tui/explorer";
+import type { WeaveTheme, WeaveLoaders } from "../../src/pi/viewer/tui/surface/base";
 import type { GraphModel, GraphNode } from "../../src/core/graph/model";
 import type { NoteSource } from "../../src/core/types";
 import { visibleWidth } from "@earendil-works/pi-tui";

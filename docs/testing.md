@@ -168,12 +168,11 @@ module scope while building sigma's default program table, so in Node the *impor
 runs. There is no DOM test environment in this repository and §L5.5 forbids adding one, so a file that names sigma is a file no test can
 even import — which means it reports 0 % **as a whole**, not line by line.
 
-The response was to shrink the island rather than to hide it. `renderer.ts` declares `SigmaLike` (a six-method structural port the real
-`Sigma` satisfies without a cast) and `SigmaFactory` (`new Sigma(...)` as a function type); `sigmaRenderer(create, scheme)` is the entire
-renderer written against that port, and `client-graph.test.ts` drives it with a recording fake through mount, reducer installation,
-`setGraph`, `setPositions`, `setHighlight`, `fit`, selection and a double `destroy`. What is left in `renderer.dom.ts` is the constructor
-call and the container cast. `renderer.ts` imports **no npm package at all**, which is what lets the root `tsconfig.json` project — no `DOM`
-lib — compile the tests that import it.
+The response was to shrink the island rather than to hide it. `renderer.ts` declares `SigmaLike` (a structural port for the real `Sigma`);
+`sigmaRenderer(create, scheme)` is the entire renderer written against that port, and `client-graph.test.ts` drives it with a recording fake
+through mount, reducer installation, `setGraph`, `setPositions`, `setHighlight`, `fit`, selection and a double `destroy`. What is left in
+`renderer.dom.ts` is the constructor call and the container cast. `renderer.ts` imports **no npm package at all**, which is what lets the
+root `tsconfig.json` project — no `DOM` lib — compile the tests that import it.
 
 **No coverage exclusion was added, and that is the point.** §L5.2's rule is that untestable *lines* are kept to a handful, not that
 untestable *files* are excluded; the one exclusion that exists is a type-only module and a blanket `src/web/client/**` exclude is explicitly

@@ -18,30 +18,19 @@
 import { describe, expect, it } from "vitest";
 import {
   classifyStatus,
-  deleteNote,
   fetchGraph,
   fetchNote,
-  fetchOkfFile,
   fetchSearch,
-  isConflictPayload,
   isGraphPayload,
   isNotePayload,
-  isOkfFile,
   isOpenResult,
   isSearchPayload,
   isViewNote,
   messageForStatus,
   openNote,
-  renameNote,
-  moveNote,
-  createFolder,
-  deleteFolder,
-  renameFolder,
-  isCreateFolderResult,
-  saveNote,
 } from "../../src/web/client/api";
 import type { FetchLike, HttpRequest, HttpResponse } from "../../src/web/client/api";
-import type { ConflictPayload, GraphPayload, NotePayload, ViewNote } from "../../src/web/shared/wire";
+import type { GraphPayload, NotePayload, ViewNote } from "../../src/web/shared/wire";
 
 // --- fakes ---------------------------------------------------------------------
 
@@ -97,8 +86,7 @@ const NOTE: ViewNote = {
   source: "human",
 };
 
-/** What `GET /api/note/:slug` serves as of P5: the note plus its revision. */
-const PAYLOAD: NotePayload = { note: NOTE, revision: "111:22" };
+const PAYLOAD: NotePayload = { note: NOTE };
 
 // --- status classification ----------------------------------------------------
 
@@ -184,17 +172,13 @@ describe("isViewNote", () => {
   });
 });
 
-describe("isOkfFile / isSearchPayload / isOpenResult", () => {
+describe("isSearchPayload / isOpenResult", () => {
   it("accepts well-formed payloads", () => {
-    expect(isOkfFile({ path: "index/notes.md", body: "x" })).toBe(true);
     expect(isSearchPayload({ query: "a", hits: [] })).toBe(true);
     expect(isOpenResult({ opened: true })).toBe(true);
   });
 
   it.each([
-    ["okf without a body", isOkfFile, { path: "a" }],
-    ["okf with a numeric path", isOkfFile, { path: 1, body: "x" }],
-    ["okf null", isOkfFile, null],
     ["search without hits", isSearchPayload, { query: "a" }],
     ["search with object hits", isSearchPayload, { query: "a", hits: {} }],
     ["search with a numeric query", isSearchPayload, { query: 1, hits: [] }],
@@ -297,12 +281,11 @@ describe("fetchGraph", () => {
 // --- fetchNote ---------------------------------------------------------------------
 
 describe("fetchNote", () => {
-  it("returns the note and its revision on 200", async () => {
+  it("returns the note on 200", async () => {
     const result = await fetchNote(respondsWith(PAYLOAD), "alpha");
     expect(result.ok).toBe(true);
     if (result.ok) {
       expect(result.data.note.title).toBe("Alpha");
-      expect(result.data.revision).toBe("111:22");
     }
   });
 
@@ -333,19 +316,12 @@ describe("fetchNote", () => {
   });
 
   it("reports a note missing its tags as malformed", async () => {
-    const bad = { note: { ...NOTE, tags: null }, revision: "1:1" };
+    const bad = { note: { ...NOTE, tags: null } };
     expect(await fetchNote(respondsWith(bad), "alpha")).toMatchObject({ ok: false, kind: "malformed" });
   });
 
-  it("reports a bare ViewNote — the pre-P5 shape — as malformed", async () => {
-    // The route used to serve this. A stale server build answering an old
-    // shape must be a visible failure, not an editor that saves with
-    // `revision: undefined` and silently becomes last-write-wins.
+  it("reports a bare ViewNote as malformed", async () => {
     expect(await fetchNote(respondsWith(NOTE), "alpha")).toMatchObject({ ok: false, kind: "malformed" });
-  });
-
-  it("reports a payload with no revision as malformed", async () => {
-    expect(await fetchNote(respondsWith({ note: NOTE }), "alpha")).toMatchObject({ ok: false, kind: "malformed" });
   });
 
   it("reports an unparseable body as malformed", async () => {
@@ -355,32 +331,6 @@ describe("fetchNote", () => {
 
   it("survives a non-Error rejection", async () => {
     expect(await fetchNote(() => Promise.reject(42), "alpha")).toMatchObject({ ok: false, kind: "network" });
-  });
-});
-
-// --- fetchOkfFile ------------------------------------------------------------------
-
-describe("fetchOkfFile", () => {
-  it("returns the file on 200", async () => {
-    const result = await fetchOkfFile(respondsWith({ path: "index/notes.md", body: "# x" }), "index/notes.md");
-    expect(result.ok).toBe(true);
-    if (result.ok) expect(result.data.body).toBe("# x");
-  });
-
-  it("preserves path separators while encoding each segment", async () => {
-    // `encodeURIComponent` on the whole string would turn the separators into
-    // %2F and guarantee a 404.
-    const impl = respondsWith({ path: "a/b c.md", body: "" });
-    await fetchOkfFile(impl, "a/b c.md");
-    expect(impl.calls[0]?.url).toBe("/api/okf/a/b%20c.md");
-  });
-
-  it("reports a missing file", async () => {
-    expect(await fetchOkfFile(respondsStatus(404), "nope.md")).toMatchObject({ ok: false, kind: "missing" });
-  });
-
-  it("reports a malformed payload", async () => {
-    expect(await fetchOkfFile(respondsWith({ path: "a" }), "a")).toMatchObject({ ok: false, kind: "malformed" });
   });
 });
 
@@ -453,231 +403,5 @@ describe("openNote", () => {
 
   it("reports a network failure", async () => {
     expect(await openNote(rejects(), "alpha")).toMatchObject({ ok: false, kind: "network" });
-  });
-});
-
-// --- writes (P5) ---------------------------------------------------------------------
-
-const CONFLICT: ConflictPayload = {
-  error: "the note changed on disk since it was read",
-  reason: "conflict",
-  current: { note: { ...NOTE, body: "someone else's text" }, revision: "999:44" },
-};
-
-const COLLISION: ConflictPayload = { error: "a note with that slug already exists", reason: "collision", slug: "taken" };
-
-/** A `fetch` that answers 409 with `body`. */
-function conflicts(body: unknown): FetchLike & { readonly calls: Call[] } {
-  return fakeFetch({ ok: false, status: 409, json: () => Promise.resolve(body) });
-}
-
-describe("isNotePayload", () => {
-  it("accepts the shape the route serves", () => {
-    expect(isNotePayload(PAYLOAD)).toBe(true);
-  });
-
-  it("rejects anything missing either half", () => {
-    const bad = [null, 42, [], {}, NOTE, { note: NOTE }, { revision: "r" }, { note: {}, revision: "r" }, { note: NOTE, revision: 1 }];
-    for (const value of bad) {
-      expect(isNotePayload(value), JSON.stringify(value)).toBe(false);
-    }
-  });
-});
-
-describe("isConflictPayload", () => {
-  it("accepts both arms", () => {
-    expect(isConflictPayload(CONFLICT)).toBe(true);
-    expect(isConflictPayload(COLLISION)).toBe(true);
-  });
-
-  it("rejects a conflict whose nested note is unusable", () => {
-    // Checked to the depth the prompt *renders*: the reload button writes
-    // `current.note` into the column and overwrite sends `current.revision`.
-    // A payload missing either would produce a dialog with two buttons, at
-    // least one of which silently does nothing.
-    for (const value of [
-      { ...CONFLICT, current: undefined },
-      { ...CONFLICT, current: { note: NOTE } },
-      { ...CONFLICT, current: { note: {}, revision: "r" } },
-      { ...COLLISION, slug: 7 },
-      { error: "x", reason: "other" },
-      { reason: "collision", slug: "s" },
-      null,
-      [],
-      "409",
-    ]) {
-      expect(isConflictPayload(value), JSON.stringify(value)).toBe(false);
-    }
-  });
-});
-
-describe("saveNote", () => {
-  it("POSTs the request verbatim to the note's URL", async () => {
-    const impl = respondsWith(PAYLOAD);
-    await saveNote(impl, "alpha", { body: "new text", expectedRevision: "111:22" });
-    const call = impl.calls[0];
-    expect(call?.url).toBe("/api/note/alpha");
-    expect(call?.init?.method).toBe("POST");
-    expect(call?.init?.headers?.["content-type"]).toBe("application/json");
-    expect(JSON.parse(call?.init?.body ?? "{}")).toEqual({ body: "new text", expectedRevision: "111:22" });
-  });
-
-  it("sends no expectedRevision when the caller omits one — that is how overwrite is spelled", async () => {
-    const impl = respondsWith(PAYLOAD);
-    await saveNote(impl, "alpha", { body: "mine" });
-    expect(JSON.parse(impl.calls[0]?.init?.body ?? "{}")).toEqual({ body: "mine" });
-  });
-
-  it("encodes the slug", async () => {
-    const impl = respondsWith(PAYLOAD);
-    await saveNote(impl, "a b/c", { body: "x" });
-    expect(impl.calls[0]?.url).toBe("/api/note/a%20b%2Fc");
-  });
-
-  it("returns the fresh payload on 200", async () => {
-    const result = await saveNote(respondsWith(PAYLOAD), "alpha", { body: "x" });
-    expect(result.ok).toBe(true);
-    if (result.ok) expect(result.data.revision).toBe("111:22");
-  });
-
-  it("decodes a 409 into its own arm, carrying the current note", async () => {
-    // The whole reason writes do not go through the generic `request`: the
-    // 409 *body* is the point, and flattening it to a message would leave
-    // the editor unable to offer reload-or-overwrite.
-    const result = await saveNote(conflicts(CONFLICT), "alpha", { body: "x", expectedRevision: "old" });
-    expect(result.ok).toBe(false);
-    if (result.ok || result.kind !== "conflict") throw new Error("expected a conflict");
-    expect(result.status).toBe(409);
-    expect(result.message).toBe(CONFLICT.error);
-    if (result.conflict.reason !== "conflict") throw new Error("expected the conflict arm");
-    expect(result.conflict.current.note.body).toBe("someone else's text");
-    expect(result.conflict.current.revision).toBe("999:44");
-  });
-
-  it("treats a 409 with an undecodable body as malformed, not as a prompt", async () => {
-    // Presenting reload-or-overwrite built from a payload we could not read
-    // would offer two buttons, at least one of which does nothing.
-    expect(await saveNote(conflicts({ nonsense: true }), "alpha", { body: "x" })).toMatchObject({
-      ok: false,
-      kind: "malformed",
-      status: 409,
-    });
-  });
-
-  it("treats a 409 with an unparseable body as malformed", async () => {
-    const impl = fakeFetch({ ok: false, status: 409, json: () => Promise.reject(new Error("boom")) });
-    expect(await saveNote(impl, "alpha", { body: "x" })).toMatchObject({ ok: false, kind: "malformed", status: 409 });
-  });
-
-  it("maps the other statuses exactly as reads do", async () => {
-    expect(await saveNote(respondsStatus(404), "gone", { body: "x" })).toMatchObject({ ok: false, kind: "missing" });
-    expect(await saveNote(respondsStatus(403), "alpha", { body: "x" })).toMatchObject({ ok: false, kind: "auth" });
-    expect(await saveNote(respondsStatus(500), "alpha", { body: "x" })).toMatchObject({ ok: false, kind: "server" });
-    expect(await saveNote(rejects(), "alpha", { body: "x" })).toMatchObject({ ok: false, kind: "network", status: 0 });
-    expect(await saveNote(() => Promise.reject(42), "alpha", { body: "x" })).toMatchObject({ ok: false, kind: "network" });
-  });
-
-  it("reports a 200 that is not a NotePayload as malformed", async () => {
-    expect(await saveNote(respondsWith(NOTE), "alpha", { body: "x" })).toMatchObject({ ok: false, kind: "malformed" });
-  });
-
-  it("reports a 200 with an unparseable body as malformed", async () => {
-    const impl = fakeFetch({ ok: true, status: 200, json: () => Promise.reject(new Error("boom")) });
-    expect(await saveNote(impl, "alpha", { body: "x" })).toMatchObject({ ok: false, kind: "malformed" });
-  });
-});
-
-describe("renameNote", () => {
-  it("POSTs the target to the rename sub-resource", async () => {
-    const impl = respondsWith(PAYLOAD);
-    await renameNote(impl, "alpha", "Alpha Renamed");
-    expect(impl.calls[0]?.url).toBe("/api/note/alpha/rename");
-    expect(JSON.parse(impl.calls[0]?.init?.body ?? "{}")).toEqual({ slug: "Alpha Renamed" });
-  });
-
-  it("surfaces a collision as a conflict carrying the taken slug", async () => {
-    const result = await renameNote(conflicts(COLLISION), "alpha", "taken");
-    if (result.ok || result.kind !== "conflict") throw new Error("expected a conflict");
-    expect(result.conflict).toEqual(COLLISION);
-  });
-
-  it("reports a missing source note", async () => {
-    expect(await renameNote(respondsStatus(404), "gone", "x")).toMatchObject({ ok: false, kind: "missing" });
-  });
-});
-
-describe("deleteNote", () => {
-  it("sends DELETE with no body", async () => {
-    const impl = respondsWith({ deleted: true });
-    await deleteNote(impl, "alpha");
-    expect(impl.calls[0]?.url).toBe("/api/note/alpha");
-    expect(impl.calls[0]?.init?.method).toBe("DELETE");
-    expect(impl.calls[0]?.init?.body).toBeUndefined();
-  });
-
-  it("returns the acknowledgement on 200", async () => {
-    const result = await deleteNote(respondsWith({ deleted: true }), "alpha");
-    expect(result.ok).toBe(true);
-    if (result.ok) expect(result.data.deleted).toBe(true);
-  });
-
-  it("reports a missing note", async () => {
-    expect(await deleteNote(respondsStatus(404), "gone")).toMatchObject({ ok: false, kind: "missing" });
-  });
-
-  it("rejects an acknowledgement that does not say `deleted: true`", async () => {
-    for (const body of [{}, { deleted: false }, { deleted: "yes" }]) {
-      expect(await deleteNote(respondsWith(body), "alpha"), JSON.stringify(body)).toMatchObject({ ok: false, kind: "malformed" });
-    }
-  });
-});
-
-describe("createFolder", () => {
-  it("sends POST to /api/folder with { path }", async () => {
-    const impl = respondsWith({ ok: true, path: "projects" });
-    const result = await createFolder(impl, "projects");
-    expect(impl.calls[0]?.url).toBe("/api/folder");
-    expect(impl.calls[0]?.init?.method).toBe("POST");
-    expect(result.ok).toBe(true);
-    if (result.ok) expect(result.data.path).toBe("projects");
-  });
-
-  it("validates isCreateFolderResult correctly", () => {
-    expect(isCreateFolderResult({ ok: true, path: "dir" })).toBe(true);
-    expect(isCreateFolderResult({ ok: false })).toBe(false);
-    expect(isCreateFolderResult(null)).toBe(false);
-    expect(isCreateFolderResult("string")).toBe(false);
-  });
-});
-
-describe("moveNote", () => {
-  it("sends POST to /api/note/:slug/move with { targetFolder }", async () => {
-    const impl = respondsWith(PAYLOAD);
-    const result = await moveNote(impl, "alpha", "projects");
-    expect(impl.calls[0]?.url).toBe("/api/note/alpha/move");
-    expect(impl.calls[0]?.init?.method).toBe("POST");
-    expect(JSON.parse(impl.calls[0]?.init?.body ?? "{}")).toEqual({ targetFolder: "projects" });
-    expect(result.ok).toBe(true);
-  });
-});
-
-describe("deleteFolder", () => {
-  it("sends DELETE to /api/folder/:path", async () => {
-    const impl = respondsWith({ deleted: true });
-    const result = await deleteFolder(impl, "projects/sub");
-    expect(impl.calls[0]?.url).toBe("/api/folder/projects/sub");
-    expect(impl.calls[0]?.init?.method).toBe("DELETE");
-    expect(result.ok).toBe(true);
-  });
-});
-
-describe("renameFolder", () => {
-  it("sends POST to /api/folder/:path/rename with { newPath }", async () => {
-    const impl = respondsWith({ ok: true, path: "projects/new" });
-    const result = await renameFolder(impl, "projects/old", "projects/new");
-    expect(impl.calls[0]?.url).toBe("/api/folder/projects/old/rename");
-    expect(impl.calls[0]?.init?.method).toBe("POST");
-    expect(JSON.parse(impl.calls[0]?.init?.body ?? "{}")).toEqual({ newPath: "projects/new" });
-    expect(result.ok).toBe(true);
   });
 });

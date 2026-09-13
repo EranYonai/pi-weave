@@ -117,53 +117,20 @@ export function connectionView(state: ConnectionState): ConnectionView {
 
 // --- empty states ------------------------------------------------------------------
 
-/**
- * A column's title, and the placeholder shown while its content is someone
- * else's phase.
- *
- * P1's deliverable for the three columns was an *honest* empty state naming
- * the phase that would fill it — more useful than a spinner implying a load,
- * and far more useful than a blank pane that reads as a bug.
- *
- * **As of P3 no column uses one.** All three are built, so `Columns.tsx`
- * renders their real surfaces and each has its *own* empty states —
- * `treeEmptyMessage`, `noteEmptyMessage` and `graphEmptyMessage`, which
- * distinguish "loading" from "filtered to nothing" from "genuinely empty" in a
- * way one static sentence cannot.
- *
- * The table stays because {@link EmptyStateCopy.title} is still every column's
- * heading and its `aria-label`. {@link EmptyStateCopy.body} and `phase` are
- * now dead for all three, and are kept accurate rather than deleted for one
- * reason: `tests/web/client-shell.test.ts` asserts the `phase` values against
- * §11, so a column whose phase silently disagreed with the doc would be the
- * first sign that this table had stopped tracking reality. `EmptyState.tsx`
- * itself now has no caller, and is deleted rather than kept warm — an unused
- * component is a thing the next reader has to work out is unused.
- */
+/** The title used by a column heading and its `aria-label`. */
 export interface EmptyStateCopy {
   readonly title: string;
-  readonly body: string;
-  /** The phase that fills this column in, e.g. `"P2"`. */
-  readonly phase: string;
 }
 
 const EMPTY_STATES: Readonly<Record<ColumnId, EmptyStateCopy>> = {
   tree: {
     title: "Tree",
-    // Built in P2; body and phase are no longer rendered. See the header.
-    body: "The vault and repository outline, expandable, filterable, with provenance markers.",
-    phase: "P2",
   },
   note: {
     title: "Note",
-    body: "Select anything to read it here — rendered Markdown, front matter, tags and wikilinks.",
-    phase: "P2",
   },
   graph: {
     title: "Graph",
-    // Built in P3; body and phase are no longer rendered. See the header.
-    body: "The knowledge graph, laid out and navigable, with the selection's neighbourhood highlighted.",
-    phase: "P3",
   },
 };
 
@@ -172,18 +139,9 @@ export function emptyStateFor(column: ColumnId): EmptyStateCopy {
   return EMPTY_STATES[column];
 }
 
-/**
- * The context rail's title.
- *
- * Built in P2.5, so `body`/`phase` are no longer rendered either — the rail's
- * real empty states are `RAIL_EMPTY` in `context/context.model.ts`, which
- * separates "loading" from "nothing selected" from "this node is isolated".
- * `title` is still the rail's heading and `aria-label`.
- */
+/** The context rail's heading and `aria-label`. */
 export const CONTEXT_EMPTY: EmptyStateCopy = {
   title: "Context",
-  body: "Links, backlinks and mentions for whatever is selected.",
-  phase: "P2",
 };
 
 // --- the status bar -------------------------------------------------------------------

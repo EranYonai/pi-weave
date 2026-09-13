@@ -27,7 +27,6 @@ It also understands the repository you are working in. Personal notes live in a 
   while maintaining an organized summary above it.
 - **Knowledge retrieval.** Pi searches existing notes when answering questions about previous decisions, people, projects, or meetings.
 - **Unified visual workspace.** `/weave-view` presents notes, links, repository structure, and provenance in a live browser interface.
-- **Optional session memory.** `/weave-scan sessions` converts prior pi sessions into searchable notes and skips unchanged transcripts.
 - **Repository exploration.** A lightweight, git-aware index gives Pi a structural overview of the current codebase before it reads files.
 
 Nothing is captured silently. pi-weave creates or extends a personal note only when you ask it to.
@@ -98,41 +97,17 @@ Useful requests include:
 
 The browser workspace has four connected views:
 
-- **Tree** — notes, folders, session memories, and repository structure. Filter by text or provenance, create folders, drag notes between
-  folders, and use the context menu to rename or delete.
-- **Note** — rendered Markdown with clickable `[[wikilinks]]`, link previews, tags, and authorship. Click the body or press `⌘E` / `Ctrl E`
-  to edit; save with `⌘S` / `Ctrl S`.
+- **Tree** — notes, folders, and repository structure, with text and provenance filters.
+- **Note** — rendered Markdown with clickable `[[wikilinks]]`, link previews, tags, authorship, and an action to open the source in `$EDITOR`.
 - **Graph** — a navigable map of notes, links, mentions, modules, and repository relationships. Selecting something updates every view.
 - **Context** — links, backlinks, tags, and code mentions for the current selection.
 
 Search with `⌘K` / `Ctrl K`. Press `?` for all shortcuts. The workspace updates as notes change on disk, so a note written by Pi appears
 without a reload. It follows the system theme by default and can be switched between light and dark.
 
-The editor checks revisions before saving. If the note changed elsewhere, it asks whether to reload or overwrite instead of silently losing
-work. Unknown front-matter fields are preserved, so the same vault remains safe to edit with Obsidian or a text editor.
+The browser is read-only. Edit with `$EDITOR`, Obsidian, or the `weave_note` tool; unknown front-matter fields remain preserved.
 
 `/weave-view tui` is the smaller, read-only terminal explorer: tree, focused neighborhood, details, and link health over the same graph.
-
-## Remember past pi sessions
-
-```bash
-/weave-scan sessions
-```
-
-This reads pi’s local session transcripts and creates generated notes under:
-
-```text
-~/.okf/notes/sessions/
-```
-
-Each note records what was asked, what happened, and any open threads. The scan is:
-
-- **opt-in** — it never runs automatically;
-- **incremental** — unchanged transcripts use no model calls;
-- **cancellable** — run `/weave-scan-cancel`;
-- **repo-independent** — it works from any directory.
-
-Session summaries use the active pi model and are marked `source: generated`.
 
 ## Repository knowledge
 
@@ -159,8 +134,7 @@ Most people only need natural language and `/weave-view`.
 | Command | `/weave` | Show vault and repository status |
 | Command | `/weave-scan` | Build or refresh the repository index |
 | Command | `/weave-scan deep` | Add incremental model-written file summaries |
-| Command | `/weave-scan sessions` | Turn pi session history into vault notes |
-| Command | `/weave-scan-cancel` | Stop a deep or session scan |
+| Command | `/weave-scan-cancel` | Stop a deep scan |
 | Tool | `weave_note` | List, read, add, append, finalize, and search notes |
 | Tool | `weave_repo` | Check, scan, and summarize the repository index |
 
@@ -174,8 +148,7 @@ Personal notes are ordinary Markdown files:
 ~/.okf/
 └── notes/
     ├── authentication-migration.md
-    └── sessions/
-        └── plan-the-release.md
+    └── release-plan.md
 ```
 
 A note has small YAML front matter followed by Markdown:
@@ -205,9 +178,8 @@ We probably want OIDC next quarter…
 
 Set `PI_WEAVE_VAULT` to use a different vault location.
 
-Reading, writing, searching, and viewing notes are local operations. Deep repository scans and session summaries send their bounded input to
-whichever model you configured in pi. The browser workspace binds only to loopback, uses a per-session token, and shuts down with the pi
-session.
+Reading, writing, searching, and viewing notes are local operations. Deep repository scans send bounded input to whichever model you
+configured in pi. The browser workspace binds only to loopback, uses a per-session token, and shuts down with the pi session.
 
 The vault format, repository index, and skills are intentionally harness-agnostic. `src/core` contains no pi-specific imports.
 
@@ -237,7 +209,6 @@ Read [AGENTS.md](AGENTS.md) before contributing. Work on a feature branch; do no
 - [Design](docs/design.md) — product and architecture
 - [Notepad skill](skills/weave-notepad/SKILL.md) — capture, narration, and provenance behavior
 - [Browser workspace](docs/weave-workspace.md) — UI architecture and security model
-- [Session scanning](docs/session-scan.md) — incremental session memory
 - [Repository exploration skill](skills/weave-explore/SKILL.md) — how Pi uses the index
 
 ## License

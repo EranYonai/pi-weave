@@ -1,15 +1,12 @@
 /**
  * BodyStore — shared note/.okf body cache (weave-view-tui-v2 §6, §9.1).
  *
- * The v1 WeaveExplorer cached bodies in private maps. v2 lifts that cache into
- * a per-session store so every pane (e.g. two Detail panes reading the same
- * note) shares one fetch per node id. Behavior is identical to v1's
- * per-explorer cache: a body load is kicked off once per id, in-flight loads
- * are deduped, and a refresh busts the cache so the next read re-fetches.
+ * Every pane (e.g. two Detail panes reading the same note) shares one fetch
+ * per node id. A body load is kicked off once per id, in-flight loads are
+ * deduped, and a refresh busts the cache so the next read re-fetches.
  *
  * The store is harness-free (takes injected loaders + an optional
- * onChange callback), so it is unit-tested with fake loaders exactly like
- * v1's body tests.
+ * onChange callback).
  */
 
 import type { ViewNote } from "../../../core/graph/current";

@@ -12,7 +12,7 @@
  * | --- | --- | --- |
  * | `graph/graph.model.ts` | ✅ every line | pure; names no DOM type, imports no npm |
  * | `graph/project.ts` | ✅ every line | graphology is a plain data structure |
- * | `graph/renderer.ts` | interface + `nullRenderer` only | `SigmaRenderer` needs WebGL |
+ * | `graph/renderer.ts` | lifecycle and reducer logic over a port | Sigma needs WebGL |
  *
  * So this suite *is* the graph column's coverage of everything that makes a
  * decision, and the assertions below are deliberately about the numbers and
@@ -67,8 +67,8 @@ import type {
   ViewBox,
 } from "../../src/web/client/graph/graph.model";
 import { emptyProjection, positionsOf, project, syncPositions } from "../../src/web/client/graph/project";
-import { nullRenderer, sigmaRenderer } from "../../src/web/client/graph/renderer";
-import type { RenderContainer, SigmaFactory, SigmaLike } from "../../src/web/client/graph/renderer";
+import { sigmaRenderer } from "../../src/web/client/graph/renderer";
+import type { RenderContainer, SigmaLike } from "../../src/web/client/graph/renderer";
 import { THEME_CSS } from "../../src/web/client/shell/theme";
 import { repoLikeGraph } from "../fixtures/graphShapes";
 
@@ -855,27 +855,6 @@ describe("the graphology projection (§7.1)", () => {
 
 // --- the renderer seam (§7.5) ----------------------------------------------------------------
 
-describe("the renderer seam (§7.5)", () => {
-  it("nullRenderer satisfies the whole interface and draws nothing", () => {
-    // Not a test double — a production path. The column renders before its
-    // container exists, and may never mount at all when the `medium`
-    // breakpoint collapses it. A null object removes the `renderer === null`
-    // check from every call site, which is the check that is always missing
-    // from exactly one of them.
-    const renderer = nullRenderer();
-    expect(() => {
-      renderer.mount({ clientWidth: 0, clientHeight: 0 });
-      renderer.setGraph(EMPTY_RENDER_GRAPH);
-      renderer.setPositions(new Map());
-      renderer.setHighlight(null);
-      renderer.onSelect(() => {});
-      renderer.fit();
-      renderer.destroy();
-    }).not.toThrow();
-    expect(renderer.positions().size).toBe(0);
-  });
-});
-
 /**
  * A recording `SigmaLike`.
  *
@@ -954,7 +933,7 @@ function fakeSigma() {
   } as SigmaLike;
 
   const created: Array<{ graph: ReturnType<typeof project>; container: RenderContainer; settings: GraphSettings }> = [];
-  const factory: SigmaFactory = (g, container, settings) => {
+  const factory = (g: ReturnType<typeof project>, container: RenderContainer, settings: GraphSettings): SigmaLike => {
     created.push({ graph: g, container, settings });
     graph = g;
     return instance;

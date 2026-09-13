@@ -388,8 +388,7 @@ describe("statNotes", () => {
 describe("slug safety (untrusted tool input)", () => {
   it("resolves safe slugs (including nested) and rejects traversal/empty ones", () => {
     expect(resolveNotePath(vault, "plain-slug_2")).toBe(join(vault, "notes", "plain-slug_2.md"));
-    // Nested slugs are legitimate — session memory lives in a vault
-    // subdirectory (docs/session-scan.md) — but they stay inside notes/.
+    // Nested slugs are legitimate, but they stay inside notes/.
     expect(resolveNotePath(vault, "sessions/my-session")).toBe(
       join(vault, "notes", "sessions", "my-session.md"),
     );
@@ -496,4 +495,3 @@ describe("formatNote", () => {
     expect(formatNote(note)).not.toContain("tags:");
   });
 });
-

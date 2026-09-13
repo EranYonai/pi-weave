@@ -16,9 +16,30 @@
 import { truncateToWidth, visibleWidth, type Component } from "@earendil-works/pi-tui";
 import type { GraphModel } from "../../../../core/graph/model";
 import { BodyStore } from "../bodyStore";
-import type { WeaveLoaders, WeaveTheme } from "../explorer";
+import type { ViewNote } from "../../../../core/graph/current";
 import type { SurfaceKind } from "../workspace";
 import type { ThemeSlot } from "../theme";
+
+/** Minimal theme surface shared by the workspace root and its surfaces. */
+export interface WeaveTheme {
+  fg(slot: ThemeSlot, text: string): string;
+  bg(slot: "selectedBg", text: string): string;
+  bold(text: string): string;
+}
+
+/** Minimal TUI surface shared by the workspace root and its adapter. */
+export interface WeaveTui {
+  requestRender(force?: boolean): void;
+  terminal: { rows: number; columns: number };
+}
+
+/** Injected readers/actions bound to the vault and repository by run.ts. */
+export interface WeaveLoaders {
+  loadNote: (slug: string) => Promise<ViewNote | null>;
+  loadOkf: (rel: string) => Promise<{ path: string; body: string } | null>;
+  openNote: (slug: string) => Promise<boolean>;
+  rebuild: () => Promise<GraphModel>;
+}
 
 /** A cross-pane navigation request a surface emits (resolved by the root). */
 export type SurfaceEvent =
@@ -151,7 +172,7 @@ export class Pane implements Component {
     const inner = Math.max(2, width - 2);
     // The surface already windows + selection-marks its own lines (each
     // surface owns its scroll/selection state). The pane only wraps them in a
-    // border and PADS to fill its allocated height so the split looks clean —
+    // border and PADS to fill its allocated height so the multi-pane view looks clean —
     // it must NOT re-window (that double-applies the indent/marker and corrupts
     // the layout). Each body line is sliced/padded to `inner` so borders align.
     const surfaceLines = this.surface.render(inner);
@@ -164,7 +185,7 @@ export class Pane implements Component {
     const titleVis = visibleWidth(titleText);
     const titleLine = `${this.borderFn(borderSlot, "│")}${this.theme.bold(titleText)}${" ".repeat(Math.max(0, inner - titleVis))}${this.borderFn(borderSlot, "│")}`;
     // top + title + bottom = 3 fixed lines; body fills the rest so both panes
-    // in a split render the same height.
+    // in a multi-pane render the same height.
     const bodyRows = Math.max(0, this.rows - 3);
     const out = [top, titleLine];
     for (let i = 0; i < bodyRows; i++) {

@@ -8,23 +8,20 @@
  * since they moved to `src/core/view` (weave-workspace §3).
  */
 
-import { describe, expect, it, vi } from "vitest";
-import { WeaveExplorer, decodeAction, type WeaveTheme, type WeaveTui, type WeaveLoaders } from "../../src/pi/viewer/tui/explorer";
+import { describe, expect, it } from "vitest";
+import { decodeAction } from "../../src/pi/viewer/tui/surface/explore";
 import {
   reduce,
   initialState,
   graphRoots,
   mergeAfterRefresh,
-  sanitizeTerminalText,
   type ExplorerState,
 } from "../../src/pi/viewer/tui/model";
 import { provenanceStyle, kindStyle, chevron, PROVENANCE_CYCLE } from "../../src/pi/viewer/tui/theme";
 import type { GraphModel, GraphNode, NodeKind } from "../../src/core/graph/model";
 import type { NoteSource } from "../../src/core/types";
-import { addNote } from "../../src/core/vault";
-import { buildRepoIndex, writeRepoIndex } from "../../src/core/repoIndex";
-import { commitAll, gitInit, makeTempDir, withVaultEnv, writeFixture, createMockCtx } from "../helpers";
-import { runWeaveViewTui, buildTuiModel } from "../../src/pi/viewer/tui/run";
+import { makeTempDir, withVaultEnv, createMockCtx } from "../helpers";
+import { runWeaveViewTui } from "../../src/pi/viewer/tui/run";
 import { visibleWidth } from "@earendil-works/pi-tui";
 
 // ---------------------------------------------------------------------------
@@ -36,39 +33,6 @@ function node(id: string, kind: NodeKind, label: string, prov: NoteSource | null
 }
 function graph(nodes: GraphNode[], edges: GraphModel["edges"], staleness: GraphModel["staleness"] = null): GraphModel {
   return { generatedAt: "2026-06-01T00:00:00.000Z", staleness, nodes, edges, danglingLinks: {}, contentDigest: "" };
-}
-const NOW = Date.parse("2026-06-01T00:00:00.000Z");
-function fakeTheme(): WeaveTheme {
-  return {
-    fg: (_s, t) => t,
-    bg: (_s, t) => t,
-    bold: (t) => t,
-  };
-}
-function fakeTui(rows = 30): WeaveTui & { requestRender: ReturnType<typeof vi.fn> } {
-  return { requestRender: vi.fn(), terminal: { rows, columns: 80 } };
-}
-function fakeLoaders(over: Partial<WeaveLoaders> = {}): WeaveLoaders {
-  return {
-    loadNote: async () => null,
-    loadOkf: async () => null,
-    openNote: async () => true,
-    rebuild: async () => ({ generatedAt: "", staleness: null, nodes: [], edges: [], danglingLinks: {}, contentDigest: "" }),
-    ...over,
-  };
-}
-function explorer(model: GraphModel, opts: { rows?: number; loaders?: Partial<WeaveLoaders>; done?: (r: null) => void; now?: () => number } = {}) {
-  const done = opts.done ?? vi.fn();
-  const ex = new WeaveExplorer({
-    model,
-    theme: fakeTheme(),
-    tui: fakeTui(opts.rows ?? 30),
-    loaders: fakeLoaders(opts.loaders),
-    done,
-    rows: opts.rows ?? 30,
-    now: opts.now ?? (() => NOW),
-  });
-  return { ex, done, loaders: opts.loaders };
 }
 function st(over: Partial<ExplorerState> = {}): ExplorerState {
   return {
@@ -240,134 +204,7 @@ describe("reduce arm coverage", () => {
 });
 
 // ---------------------------------------------------------------------------
-// explorer.ts: degenerate surfaces and defensive branches
-// ---------------------------------------------------------------------------
-
-describe("explorer degenerate surfaces", () => {
-  it("renders detail with no selection, and unknown detail id", () => {
-    const { ex } = explorer(graph([node("vault", "vault", "Vault", null)], []));
-    ex.state = st({ surface: "detail", detailId: null, selectedId: null, version: 1 });
-    let lines = ex.render(80).join("\n");
-    expect(lines).toContain("(no selection)");
-    ex.invalidate();
-    ex.state = st({ surface: "detail", detailId: "note:ghost", selectedId: "note:ghost", version: 2 });
-    lines = ex.render(80).join("\n");
-    expect(lines).toContain("node not found");
-  });
-  it("renders focus with no focus id", () => {
-    const { ex } = explorer(graph([node("vault", "vault", "Vault", null)], []));
-    ex.state = st({ surface: "focus", focusId: null });
-    const lines = ex.render(80).join("\n");
-    expect(lines).toContain("no focus node");
-  });
-  it("renders health surface with a full model", () => {
-    const m = graph(
-      [
-        node("repository", "repository", "repo", null, { files: "3", state: "fresh", languages: "TS (3)" }),
-        node("vault", "vault", "Vault", null, { notes: "2" }),
-        node("note:a", "note", "A", "human"),
-        node("note:b", "note", "B", "agent"),
-      ],
-      [
-        { source: "repository", target: "vault", kind: "contains" },
-        { source: "note:a", target: "note:b", kind: "links-to" },
-      ],
-      { state: "fresh", reasons: [] },
-    );
-    const { ex } = explorer(m);
-    ex.handleInput("2"); // health
-    const lines = ex.render(80).join("\n");
-    expect(lines).toContain("Repository");
-    expect(lines).toContain("Vault");
-    expect(lines).toContain("Link health");
-  });
-  it("header: no repository present omits repo part", () => {
-    const { ex } = explorer(graph([node("vault", "vault", "Vault", null)], []));
-    const lines = ex.render(80);
-    expect(lines.join("\n")).toContain("weave view");
-  });
-  it("body windowing with scroll indicators when content exceeds window", () => {
-    const nodes: GraphNode[] = [node("vault", "vault", "Vault", null)];
-    for (let i = 0; i < 30; i++) nodes.push(node(`note:n${i}`, "note", `N${i}`, "human"));
-    const edges = nodes.slice(1).map((n) => ({ source: "vault", target: n.id, kind: "contains" as const }));
-    const { ex } = explorer(graph(nodes, edges), { rows: 8 });
-    ex.handleInput("\x1b[B"); // move down so selection pushes scroll
-    const lines = ex.render(40);
-    expect(lines.some((l) => l.includes("more"))).toBe(true);
-  });
-});
-
-// ---------------------------------------------------------------------------
-// explorer.ts: key flow edge cases
-// ---------------------------------------------------------------------------
-
-describe("explorer key flow edges", () => {
-  const model = graph(
-    [node("vault", "vault", "Vault", null), node("note:a", "note", "Alpha", "human", { slug: "alpha" })],
-    [{ source: "vault", target: "note:a", kind: "contains" }],
-  );
-  it("o in search mode does not open editor; o on non-note does nothing", () => {
-    const openNote = vi.fn(async () => true);
-    const { ex } = explorer(model, { loaders: { openNote } });
-    ex.handleInput("/"); // search
-    ex.handleInput("o"); // ignored in search
-    expect(openNote).not.toHaveBeenCalled();
-  });
-  it("o on the vault (non-note) does nothing", () => {
-    const openNote = vi.fn(async () => true);
-    const { ex } = explorer(model, { loaders: { openNote } });
-    ex.handleInput("o"); // vault selected, not a note
-    expect(openNote).not.toHaveBeenCalled();
-  });
-  it("unknown key is ignored (no state change, no done)", () => {
-    const done = vi.fn();
-    const { ex } = explorer(model, { done });
-    ex.handleInput("\x01"); // ctrl-a, unknown
-    expect(done).not.toHaveBeenCalled();
-  });
-  it("refresh while already refreshing is a no-op", () => {
-    const rebuild = vi.fn(async () => model);
-    const { ex } = explorer(model, { loaders: { rebuild } });
-    ex.handleInput("r");
-    ex.handleInput("r"); // second r ignored
-    expect(ex.state.refreshing).toBe(true);
-  });
-  it("refresh failure clears the refreshing flag", async () => {
-    const rebuild = vi.fn(async () => {
-      throw new Error("boom");
-    });
-    const { ex } = explorer(model, { loaders: { rebuild } });
-    ex.handleInput("r");
-    await new Promise((r) => setTimeout(r, 0));
-    expect(ex.state.refreshing).toBe(false);
-  });
-  it("openNote triggers when a note is selected", async () => {
-    const openNote = vi.fn(async () => true);
-    const { ex } = explorer(model, { loaders: { openNote } });
-    ex.handleInput("\x1b[B"); // select note:a
-    ex.handleInput("o");
-    await new Promise((r) => setTimeout(r, 0));
-    expect(openNote).toHaveBeenCalledWith("alpha");
-  });
-  it("render returns cached array then recompute after invalidate", () => {
-    const { ex } = explorer(model);
-    const a = ex.render(50);
-    const b = ex.render(50);
-    expect(a).toBe(b);
-  });
-  it("entering detail for a note triggers body load; null body renders nothing", async () => {
-    const { ex } = explorer(model, { loaders: { loadNote: async () => null } });
-    ex.handleInput("\x1b[B");
-    ex.handleInput("\r");
-    await new Promise((r) => setTimeout(r, 0));
-    ex.invalidate();
-    const lines = ex.render(80).join("\n");
-    expect(lines).toContain("Alpha");
-  });
-});
-
-// ---------------------------------------------------------------------------
-// explorer.ts: decodeAction search-mode arms
+// Explore surface: decodeAction search-mode arms
 // ---------------------------------------------------------------------------
 
 describe("decodeAction search-mode arms", () => {
@@ -387,24 +224,10 @@ describe("decodeAction search-mode arms", () => {
 });
 
 // ---------------------------------------------------------------------------
-// run.ts guard + buildTuiModel
+// run.ts guard
 // ---------------------------------------------------------------------------
 
 describe("run.ts", () => {
-  it("buildTuiModel assembles the graph from disk", async () => {
-    const vault = await makeTempDir();
-    await withVaultEnv(vault, async () => {
-      const repo = await makeTempDir();
-      gitInit(repo);
-      await writeFixture(repo, "src/index.ts", "export const x = 1;\n");
-      commitAll(repo, "init");
-      const index = await buildRepoIndex(repo);
-      await writeRepoIndex(repo, index!);
-      await addNote(vault, { title: "X", body: "body", source: "human" });
-      const model = await buildTuiModel(repo, vault);
-      expect(model.nodes.some((n) => n.id === "vault")).toBe(true);
-    });
-  });
   it("runWeaveViewTui warns without UI and returns without throwing", async () => {
     const ctx = createMockCtx(await makeTempDir(), false, "tui");
     await runWeaveViewTui(ctx as never);
@@ -460,32 +283,8 @@ describe("run.ts", () => {
   });
 });
 
-// ---------------------------------------------------------------------------
-// sanitize + render width invariant on big model
-// ---------------------------------------------------------------------------
-
-describe("sanitize + width", () => {
-  it("sanitizeTerminalText on plain text is a no-op", () => {
-    expect(sanitizeTerminalText("clean text")).toBe("clean text");
-  });
-  it("render lines never exceed width on a rich model", () => {
-    const m = graph(
-      [
-        node("repository", "repository", "very long repository name that exceeds width", null, { files: "10", state: "stale", languages: "TypeScript (10), Markdown (5), JSON (3)" }),
-        node("vault", "vault", "Vault", null, { notes: "3" }),
-        node("note:a", "note", "A", "human", { updated: "2026-05-01T00:00:00.000Z", tags: "alpha, beta, gamma" }),
-      ],
-      [{ source: "repository", target: "vault", kind: "contains" }],
-      { state: "stale", reasons: ["x".repeat(60)] },
-    );
-    const { ex } = explorer(m);
-    for (const w of [20, 40, 80]) {
-      for (const l of ex.render(w)) expect(visibleWidth(l)).toBeLessThanOrEqual(w);
-    }
-  });
-});
 // ===========================================================================
-// Second pass: fine-grained branch coverage (explorer + model)
+// Second pass: fine-grained branch coverage (model)
 // ===========================================================================
 
 describe("decodeAction: every all-modes key and letter", () => {
@@ -511,151 +310,6 @@ describe("decodeAction: every all-modes key and letter", () => {
     const searching = { searching: true } as never;
     expect(decodeAction("\x01\x02", searching)).toBeNull();
     expect(decodeAction("\t", searching)).toBeNull(); // parseKey -> "tab" (len 3)
-  });
-});
-
-describe("explorer render branches", () => {
-  const model = graph(
-    [
-      node("vault", "vault", "Vault", null),
-      node("note:a", "note", "Alpha", "human", { slug: "alpha", updated: "2026-05-01T00:00:00.000Z" }),
-      node("note:b", "note", "Beta", "agent", { slug: "beta" }),
-    ],
-    [
-      { source: "vault", target: "note:a", kind: "contains" },
-      { source: "vault", target: "note:b", kind: "contains" },
-      { source: "note:a", target: "note:b", kind: "links-to" },
-      { source: "note:b", target: "note:a", kind: "links-to" },
-    ],
-  );
-
-  it("truncates lines wider than the viewport (w > width branch)", () => {
-    const { ex } = explorer(model);
-    const lines = ex.render(10);
-    for (const l of lines) expect(visibleWidth(l)).toBeLessThanOrEqual(10);
-  });
-
-  it("clamps output to terminal rows when content exceeds it", () => {
-    const { ex } = explorer(model, { rows: 3 });
-    expect(ex.render(80).length).toBeLessThanOrEqual(3);
-  });
-
-  it("renders with a banner (provFilter + refreshing) and search line, shrinking the window", () => {
-    const { ex } = explorer(model);
-    ex.handleInput("p"); // provFilter -> banner
-    ex.state = { ...ex.state, refreshing: true };
-    ex.handleInput("/"); // search sub-mode adds a line
-    const lines = ex.render(60);
-    expect(lines.some((l) => l.includes("prov:"))).toBe(true);
-    expect(lines.some((l) => l.includes("/"))).toBe(true);
-  });
-
-  it("renders each surface name in the header", () => {
-    const { ex } = explorer(model);
-    ex.state = { ...ex.state, surface: "detail", detailId: "note:a" };
-    expect(ex.render(80).join("\n")).toContain("Detail");
-    ex.state = { ...ex.state, surface: "focus", focusId: "note:a", version: ex.state.version + 1 };
-    expect(ex.render(80).join("\n")).toContain("Focus");
-    ex.state = { ...ex.state, surface: "health", version: ex.state.version + 1 };
-    expect(ex.render(80).join("\n")).toContain("Health");
-  });
-
-  it("renderBody with no matching selection keeps selLine -1 (no crash)", () => {
-    const { ex } = explorer(model);
-    ex.state = { ...ex.state, selectedId: "note:ghost" };
-    const lines = ex.render(60);
-    expect(lines.length).toBeGreaterThan(0);
-  });
-
-  it("detail with links + backlinks + a loaded body renders all sections", async () => {
-    const loaders = fakeLoaders({
-      loadNote: async (slug) => (slug === "alpha" ? { slug: "alpha", title: "Alpha", body: "# H\n\nbody text here", created: "", updated: "", tags: [], source: "human" } : null),
-    });
-    const { ex } = explorer(model, { loaders });
-    ex.handleInput("\x1b[B"); // select note:a
-    ex.handleInput("\r"); // open detail
-    await new Promise((r) => setTimeout(r, 0));
-    ex.invalidate();
-    const lines = ex.render(80).join("\n");
-    expect(lines).toContain("Links");
-    expect(lines).toContain("Backlinks");
-    expect(lines).toContain("body text here");
-  });
-
-  it("rowMarker: note with null provenance renders no glyph; non-note renders a kind glyph", () => {
-    const m = graph(
-      [node("vault", "vault", "Vault", null), node("note:x", "note", "X", null as NoteSource | null)],
-      [{ source: "vault", target: "note:x", kind: "contains" }],
-    );
-    const { ex } = explorer(m);
-    const lines = ex.render(80).join("\n");
-    // note:x has null provenance -> no ●/◐ glyph; vault gets ◆
-    expect(lines).toContain("◆");
-  });
-});
-
-describe("explorer maybeLoadBody / openSelectedInEditor branches", () => {
-  it("note without slug and file without path do not trigger a load", async () => {
-    const loadNote = vi.fn(async () => null);
-    const loadOkf = vi.fn(async () => null);
-    const m = graph(
-      [
-        node("vault", "vault", "Vault", null),
-        node("note:noslug", "note", "NoSlug", "human", {}),
-        node("okf:nopath", "file", "noPath", null, {}),
-      ],
-      [
-        { source: "vault", target: "note:noslug", kind: "contains" },
-        { source: "vault", target: "okf:nopath", kind: "contains" },
-      ],
-    );
-    const { ex } = explorer(m, { loaders: { loadNote, loadOkf } });
-    ex.handleInput("\x1b[B"); // note:noslug
-    ex.handleInput("\r"); // open detail -> maybeLoadBody(note) no slug -> no load
-    await new Promise((r) => setTimeout(r, 0));
-    expect(loadNote).not.toHaveBeenCalled();
-    // move to okf file and open
-    ex.handleInput("\x1b[1;2;3;4;5;6;7;8;9;0"); // noise
-    ex.state = { ...ex.state, surface: "detail", detailId: "okf:nopath", selectedId: "okf:nopath" };
-    ex.render(80); // triggers bodyLinesFor -> maybeLoadBody(file) no path -> no load
-    await new Promise((r) => setTimeout(r, 0));
-    expect(loadOkf).not.toHaveBeenCalled();
-  });
-
-  it("openSelectedInEditor with no selection and non-note does nothing", () => {
-    const openNote = vi.fn(async () => true);
-    const m = graph([node("vault", "vault", "Vault", null)], []);
-    const { ex } = explorer(m, { loaders: { openNote } });
-    ex.state = { ...ex.state, selectedId: null, detailId: null };
-    ex.handleInput("o");
-    ex.state = { ...ex.state, selectedId: "vault" }; // non-note
-    ex.handleInput("o");
-    expect(openNote).not.toHaveBeenCalled();
-  });
-
-  it("openSelectedInEditor on a note without slug does nothing", () => {
-    const openNote = vi.fn(async () => true);
-    const m = graph(
-      [node("vault", "vault", "Vault", null), node("note:noslug", "note", "N", "human", {})],
-      [{ source: "vault", target: "note:noslug", kind: "contains" }],
-    );
-    const { ex } = explorer(m, { loaders: { openNote } });
-    ex.handleInput("\x1b[B");
-    ex.handleInput("o");
-    expect(openNote).not.toHaveBeenCalled();
-  });
-
-  it("bodyLinesFor renders a cached non-null body wrapped to width", async () => {
-    const m = graph(
-      [node("vault", "vault", "Vault", null), node("note:a", "note", "A", "human", { slug: "a" })],
-      [{ source: "vault", target: "note:a", kind: "contains" }],
-    );
-    const { ex } = explorer(m, { loaders: { loadNote: async () => ({ slug: "a", title: "A", body: "word ".repeat(40), created: "", updated: "", tags: [], source: "human" }) } });
-    ex.handleInput("\x1b[B");
-    ex.handleInput("\r");
-    await new Promise((r) => setTimeout(r, 0));
-    ex.invalidate();
-    for (const l of ex.render(30)) expect(visibleWidth(l)).toBeLessThanOrEqual(30);
   });
 });
 
@@ -784,28 +438,5 @@ describe("model: clampIndex/scrollForSelection via reduce", () => {
   it("bogus action falls through to the trailing no-op return", () => {
     const s = reduce(st(), { type: "bogus" } as never, rows);
     expect(s.version).toBe(st().version); // unchanged
-  });
-});
-
-
-describe("explorer: render with banner refresh and no search", () => {
-  it("refreshing banner shrinks the window without search", () => {
-    const { ex } = explorer(graph([node("vault", "vault", "Vault", null)], []));
-    ex.state = { ...ex.state, refreshing: true };
-    const lines = ex.render(60);
-    expect(lines.some((l) => l.includes("refreshing…"))).toBe(true);
-  });
-});
-
-describe("explorer: renderSurface detail/focus/health each render", () => {
-  it("focus surface with a real focused note renders the focus heading", () => {
-    const m = graph(
-      [node("vault", "vault", "Vault", null), node("note:a", "note", "A", "human")],
-      [{ source: "vault", target: "note:a", kind: "contains" }],
-    );
-    const { ex } = explorer(m);
-    ex.state = { ...ex.state, surface: "focus", focusId: "note:a", selectedId: "note:a" };
-    const lines = ex.render(80).join("\n");
-    expect(lines).toContain("focus — g/esc to exit");
   });
 });

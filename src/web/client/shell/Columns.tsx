@@ -29,8 +29,6 @@ import type { ColorScheme } from "../graph/graph.model";
 import type { PositionStorage } from "../graph/positions";
 import type { RendererFactory } from "../graph/renderer";
 import type { SchemeHost } from "../graph/scheme";
-import type { FetchLike } from "../api";
-import type { EditorEvent, EditorPrompt, EditorToolbar } from "../note/editor.model";
 import { Note } from "../note/Note";
 import { Tree } from "../tree/Tree";
 import type { GraphPayload, NotePayload } from "../../shared/wire";
@@ -62,6 +60,7 @@ export interface ColumnsProps {
    * a handler accepting the wider type takes without a cast.
    */
   onSelect: (id: string | null) => void;
+  onOpen: (slug: string) => void;
   /** Epoch ms for relative times, read once per render by the shell. */
   now: number;
   /**
@@ -75,7 +74,6 @@ export interface ColumnsProps {
   renderer: RendererFactory;
   storage: PositionStorage;
   host: SchemeHost;
-  fetch?: FetchLike | undefined;
   /**
    * The scheme the shell resolved from the user's theme choice
    * (`shell/theme.model.ts`'s `effectiveScheme`), or `null` to let the column
@@ -88,18 +86,6 @@ export interface ColumnsProps {
   bootFailed: boolean;
   /** Slot the graph column fills with its `fit`, for the global `g` key. */
   fit: { current: (() => void) | null };
-  /**
-   * The note editor's view model (§11 P5).
-   *
-   * Derived by the shell from the one `EditorHandle`, because the editor's
-   * state outlives the note column's mount: below 800 px the column can be
-   * unmounted by a resize, and an editor owned by the component would lose
-   * an unsaved draft to a window drag.
-   */
-  toolbar: EditorToolbar | null;
-  prompt: EditorPrompt | null;
-  draft: string;
-  send: (event: EditorEvent) => void;
 }
 
 /** One column: a titled region and whichever surface fills it. */
@@ -108,7 +94,7 @@ function Column({ id, props }: { id: ColumnId; props: ColumnsProps }) {
   return (
     <section class={`weave-col weave-col-${id}`} aria-label={copy.title}>
       <h2 class="weave-col-title">{copy.title}</h2>
-      {id === "tree" ? <Tree graph={props.graph} selectedId={props.selectedId} onSelect={props.onSelect} now={props.now} fetch={props.fetch} /> : null}
+      {id === "tree" ? <Tree graph={props.graph} selectedId={props.selectedId} onSelect={props.onSelect} now={props.now} /> : null}
       {id === "note" ? (
         <Note
           note={props.note}
@@ -116,10 +102,7 @@ function Column({ id, props }: { id: ColumnId; props: ColumnsProps }) {
           selectedId={props.selectedId}
           onSelect={props.onSelect}
           now={props.now}
-          toolbar={props.toolbar}
-          prompt={props.prompt}
-          draft={props.draft}
-          send={props.send}
+          onOpen={props.onOpen}
         />
       ) : null}
       {id === "graph" ? (

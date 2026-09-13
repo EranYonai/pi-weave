@@ -1,9 +1,9 @@
 /**
- * runWeaveViewTui — wires the WeaveExplorer into a pi session
+ * runWeaveViewTui — wires the workspace explorer into a pi session
  * (weave-view-tui-design §2, §4.1, §3.2).
  *
  * Guards (interactive terminal only), builds the graph from disk in the
- * handler, then hands a ready WeaveExplorer to `ctx.ui.custom` so the
+ * handler, then hands a ready workspace explorer to `ctx.ui.custom` so the
  * explorer owns input for its whole lifetime. After `done(null)` resolves,
  * the workspace status line is refreshed. Dependencies are injected so the
  * component never touches a real terminal directly.
@@ -15,12 +15,10 @@ import {
   readNoteForView,
   readOkfFileForView,
   resolveVaultRoot,
-  type GraphModel,
 } from "../../../core";
 import { openNoteInEditor } from "./openNote";
-import { bundledLogoImage, logoTier, renderMark } from "./branding";
 import { WeaveWorkspace } from "./workspaceRoot";
-import type { WeaveLoaders, WeaveTheme, WeaveTui } from "./explorer";
+import type { WeaveLoaders, WeaveTheme, WeaveTui } from "./surface/base";
 import { getWorkspaceStatus, formatStatusLine } from "../../../core";
 
 /** Open the in-terminal knowledge explorer. Returns when the explorer closes. */
@@ -47,11 +45,6 @@ export async function runWeaveViewTui(ctx: ExtensionCommandContext): Promise<voi
 
   await ctx.ui.custom(
     (tui, theme, _keybindings, done) => {
-      const tier = logoTier();
-      const logo = renderMark(tier, theme as unknown as WeaveTheme, 20);
-      // bundledLogoImage gates on Kitty support itself and returns null (glyph
-      // header) when unavailable.
-      const logoImage = bundledLogoImage(theme as unknown as WeaveTheme);
       const explorer = new WeaveWorkspace({
         model,
         theme: theme as unknown as WeaveTheme,
@@ -59,8 +52,6 @@ export async function runWeaveViewTui(ctx: ExtensionCommandContext): Promise<voi
         loaders,
         done,
         rows: tui.terminal.rows,
-        logo,
-        logoImage,
       });
       return explorer;
     },
@@ -77,9 +68,4 @@ export async function runWeaveViewTui(ctx: ExtensionCommandContext): Promise<voi
   }
   const indicator = theme?.fg ? theme.fg("dim", "○") : "○";
   ctx.ui.setStatus("weave", `${indicator} ${formatStatusLine(status)}`);
-}
-
-/** Test seam: build the model the explorer opens with, without a terminal. */
-export async function buildTuiModel(cwd: string, vaultRoot: string = resolveVaultRoot()): Promise<GraphModel> {
-  return buildCurrentGraph(cwd, vaultRoot);
 }

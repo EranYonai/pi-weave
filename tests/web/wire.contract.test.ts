@@ -39,7 +39,6 @@ import type { EdgeKind, GraphEdge, GraphModel, GraphNode, NodeKind } from "../..
 import { EDGE_KINDS, NODE_KINDS } from "../../src/core/graph/model";
 import type { ViewNote } from "../../src/core/graph/current";
 import type { NoteMeta, NoteSearchHit, NoteSource, NoteSummary, StalenessReport, StalenessState } from "../../src/core/types";
-import type { MutationFailure, RevisionedNote, UpdateNoteInput } from "../../src/core/vault";
 
 // The wire mirrors.
 import type {
@@ -57,7 +56,7 @@ import type {
   WireViewNote,
 } from "../../src/web/shared/graph";
 import { WIRE_EDGE_KINDS, WIRE_MODEL_OMITTED_KEYS, WIRE_NODE_KINDS } from "../../src/web/shared/graph";
-import type { ConflictPayload, NotePayload, SaveNoteRequest } from "../../src/web/shared/wire";
+import type { NotePayload } from "../../src/web/shared/wire";
 
 // --- the type-level machinery -------------------------------------------------
 
@@ -140,48 +139,7 @@ describe("wire DTOs mirror the core types (compile-time)", () => {
     expect(true).toBe(true);
   });
 
-  it("the mutation DTOs stay assignable to core's mutation inputs (P5)", () => {
-    // The write half of the contract, and the one with teeth: `SaveNoteRequest`
-    // is decoded on the server and handed straight to `updateNote`, so a
-    // field core renames or retypes must stop this compiling rather than
-    // start producing a silently-ignored request field.
-    assertExact<SaveNoteRequest extends UpdateNoteInput ? true : false>();
-
-    // `meta` matches core's exactly. Worth pinning in both directions,
-    // because this is the object that gets spread over a note's front
-    // matter: a key core adds and the wire does not mirror is a capability
-    // the browser silently lacks, and a key the wire has and core does not
-    // is a request field that is accepted and then dropped.
-    assertExact<Exact<NonNullable<SaveNoteRequest["meta"]>, NonNullable<UpdateNoteInput["meta"]>>>();
-
-    // The one deliberate omission: `now`, core's injectable clock. It has no
-    // business on an HTTP request — a client that could set it could date an
-    // edit into the past, ahead of the state it overwrote. Asserted as
-    // present on core and absent on the wire, so the omission stays visible
-    // rather than becoming an accident nobody notices restoring.
-    assertExact<"now" extends keyof UpdateNoteInput ? true : false>();
-    assertExact<"now" extends keyof SaveNoteRequest ? false : true>();
-
-    // Neither `created` nor `updated` is settable through either shape, and
-    // that agreement is core's doing rather than the wire's narrowing —
-    // recorded here so a future widening of core's `Pick` is caught at the
-    // boundary too.
-    for (const key of ["created", "updated"]) {
-      const settable: readonly string[] = ["title", "tags", "source"];
-      expect(settable).not.toContain(key);
-    }
-  });
-
-  it("NotePayload carries a core RevisionedNote, minus what must not ship", () => {
-    // `NotePayload.note` is a `ViewNote`, not a `Note`: the difference is
-    // `frontMatter`, the verbatim block P5a added. It must not cross the
-    // wire — a client that receives it is a client that might send it back,
-    // and preservation would stop being something core enforces by re-reading
-    // the file. The assertion is that the two differ in exactly that way.
-    assertExact<Exact<NotePayload["revision"], RevisionedNote["revision"]>>();
-    assertExact<"frontMatter" extends keyof RevisionedNote["note"] ? true : false>();
-    assertExact<"frontMatter" extends keyof NotePayload["note"] ? false : true>();
-
+  it("NotePayload contains only the rendered note", () => {
     // A `Note` is assignable to a `ViewNote` (extra keys are allowed through
     // a variable), so the guard that matters is the runtime one in
     // `notePayload` — which builds the object field by field rather than
@@ -196,25 +154,6 @@ describe("wire DTOs mirror the core types (compile-time)", () => {
       source: "human",
     };
     expect(Object.keys(view).sort()).toEqual(["body", "created", "slug", "source", "tags", "title", "updated"]);
-  });
-
-  it("ConflictPayload's arms cover exactly core's non-missing failures", () => {
-    // `MutationFailure` has three arms; `missing` maps to a `404` with an
-    // `ErrorPayload` and the other two share the `409`. Core gaining a
-    // fourth failure must break this, because a failure with no mapping
-    // would fall through to whichever branch was written last.
-    type CoreReason = MutationFailure["reason"];
-    type WireReason = ConflictPayload["reason"];
-    assertExact<Exact<CoreReason, WireReason | "missing">>();
-
-    // …and each 409 arm carries the same payload core hands the server.
-    type CoreConflict = Extract<MutationFailure, { reason: "conflict" }>;
-    type WireConflict = Extract<ConflictPayload, { reason: "conflict" }>;
-    assertExact<Exact<CoreConflict["current"]["revision"], WireConflict["current"]["revision"]>>();
-    type CoreCollision = Extract<MutationFailure, { reason: "collision" }>;
-    type WireCollision = Extract<ConflictPayload, { reason: "collision" }>;
-    assertExact<Exact<CoreCollision["slug"], WireCollision["slug"]>>();
-    expect(true).toBe(true);
   });
 
   it("a core value is assignable to its wire type, and back", () => {
