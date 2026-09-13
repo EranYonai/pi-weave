@@ -74,11 +74,8 @@ export const graphFailed = signal(false);
 /**
  * Derived: fetched when {@link selectedId} names a note.
  *
- * A {@link NotePayload} rather than a bare `ViewNote` as of P5. The revision
- * travels **with** the body because the editor saves against it, and a
- * revision fetched separately would describe a state the draft was not typed
- * against — the exact window a conflict check exists to close. The note
- * column reads `.note` and is otherwise unchanged.
+ * A {@link NotePayload} rather than a bare `ViewNote`, keeping the response
+ * shape explicit at the HTTP boundary. The note column reads `.note`.
  */
 export const noteBody = signal<NotePayload | null>(null);
 

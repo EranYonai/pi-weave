@@ -31,7 +31,7 @@
  * the socket, is what tells the user something is wrong.
  */
 
-import type { GraphPayload, NotePayload } from "../shared/wire";
+import type { GraphPayload } from "../shared/wire";
 import type { ApiResult, FetchLike } from "./api";
 import { fetchGraph, fetchNote } from "./api";
 import { graphFailed, recentIds } from "./state";
@@ -75,33 +75,6 @@ export function addedNodeIds(previous: GraphPayload | null, next: GraphPayload):
     if (!before.has(node.id)) added.add(node.id);
   }
   return added;
-}
-
-/**
- * Told about every note that arrives, so the editor can decide (§6, P5).
- *
- * A module-level hook rather than a parameter threaded through five call
- * sites, because a note reaches the column from three unrelated directions —
- * the mount fetch, a selection, and an SSE refetch — and the editor's
- * decision ("is this the note I am editing, at a revision I do not hold?")
- * has to be made on all three or it is made on none. The alternative was
- * `loadNote` taking a callback that every caller had to remember to pass.
- *
- * Set by the shell at mount and cleared on unmount, exactly like
- * `Shell.tsx`'s `fit` ref. `null` — the shape every test that does not care
- * about editing sees — means the load simply publishes and nothing else
- * happens.
- */
-let onNoteLoaded: ((payload: NotePayload) => void) | null = null;
-
-/** Register the editor's load hook. Returns an unsubscribe. */
-export function observeNotes(hook: (payload: NotePayload) => void): () => void {
-  onNoteLoaded = hook;
-  return () => {
-    // Only clear our own registration: two shells in one test process
-    // unmounting out of order must not blank a live hook.
-    if (onNoteLoaded === hook) onNoteLoaded = null;
-  };
 }
 
 /** A running workspace. */
@@ -171,11 +144,6 @@ async function loadNote(fetchImpl: FetchLike): Promise<void> {
   // to display nothing, and the note is usually still there.
   if (!result.ok) return;
   noteBody.value = result.data;
-  // After the signal, not before: the editor's decision may leave the draft
-  // in place *while* the column's read-mode rendering shows the new version,
-  // and the two are independent. Publishing second would let the editor see
-  // a payload the rest of the workspace does not yet hold.
-  onNoteLoaded?.(result.data);
 }
 
 /**

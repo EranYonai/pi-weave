@@ -84,27 +84,6 @@ export interface StartWorkspaceServerOptions {
   bundlePath?: string | undefined;
   /** Test seam for `POST /api/open`. */
   openNote?: ((slug: string) => Promise<boolean>) | undefined;
-  /** Test seam for the note read; see {@link RouteDeps.readNote}. */
-  readNote?: RouteDeps["readNote"];
-  /**
-   * Self-write suppression (§6): tell the watcher to ignore a path it is
-   * about to see us change.
-   *
-   * A separate option rather than a method on {@link Watcher}, because
-   * `Watcher` here is the two-method lifecycle contract `routes.ts` declares
-   * — start and close — and widening it would force every future watcher
-   * (a poller, a remote FS) to implement suppression whether or not the
-   * concept applies to it. The caller that constructs the real watcher knows
-   * it has a `suppress`, and passes it.
-   *
-   * Defaults to {@link Watcher.suppress} when the injected watcher has one,
-   * so the common wiring is automatic and the option exists for a caller
-   * whose suppression lives somewhere else (or for a test that wants to
-   * observe it). Absent on both means writes happen unsuppressed, which is
-   * exactly right for a server booted with no watcher: there is nothing
-   * listening to feed a loop.
-   */
-  suppress?: ((absPath: string) => void) | undefined;
   /** Idle shutdown delay. `0` disables it entirely. */
   idleMs?: number | undefined;
   setTimer?: SetTimer | undefined;
@@ -146,13 +125,6 @@ export async function startWorkspaceServer(opts: StartWorkspaceServerOptions): P
   // over it, but the security policy needs the bound port — so the policy
   // slot is filled after binding and the handler reads it through the
   // mutable holder rather than capturing a stale value.
-  // Explicit `suppress` first, else the watcher's own if it has one (§6).
-  // Bound as a closure rather than passed as a method reference, so a
-  // watcher implementing `suppress` as a class method keeps its `this`.
-  const watcherSuppress = opts.watcher?.suppress;
-  const suppress: ((absPath: string) => void) | null =
-    opts.suppress ?? (watcherSuppress === undefined ? null : (absPath: string) => watcherSuppress.call(opts.watcher, absPath));
-
   let deps: RouteDeps | null = null;
   const server: Server = createHttpServer((req, res) => {
     // Unreachable in practice — `listen` resolves before any connection is
@@ -232,8 +204,6 @@ export async function startWorkspaceServer(opts: StartWorkspaceServerOptions): P
     bundlePath: opts.bundlePath ?? defaultBundlePath(),
     ...(opts.sse !== undefined ? { sse: opts.sse } : {}),
     ...(opts.openNote !== undefined ? { openNote: opts.openNote } : {}),
-    ...(opts.readNote !== undefined ? { readNote: opts.readNote } : {}),
-    ...(suppress === null ? {} : { suppress }),
     onActivity: noteActivity,
   };
 

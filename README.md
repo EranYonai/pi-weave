@@ -97,18 +97,15 @@ Useful requests include:
 
 The browser workspace has four connected views:
 
-- **Tree** — notes, folders, and repository structure. Filter by text or provenance, create folders, drag notes between
-  folders, and use the context menu to rename or delete.
-- **Note** — rendered Markdown with clickable `[[wikilinks]]`, link previews, tags, and authorship. Click the body or press `⌘E` / `Ctrl E`
-  to edit; save with `⌘S` / `Ctrl S`.
+- **Tree** — notes, folders, and repository structure, with text and provenance filters.
+- **Note** — rendered Markdown with clickable `[[wikilinks]]`, link previews, tags, authorship, and an action to open the source in `$EDITOR`.
 - **Graph** — a navigable map of notes, links, mentions, modules, and repository relationships. Selecting something updates every view.
 - **Context** — links, backlinks, tags, and code mentions for the current selection.
 
 Search with `⌘K` / `Ctrl K`. Press `?` for all shortcuts. The workspace updates as notes change on disk, so a note written by Pi appears
 without a reload. It follows the system theme by default and can be switched between light and dark.
 
-The editor checks revisions before saving. If the note changed elsewhere, it asks whether to reload or overwrite instead of silently losing
-work. Unknown front-matter fields are preserved, so the same vault remains safe to edit with Obsidian or a text editor.
+The browser is read-only. Edit with `$EDITOR`, Obsidian, or the `weave_note` tool; unknown front-matter fields remain preserved.
 
 `/weave-view tui` is the smaller, read-only terminal explorer: tree, focused neighborhood, details, and link health over the same graph.
 

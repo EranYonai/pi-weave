@@ -20,7 +20,6 @@ import { connection, graph, graphFailed, noteBody, recentIds, selectedId } from 
 import {
   addedNodeIds,
   noteSlug,
-  observeNotes,
   resetWorkspace,
   select,
   startWorkspace,
@@ -61,7 +60,7 @@ const NOTE: ViewNote = {
 };
 
 /** What `GET /api/note/:slug` serves as of P5 (§11 P5.3). */
-const PAYLOAD: NotePayload = { note: NOTE, revision: "111:22" };
+const PAYLOAD: NotePayload = { note: NOTE };
 
 interface Call {
   readonly url: string;
@@ -516,77 +515,9 @@ describe("select", () => {
   });
 
   it("ignores a malformed note body", async () => {
-    const fetch = router({ note: () => ({ status: 200, body: { note: { slug: 7 }, revision: "r" } }) });
+    const fetch = router({ note: () => ({ status: 200, body: { note: { slug: 7 } } }) });
     await select(fetch, "note:alpha");
     expect(noteBody.value).toBeNull();
-  });
-});
-
-// --- the editor's load hook (§6, P5) -----------------------------------------------------------
-
-describe("observeNotes", () => {
-  it("is told about every note that reaches the column", async () => {
-    // Three unrelated directions produce a note — the mount fetch, a
-    // selection, and an SSE refetch — and the editor's "is this the note I am
-    // editing, at a revision I do not hold?" decision has to be made on all
-    // three or it is made on none.
-    const seen: NotePayload[] = [];
-    const stop = observeNotes((p) => void seen.push(p));
-    const fetch = router({ note: () => ({ status: 200, body: PAYLOAD }) });
-
-    await select(fetch, "note:alpha");
-    expect(seen).toEqual([PAYLOAD]);
-    stop();
-  });
-
-  it("is not called for a failed or malformed fetch", async () => {
-    // The signal is not written either, so telling the editor about a note
-    // that never arrived would give it a revision the column does not hold.
-    const seen: NotePayload[] = [];
-    const stop = observeNotes((p) => void seen.push(p));
-    await select(router({ note: () => ({ status: 500, body: {} }) }), "note:alpha");
-    await select(router({ note: () => ({ status: 200, body: { note: 7 } }) }), "note:beta");
-    expect(seen).toEqual([]);
-    stop();
-  });
-
-  it("publishes the signal before it calls the hook", async () => {
-    // The editor's decision may leave the draft in place *while* the
-    // column's read-mode rendering shows the new version, and the two are
-    // independent. Calling the hook first would let it see a payload the
-    // rest of the workspace does not yet hold.
-    let atCall: NotePayload | null = null;
-    const stop = observeNotes(() => {
-      atCall = noteBody.value;
-    });
-    await select(router({ note: () => ({ status: 200, body: PAYLOAD }) }), "note:alpha");
-    expect(atCall).toEqual(PAYLOAD);
-    stop();
-  });
-
-  it("unsubscribes, and only its own registration", async () => {
-    // Two shells in one test process unmounting out of order must not blank
-    // a live hook.
-    const first: NotePayload[] = [];
-    const second: NotePayload[] = [];
-    const stopFirst = observeNotes((p) => void first.push(p));
-    const stopSecond = observeNotes((p) => void second.push(p));
-
-    // The second registration won; the first's unsubscribe must be a no-op.
-    stopFirst();
-    await select(router({ note: () => ({ status: 200, body: PAYLOAD }) }), "note:alpha");
-    expect(first).toEqual([]);
-    expect(second).toEqual([PAYLOAD]);
-
-    stopSecond();
-    await select(router({ note: () => ({ status: 200, body: PAYLOAD }) }), "note:alpha");
-    expect(second).toHaveLength(1);
-  });
-
-  it("a load with no observer is just a load", async () => {
-    const fetch = router({ note: () => ({ status: 200, body: PAYLOAD }) });
-    await select(fetch, "note:alpha");
-    expect(noteBody.value).toEqual(PAYLOAD);
   });
 });
 

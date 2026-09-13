@@ -161,7 +161,7 @@ export const THEME_CSS = `
        ui       11.5  status bar, the note's meta row, small controls
        row      12    list rows, text inputs, inline code
        base     13    body copy, h3-h6, preview-card text
-       body     13.5  the note column's prose and its mono editor
+       body     13.5  the note column's prose
        subhead  14    palette input, note-body h2, header icon buttons
        title    15    note-body h1
        display  20    the note's page title
@@ -316,8 +316,6 @@ body{font-size:var(--weave-px-base)}
   border:1px solid var(--weave-line-strong);border-radius:var(--weave-radius);
 }
 .weave-chip:hover{color:var(--weave-fg);border-color:var(--weave-accent)}
-.weave-chip-bad{color:var(--weave-bad);border-color:var(--weave-bad)}
-.weave-chip-bad:hover{color:var(--weave-fg);background:var(--weave-bad);border-color:var(--weave-bad)}
 .weave-rows{
   flex:1;min-height:0;overflow:auto;margin:0;padding:3px 0;list-style:none;
 }
@@ -329,20 +327,6 @@ body{font-size:var(--weave-px-base)}
   cursor:default;white-space:nowrap;
 }
 .weave-row:hover{background:var(--weave-line)}
-.weave-row.weave-row-droptarget{
-  background:var(--weave-new);outline:1px dashed var(--weave-accent);outline-offset:-1px;
-}
-.weave-tree-new-folder{
-  display:flex;align-items:center;gap:6px;padding:4px var(--weave-gutter);
-  border-bottom:1px solid var(--weave-line);background:var(--weave-panel);
-}
-.weave-row-del{
-  display:none;margin-left:auto;padding:0 4px;font:inherit;font-size:var(--weave-px-row);
-  line-height:1;color:var(--weave-faint);background:none;border:0;cursor:pointer;
-  border-radius:var(--weave-radius);
-}
-.weave-row:hover .weave-row-del{display:inline-flex;align-items:center}
-.weave-row-del:hover{color:var(--weave-bad);background:var(--weave-panel)}
 /* A hover changes two things, in this order: the ground appears under the
    row, then the label steps up to fg. The second half is what stops the
    hover from reading as a stray grey rectangle — the row answers the pointer
@@ -410,8 +394,8 @@ body{font-size:var(--weave-px-base)}
    so it lies on --weave-page — one step off the desk and the canvas grounds.
    The 2px rule flush to its left edge is the spine: it takes the note's
    provenance colour (see the --weave-spine map), so the document's origin is
-   readable peripherally, before any glyph is. Head, body and editor share the
-   --weave-note-gutter so toggling the editor does not reflow the measure. */
+   readable peripherally, before any glyph is. Head and body share the
+   --weave-note-gutter so the page has one consistent measure. */
 .weave-note{display:flex;flex-direction:column;min-height:0;flex:1;overflow:auto;background:var(--weave-page)}
 .weave-note-human{--weave-spine:var(--weave-ok)}
 .weave-note-agent{--weave-spine:var(--weave-accent)}
@@ -423,9 +407,7 @@ body{font-size:var(--weave-px-base)}
    alternative, a title that scrolls away, is how a reader ends up annotating
    the wrong file. It carries the page ground rather than a fill or a shadow,
    so the reveal reads as the page continuing under it and not as a bar
-   arriving; the hairline is the only seam. The editor bar is the *next*
-   sibling in the column flow, so it can never slide underneath — no stacking
-   contest exists between them. The head's z-index is only what keeps it above
+   arriving; the hairline is the only seam. The head's z-index is only what keeps it above
    the prose (and the wikilinks inside it) as that prose scrolls beneath. */
 .weave-note-head{position:sticky;top:0;z-index:2;padding:14px var(--weave-note-gutter) 9px;background:var(--weave-page);border-bottom:1px solid var(--weave-line)}
 /* The page's largest voice, and the point of the review's headline finding:
@@ -439,11 +421,7 @@ body{font-size:var(--weave-px-base)}
    so the eye can read the whole of it without ever reading it. */
 .weave-note-meta{margin:0;display:flex;align-items:center;gap:8px;font-size:var(--weave-px-ui);color:var(--weave-dim);flex-wrap:wrap}
 .weave-note-time{color:var(--weave-faint)}
-/* \`Open in $EDITOR\`, demoted (P6.3). It used to be the bar's full-width
-   bordered button — the note's loudest control, sitting between its title and
-   its prose. Now it is an icon at the end of the meta line: the hint rides
-   the \`title\`/\`aria-label\` (\`editor.model.ts\`'s OPEN_HINT/OPEN_LABEL), and
-   the control is quiet until the pointer asks for it. */
+/* \`Open in $EDITOR\` is a quiet icon at the end of the meta line. */
 .weave-note-open{
   display:inline-flex;align-items:center;justify-content:center;
   width:22px;height:22px;padding:0;font:inherit;color:var(--weave-faint);
@@ -460,9 +438,7 @@ body{font-size:var(--weave-px-base)}
    withdrawn at the user's call: this is a workspace, and the note shares the
    width the desk gives it. It reads at --weave-px-body on 1.7 rather than the
    chrome's 1.6: the extra leading is what a page of running text needs that a
-   status bar does not. Code and the raw editor stay mono deliberately —
-   reading prose and reading raw are different postures, and the face switch
-   is the toggle. */
+   status bar does not. Code stays mono deliberately. */
 .weave-note-body{padding:12px var(--weave-note-gutter) 28px;font-size:var(--weave-px-body);line-height:1.7;color:var(--weave-fg)}
 .weave-note-body>*:first-child{margin-top:0}
 .weave-note-body h1,.weave-note-body h2,.weave-note-body h3,
@@ -549,53 +525,6 @@ body{font-size:var(--weave-px-base)}
    rise, in the overlay family's vocabulary but quieter: a card that
    underlines a hover should not land with a thud. */
 @keyframes weave-preview-in{from{opacity:0;transform:translateY(2px)}}
-
-/* note editor (§11 P5) ---------------------------------------------------- */
-/* A \`<textarea>\`, not CodeMirror: §0 V10 measured CM6 at 118 KB gzip, more
-   than the entire rest of the client. It inherits the body's type so toggling
-   \`⌘E\` does not reflow the column into a different shape. */
-.weave-note-bar{
-  display:flex;align-items:center;gap:6px;flex-wrap:wrap;
-  padding:5px var(--weave-gutter);border-bottom:1px solid var(--weave-line);
-}
-/* \`weave-note-open\` is styled in the note column above (P6.3 moved it into
-   the head's meta row as an icon), and no longer shares the bar's bordered
-   button voice. */
-.weave-note-toggle,.weave-note-save,.weave-note-action{
-  font:inherit;font-size:var(--weave-px-ui);padding:2px 8px;cursor:pointer;
-  color:var(--weave-fg);background:var(--weave-raise);
-  border:1px solid var(--weave-line);border-radius:var(--weave-radius);
-}
-.weave-note-toggle:hover,.weave-note-save:hover,.weave-note-action:hover{
-  border-color:var(--weave-accent);
-}
-.weave-note-toggle[aria-pressed="true"]{border-color:var(--weave-accent);color:var(--weave-accent)}
-.weave-note-save:disabled{opacity:.45;cursor:default;border-color:var(--weave-line)}
-.weave-note-dirty{color:var(--weave-accent);font-size:var(--weave-px-subhead);line-height:1}
-.weave-note-status{font-size:var(--weave-px-ui);color:var(--weave-dim)}
-.weave-note-status-ok{color:var(--weave-ok)}
-.weave-note-status-warn{color:var(--weave-warn)}
-/* The prompt takes the full row rather than sitting inline: reload-or-overwrite
-   is a decision about the user's unsaved text, and a decision squeezed between
-   two buttons reads as a hint. */
-.weave-note-prompt{
-  flex-basis:100%;display:flex;align-items:center;gap:8px;flex-wrap:wrap;
-  margin-top:4px;padding:5px 8px;border-radius:var(--weave-radius);
-  background:var(--weave-raise);border:1px solid var(--weave-warn);
-}
-.weave-note-prompt-conflict,.weave-note-prompt-collision{border-color:var(--weave-warn)}
-.weave-note-prompt-external,.weave-note-prompt-discard{border-color:var(--weave-line)}
-.weave-note-prompt-text{margin:0;font-size:var(--weave-px-ui);color:var(--weave-fg)}
-.weave-note-prompt-actions{margin:0;display:flex;gap:6px;flex-wrap:wrap}
-.weave-note-editor{
-  flex:1;min-height:240px;resize:none;
-  padding:10px var(--weave-note-gutter) 24px;
-  /* Exactly the prose body's size and leading. The invariant is documented
-     and deliberate: ⌘E must not reflow, and reading raw at the same measure
-     the prose uses is what makes the toggle a lens rather than a jump. */
-  font:inherit;font-family:var(--weave-mono);font-size:var(--weave-px-body);line-height:1.7;
-  color:var(--weave-fg);background:var(--weave-page);border:0;outline-offset:-2px;
-}
 
 /* graph column ---------------------------------------------------------- */
 /* The canvas is a plain block sigma appends its own <canvas> layers into. It
@@ -737,31 +666,11 @@ body{font-size:var(--weave-px-base)}
 @media (prefers-color-scheme: light){
   :root:not([data-weave-theme="dark"]) .weave-scrim{background:rgba(76,79,105,.30)}
 }
-.weave-palette,.weave-help,.weave-dialog{
+.weave-palette,.weave-help{
   display:flex;flex-direction:column;width:100%;max-width:560px;max-height:72vh;
   overflow:hidden;background:var(--weave-panel);color:var(--weave-fg);
   border:1px solid var(--weave-line-strong);border-radius:var(--weave-radius-pop);
 }
-.weave-dialog{max-width:380px;padding:16px;overflow:visible}
-.weave-dialog-title{margin:0 0 8px;font-size:var(--weave-px-subhead);font-weight:600;color:var(--weave-fg)}
-.weave-dialog-body{margin:0 0 16px;font-size:var(--weave-px-row);line-height:1.5;color:var(--weave-dim)}
-.weave-dialog-input{width:100%;margin-bottom:12px;box-sizing:border-box}
-.weave-dialog-actions{display:flex;justify-content:flex-end;gap:8px}
-.weave-menu-backdrop{position:fixed;inset:0;z-index:9}
-.weave-menu{
-  position:fixed;left:var(--weave-menu-x,0);top:var(--weave-menu-y,0);z-index:10;
-  min-width:160px;padding:4px 0;background:var(--weave-panel);
-  border:1px solid var(--weave-line-strong);border-radius:var(--weave-radius-pop);
-}
-.weave-menu-item{
-  display:flex;align-items:center;gap:8px;width:100%;height:26px;padding:0 10px;
-  font:inherit;font-size:var(--weave-px-row);text-align:left;color:var(--weave-fg);
-  background:none;border:0;cursor:pointer;white-space:nowrap;
-}
-.weave-menu-item:hover{background:var(--weave-line)}
-.weave-menu-item-bad{color:var(--weave-bad)}
-.weave-menu-item-bad:hover{color:var(--weave-bad);background:var(--weave-line)}
-.weave-menu-sep{height:1px;margin:4px 0;background:var(--weave-line);border:0}
 .weave-palette-input{
   flex:none;height:34px;padding:0 11px;font:inherit;font-size:var(--weave-px-subhead);
   color:var(--weave-fg);background:transparent;border:0;
@@ -803,7 +712,7 @@ body{font-size:var(--weave-px-base)}
    --weave-new tint is exactly an accent at a strength text stays legible in. */
 ::selection{background:var(--weave-new)}
 /* Every scroller in the workspace (rows, note body, rail, palette results,
-   help sheet, editor) gets the same thin chrome: the default scrollbar is a
+   help sheet) gets the same thin chrome: the default scrollbar is a
    15 px system object the hairline aesthetic cannot afford, and Firefox and
    the Blink/WebKit pair cover the whole surface with these five rules. */
 *{scrollbar-width:thin;scrollbar-color:var(--weave-line-strong) transparent}
@@ -823,18 +732,13 @@ body{font-size:var(--weave-px-base)}
    properties only — colour, border, opacity, transform; height and padding
    snap. */
 .weave-row,.weave-ctx-link,.weave-chip,.weave-search,.weave-refresh,.weave-theme,
-.weave-divider,.weave-hit,.weave-note-toggle,.weave-note-save,.weave-note-open,
-.weave-note-action{
+.weave-divider,.weave-hit,.weave-note-open{
   transition:background-color 120ms ease,border-color 120ms ease,color 120ms ease;
 }
 .weave-scrim{animation:weave-fade-in 140ms ease-out both}
 .weave-palette,.weave-help{animation:weave-overlay-in 160ms ease-out both}
-/* The conflict prompt mounts once per conflict, so its entrance cannot strobe
-   the way a context-rail flash would — that rail deliberately stays still. */
-.weave-note-prompt{animation:weave-prompt-in 180ms ease-out both}
 @keyframes weave-fade-in{from{opacity:0}}
 @keyframes weave-overlay-in{from{opacity:0;transform:translateY(4px)}}
-@keyframes weave-prompt-in{from{opacity:0;transform:translateY(-2px)}}
 @media (prefers-reduced-motion: reduce){*{transition:none!important;animation:none!important}}
 `;
 

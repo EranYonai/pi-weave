@@ -21,7 +21,6 @@ import { fetchJson } from "../../src/web/client/api.dom";
 import { NONCE_SOURCES, THEME_CSS, findNonce, installTheme } from "../../src/web/client/shell/theme";
 import type { StyleElement, ThemeHost } from "../../src/web/client/shell/theme";
 import { COLUMNS, columnVar } from "../../src/web/client/shell/layout.model";
-import { EDITOR_PROMPT_KINDS } from "../../src/web/client/note/editor.model";
 import {
   THEME_CHOICES,
   THEME_STORAGE_KEY,
@@ -139,15 +138,11 @@ describe("THEME_CSS", () => {
       "weave-tree-controls",
       "weave-filter",
       "weave-chip",
-      "weave-chip-bad",
       "weave-rows",
       "weave-row",
       "weave-row-new",
       "weave-row-on",
       "weave-row-muted",
-      "weave-row-droptarget",
-      "weave-row-del",
-      "weave-tree-new-folder",
       "weave-icon",
       "weave-icon-open",
       "weave-twisty",
@@ -186,22 +181,7 @@ describe("THEME_CSS", () => {
       "weave-preview-kind",
       "weave-preview-title",
       "weave-preview-text",
-      // The P5 editor. `weave-note-prompt-{conflict,collision,external,discard}`
-      // are generated from `EditorPromptKind`, so they get their own
-      // assertion below rather than four entries here.
-      "weave-note-bar",
-      "weave-note-toggle",
-      "weave-note-save",
       "weave-note-open",
-      "weave-note-action",
-      "weave-note-dirty",
-      "weave-note-status",
-      "weave-note-status-ok",
-      "weave-note-status-warn",
-      "weave-note-prompt",
-      "weave-note-prompt-text",
-      "weave-note-prompt-actions",
-      "weave-note-editor",
       "weave-ctx-empty",
       "weave-ctx-group",
       "weave-ctx-head",
@@ -245,16 +225,6 @@ describe("THEME_CSS", () => {
       "weave-help-title",
       "weave-help-foot",
       "weave-help-hint",
-      "weave-dialog",
-      "weave-dialog-title",
-      "weave-dialog-body",
-      "weave-dialog-input",
-      "weave-dialog-actions",
-      "weave-menu-backdrop",
-      "weave-menu",
-      "weave-menu-item",
-      "weave-menu-item-bad",
-      "weave-menu-sep",
       "weave-keys",
       "weave-key-group",
       "weave-key-row",
@@ -262,14 +232,6 @@ describe("THEME_CSS", () => {
       "weave-key-what",
     ];
     for (const name of classes) expect(THEME_CSS).toContain(`.${name}`);
-  });
-
-  it("styles every prompt kind, derived from the union rather than listed", () => {
-    // `Editor.tsx` emits `weave-note-prompt-${prompt.kind}`, so the class set
-    // is generated at runtime from `EditorPromptKind`. Listing the four by
-    // hand above would pass on the day a fifth kind arrives unstyled; walking
-    // the union means the assertion grows with it.
-    for (const kind of EDITOR_PROMPT_KINDS) expect(THEME_CSS, kind).toContain(`.weave-note-prompt-${kind}`);
   });
 
   it("styles all three grid arities, so a breakpoint is never unstyled", () => {

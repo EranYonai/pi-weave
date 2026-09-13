@@ -36,17 +36,7 @@
  * fortnight.
  */
 
-import type {
-  ConflictPayload,
-  CreateFolderResult,
-  DeleteNoteResult,
-  GraphPayload,
-  NotePayload,
-  OpenResult,
-  SaveNoteRequest,
-  SearchPayload,
-  ViewNote,
-} from "../shared/wire";
+import type { GraphPayload, NotePayload, OpenResult, SearchPayload, ViewNote } from "../shared/wire";
 
 // --- the injected HTTP port ------------------------------------------------------
 
@@ -105,29 +95,6 @@ export interface ApiFailure {
   readonly message: string;
 }
 
-/**
- * A `409` from a write route — its own arm, not a sixth {@link ApiErrorKind}.
- *
- * Every other failure is a dead end: the caller shows a message and stops. A
- * conflict is the opposite — it is the server handing back **the information
- * needed to continue**, and the editor's whole reload-or-overwrite prompt is
- * built from `conflict.current`. Folding it into `ApiFailure` would mean
- * either an optional field every caller has to remember is only sometimes
- * there, or a cast; a separate arm makes the payload's presence a fact the
- * compiler enforces once the caller has narrowed on `kind`.
- *
- * The `409` is therefore *not* an error in the sense the other five are, and
- * the type says so.
- */
-export interface ApiConflict {
-  readonly ok: false;
-  readonly kind: "conflict";
-  readonly status: 409;
-  readonly message: string;
-  /** The server's `409` body: the current note, or the taken slug. */
-  readonly conflict: ConflictPayload;
-}
-
 export interface ApiSuccess<T> {
   readonly ok: true;
   readonly data: T;
@@ -139,9 +106,6 @@ export interface ApiSuccess<T> {
 }
 
 export type ApiResult<T> = ApiSuccess<T> | ApiFailure;
-
-/** The result of a write: as {@link ApiResult}, plus the `409` arm. */
-export type WriteResult<T> = ApiSuccess<T> | ApiFailure | ApiConflict;
 
 function success<T>(data: T, cached = false): ApiSuccess<T> {
   return { ok: true, data, cached };
@@ -249,30 +213,9 @@ export function isViewNote(value: unknown): value is ViewNote {
   return isStringArray(value["tags"]);
 }
 
-/** `NotePayload` — a `ViewNote` plus the revision the editor saves against. */
+/** `NotePayload` — the note response wrapper. */
 export function isNotePayload(value: unknown): value is NotePayload {
-  return isObject(value) && typeof value["revision"] === "string" && isViewNote(value["note"]);
-}
-
-/** `DeleteNoteResult`. */
-export function isDeleteResult(value: unknown): value is DeleteNoteResult {
-  return isObject(value) && value["deleted"] === true;
-}
-
-/**
- * `ConflictPayload` — the `409` body.
- *
- * Checked to the depth the prompt renders, which for a `conflict` is the
- * whole nested note: the reload button writes `current.note` into the column
- * and the overwrite button sends `current.revision`, so a payload missing
- * either would produce a dialog whose buttons do nothing. Falling back to a
- * generic "server error" is the honest outcome for a malformed one.
- */
-export function isConflictPayload(value: unknown): value is ConflictPayload {
-  if (!isObject(value) || typeof value["error"] !== "string") return false;
-  if (value["reason"] === "collision") return typeof value["slug"] === "string";
-  if (value["reason"] !== "conflict") return false;
-  return isNotePayload(value["current"]);
+  return isObject(value) && isViewNote(value["note"]);
 }
 
 /** `SearchPayload`. Hits are checked as an array; ranking tolerates junk. */
@@ -281,12 +224,6 @@ export function isSearchPayload(value: unknown): value is SearchPayload {
 }
 
 /** `OpenResult`. */
-export function isCreateFolderResult(value: unknown): value is CreateFolderResult {
-  if (typeof value !== "object" || value === null) return false;
-  const candidate = value as Record<string, unknown>;
-  return candidate.ok === true && typeof candidate.path === "string";
-}
-
 export function isOpenResult(value: unknown): value is OpenResult {
   return isObject(value) && typeof value["opened"] === "boolean";
 }
@@ -337,150 +274,17 @@ export async function fetchGraph(fetchImpl: FetchLike, previous: GraphPayload | 
  * `GET /api/note/:slug`.
  *
  * The slug is percent-encoded here and traversal-checked *there* — the
- * server hands it to `resolveNotePath`, which rejects anything that is not a
- * flat slug. Doing our own check as well would be a second implementation to
+ * server hands it to `resolveNotePath`, which rejects unsafe slugs. Doing our
+ * own check as well would be a second implementation to
  * keep in sync, which is how traversal bugs are actually born (see
  * `routes.ts`). Encoding is still required, because an unencoded `#` or `?`
  * would silently truncate the path.
  *
- * Returns a {@link NotePayload}, not a bare `ViewNote`: the revision is read
- * **with** the note or not at all. Fetching it separately would leave a
- * window in which the two describe different states of the file, and a save
- * carrying a revision that does not match the body it was typed against is
- * worse than a save carrying none.
+ * Returns a {@link NotePayload}, not a bare `ViewNote`, so the response shape
+ * stays explicit at the HTTP boundary.
  */
 export function fetchNote(fetchImpl: FetchLike, slug: string): Promise<ApiResult<NotePayload>> {
   return request(fetchImpl, `/api/note/${encodeURIComponent(slug)}`, isNotePayload);
-}
-
-/** The URL for one note. One definition, so the four routes cannot disagree. */
-function noteUrl(slug: string, suffix = ""): string {
-  return `/api/note/${encodeURIComponent(slug)}${suffix}`;
-}
-
-/** A JSON write, as {@link HttpRequest}. */
-function writeInit(method: string, body: unknown): HttpRequest {
-  return { method, headers: { "content-type": "application/json" }, body: JSON.stringify(body) };
-}
-
-/**
- * Perform a write, decoding the `409` rather than flattening it.
- *
- * The generic {@link request} cannot serve here: it maps every non-2xx to an
- * {@link ApiFailure} with a message and no body, and the `409` body is the
- * entire point — it carries the note the user must choose between keeping
- * and discarding. So the conflict is intercepted before the status
- * classification and decoded through {@link isConflictPayload}.
- *
- * A `409` whose body does *not* decode falls through to a `server` failure.
- * That is deliberate rather than defensive: presenting a reload-or-overwrite
- * prompt built from a payload we could not read would offer the user two
- * buttons, at least one of which silently does nothing.
- */
-async function write<T>(
-  fetchImpl: FetchLike,
-  url: string,
-  guard: (value: unknown) => value is T,
-  init: HttpRequest,
-): Promise<WriteResult<T>> {
-  let response: HttpResponse;
-  try {
-    response = await fetchImpl(url, init);
-  } catch (error) {
-    return failure("network", 0, error instanceof Error ? error.message : "network request failed");
-  }
-
-  if (response.status === 409) {
-    let body: unknown;
-    try {
-      body = await response.json();
-    } catch {
-      return failure("malformed", 409, "response was not valid JSON");
-    }
-    if (!isConflictPayload(body)) return failure("malformed", 409, "response did not match the expected shape");
-    return { ok: false, kind: "conflict", status: 409, message: body.error, conflict: body };
-  }
-
-  if (!response.ok) return failure(classifyStatus(response.status), response.status, messageForStatus(response.status));
-
-  let body: unknown;
-  try {
-    body = await response.json();
-  } catch {
-    return failure("malformed", response.status, "response was not valid JSON");
-  }
-  if (!guard(body)) return failure("malformed", response.status, "response did not match the expected shape");
-  return success(body);
-}
-
-/**
- * `POST /api/note/:slug` — save (§11 P5.3, P5.5).
- *
- * `input.expectedRevision` is what makes a save safe, and omitting it is what
- * makes one an overwrite. Both are legitimate and neither is a default the
- * caller should stumble into, so this function takes the request verbatim
- * rather than deciding for it: `editor.model.ts` supplies the revision on a
- * normal save and drops it only after the user has looked at a conflict and
- * chosen to win.
- */
-export function saveNote(fetchImpl: FetchLike, slug: string, input: SaveNoteRequest): Promise<WriteResult<NotePayload>> {
-  return write(fetchImpl, noteUrl(slug), isNotePayload, writeInit("POST", input));
-}
-
-/**
- * `POST /api/note/:slug/rename`.
- *
- * A `409` here is a `collision`, not a `conflict` — the destination is
- * taken. The server refuses rather than uniquifying, because landing
- * somewhere other than where the user asked hides their mistake.
- */
-export function renameNote(
-  fetchImpl: FetchLike,
-  slug: string,
-  target: string,
-  title?: string,
-): Promise<WriteResult<NotePayload>> {
-  return write(
-    fetchImpl,
-    noteUrl(slug, "/rename"),
-    isNotePayload,
-    writeInit("POST", { slug: target, ...(title !== undefined ? { title } : {}) }),
-  );
-}
-
-/** `POST /api/note/:slug/move`. Moves note into a folder and updates tags. */
-export function moveNote(fetchImpl: FetchLike, slug: string, targetFolder: string | null): Promise<WriteResult<NotePayload>> {
-  return write(fetchImpl, noteUrl(slug, "/move"), isNotePayload, writeInit("POST", { targetFolder }));
-}
-
-/** `POST /api/folder`. Creates a folder under notes/. */
-export function createFolder(fetchImpl: FetchLike, path: string): Promise<ApiResult<CreateFolderResult>> {
-  return request(fetchImpl, "/api/folder", isCreateFolderResult, {
-    method: "POST",
-    headers: { "content-type": "application/json" },
-    body: JSON.stringify({ path }),
-  });
-}
-
-/** `DELETE /api/note/:slug`. Hard delete — the vault has no trash. */
-export function deleteNote(fetchImpl: FetchLike, slug: string): Promise<WriteResult<DeleteNoteResult>> {
-  return write(fetchImpl, noteUrl(slug), isDeleteResult, { method: "DELETE" });
-}
-
-/** `DELETE /api/folder/:path`. Deletes a folder and its contents. */
-export function deleteFolder(fetchImpl: FetchLike, path: string): Promise<WriteResult<DeleteNoteResult>> {
-  const encoded = path.split("/").map(encodeURIComponent).join("/");
-  return write(fetchImpl, `/api/folder/${encoded}`, isDeleteResult, { method: "DELETE" });
-}
-
-/** `POST /api/folder/:path/rename`. Renames a folder and updates note tags. */
-export function renameFolder(fetchImpl: FetchLike, oldPath: string, newPath: string): Promise<ApiResult<CreateFolderResult>> {
-  const encoded = oldPath.split("/").map(encodeURIComponent).join("/");
-  return request(fetchImpl, `/api/folder/${encoded}/rename`, isCreateFolderResult, {
-    method: "POST",
-    headers: { "content-type": "application/json" },
-    body: JSON.stringify({ newPath }),
-  });
 }
 
 /** `GET /api/search?q=`. An empty query is valid and returns no hits. */
@@ -489,7 +293,7 @@ export function fetchSearch(fetchImpl: FetchLike, query: string): Promise<ApiRes
 }
 
 /**
- * `POST /api/open` — the only write in P1–P4.
+ * `POST /api/open` — hand the selected note to the user's editor.
  *
  * A missing note answers `404` with `{opened:false}`, which surfaces here as
  * a `missing` failure rather than a success carrying `false`. The status code
