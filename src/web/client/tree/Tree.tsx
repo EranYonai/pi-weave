@@ -1,7 +1,6 @@
 /** The read-only tree column. */
 
 import { useState } from "preact/hooks";
-import { recentIds } from "../state";
 import { isTextEntry, type KeyTarget } from "../shell/keys.model";
 import { ICON_BOX, ICON_STROKE, ICONS } from "../shell/icons.model";
 import type { IconName } from "../shell/icons.model";
@@ -32,6 +31,7 @@ import {
 export interface TreeProps {
   graph: GraphPayload | null;
   selectedId: string | null;
+  recentIds: ReadonlySet<string>;
   onSelect: (id: string) => void;
   now: number;
 }
@@ -56,12 +56,12 @@ export function Icon({ name, class: className }: { name: IconName; class?: strin
   );
 }
 
-function Row({ view, onSelect, onToggle }: { view: ReturnType<typeof rowViews>[number]; onSelect: () => void; onToggle: () => void }) {
+function Row({ view, recentIds, onSelect, onToggle }: { view: ReturnType<typeof rowViews>[number]; recentIds: ReadonlySet<string>; onSelect: () => void; onToggle: () => void }) {
   return (
     <li
       id={view.domId}
       data-row-id={view.id}
-      class={`weave-row weave-row-${view.kind}${view.selected ? " weave-row-on" : ""}${view.muted ? " weave-row-muted" : ""}${recentIds.value.has(view.id) ? " weave-row-new" : ""}`}
+      class={`weave-row weave-row-${view.kind}${view.selected ? " weave-row-on" : ""}${recentIds.has(view.id) ? " weave-row-new" : ""}`}
       role="treeitem"
       aria-level={view.level}
       aria-posinset={view.posinset}
@@ -102,7 +102,7 @@ export function Tree(props: TreeProps) {
       </div>
       {empty === null ? (
         <ul class="weave-rows" role="tree" tabIndex={0} aria-label={TREE_LABEL} aria-activedescendant={treeActiveDescendant(rows, props.selectedId) ?? undefined}>
-          {rowViews(rows, props.selectedId, props.now).map((view) => <Row key={view.id} view={view} onSelect={() => { props.onSelect(view.id); if (view.hasKids) setState((current) => toggleExpanded(current, view.id)); }} onToggle={() => setState(toggleExpanded(state, view.id))} />)}
+          {rowViews(rows, props.selectedId, props.now).map((view) => <Row key={view.id} view={view} recentIds={props.recentIds} onSelect={() => { props.onSelect(view.id); if (view.hasKids) setState((current) => toggleExpanded(current, view.id)); }} onToggle={() => setState(toggleExpanded(state, view.id))} />)}
         </ul>
       ) : <p class="weave-tree-empty">{empty}</p>}
       <p class="weave-tree-count">{rowCountLabel(rows)}</p>

@@ -8,7 +8,7 @@
  * and none is needed, because nothing that branches lives in a component.
  */
 
-import { afterEach, describe, expect, it } from "vitest";
+import { describe, expect, it } from "vitest";
 import { EMPTY_BOOTSTRAP, readBootstrap } from "../../src/web/client/bootstrap";
 import type { OverlayId } from "../../src/web/client/shell/shell.model";
 import {
@@ -27,14 +27,7 @@ import {
   summaryParts,
 } from "../../src/web/client/shell/shell.model";
 import { COLUMNS } from "../../src/web/client/shell/shell.model";
-import { graph, noteBody, selectedId } from "../../src/web/client/state";
 import type { GraphPayload, WireGraphNode, WireStalenessState } from "../../src/web/shared/wire";
-
-afterEach(() => {
-  selectedId.value = null;
-  graph.value = null;
-  noteBody.value = null;
-});
 
 // --- fixtures ---------------------------------------------------------------------
 

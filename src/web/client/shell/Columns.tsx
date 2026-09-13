@@ -21,6 +21,7 @@ export interface ColumnsProps {
   graph: GraphPayload | null;
   note: NotePayload | null;
   selectedId: string | null;
+  recentIds: ReadonlySet<string>;
   /**
    * The §1.3 context bus.
    *
@@ -65,7 +66,7 @@ function Column({ id, props }: { id: ColumnId; props: ColumnsProps }) {
   return (
     <section class={`weave-col weave-col-${id}`} aria-label={copy.title}>
       <h2 class="weave-col-title">{copy.title}</h2>
-      {id === "tree" ? <Tree graph={props.graph} selectedId={props.selectedId} onSelect={props.onSelect} now={props.now} /> : null}
+      {id === "tree" ? <Tree graph={props.graph} selectedId={props.selectedId} recentIds={props.recentIds} onSelect={props.onSelect} now={props.now} /> : null}
       {id === "note" ? (
         <Note
           note={props.note}

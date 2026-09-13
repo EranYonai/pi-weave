@@ -1,11 +1,11 @@
 /**
- * The workspace shell (weave-workspace §1.2).
+ * The workspace shell.
  *
  * Header, three fixed columns, context rail, status bar. This component holds
  * the wiring and nothing else — every value it renders comes from pure
  * functions in the shell models,
  * and the fetch/poll loop is `workspace.ts`. What is left here is hooks:
- * signals in, callbacks out.
+ * state in, callbacks out.
  *
  * The main effects are one-liners over injected units:
  *
@@ -25,9 +25,10 @@ import { schemeOf, watchScheme } from "../graph/scheme";
 import { createSigmaRenderer } from "../graph/renderer.dom";
 import { SearchPalette } from "../search/SearchPalette";
 import { restoreSelection, saveSelection } from "../selection.storage";
-import { graph, graphFailed, noteBody, selectedId } from "../state";
+import { initialWorkspaceState } from "../state";
+import type { WorkspaceState } from "../state";
 import type { WorkspaceHandle } from "../workspace";
-import { select, startWorkspace } from "../workspace";
+import { startWorkspace } from "../workspace";
 import { Columns } from "./Columns";
 import { deeplinkSelection, formatHash } from "./deeplink.model";
 import { Header } from "./Header";
@@ -57,6 +58,7 @@ export interface ShellProps {
 }
 
 export function Shell(props: ShellProps) {
+  const [workspaceState, setWorkspaceState] = useState<WorkspaceState>(initialWorkspaceState);
   const [overlay, setOverlay] = useState<OverlayId>(null);
   // The theme: what the user picked, and what the OS is currently saying. Two
   // states because they answer different questions — `theme` changes on a
@@ -70,11 +72,11 @@ export function Shell(props: ShellProps) {
   const fit = useRef<(() => void) | null>(null);
   // The global key listener reads through this so a handler registered at
   // mount still sees the current overlay.
-  const live = useRef({ overlay });
-  live.current = { overlay };
+  const live = useRef({ overlay, selectedId: workspaceState.selectedId });
+  live.current = { overlay, selectedId: workspaceState.selectedId };
 
   useEffect(() => {
-    const handle = startWorkspace({ fetch: fetchJson });
+    const handle = startWorkspace({ fetch: fetchJson, state: workspaceState, setState: setWorkspaceState });
     workspace.current = handle;
     return () => handle.stop();
   }, []);
@@ -89,26 +91,26 @@ export function Shell(props: ShellProps) {
   const bootHash = useRef(location.hash);
   useEffect(() => {
     if (!selectionRestored.current) return;
-    saveSelection(localStorage, selectedId.value);
+    saveSelection(localStorage, workspaceState.selectedId);
     // replaceState, not pushState: the address bar mirrors the note on
     // screen, and reading three notes is not three history entries. The
     // *string* is the model's (`formatHash`); this is the write itself.
-    history.replaceState(null, "", formatHash(selectedId.value));
-  }, [selectedId.value]);
+    history.replaceState(null, "", formatHash(workspaceState.selectedId));
+  }, [workspaceState.selectedId]);
   useEffect(() => {
-    if (selectionRestored.current || graph.value === null) return;
+    if (selectionRestored.current || workspaceState.graph === null) return;
     selectionRestored.current = true;
-    if (selectedId.value !== null) return;
+    if (workspaceState.selectedId !== null) return;
     // A link wins over storage: the address bar is an explicit instruction,
     // the saved note is a habit. A link to a note the graph does not hold is
     // refused (see `deeplink.model.ts`) and continuity falls through.
-    const linked = deeplinkSelection(bootHash.current, graph.value);
-    if (linked !== null) void select(fetchJson, linked);
+    const linked = deeplinkSelection(bootHash.current, workspaceState.graph);
+    if (linked !== null) void workspace.current?.select(linked);
     else {
-      const saved = restoreSelection(graph.value, localStorage);
-      if (saved !== null) void select(fetchJson, saved);
+      const saved = restoreSelection(workspaceState.graph, localStorage);
+      if (saved !== null) void workspace.current?.select(saved);
     }
-  }, [graph.value]);
+  }, [workspaceState.graph]);
 
   // The relative-time clock. Every "8h ago" in the tree and the note meta is
   // computed from a `now` stamped per render, and a resting workspace never
@@ -137,13 +139,13 @@ export function Shell(props: ShellProps) {
   useEffect(
     () =>
       watchKeys(document, {
-        context: () => ({ overlay: live.current.overlay, hasSelection: selectedId.value !== null }),
+        context: () => ({ overlay: live.current.overlay, hasSelection: live.current.selectedId !== null }),
         run: (action) =>
           runShellAction(action, {
             setOverlay,
             focusSelector: (selector) => focusSelector(document, selector),
             fitGraph: () => fit.current?.(),
-            clearSelection: () => { selectedId.value = null; },
+            clearSelection: () => { void workspace.current?.select(null); },
             cycleTheme: () => setTheme((current) => cycleTheme(current)),
           }),
       }),
@@ -153,7 +155,7 @@ export function Shell(props: ShellProps) {
   return (
     <>
       <Header
-        summary={summarize(graph.value)}
+        summary={summarize(workspaceState.graph)}
         shortcut={searchShortcut(looksApple(props.platform))}
         onRefresh={() => workspace.current?.refresh()}
         onSearch={() => setOverlay("search")}
@@ -162,11 +164,12 @@ export function Shell(props: ShellProps) {
       />
       <Columns
         scheme={effectiveScheme(theme, systemScheme)}
-        bootFailed={graphFailed.value}
-        graph={graph.value}
-        note={noteBody.value}
-        selectedId={selectedId.value}
-        onSelect={(id) => void select(fetchJson, id)}
+        bootFailed={workspaceState.graphFailed}
+        graph={workspaceState.graph}
+        note={workspaceState.note}
+        selectedId={workspaceState.selectedId}
+        recentIds={workspaceState.recentIds}
+        onSelect={(id) => void workspace.current?.select(id)}
         onOpen={(slug) => void openNote(fetchJson, slug)}
         now={now}
         // The graph column's three ports (§7.5, §10). Supplied here, at the
@@ -185,12 +188,12 @@ export function Shell(props: ShellProps) {
         exactly what this bar wants.
       */}
       <StatusBar
-        model={statusBarModel(props.cwd, selectedId.value, graph.value?.model.generatedAt ?? null)}
+        model={statusBarModel(props.cwd, workspaceState.selectedId, workspaceState.graph?.model.generatedAt ?? null)}
       />
       {overlay === "search" ? (
         <SearchPalette
-          graph={graph.value}
-          onSelect={(id) => void select(fetchJson, id)}
+          graph={workspaceState.graph}
+          onSelect={(id) => void workspace.current?.select(id)}
           onClose={() => setOverlay(null)}
           ports={{ fetch: fetchJson }}
         />

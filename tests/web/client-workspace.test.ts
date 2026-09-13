@@ -1,7 +1,8 @@
-import { afterEach, describe, expect, it } from "vitest";
+import { describe, expect, it } from "vitest";
 import type { FetchLike, HttpResponse } from "../../src/web/client/api";
-import { POLL_MS, addedNodeIds, resetWorkspace, startWorkspace } from "../../src/web/client/workspace";
-import { graph, noteBody, selectedId } from "../../src/web/client/state";
+import { POLL_MS, addedNodeIds, startWorkspace } from "../../src/web/client/workspace";
+import { initialWorkspaceState } from "../../src/web/client/state";
+import type { WorkspaceState } from "../../src/web/client/state";
 import type { GraphPayload, NotePayload } from "../../src/web/shared/wire";
 
 const GRAPH: GraphPayload = {
@@ -21,8 +22,6 @@ function fetchWith(...responses: unknown[]): FetchLike & { calls: string[] } {
   }, { calls });
 }
 
-afterEach(() => resetWorkspace());
-
 describe("addedNodeIds", () => {
   it("returns only nodes absent from the previous graph", () => {
     const previous = { ...GRAPH, model: { ...GRAPH.model, nodes: [{ id: "a" }] } } as GraphPayload;
@@ -35,22 +34,44 @@ describe("addedNodeIds", () => {
 describe("startWorkspace", () => {
   it("fetches immediately and polls with the current ETag", async () => {
     const fetch = fetchWith(GRAPH, GRAPH);
+    let state = initialWorkspaceState();
     let tick: (() => void) | undefined;
-    const workspace = startWorkspace({ fetch, repeat: (fn, ms) => { expect(ms).toBe(POLL_MS); tick = fn; return () => {}; } });
+    const workspace = startWorkspace({ fetch, state, setState: (next) => { state = next; }, repeat: (fn, ms) => { expect(ms).toBe(POLL_MS); tick = fn; return () => {}; } });
     await new Promise((resolve) => setTimeout(resolve, 0));
-    expect(graph.value).toBe(GRAPH);
+    expect(state.graph).toBe(GRAPH);
     tick?.();
     await new Promise((resolve) => setTimeout(resolve, 0));
     expect(fetch.calls).toEqual(["/api/graph", "/api/graph"]);
     workspace.stop();
   });
 
-  it("refreshes the selected note alongside the graph", async () => {
-    selectedId.value = "note:alpha";
-    const fetch = fetchWith(GRAPH, NOTE);
-    const workspace = startWorkspace({ fetch, repeat: () => () => {} });
+  it("does not publish a cached poll", async () => {
+    let state = initialWorkspaceState();
+    let calls = 0;
+    let tick: (() => void) | undefined;
+    const fetch: FetchLike = async () => {
+      calls += 1;
+      return calls === 1
+        ? { ok: true, status: 200, json: async () => GRAPH }
+        : { ok: false, status: 304, json: async () => { throw new Error("no body"); } };
+    };
+    let publishes = 0;
+    const workspace = startWorkspace({ fetch, state, setState: (next) => { state = next; publishes += 1; }, repeat: (fn) => { tick = fn; return () => {}; } });
     await new Promise((resolve) => setTimeout(resolve, 0));
-    expect(noteBody.value).toBe(NOTE);
+    expect(publishes).toBe(1);
+    tick?.();
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(publishes).toBe(1);
+    workspace.stop();
+    expect(publishes).toBe(1);
+  });
+
+  it("refreshes the selected note alongside the graph", async () => {
+    let state: WorkspaceState = { ...initialWorkspaceState(), selectedId: "note:alpha" };
+    const fetch = fetchWith(GRAPH, NOTE);
+    const workspace = startWorkspace({ fetch, state, setState: (next) => { state = next; }, repeat: () => () => {} });
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(state.note).toBe(NOTE);
     workspace.refresh();
     await new Promise((resolve) => setTimeout(resolve, 0));
     expect(fetch.calls).toEqual(["/api/graph", "/api/note/alpha", "/api/graph"]);
@@ -59,7 +80,8 @@ describe("startWorkspace", () => {
 
   it("stops polling", async () => {
     let cancelled = false;
-    const workspace = startWorkspace({ fetch: fetchWith(GRAPH), repeat: () => () => { cancelled = true; } });
+    let state = initialWorkspaceState();
+    const workspace = startWorkspace({ fetch: fetchWith(GRAPH), state, setState: (next) => { state = next; }, repeat: () => () => { cancelled = true; } });
     workspace.stop();
     expect(cancelled).toBe(true);
   });
