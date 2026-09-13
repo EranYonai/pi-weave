@@ -3,8 +3,8 @@
  *
  * One function per route, each returning a discriminated {@link ApiResult}
  * rather than throwing. That is the whole design decision here, and it is
- * driven by §6: the client refetches on every SSE frame and on every
- * reconnect, so a failed request is a *normal, frequent* occurrence — the
+ * driven by §6: the client refetches on every poll and on every explicit
+ * refresh, so a failed request is a *normal, frequent* occurrence — the
  * server may be mid-restart, the session may have been killed, the token may
  * have rotated. Exceptions are for the unexpected, and none of these are.
  * A caller that must handle "the server went away" on every call is better
@@ -60,6 +60,7 @@ export interface HttpRequest {
   readonly method?: string;
   readonly headers?: Record<string, string>;
   readonly body?: string;
+  readonly signal?: { readonly aborted: boolean };
 }
 
 /** The injected `fetch`. The platform's satisfies this structurally. */
@@ -190,7 +191,7 @@ function isStringArray(value: unknown): value is string[] {
  *
  * `model.nodes` and `model.edges` are verified to be arrays and `stamp` to be
  * a string, because those three are what the columns index into and what the
- * SSE dedupe compares. Individual node fields are not walked: a per-node
+ * conditional request compares. Individual node fields are not walked: a per-node
  * validation pass on every refetch is real cost on a large graph, and a
  * malformed node degrades one row rather than crashing the app. The cutoff is
  * "what breaks the shell if absent", not "everything the type declares".
@@ -288,8 +289,8 @@ export function fetchNote(fetchImpl: FetchLike, slug: string): Promise<ApiResult
 }
 
 /** `GET /api/search?q=`. An empty query is valid and returns no hits. */
-export function fetchSearch(fetchImpl: FetchLike, query: string): Promise<ApiResult<SearchPayload>> {
-  return request(fetchImpl, `/api/search?q=${encodeURIComponent(query)}`, isSearchPayload);
+export function fetchSearch(fetchImpl: FetchLike, query: string, signal?: { readonly aborted: boolean }): Promise<ApiResult<SearchPayload>> {
+  return request(fetchImpl, `/api/search?q=${encodeURIComponent(query)}`, isSearchPayload, signal === undefined ? undefined : { signal });
 }
 
 /**

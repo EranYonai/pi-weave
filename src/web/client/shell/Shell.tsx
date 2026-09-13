@@ -229,7 +229,7 @@ export function Shell(props: ShellProps) {
           graph={graph.value}
           onSelect={(id) => void select(fetchJson, id)}
           onClose={() => setOverlay(null)}
-          ports={{ fetch: fetchJson, now: Date.now, delay: (run, ms) => void setTimeout(run, ms) }}
+          ports={{ fetch: fetchJson }}
         />
       ) : null}
       {overlay === "help" ? (
