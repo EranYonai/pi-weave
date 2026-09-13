@@ -1,6 +1,8 @@
-# weave-workspace — the browser knowledge workspace
+# weave-workspace — historical browser workspace notes
 
-> Status: **P0, P1, P2 and P3 are built and green; P4–P5 are still design.** This is the plan of record for `/weave-view`. §16 is the
+> Historical record, superseded by [docs/design.md](design.md), [README.md](../README.md), and [`AGENTS.md`](../AGENTS.md). Use those documents and the current code for present behavior.
+
+> Historical status at time of writing: **P0, P1, P2 and P3 were built and green; P4–P5 were still design.** This was the plan of record for `/weave-view`. §16 is the
 > two-minute summary of where things stand.
 >
 > Scope: a local web workspace over the same `GraphModel` the TUI already uses. Notes are the product; the graph is one column of it.
@@ -968,7 +970,7 @@ strategy is: **push logic into pure modules, keep DOM shells trivial and exclude
 | Client DOM | `src/web/client/**/*.tsx` | **Outside the coverage set.** Kept to 30–50 lines each: props in, JSX out, no branching beyond rendering. |
 | End-to-end | `tests/web/smoke.test.ts` | Boot the server, `fetch /`, assert shell + CSP + bundle integrity. **No browser, no screenshots.** |
 
-Coverage excludes are listed explicitly in `vitest.config.ts` and justified in `docs/testing.md` — a blanket `src/web/client/**` exclude is
+Coverage excludes are listed explicitly in `vitest.config.ts` and justified in the test suite — a blanket `src/web/client/**` exclude is
 not acceptable.
 
 **As built, this turned out cheaper than planned.** `vitest.config.ts` declares exactly **one** exclusion, `src/core/view/types.ts`, by
@@ -981,7 +983,7 @@ logic-free. The moment a `.tsx` file wants a branch, the branch belongs in a sib
 **The hard constraint stands: no screenshots, ever.** Any live-browser verification is JS-eval/DOM-measurement only, via the `/browse`
 skill, and stays manual — it is not part of the CI gate.
 
-**Manual checklist** (added to `docs/testing.md` §3 as UC11–UC16): open in a repo with no `.okf`; open with an empty vault; edit a note in
+**Manual checklist** (recorded here as UC11–UC16): open in a repo with no `.okf`; open with an empty vault; edit a note in
 `$EDITOR` and watch it update live; run `/weave-scan` while open; kill the pi session and confirm the port closes; open two browser tabs.
 
 ---
@@ -1169,7 +1171,7 @@ product decision, and none is needed to prove this one.
 
 These land **with** the phases that require them, not afterwards.
 
-> **Status.** `docs/testing.md` is done. **`AGENTS.md` has not been updated** — it still describes only
+> **Historical status.** The testing ledger was complete at the time. **`AGENTS.md` had not been updated** — it still described only
 > the TUI surface and still carries the stale runtime-dependency line — and `docs/design.md` §19 has not been reconciled either. Both are
 > outstanding. **`README.md` is now overdue**: it was scheduled for P2, P2 and P3 have both landed, and it still says the browser viewer
 > "has been retired and is being rebuilt on pixi.js" and that `/weave-view` opens the terminal explorer — which is wrong on both counts
@@ -1189,7 +1191,7 @@ These land **with** the phases that require them, not afterwards.
 - Note the second typecheck project: `npm run typecheck` is now `tsc --noEmit && tsc --noEmit -p tsconfig.web.json`, and the second one is
   what makes the client's core-freedom mechanical (§2.1).
 
-**`docs/testing.md`** (P0 through P3) — ✅ **applied**:
+**The testing ledger** (P0 through P3) — ✅ **applied**:
 
 - New layer **L5 — Web**, with the §10 table and a per-row "Built?" column.
 - The dynamics smoke test documented as a first-class gate, with the graph-shape fixtures.
@@ -1327,7 +1329,7 @@ watcher works". Recursive watch behaviour on a normal `maxfiles` limit — and o
 `security.ts` emits `__Host-weave` with `Secure; HttpOnly; SameSite=Strict; Path=/`, a prefix-free fallback name exists for a browser that
 disagrees, and the tests pin both shapes — but no real browser has ever been checked, because the no-screenshots constraint (§10) keeps
 live-browser verification manual. If Chrome, Firefox or Safari rejects it, the symptom is a workspace that redirects and then 403s forever,
-which is a bad way to find out. **Belongs on the `docs/testing.md` manual checklist** as an explicit item.
+which is a bad way to find out. **Belongs on the manual checklist** as an explicit item.
 
 ### 15.4 `GraphPayload.tags` and `.dangling` are shipped empty — ✅ **resolved**
 

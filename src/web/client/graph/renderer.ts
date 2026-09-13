@@ -23,7 +23,7 @@
  * line of ours runs.
  *
  * That is a worse outcome than it looks. This repository's rule (§10, and
- * `docs/testing.md` §L5.2) is that *untestable lines* are kept to a handful,
+ * the browser coverage policy) is that *untestable lines* are kept to a handful,
  * not that untestable *files* are excluded — the one coverage exclusion that
  * exists is a type-only module, and a blanket `src/web/client/**` exclude is
  * explicitly "not acceptable". A whole renderer sitting outside the gate would
