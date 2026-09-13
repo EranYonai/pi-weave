@@ -10,7 +10,6 @@
  * | GET    | `/api/okf/:rel`          | {@link OkfFilePayload}                       |
  * | GET    | `/api/search?q=`         | {@link SearchPayload}                        |
  * | POST   | `/api/open`              | {@link OpenResult} — hand the note to `$EDITOR` |
- * | GET    | `/events`                | the SSE stream (delegated to an injected hub) |
  *
  * ## Shape
  *
@@ -18,8 +17,7 @@
  * injected — and a `ServerResponse`. It never constructs a cache, reads an
  * environment variable, or knows what port it is on. That is what lets
  * `tests/web/routes.test.ts` drive the real thing over a real socket with a
- * temp vault, and what lets P1b's SSE hub arrive as a constructor argument
- * rather than an import.
+ * temp vault without browser-specific state.
  *
  * ## Two things this file deliberately never does
  *
@@ -48,7 +46,6 @@ import type { Note } from "../../core/types";
 import { getNote, searchNotes } from "../../core/vault";
 import { deriveTagIndex, type TaggedNote } from "../../core/view/links";
 import type {
-  ChangeEvent,
   GraphPayload,
   NotePayload,
   OkfFilePayload,
@@ -61,59 +58,6 @@ import { renderPage } from "./page";
 import type { RequestFacts, SecurityPolicy } from "./security";
 import { requestFacts } from "./security";
 
-/**
- * The SSE hub contract.
- *
- * Declared here, in the consumer, rather than in the implementation: this
- * file is what needs the capability, and stating it here means the hub can
- * be written, replaced or omitted without `routes.ts` changing. It is also
- * the seam that lets the route tests boot a server with **no** hub and
- * assert the `503`.
- *
- * Implemented by `src/web/server/sse.ts`.
- */
-export interface SseHub {
-  /** Adopt a request/response pair as a long-lived event stream. */
-  attach(req: IncomingMessage, res: ServerResponse): void;
-  /** Fan a change out to every attached client. */
-  broadcast(event: ChangeEvent): void;
-  /** Currently attached clients. Drives the idle-shutdown timer (§5.4). */
-  clientCount(): number;
-  /** End every stream and stop the heartbeat. Idempotent. */
-  close(): void;
-}
-
-/**
- * The file watcher contract.
- *
- * Same reasoning as {@link SseHub} — the server owns the lifecycle, so it
- * declares the shape it will start and stop, and P1b's `watcher.ts` supplies
- * it. Deliberately minimal: the watcher's *output* reaches the world through
- * the hub it was constructed with, not through a return value here.
- *
- * Implemented by `src/web/server/watcher.ts`.
- */
-export interface Watcher {
-  /** Begin watching. Resolves once the watches are established. */
-  start(): Promise<void>;
-  /** Stop watching and release every handle. Idempotent. */
-  close(): Promise<void>;
-  /**
-   * Ignore events for `absPath` briefly — the §6 self-write window.
-   *
-   * **Optional**, and that is a deliberate contract choice rather than
-   * timidity. This interface is the *lifecycle* one: start, close. A future
-   * watcher over a remote filesystem or a stamp poller may have no concept
-   * of "a path I am about to write", and making suppression mandatory would
-   * force it to implement a no-op to satisfy a contract it does not
-   * participate in. `server.ts` bridges it to {@link RouteDeps.suppress}
-   * when it is present, and writes simply happen unsuppressed when it is
-   * not — which is the correct degradation: one spurious refetch, never a
-   * lost edit.
-   */
-  suppress?(absPath: string): void;
-}
-
 /** Everything a route needs, injected. */
 export interface RouteDeps {
   cwd: string;
@@ -122,14 +66,10 @@ export interface RouteDeps {
   session: string;
   cache: WorkspaceCache;
   security: SecurityPolicy;
-  /** Absent → `/events` answers `503`. Wired by P1b. */
-  sse?: SseHub | undefined;
   /** Absolute path of the committed bundle. Injectable for tests. */
   bundlePath: string;
   /** Test seam for `POST /api/open`; defaults to the real editor shell-out. */
   openNote?: ((slug: string) => Promise<boolean>) | undefined;
-  /** Called when an SSE client attaches or detaches — resets the idle timer. */
-  onActivity?: (() => void) | undefined;
 }
 
 const JSON_TYPE = "application/json; charset=utf-8";
@@ -287,7 +227,7 @@ export function toGraphPayload(model: CoreGraphModel, notes: readonly TaggedNote
  * front-matter tags without bumping `updated`, and deleting a note that is
  * not the newest. In each the payload differs and the old stamp did not, so a
  * conditional GET answered `304` and the client kept stale data — and, worse,
- * the SSE dedupe (which shares this key) discarded the frame that would have
+ * a client-side comparison could discard the update that would have
  * prompted a refetch. A digest changes if and only if the bytes change, which
  * is the property both consumers actually need.
  *
@@ -334,7 +274,7 @@ export function stampPayload(payload: GraphPayload): GraphPayload {
  * The digest function. SHA-256, truncated to 128 bits and hex-encoded.
  *
  * Truncation is safe here and worth the 32 bytes it saves on every ETag
- * header and every SSE frame: at 128 bits an accidental collision between two
+ * header values: at 128 bits an accidental collision between two
  * payloads is far below the probability of the cache being wrong for any
  * other reason. This is a cache validator, not a security boundary — nobody
  * is choosing our note contents to force a collision, and if they could, they
@@ -436,8 +376,6 @@ async function route(
   }
   if (method === "GET" && path === "/api/search") return sendSearch(deps, query, res);
   if (method === "POST" && path === "/api/open") return openNote(deps, req, res);
-  if (method === "GET" && path === "/events") return attachSse(deps, req, res);
-
   sendText(res, 404, "not found\n");
 }
 
@@ -499,12 +437,9 @@ const renderedGraphs = new WeakMap<WorkspaceSnapshot, { body: string; etag: stri
 /**
  * The stamp `/api/graph` would serve for this snapshot.
  *
- * Exported so the SSE liveness bridge broadcasts the **same** key the ETag
- * carries (§6). Two derivations of "the current stamp" would be two things to
- * keep in sync, and the failure mode is silent: frames that never match the
- * validator the client then sends. It shares {@link renderGraph}'s memo, so
- * asking for the stamp after the route has rendered the same snapshot — the
- * common case, since a change triggers both — costs nothing.
+ * Exported for tests and for the conditional client contract. It shares
+ * {@link renderGraph}'s memo, so asking for the stamp after the route has
+ * rendered the same snapshot costs nothing.
  */
 export function graphStamp(snapshot: WorkspaceSnapshot): string {
   // The memo stores the quoted ETag; the frame wants the bare digest.
@@ -666,14 +601,4 @@ async function openNote(deps: RouteDeps, req: IncomingMessage, res: ServerRespon
   // shows an error either way, and a status code keeps the failure visible
   // in a network panel.
   sendJson(res, opened ? 200 : 404, payload, { "cache-control": "no-store" });
-}
-
-function attachSse(deps: RouteDeps, req: IncomingMessage, res: ServerResponse): void {
-  const hub = deps.sse;
-  if (hub === undefined) {
-    sendText(res, 503, "pi-weave: live updates unavailable\n");
-    return;
-  }
-  hub.attach(req, res);
-  deps.onActivity?.();
 }

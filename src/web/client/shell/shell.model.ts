@@ -1,9 +1,9 @@
 /**
  * Everything the shell *decides*, as pure functions (weave-workspace §1.2).
  *
- * The header's status summary, the connection indicator's wording, the
- * per-column empty-state copy and the status bar's text all live here rather
- * than inside the components that render them. That is not a stylistic
+ * The header's status summary, the per-column empty-state copy and the status
+ * bar's text all live here rather than inside the components that render them.
+ * That is not a stylistic
  * preference: §10 forbids adding a DOM test environment, so a conditional
  * inside a `.tsx` is a conditional that can never be covered, and §14 lists
  * "coverage gate blocks the UI work" as a live risk whose stated mitigation
@@ -15,7 +15,6 @@
  */
 
 import type { GraphPayload, WireNodeKind, WireStalenessState } from "../../shared/wire";
-import type { ConnectionState } from "../state";
 import type { ColumnId, DividerId, ResolvedColumn } from "./layout.model";
 import { DIVIDERS } from "./layout.model";
 
@@ -77,44 +76,6 @@ export function summaryParts(summary: HeaderSummary): readonly string[] {
   return [`vault:${summary.notes}`, `repo:${repoLabel(summary.repo)}`, `${summary.nodes} nodes`];
 }
 
-// --- the connection indicator ----------------------------------------------------
-
-/**
- * How a connection state is presented.
- *
- * `tone` is a class suffix rather than a colour, so the palette stays in the
- * stylesheet where §5.2's nonce'd CSS can own it and this module stays free
- * of presentation constants it cannot test the appearance of.
- */
-export interface ConnectionView {
-  readonly label: string;
-  readonly tone: "ok" | "warn" | "bad";
-  /** The `title=` tooltip. Says what the user should expect to happen next. */
-  readonly hint: string;
-}
-
-const CONNECTION_VIEWS: Readonly<Record<ConnectionState, ConnectionView>> = {
-  live: { label: "live", tone: "ok", hint: "watching the vault and the repository for changes" },
-  reconnecting: {
-    label: "reconnecting",
-    tone: "warn",
-    // Naming the recovery matters: §6 has the client refetch everything on
-    // reopen, so the user's screen will catch up on its own and they should
-    // not go looking for a reload button.
-    hint: "the event stream dropped — retrying, and everything refetches when it returns",
-  },
-  offline: {
-    label: "offline",
-    tone: "bad",
-    hint: "the workspace server is gone — the header's refresh control retries",
-  },
-};
-
-/** Present a connection state. Total over the three states of §1.3. */
-export function connectionView(state: ConnectionState): ConnectionView {
-  return CONNECTION_VIEWS[state];
-}
-
 // --- empty states ------------------------------------------------------------------
 
 /** The title used by a column heading and its `aria-label`. */
@@ -158,7 +119,6 @@ export const CONTEXT_EMPTY: EmptyStateCopy = {
 export interface StatusBarModel {
   readonly cwd: string;
   readonly selection: string;
-  readonly connection: ConnectionView;
   /** `null` before the first successful graph fetch. */
   readonly stamp: string | null;
 }
@@ -170,13 +130,11 @@ export const NO_VALUE = "—";
 export function statusBarModel(
   cwd: string,
   selectedId: string | null,
-  connection: ConnectionState,
   stamp: string | null,
 ): StatusBarModel {
   return {
     cwd: cwd === "" ? NO_VALUE : cwd,
     selection: selectedId ?? "nothing selected",
-    connection: connectionView(connection),
     stamp,
   };
 }

@@ -2,8 +2,7 @@
  * The header bar (weave-workspace §1.2).
  *
  * Title, the `⌘K` search button, the `vault:N · repo:… · N nodes` summary,
- * the refresh button and the connection dot. Every string and every tone
- * comes from `shell.model.ts`.
+ * the refresh button. Every string comes from `shell.model.ts`.
  *
  * The search control was `disabled` through P1–P3 because search was P4 and
  * an affordance that looks live but is not would be the dishonest option. P4
@@ -16,12 +15,11 @@
 import { useState } from "preact/hooks";
 import { LOGO_MARK_B64, LOGO_MARK_MIME } from "../../shared/logo";
 import type { ThemeButtonView } from "./theme.model";
-import type { ConnectionView, HeaderSummary } from "./shell.model";
+import type { HeaderSummary } from "./shell.model";
 import { REFRESH_ICON_PATHS, SEARCH_PLACEHOLDER, searchHint, summaryParts } from "./shell.model";
 
 export interface HeaderProps {
   summary: HeaderSummary;
-  connection: ConnectionView;
   shortcut: string;
   onRefresh: () => void;
   /** Opens the ⌘K palette. The same action the global key performs. */
@@ -116,12 +114,6 @@ export function Header(props: HeaderProps) {
         {props.theme.glyph}
       </button>
       <RefreshButton onRefresh={props.onRefresh} />
-      <span class={`weave-conn weave-conn-${props.connection.tone}`} title={props.connection.hint}>
-        <span class="weave-conn-dot" aria-hidden="true">
-          ●
-        </span>
-        {props.connection.label}
-      </span>
     </header>
   );
 }

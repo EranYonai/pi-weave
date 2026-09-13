@@ -34,9 +34,6 @@
 import { signal } from "@preact/signals";
 import type { GraphPayload, NotePayload } from "../shared/wire";
 
-/** Connection state shown in the status bar. */
-export type ConnectionState = "live" | "reconnecting" | "offline";
-
 /**
  * Which tree rows are open.
  *
@@ -61,10 +58,7 @@ export const selectedId = signal<string | null>(null);
 export const graph = signal<GraphPayload | null>(null);
 
 /**
- * Whether the *first* graph fetch failed.
- *
- * Distinct from {@link connection} on purpose: the socket can be live while a
- * fetch 500s, and "offline" is then the wrong sentence. With a graph already
+ * Whether the *first* graph fetch failed. With a graph already
  * on screen a failed refetch leaves the stale value standing (see
  * `workspace.ts`'s header — a stale graph beats a blank one), so this only
  * ever describes the boot, which is the one moment there is nothing to show.
@@ -81,9 +75,6 @@ export const noteBody = signal<NotePayload | null>(null);
 
 /** Which tree rows are open. */
 export const treeState = signal<TreeState>(initialTreeState());
-
-/** SSE liveness (§6). */
-export const connection = signal<ConnectionState>("live");
 
 /**
  * Node ids that appeared in the most recent graph update (weave-workspace

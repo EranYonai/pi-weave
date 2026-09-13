@@ -69,60 +69,6 @@ export type {
 } from "./graph";
 export { WIRE_EDGE_KINDS, WIRE_MODEL_OMITTED_KEYS, WIRE_NODE_KINDS } from "./graph";
 
-// --- liveness ----------------------------------------------------------------
-
-/**
- * Which half of the workspace an SSE frame is about.
- *
- * Deliberately coarser than the paths that produced it: macOS `fs.watch`
- * coalesces and can miss rapid bursts, so a frame means "something in this
- * scope changed, re-read it", never "here is the delta" (§6). A client that
- * treated frames as deltas would silently diverge the first time the OS
- * dropped one.
- */
-export type ChangeScope = "vault" | "repo" | "git";
-
-/** Every {@link ChangeScope}, for exhaustiveness checks and table tests. */
-export const CHANGE_SCOPES: readonly ChangeScope[] = ["vault", "repo", "git"];
-
-/**
- * One SSE frame.
- *
- * `stamp` is the graph's content digest at the moment the change was observed
- * — the same value `GET /api/graph` serves as its ETag (§5.3). It is the
- * dedupe key: a client that already holds this stamp has nothing to refetch,
- * which matters because the watcher's debounce window can still emit two
- * frames for one logical edit.
- *
- * Sharing one key with the ETag is load-bearing rather than tidy. While this
- * was `generatedAt`, an edit that did not advance the timestamp maximum
- * produced a frame the client deduped away against the stamp of the graph it
- * already held, so the refetch never happened (§15.6).
- */
-export interface ChangeEvent {
-  scope: ChangeScope;
-  stamp: string;
-}
-
-/** The `event:` name carried by every {@link ChangeEvent} frame. */
-export const CHANGE_EVENT_NAME = "change";
-
-/**
- * Structural guard for a decoded SSE `data:` payload.
- *
- * The client parses frames off a socket that survives server restarts and
- * proxy interference, so "it is JSON" is not the same as "it is ours".
- * Narrow rather than validate-and-throw: a malformed frame should cost a
- * skipped refetch, not an unhandled rejection inside `EventSource`'s
- * callback.
- */
-export function isChangeEvent(value: unknown): value is ChangeEvent {
-  if (typeof value !== "object" || value === null) return false;
-  const candidate = value as { scope?: unknown; stamp?: unknown };
-  if (typeof candidate.stamp !== "string") return false;
-  return CHANGE_SCOPES.includes(candidate.scope as ChangeScope);
-}
-
 // --- responses ---------------------------------------------------------------
 
 /**
@@ -244,10 +190,7 @@ export interface Bootstrap {
   /** Absolute path of the vault root. */
   vaultRoot: string;
   /**
-   * Random per-boot id. `EventSource` reconnects transparently across a
-   * server restart, so without this a client cannot distinguish two cases it
-   * must handle differently: "I missed some frames" (refetch) and "this is a
-   * different server" (full reload).
+   * Random per-boot id, useful for distinguishing a fresh server after reload.
    */
   session: string;
 }

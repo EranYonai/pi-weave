@@ -22,7 +22,6 @@ import {
   NO_VALUE,
   SEARCH_PLACEHOLDER,
   columnSlots,
-  connectionView,
   emptyStateFor,
   looksApple,
   repoLabel,
@@ -35,14 +34,13 @@ import {
 } from "../../src/web/client/shell/shell.model";
 import { COLUMNS, breakpointFor } from "../../src/web/client/shell/layout.model";
 import { watchViewport } from "../../src/web/client/shell/viewport";
-import { connection, graph, noteBody, selectedId } from "../../src/web/client/state";
+import { graph, noteBody, selectedId } from "../../src/web/client/state";
 import type { GraphPayload, WireGraphNode, WireStalenessState } from "../../src/web/shared/wire";
 
 afterEach(() => {
   selectedId.value = null;
   graph.value = null;
   noteBody.value = null;
-  connection.value = "live";
 });
 
 // --- fixtures ---------------------------------------------------------------------
@@ -122,30 +120,6 @@ describe("summaryParts", () => {
   });
 });
 
-// --- the connection indicator ------------------------------------------------------
-
-describe("connectionView", () => {
-  it("is total over the three states of §1.3", () => {
-    for (const state of ["live", "reconnecting", "offline"] as const) {
-      const view = connectionView(state);
-      expect(view.label).toBe(state);
-      expect(view.hint).not.toBe("");
-    }
-  });
-
-  it("tones escalate ok → warn → bad", () => {
-    expect(connectionView("live").tone).toBe("ok");
-    expect(connectionView("reconnecting").tone).toBe("warn");
-    expect(connectionView("offline").tone).toBe("bad");
-  });
-
-  it("tells a reconnecting user the screen will catch up on its own", () => {
-    // §6 refetches everything on reopen, so they should not go hunting for a
-    // reload button.
-    expect(connectionView("reconnecting").hint).toContain("refetch");
-  });
-});
-
 // --- empty states -------------------------------------------------------------------
 
 describe("empty states", () => {
@@ -192,20 +166,19 @@ describe("columnSlots", () => {
 // --- the status bar --------------------------------------------------------------------
 
 describe("statusBarModel", () => {
-  it("shows the cwd, the selection and the connection", () => {
-    const model = statusBarModel("/repo", "note:alpha", "live", "2026-03-04T09:08:07Z");
+  it("shows the cwd, the selection and the stamp", () => {
+    const model = statusBarModel("/repo", "note:alpha", "2026-03-04T09:08:07Z");
     expect(model.cwd).toBe("/repo");
     expect(model.selection).toBe("note:alpha");
-    expect(model.connection.tone).toBe("ok");
     expect(model.stamp).toBe("2026-03-04T09:08:07Z");
   });
 
   it("says so when nothing is selected", () => {
-    expect(statusBarModel("/repo", null, "live", null).selection).toBe("nothing selected");
+    expect(statusBarModel("/repo", null, null).selection).toBe("nothing selected");
   });
 
   it("falls back to a dash for an absent cwd", () => {
-    expect(statusBarModel("", null, "live", null).cwd).toBe(NO_VALUE);
+    expect(statusBarModel("", null, null).cwd).toBe(NO_VALUE);
   });
 });
 

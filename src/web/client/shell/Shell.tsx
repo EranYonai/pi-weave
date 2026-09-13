@@ -4,14 +4,13 @@
  * Header, three resizable columns, context rail, status bar. This component
  * holds the wiring and nothing else — every value it renders comes from a
  * pure function in `shell.model.ts`, `layout.model.ts` or `drag.model.ts`,
- * and the fetch/SSE loop is `workspace.ts`. What is left here is hooks:
+ * and the fetch/poll loop is `workspace.ts`. What is left here is hooks:
  * signals in, callbacks out.
  *
  * The three effects, all one-liners over injected units:
  *
- *  1. **mount** — `startWorkspace` fetches the graph and opens the stream;
- *     the returned `stop` is the cleanup, so a hot reload cannot leak a
- *     socket.
+ *  1. **mount** — `startWorkspace` fetches the graph and starts polling;
+ *     the returned `stop` is the cleanup, so a hot reload cannot leak a timer.
  *  2. **resize** — `watchViewport` keeps `width` current, because the width
  *     picks the breakpoint, which decides how many columns exist.
  *  3. **keys** — `watchKeys` attaches the one global `keydown` listener
@@ -29,10 +28,9 @@ import { openNote } from "../api";
 import type { ColorScheme } from "../graph/graph.model";
 import { schemeOf, watchScheme } from "../graph/scheme";
 import { createSigmaRenderer } from "../graph/renderer.dom";
-import { domEventSource } from "../live";
 import { SearchPalette } from "../search/SearchPalette";
 import { restoreSelection, saveSelection } from "../selection.storage";
-import { connection, graph, graphFailed, noteBody, selectedId } from "../state";
+import { graph, graphFailed, noteBody, selectedId } from "../state";
 import type { WorkspaceHandle } from "../workspace";
 import { select, startWorkspace } from "../workspace";
 import { Columns } from "./Columns";
@@ -46,7 +44,7 @@ import type { LayoutState } from "./layout.model";
 import { breakpointFor, loadLayout, resolveColumns, saveLayout } from "./layout.model";
 import { StatusBar } from "./StatusBar";
 import type { OverlayId } from "./shell.model";
-import { TICK_MS, connectionView, looksApple, searchShortcut, statusBarModel, summarize } from "./shell.model";
+import { TICK_MS, looksApple, searchShortcut, statusBarModel, summarize } from "./shell.model";
 import { cycleTheme, effectiveScheme, loadTheme, saveTheme, themeAttr, themeButton } from "./theme.model";
 import type { ThemeChoice } from "./theme.model";
 import { watchViewport } from "./viewport";
@@ -91,7 +89,7 @@ export function Shell(props: ShellProps) {
   live.current = { layout, width, overlay };
 
   useEffect(() => {
-    const handle = startWorkspace({ fetch: fetchJson, open: domEventSource });
+    const handle = startWorkspace({ fetch: fetchJson });
     workspace.current = handle;
     return () => handle.stop();
   }, []);
@@ -132,7 +130,7 @@ export function Shell(props: ShellProps) {
   // The relative-time clock. Every "8h ago" in the tree and the note meta is
   // computed from a `now` stamped per render, and a resting workspace never
   // re-renders on its own — so the minutes used to go stale until the next
-  // SSE frame. One interval at `TICK_MS` (the reasoning is in `shell.model.ts`);
+  // poll. One interval at `TICK_MS` (the reasoning is in `shell.model.ts`);
   // `setNow` with a new value re-renders, and a re-render is all the copy
   // needs to catch up.
   const [now, setNow] = useState(() => Date.now());
@@ -188,7 +186,6 @@ export function Shell(props: ShellProps) {
     <>
       <Header
         summary={summarize(graph.value)}
-        connection={connectionView(connection.value)}
         shortcut={searchShortcut(looksApple(props.platform))}
         onRefresh={() => workspace.current?.refresh()}
         onSearch={() => setOverlay("search")}
@@ -220,12 +217,12 @@ export function Shell(props: ShellProps) {
       {/*
         `model.generatedAt`, not `stamp`. The two used to be the same string;
         since §15.6 `stamp` is a content digest (a hex validator for the ETag
-        and the SSE dedupe) and would render as `a3f9c2…` under a label that
+        and the ETag validator) and would render as `a3f9c2…` under a label that
         says "data as of". `generatedAt` kept the data-as-of job, which is
         exactly what this bar wants.
       */}
       <StatusBar
-        model={statusBarModel(props.cwd, selectedId.value, connection.value, graph.value?.model.generatedAt ?? null)}
+        model={statusBarModel(props.cwd, selectedId.value, graph.value?.model.generatedAt ?? null)}
       />
       {overlay === "search" ? (
         <SearchPalette

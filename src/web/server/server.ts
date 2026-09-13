@@ -8,30 +8,9 @@
  *     Never a fixed port: a fixed port is a port another process can squat
  *     before us, and a port a malicious page can guess without scanning.
  *  2. **Composition.** It builds the {@link RouteDeps} — a
- *     {@link WorkspaceCache}, a {@link SecurityPolicy}, and whichever hub and
- *     watcher it was handed — and passes them to `handleRequest`.
- *  3. **Lifecycle.** Idle shutdown 30 minutes after the last SSE client
- *     disconnects, and a `close()` that actually releases the port.
- *
- * ## Why the hub and the watcher are constructor arguments
- *
- * `SseHub` and `Watcher` are declared in `routes.ts` (the consumer) and
- * arrive here as optional options. That is not ceremony: it means the server
- * can be booted with neither — which is exactly what the route tests do, so
- * they exercise the real socket and the real security policy without a file
- * watcher spinning up on a temp directory, and it means the SSE
- * implementation can be written, replaced, or omitted with no edit to this
- * file. With no hub, `/events` answers `503` and the server has no idle
- * timer to run, because nothing can be idle.
- *
- * ## Idle shutdown, precisely
- *
- * The timer starts when the SSE client count reaches zero and is cancelled
- * when a client attaches. A workspace with a tab open is never idle; a
- * workspace whose last tab closed is reclaimed after
- * {@link DEFAULT_IDLE_MS}. `setTimer` is injectable, so the test asserts the
- * transition rather than waiting thirty minutes for it, and
- * `timer.unref?.()` keeps a pending shutdown from holding the process open.
+ *     {@link WorkspaceCache} and {@link SecurityPolicy} — and passes them to
+ *     `handleRequest`.
+ *  3. **Lifecycle.** `close()` releases the port.
  */
 
 import { randomBytes } from "node:crypto";
@@ -39,13 +18,8 @@ import { createServer as createHttpServer, type Server } from "node:http";
 import { fileURLToPath } from "node:url";
 import { WorkspaceCache } from "../../core/cache/workspace";
 import { resolveVaultRoot } from "../../core/paths";
-import { handleRequest, type RouteDeps, type SseHub, type Watcher } from "./routes";
+import { handleRequest, type RouteDeps } from "./routes";
 import { createSecurityPolicy, type SecurityPolicy } from "./security";
-
-export type { SseHub, Watcher } from "./routes";
-
-/** §5.4: reclaim the port 30 minutes after the last SSE client disconnects. */
-export const DEFAULT_IDLE_MS = 30 * 60 * 1000;
 
 /**
  * The committed bundle, resolved relative to this module rather than to
@@ -56,24 +30,10 @@ export function defaultBundlePath(): string {
   return fileURLToPath(new URL("../client/dist/app.js", import.meta.url));
 }
 
-/** A `setTimeout` shaped seam, so the idle path is testable in microseconds. */
-export interface TimerHandle {
-  unref?(): unknown;
-}
-export type SetTimer = (fn: () => void, ms: number) => TimerHandle;
-export type ClearTimer = (handle: TimerHandle) => void;
-
 export interface StartWorkspaceServerOptions {
   cwd: string;
   /** Defaults to `resolveVaultRoot()`, which honours `PI_WEAVE_VAULT`. */
   vaultRoot?: string;
-  /**
-   * Live-update hub. Absent → `/events` answers `503` and the idle timer
-   * never runs. Supplied by the caller that also constructs the watcher.
-   */
-  sse?: SseHub | undefined;
-  /** File watcher. Started during boot, closed during teardown. */
-  watcher?: Watcher | undefined;
   /** Pre-built cache. Defaults to a fresh one over `cwd` + `vaultRoot`. */
   cache?: WorkspaceCache | undefined;
   /** Fixed token, for tests that need to know it before the boot resolves. */
@@ -84,12 +44,6 @@ export interface StartWorkspaceServerOptions {
   bundlePath?: string | undefined;
   /** Test seam for `POST /api/open`. */
   openNote?: ((slug: string) => Promise<boolean>) | undefined;
-  /** Idle shutdown delay. `0` disables it entirely. */
-  idleMs?: number | undefined;
-  setTimer?: SetTimer | undefined;
-  clearTimer?: ClearTimer | undefined;
-  /** Invoked when the idle timeout fires, after `close()`. */
-  onIdleShutdown?: (() => void) | undefined;
 }
 
 export interface WorkspaceServer {
@@ -103,13 +57,7 @@ export interface WorkspaceServer {
   cache: WorkspaceCache;
   /** Random per-boot id, also embedded in the page bootstrap. */
   session: string;
-  /**
-   * Called by the SSE hub whenever a client attaches or detaches, so the
-   * idle timer can be armed or cancelled. Exposed rather than inferred
-   * because only the hub knows when a socket actually died.
-   */
-  noteActivity(): void;
-  /** Release the port, the watcher and every stream. Idempotent. */
+  /** Release the port. Idempotent. */
   close(): Promise<void>;
 }
 
@@ -117,9 +65,6 @@ export async function startWorkspaceServer(opts: StartWorkspaceServerOptions): P
   const vaultRoot = opts.vaultRoot ?? resolveVaultRoot();
   const cache = opts.cache ?? new WorkspaceCache({ cwd: opts.cwd, vaultRoot });
   const session = randomBytes(8).toString("hex");
-  const setTimer: SetTimer = opts.setTimer ?? ((fn, ms) => setTimeout(fn, ms));
-  const clearTimer: ClearTimer = opts.clearTimer ?? ((h) => clearTimeout(h as NodeJS.Timeout));
-  const idleMs = opts.idleMs ?? DEFAULT_IDLE_MS;
 
   // `deps` is assembled before `listen` because the request handler closes
   // over it, but the security policy needs the bound port — so the policy
@@ -148,49 +93,11 @@ export async function startWorkspaceServer(opts: StartWorkspaceServerOptions): P
   });
 
   let closed = false;
-  let idleHandle: TimerHandle | null = null;
-
-  const cancelIdle = (): void => {
-    if (idleHandle !== null) {
-      clearTimer(idleHandle);
-      idleHandle = null;
-    }
-  };
-
-  const armIdle = (): void => {
-    // No hub means `/events` answers 503, so there is no such thing as a
-    // client here and nothing for a countdown to count. The server stays up
-    // until its owner closes it.
-    if (idleMs <= 0 || closed || opts.sse === undefined) return;
-    const handle = setTimer(() => {
-      idleHandle = null;
-      void close().then(() => opts.onIdleShutdown?.());
-    }, idleMs);
-    // A pending shutdown must not be the reason the process stays alive.
-    handle.unref?.();
-    idleHandle = handle;
-  };
-
-  const noteActivity = (): void => {
-    cancelIdle();
-    // Zero clients right now means the countdown starts now. A hub that
-    // reports a live client cancels it and says nothing more until that
-    // client leaves. With no hub at all, `armIdle` is already a no-op — the
-    // guard lives there rather than being repeated here.
-    if (opts.sse === undefined || opts.sse.clientCount() === 0) armIdle();
-  };
-
   const close = async (): Promise<void> => {
     if (closed) return;
     closed = true;
-    cancelIdle();
-    opts.sse?.close();
-    await opts.watcher?.close();
     await new Promise<void>((resolve) => {
       server.close(() => resolve());
-      // Without this, an open SSE stream keeps the server's handle alive and
-      // `close()` never resolves — the exact reason a pi session used to
-      // hang on shutdown.
       server.closeAllConnections();
     });
   };
@@ -202,16 +109,8 @@ export async function startWorkspaceServer(opts: StartWorkspaceServerOptions): P
     cache,
     security,
     bundlePath: opts.bundlePath ?? defaultBundlePath(),
-    ...(opts.sse !== undefined ? { sse: opts.sse } : {}),
     ...(opts.openNote !== undefined ? { openNote: opts.openNote } : {}),
-    onActivity: noteActivity,
   };
-
-  await opts.watcher?.start();
-
-  // A workspace nobody has connected to yet is already idle: if the browser
-  // never opens, the port should still be reclaimed.
-  if (opts.sse !== undefined) armIdle();
 
   return {
     url: security.origin,
@@ -221,7 +120,6 @@ export async function startWorkspaceServer(opts: StartWorkspaceServerOptions): P
     security,
     cache,
     session,
-    noteActivity,
     close,
   };
 }

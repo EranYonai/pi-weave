@@ -15,7 +15,7 @@
 
 import { computed, effect } from "@preact/signals";
 import { afterEach, describe, expect, it } from "vitest";
-import { connection, graph, initialTreeState, noteBody, selectedId, treeState } from "../../src/web/client/state";
+import { graph, initialTreeState, noteBody, selectedId, treeState } from "../../src/web/client/state";
 import type { GraphPayload, ViewNote } from "../../src/web/shared/wire";
 
 /**
@@ -61,7 +61,6 @@ afterEach(() => {
   graph.value = null;
   noteBody.value = null;
   treeState.value = initialTreeState();
-  connection.value = "live";
 });
 
 describe("initial state", () => {
@@ -75,9 +74,6 @@ describe("initial state", () => {
     expect(treeState.value).toEqual({ expanded: [] });
   });
 
-  it("assumes the connection is live until the client learns otherwise", () => {
-    expect(connection.value).toBe("live");
-  });
 });
 
 describe("initialTreeState", () => {
@@ -154,10 +150,4 @@ describe("the remaining signals hold their payloads", () => {
     expect(treeState.value.expanded).toContain("vault/projects");
   });
 
-  it("moves through the three connection states of §6", () => {
-    for (const state of ["live", "reconnecting", "offline"] as const) {
-      connection.value = state;
-      expect(connection.value).toBe(state);
-    }
-  });
 });

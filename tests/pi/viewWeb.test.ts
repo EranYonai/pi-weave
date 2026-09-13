@@ -18,7 +18,7 @@
  * `startWorkspaceServer` binds `listen(0)`; nothing here overrides it. Each
  * built extension registers its `session_shutdown` handler with
  * {@link track}, and `afterEach` fires all of them — a leaked server would
- * hold an SSE heartbeat and hang the run, which is the exact bug this task
+ * hold an unclosed server and hang the run, which is the exact bug this task
  * exists to prevent.
  */
 
@@ -26,15 +26,7 @@ import { afterEach, describe, expect, it } from "vitest";
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import piWeave, { parseWeaveViewArgs, WEAVE_VIEW_USAGE } from "../../src/pi/index";
-import {
-  browserOpenCommand,
-  createLivenessBridge,
-  WebWorkspaceController,
-} from "../../src/pi/viewer/web/run";
-import { WorkspaceCache } from "../../src/core/cache/workspace";
-import { graphStamp } from "../../src/web/server/routes";
-import { SseHub } from "../../src/web/server/sse";
-import type { ChangeEvent } from "../../src/web/shared/wire";
+import { browserOpenCommand, WebWorkspaceController } from "../../src/pi/viewer/web/run";
 import { addNote } from "../../src/core/vault";
 import { createMockCtx, createMockPi, makeTempDir, withVaultEnv, type MockCtx } from "../helpers";
 
@@ -408,7 +400,7 @@ describe("singleton per session", () => {
 // ---------------------------------------------------------------------------
 
 describe("session_shutdown", () => {
-  it("closes the server, the watcher and the SSE hub, releasing the port", async () => {
+  it("closes the server, releasing the port", async () => {
     const vault = await makeTempDir();
     await withVaultEnv(vault, async () => {
       const ctx = createMockCtx(await makeTempDir());
@@ -619,47 +611,6 @@ describe("WebWorkspaceController", () => {
     expect(controller.port()).toBeNull();
   });
 
-  it("clears the slot when the server shuts itself down for idleness (§5.4)", async () => {
-    const vaultRoot = await makeTempDir();
-    const ctx = createMockCtx(await makeTempDir());
-    let stateChanges = 0;
-    let fire: (() => void) | null = null;
-    const controller = new WebWorkspaceController({
-      exec: async () => ({ code: 0, stderr: "" }),
-      vaultRoot: () => vaultRoot,
-      onStateChange: () => {
-        stateChanges += 1;
-      },
-      // Capture the idle timer instead of waiting 30 minutes for it.
-      startServer: async (opts) => {
-        const { startWorkspaceServer } = await import("../../src/web/server/server");
-        return startWorkspaceServer({
-          ...opts,
-          setTimer: (fn) => {
-            fire = fn;
-            return {};
-          },
-          clearTimer: () => {},
-          idleMs: 1,
-        });
-      },
-    });
-    cleanups.push(() => controller.close());
-
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    await controller.run(ctx as any, { open: false });
-    expect(controller.port()).toBeGreaterThan(0);
-    const afterBoot = stateChanges;
-
-    expect(fire).not.toBeNull();
-    fire!();
-    // The shutdown is async inside the timer; let it settle.
-    for (let i = 0; i < 100 && controller.port() !== null; i++) await new Promise((r) => setTimeout(r, 5));
-
-    expect(controller.port()).toBeNull();
-    expect(stateChanges).toBeGreaterThan(afterBoot);
-  });
-
   it("honours PI_WEAVE_VAULT when no vaultRoot is injected", async () => {
     const vault = await makeTempDir();
     await withVaultEnv(vault, async () => {
@@ -675,145 +626,7 @@ describe("WebWorkspaceController", () => {
   });
 });
 
-// ---------------------------------------------------------------------------
-// The liveness bridge (§6)
-// ---------------------------------------------------------------------------
-
-describe("createLivenessBridge", () => {
-  /** A hub double that records broadcasts instead of writing to sockets. */
-  function recordingHub(): { hub: SseHub; sent: ChangeEvent[] } {
-    const sent: ChangeEvent[] = [];
-    const hub = new SseHub();
-    hub.broadcast = (event: ChangeEvent) => {
-      sent.push(event);
-    };
-    return { hub, sent };
-  }
-
-  it("invalidates per path and broadcasts one frame per scope", async () => {
-    const vaultRoot = await makeTempDir();
-    const cwd = await makeTempDir();
-    await addNote(vaultRoot, { title: "Live", body: "one", source: "human" });
-    const cache = new WorkspaceCache({ cwd, vaultRoot });
-    const { hub, sent } = recordingHub();
-    const bridge = createLivenessBridge(cache, hub);
-
-    // Nothing broadcast yet, so a fresh client is told nothing.
-    expect(bridge.currentStamp()).toBeNull();
-
-    bridge.onPath(join(vaultRoot, "notes", "live.md"));
-    bridge.onChange(["vault", "repo"]);
-    await bridge.settled();
-
-    expect(sent).toHaveLength(2);
-    expect(sent.map((e) => e.scope)).toEqual(["vault", "repo"]);
-    expect(new Set(sent.map((e) => e.stamp)).size).toBe(1);
-    // And a client attaching now is handed that stamp.
-    expect(bridge.currentStamp()).toBe(sent[0]!.stamp);
-  });
-
-  it("broadcasts the same content digest the ETag carries (§6, §15.6)", async () => {
-    // The half of §15.6 that lived outside the HTTP layer. The client dedupes
-    // frames on `stamp` and already holds the stamp of the graph it last
-    // fetched, so while this broadcast `generatedAt`, an edit that did not
-    // advance the timestamp maximum produced a frame the client discarded
-    // *before* it ever issued the conditional GET. One shared key, one
-    // meaning.
-    const vaultRoot = await makeTempDir();
-    const cwd = await makeTempDir();
-    await addNote(vaultRoot, { title: "Live", body: "one", tags: ["before"], source: "human" });
-    const cache = new WorkspaceCache({ cwd, vaultRoot });
-    const { hub, sent } = recordingHub();
-    const bridge = createLivenessBridge(cache, hub);
-
-    bridge.onChange(["vault"]);
-    await bridge.settled();
-    const firstStamp = sent.at(-1)!.stamp;
-    // It is the digest the route would serve, not the data-as-of timestamp.
-    expect(firstStamp).toBe(graphStamp(await cache.snapshot()));
-    expect(firstStamp).not.toBe((await cache.snapshot()).model.generatedAt);
-
-    // A tag edit that leaves `updated` alone — case 2, at the SSE layer.
-    const file = join(vaultRoot, "notes", "live.md");
-    const original = await readFile(file, "utf8");
-    await writeFile(file, original.replace("tags: [before]", "tags: [afterwards]"), "utf8");
-    cache.invalidateAll();
-
-    bridge.onChange(["vault"]);
-    await bridge.settled();
-    const secondStamp = sent.at(-1)!.stamp;
-
-    // The frame carries a *new* stamp, so the client cannot dedupe it away.
-    expect(secondStamp).not.toBe(firstStamp);
-    expect(secondStamp).toBe(graphStamp(await cache.snapshot()));
-  });
-
-  it("swallows a rebuild failure — one missed frame, not an unhandled rejection", async () => {
-    const vaultRoot = await makeTempDir();
-    const cwd = await makeTempDir();
-    const cache = new WorkspaceCache({ cwd, vaultRoot });
-    // `snapshot()`, not `graph()`: the bridge needs the notes as well as the
-    // model, because the stamp it broadcasts is the digest of the whole
-    // payload and `tags` is derived from the notes (§4.3, §15.6).
-    cache.snapshot = async () => {
-      throw new Error("vault vanished");
-    };
-    const { hub, sent } = recordingHub();
-    const bridge = createLivenessBridge(cache, hub);
-
-    bridge.onChange(["vault"]);
-    await bridge.settled();
-
-    expect(sent).toEqual([]);
-    expect(bridge.currentStamp()).toBeNull();
-  });
-
-  it("serializes overlapping windows so the stamp is the last one built", async () => {
-    const vaultRoot = await makeTempDir();
-    const cwd = await makeTempDir();
-    const cache = new WorkspaceCache({ cwd, vaultRoot });
-    const { hub, sent } = recordingHub();
-    const bridge = createLivenessBridge(cache, hub);
-
-    bridge.onChange(["vault"]);
-    bridge.onChange(["git"]);
-    await bridge.settled();
-
-    expect(sent.map((e) => e.scope)).toEqual(["vault", "git"]);
-  });
-});
-
-// ---------------------------------------------------------------------------
-// The watcher is really attached (§6 end-to-end)
-// ---------------------------------------------------------------------------
-
 describe("liveness, end to end", () => {
-  it("a note written on disk reaches the running server's graph", async () => {
-    const vault = await makeTempDir();
-    await withVaultEnv(vault, async () => {
-      await addNote(vault, { title: "First", body: "a", source: "human" });
-      const ctx = createMockCtx(await makeTempDir());
-      const mock = track(ctx);
-      await view(mock, "--no-open", ctx);
-
-      const entry = new URL(urlFrom(ctx));
-      const token = entry.searchParams.get("t")!;
-      const headers = { cookie: `__Host-weave=${token}` };
-
-      await addNote(vault, { title: "Second", body: "b", source: "human" });
-      // The watcher's 80 ms debounce plus a rebuild; poll rather than sleep.
-      let labels: string[] = [];
-      for (let i = 0; i < 100; i++) {
-        const res = await fetch(`${entry.origin}/api/graph`, { headers });
-        const payload = (await res.json()) as { model: { nodes: { label: string }[] } };
-        labels = payload.model.nodes.map((n) => n.label);
-        if (labels.includes("Second")) break;
-        await new Promise((r) => setTimeout(r, 20));
-      }
-      expect(labels).toContain("Second");
-    });
-  });
-
   it("serves .okf content from the repository half", async () => {
     const vault = await makeTempDir();
     await withVaultEnv(vault, async () => {

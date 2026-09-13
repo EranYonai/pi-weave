@@ -38,15 +38,11 @@ import {
   parseTarget,
   stampPayload,
   toGraphPayload,
-  type SseHub,
-  type Watcher,
 } from "../../src/web/server/routes";
 import {
-  DEFAULT_IDLE_MS,
   defaultBundlePath,
   startWorkspaceServer,
   type StartWorkspaceServerOptions,
-  type TimerHandle,
   type WorkspaceServer,
 } from "../../src/web/server/server";
 import type { GraphPayload, NotePayload, OkfFilePayload, SearchPayload } from "../../src/web/shared/wire";
@@ -298,11 +294,7 @@ describe("toGraphPayload", () => {
   });
 
   it("graphStamp agrees with the stamp the route serves, and is memoized", () => {
-    // The §6 consistency requirement at its source: the SSE bridge asks
-    // `graphStamp` for the frame's dedupe key and the route puts its own
-    // digest in the ETag. If those two ever disagreed, every frame would
-    // trigger a refetch whose validator could never match — so they are one
-    // function, and this pins that.
+    // The route's exported digest helper and its ETag must agree.
     const snapshot = {
       model: { ...EMPTY, danglingLinks: {} },
       notes: [{ slug: "a", tags: ["t"] }],
@@ -766,29 +758,6 @@ describe("GET /api/graph", () => {
     expect(await res.text()).toContain("a bare string");
   });
 
-  it("ends the socket rather than hanging when a handler throws after writing headers", async () => {
-    // The un-rescuable case: headers are already on the wire, so there is no
-    // status left to send. Leaving the socket open would hang the browser
-    // tab on a response that is never coming.
-    const ws = await sharedWorkspace();
-    const cache = new WorkspaceCache({ cwd: ws.cwd, vaultRoot: ws.vaultRoot });
-    const { server } = await boot({
-      cache,
-      sse: {
-        attach: (_req, res) => {
-          res.writeHead(200, { "content-type": "text/event-stream" });
-          throw new Error("boom after headers");
-        },
-        broadcast: () => {},
-        clientCount: () => 0,
-        close: () => {},
-      },
-      idleMs: 0,
-    });
-    const res = await get(server, "/events");
-    expect(res.status).toBe(200);
-    expect(await res.text()).toBe("");
-  });
 });
 
 // --- notes ------------------------------------------------------------------------
@@ -1023,70 +992,12 @@ describe("POST /api/open", () => {
   });
 });
 
-// --- events -----------------------------------------------------------------------
-
-describe("GET /events", () => {
-  it("503s when no SSE hub was injected", async () => {
-    // P1b wires the real hub. Until then — and in every route test — the
-    // endpoint must fail honestly rather than hang the browser on a stream
-    // that never produces a frame.
-    const { server } = await boot();
-    const res = await get(server, "/events");
-    expect(res.status).toBe(503);
-    expect(await res.text()).toContain("live updates unavailable");
-  });
-
-  it("hands the raw request and response to the hub", async () => {
-    // The route must not write anything itself: SSE needs the socket
-    // un-ended, with headers the hub chooses. Anything written here would
-    // be a header the hub then could not set.
-    let attached = 0;
-    const hub: SseHub = {
-      attach: (req, res) => {
-        attached += 1;
-        expect(req.url).toBe("/events");
-        expect(res.headersSent).toBe(false);
-        res.writeHead(200, { "content-type": "text/event-stream" });
-        res.end();
-      },
-      broadcast: () => {},
-      clientCount: () => 1,
-      close: () => {},
-    };
-    const { server } = await boot({ sse: hub, idleMs: 0 });
-    const res = await get(server, "/events");
-    expect(res.status).toBe(200);
-    expect(res.headers.get("content-type")).toBe("text/event-stream");
-    await res.text();
-    expect(attached).toBe(1);
-  });
-
-  it("resets the idle countdown when a client attaches", async () => {
-    // §5.4: a workspace with a live stream is not idle. The route calls
-    // `onActivity`, which cancels the timer armed at boot.
-    let cancelled = 0;
-    const hub = stubHub(1);
-    hub.attach = (_req, res) => res.end();
-    const { server } = await boot({
-      sse: hub,
-      idleMs: 1000,
-      setTimer: () => ({}),
-      clearTimer: () => {
-        cancelled += 1;
-      },
-    });
-    expect(cancelled).toBe(0);
-    await (await get(server, "/events")).text();
-    expect(cancelled).toBe(1);
-  });
-});
-
 // --- security, end to end ------------------------------------------------------------
 
 describe("security over the wire", () => {
   it("403s every route without a token", async () => {
     const { server } = await boot();
-    for (const path of ["/", "/app.js", "/api/graph", "/api/note/alpha-note", "/api/okf/x", "/api/search?q=a", "/events"]) {
+    for (const path of ["/", "/app.js", "/api/graph", "/api/note/alpha-note", "/api/okf/x", "/api/search?q=a"]) {
       const res = await raw(server, path);
       expect(res.status, path).toBe(403);
       // The body says nothing about which layer refused: telling a prober
@@ -1173,7 +1084,6 @@ describe("security over the wire", () => {
       get(server, "/api/note/missing"),
       get(server, "/api/okf/repository/identity.json"),
       get(server, "/api/search?q=a"),
-      get(server, "/events"),
       post(server, "/api/open", { slug: "alpha-note" }),
       raw(server, "/api/graph"),
       raw(server, "/nope"),
@@ -1208,7 +1118,7 @@ describe("security over the wire", () => {
 describe("unrouted requests", () => {
   it("404s an unknown path", async () => {
     const { server } = await boot();
-    for (const path of ["/nope", "/api", "/api/", "/api/nope", "/app.js/extra", "/events/x"]) {
+    for (const path of ["/nope", "/api", "/api/", "/api/nope", "/app.js/extra", "/live/x"]) {
       const res = await get(server, path);
       expect(res.status, path).toBe(404);
       expect(await res.text()).toBe("not found\n");
@@ -1281,130 +1191,11 @@ describe("lifecycle (§5.4)", () => {
     await expect(fetch(`http://127.0.0.1:${port}/`)).rejects.toThrow();
   });
 
-  it("defaults the idle timeout to 30 minutes", () => {
-    expect(DEFAULT_IDLE_MS).toBe(30 * 60 * 1000);
-  });
-
-  it("arms the idle timer at boot when a hub is present, and shuts down when it fires", async () => {
-    // A workspace nobody connected to should still release its port.
-    let fire: (() => void) | null = null;
-    let armed = 0;
-    let unrefed = 0;
-    let shutdown = false;
-    const hub = stubHub(0);
-
-    const { server } = await boot({
-      sse: hub,
-      idleMs: 1,
-      setTimer: (fn) => {
-        armed += 1;
-        fire = fn;
-        return {
-          unref: () => {
-            unrefed += 1;
-          },
-        };
-      },
-      clearTimer: () => {},
-      onIdleShutdown: () => {
-        shutdown = true;
-      },
-    });
-
-    expect(armed).toBe(1);
-    // A pending shutdown must not be the reason the process stays alive.
-    expect(unrefed).toBe(1);
-    expect(fire).not.toBeNull();
-    const port = server.port;
-    (fire as unknown as () => void)();
-    // `close()` inside the timer callback is async.
-    await new Promise((r) => setTimeout(r, 50));
-    expect(shutdown).toBe(true);
-    expect(hub.closed).toBe(true);
-    await expect(fetch(`http://127.0.0.1:${port}/`)).rejects.toThrow();
-  });
-
-  it("cancels the countdown while a client is attached and re-arms when it leaves", async () => {
-    const timers: Array<() => void> = [];
-    let cancelled = 0;
-    const hub = stubHub(0);
-    const { server } = await boot({
-      sse: hub,
-      idleMs: 1000,
-      setTimer: (fn) => {
-        timers.push(fn);
-        return { id: timers.length } as TimerHandle;
-      },
-      clearTimer: () => {
-        cancelled += 1;
-      },
-    });
-
-    expect(timers).toHaveLength(1); // armed at boot: nobody has connected
-
-    hub.count = 1;
-    server.noteActivity(); // a client attached
-    expect(cancelled).toBe(1);
-    expect(timers).toHaveLength(1); // not re-armed: someone is here
-
-    hub.count = 0;
-    server.noteActivity(); // the last client left
-    expect(timers).toHaveLength(2); // countdown restarts
-  });
-
-  it("never arms a timer when idleMs is 0", async () => {
-    let armed = 0;
-    const { server } = await boot({
-      sse: stubHub(0),
-      idleMs: 0,
-      setTimer: () => {
-        armed += 1;
-        return {};
-      },
-      clearTimer: () => {},
-    });
-    server.noteActivity();
-    server.noteActivity();
-    expect(armed).toBe(0);
-  });
-
-  it("does not arm the timer at boot when there is no hub", async () => {
-    // With `/events` answering 503 there is no such thing as a client, so
-    // there is nothing for an idle countdown to be counting down from. The
-    // server must stay up until its owner closes it.
-    let armed = 0;
-    await boot({
-      idleMs: 1000,
-      setTimer: () => {
-        armed += 1;
-        return {};
-      },
-      clearTimer: () => {},
-    });
-    expect(armed).toBe(0);
-  });
-
-  it("uses real timers by default, and unrefs them", async () => {
-    // The default `setTimer`/`clearTimer` are only exercised when nothing is
-    // injected. A pending 30-minute shutdown that kept the event loop alive
-    // would make this very test hang, so the assertion is partly the fact
-    // that the suite finishes.
-    const hub = stubHub(0);
-    const { server } = await boot({ sse: hub, idleMs: 60_000 });
-    // Arms at boot with a real `setTimeout`, then cancels with a real
-    // `clearTimeout` when a client shows up.
-    hub.count = 1;
-    server.noteActivity();
-    hub.count = 0;
-    server.noteActivity();
-    await server.close(); // cancels the pending real timer
-  });
-
   it("falls back to resolveVaultRoot when no vault is given", async () => {
     // `PI_WEAVE_VAULT` is what the adapter sets; a server booted without an
     // explicit root must honour it rather than inventing a default.
     const { cwd, vaultRoot } = await sharedWorkspace();
-    const server = await withVaultEnv(vaultRoot, () => startWorkspaceServer({ cwd, token: TOKEN, idleMs: 0 }));
+    const server = await withVaultEnv(vaultRoot, () => startWorkspaceServer({ cwd, token: TOKEN }));
     running.push(server);
     const html = await (await get(server, "/")).text();
     expect(html).toContain(JSON.stringify(vaultRoot).slice(1, -1));
@@ -1412,7 +1203,7 @@ describe("lifecycle (§5.4)", () => {
 
   it("builds its own cache when none is injected", async () => {
     const { cwd, vaultRoot } = await sharedWorkspace();
-    const server = await startWorkspaceServer({ cwd, vaultRoot, token: TOKEN, idleMs: 0 });
+    const server = await startWorkspaceServer({ cwd, vaultRoot, token: TOKEN });
     running.push(server);
     expect(server.cache).toBeInstanceOf(WorkspaceCache);
     const res = await get(server, "/api/graph");
@@ -1421,58 +1212,11 @@ describe("lifecycle (§5.4)", () => {
   });
 
   it("gives every boot a distinct session id", async () => {
-    // The client uses it to tell "I missed frames" from "this is a different
-    // server" across an EventSource reconnect.
+    // The page bootstrap receives a fresh id on every server boot.
     const a = await boot();
     const b = await boot();
     expect(a.server.session).not.toBe(b.server.session);
     expect(a.server.session).toMatch(/^[0-9a-f]{16}$/);
-  });
-
-  it("does not re-arm after close", async () => {
-    let armed = 0;
-    const hub = stubHub(0);
-    const { server } = await boot({
-      sse: hub,
-      idleMs: 1000,
-      setTimer: () => {
-        armed += 1;
-        return {};
-      },
-      clearTimer: () => {},
-    });
-    const atBoot = armed;
-    await server.close();
-    server.noteActivity();
-    expect(armed).toBe(atBoot);
-  });
-
-  it("starts and closes an injected watcher", async () => {
-    let started = 0;
-    let closedTimes = 0;
-    const watcher: Watcher = {
-      start: async () => {
-        started += 1;
-      },
-      close: async () => {
-        closedTimes += 1;
-      },
-    };
-    const { server } = await boot({ watcher });
-    expect(started).toBe(1);
-    expect(closedTimes).toBe(0);
-    await server.close();
-    expect(closedTimes).toBe(1);
-    await server.close();
-    expect(closedTimes).toBe(1); // idempotent
-  });
-
-  it("closes the hub exactly once", async () => {
-    const hub = stubHub(0);
-    const { server } = await boot({ sse: hub, idleMs: 0 });
-    await server.close();
-    await server.close();
-    expect(hub.closeCalls).toBe(1);
   });
 
   it("uses the fallback cookie name when asked (§5.1 footnote 1)", async () => {
@@ -1494,28 +1238,6 @@ describe("lifecycle (§5.4)", () => {
 });
 
 // --- helpers ---------------------------------------------------------------------
-
-interface StubHub extends SseHub {
-  count: number;
-  closed: boolean;
-  closeCalls: number;
-}
-
-function stubHub(initial: number): StubHub {
-  const hub: StubHub = {
-    count: initial,
-    closed: false,
-    closeCalls: 0,
-    attach: (_req, res) => res.end(),
-    broadcast: () => {},
-    clientCount: () => hub.count,
-    close: () => {
-      hub.closed = true;
-      hub.closeCalls += 1;
-    },
-  };
-  return hub;
-}
 
 /**
  * Send a raw HTTP request and return the whole response as text.

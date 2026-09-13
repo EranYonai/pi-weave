@@ -3,19 +3,15 @@
  * (weave-workspace §5.4, §6, §13).
  *
  * This is the adapter half of the browser workspace: everything portable
- * already lives in `src/core` (the cache) and `src/web/server` (the server,
- * the SSE hub, the watcher). What is left here is the wiring those three
+ * already lives in `src/core` (the cache) and `src/web/server` (the server).
+ * What is left here is the wiring those two
  * cannot do for themselves, because it is session-shaped:
  *
  *  1. **Composition.** Build one {@link WorkspaceCache} over `ctx.cwd` +
- *     the resolved vault root, one {@link SseHub}, one {@link Watcher}, and
- *     hand the last two to `startWorkspaceServer` so it owns their teardown.
- *  2. **The liveness loop.** `watcher.onPath → cache.invalidate` (evict
- *     precisely) and `watcher.onChange → cache.graph() → sse.broadcast`
- *     (one frame per scope). §6's diagram, in code.
- *  3. **Singleton per session.** A second `/weave-view` must reuse the
+ *     the resolved vault root and hand it to `startWorkspaceServer`.
+ *  2. **Singleton per session.** A second `/weave-view` must reuse the
  *     running server — a second server would mean a second port, a second
- *     watcher on the same directories, and a browser tab pointed at a
+ *     second browser tab pointed at a
  *     workspace nobody is going to close (§5.4).
  *  4. **Browser handoff**, with an honest fallback when there is no browser
  *     to hand off to.
@@ -40,15 +36,11 @@
 import { platform as osPlatform } from "node:os";
 import type { ExtensionCommandContext } from "@earendil-works/pi-coding-agent";
 import { resolveVaultRoot, WorkspaceCache } from "../../../core";
-import { graphStamp, type Watcher as ServerWatcher } from "../../../web/server/routes";
 import {
   startWorkspaceServer,
   type StartWorkspaceServerOptions,
   type WorkspaceServer,
 } from "../../../web/server/server";
-import { SseHub } from "../../../web/server/sse";
-import { Watcher } from "../../../web/server/watcher";
-import type { ChangeScope } from "../../../web/shared/wire";
 
 /** The slice of `ExtensionAPI.exec` this module uses. */
 export type ExecFn = (command: string, args: string[]) => Promise<{ code: number; stderr: string }>;
@@ -73,73 +65,10 @@ export function browserOpenCommand(
   return { command: "xdg-open", args: [url] };
 }
 
-/**
- * The §6 liveness loop, as three callbacks over a cache and a hub.
- *
- * Extracted from the boot closure so it can be driven directly in a test
- * instead of through a real filesystem event: "a change arrives, the cache
- * is evicted, the graph is rebuilt, one frame per scope goes out" is the
- * behaviour worth asserting, and waiting on `fs.watch` to assert it would
- * be slow, platform-dependent and flaky for no gain.
- */
-export interface LivenessBridge {
-  /** One call per accepted path, immediately — precise eviction. */
-  onPath(absPath: string): void;
-  /** One call per debounce window — rebuild once, broadcast per scope. */
-  onChange(scopes: readonly ChangeScope[]): void;
-  /** The stamp a newly attached SSE client is told about. */
-  currentStamp(): string | null;
-  /** Test seam: resolves when the in-flight rebuild settles. */
-  settled(): Promise<void>;
-}
-
-export function createLivenessBridge(cache: WorkspaceCache, sse: SseHub): LivenessBridge {
-  // The last stamp we broadcast, or `null` before the first change. Held
-  // rather than derived because `currentStamp` is synchronous (sse.ts) and
-  // `cache.snapshot()` is not.
-  let lastStamp: string | null = null;
-  let inFlight: Promise<void> = Promise.resolve();
-
-  return {
-    onPath: (absPath) => cache.invalidate(absPath),
-    onChange: (scopes) => {
-      const done = (async () => {
-        // A rebuild can fail — the vault was deleted mid-session — and a
-        // failed broadcast must cost one missed frame, not an unhandled
-        // rejection inside a filesystem callback.
-        const snapshot = await cache.snapshot().catch(() => null);
-        if (snapshot === null) return;
-        // The *same* key `/api/graph` puts in its ETag (§5.3, §6): a content
-        // digest, not `generatedAt`.
-        //
-        // This is the half of §15.6 that was easy to miss. The client dedupes
-        // frames on `stamp` (`live.model.ts`) and already holds the stamp of
-        // the graph it last fetched, so while this broadcast a timestamp max,
-        // an edit that did not advance that maximum produced a frame the
-        // client discarded *before* issuing the conditional GET. The stale
-        // `304` was the second line of defence; this was the first, and it
-        // failed for the same three cases. Sharing one key fixes both.
-        //
-        // `snapshot()`, not `graph()`, because the payload — and therefore
-        // the digest — depends on the notes as well as the model (§4.3).
-        const stamp = graphStamp(snapshot);
-        lastStamp = stamp;
-        for (const scope of scopes) sse.broadcast({ scope, stamp });
-      })();
-      inFlight = inFlight.then(() => done);
-    },
-    currentStamp: () => lastStamp,
-    settled: () => inFlight,
-  };
-}
-
 /** Everything one running workspace owns. Closed as a unit. */
 export interface WebWorkspaceSession {
   server: WorkspaceServer;
   cache: WorkspaceCache;
-  sse: SseHub;
-  watcher: Watcher;
-  liveness: LivenessBridge;
 }
 
 export interface WebWorkspaceDeps {
@@ -223,7 +152,7 @@ export class WebWorkspaceController {
     return { session, started, opened, fallbackToTui: wantsBrowser && !opened };
   }
 
-  /** Stop the workspace: server, watcher and every SSE stream. Idempotent. */
+  /** Stop the workspace server. Idempotent. */
   async close(): Promise<void> {
     // A close arriving mid-boot must still close what that boot produced,
     // or `session_shutdown` during a slow start leaks the whole stack.
@@ -232,8 +161,6 @@ export class WebWorkspaceController {
     const session = this.session;
     if (session === null) return;
     this.session = null;
-    // `server.close()` closes the hub and awaits the watcher — it was handed
-    // both at construction and owns their teardown (server.ts §5.4).
     await session.server.close();
     this.deps.onStateChange?.();
   }
@@ -258,34 +185,14 @@ export class WebWorkspaceController {
     const cwd = ctx.cwd;
     const vaultRoot = (this.deps.vaultRoot ?? resolveVaultRoot)();
     const cache = new WorkspaceCache({ cwd, vaultRoot });
-    const sse = new SseHub({ currentStamp: () => liveness.currentStamp() });
-    const liveness = createLivenessBridge(cache, sse);
-
-    const watcher = new Watcher({
-      cwd,
-      vaultRoot,
-      // Per-path, immediately: eviction wants every path (§6).
-      onPath: (absPath) => liveness.onPath(absPath),
-      // Per debounce window: one frame per scope, whatever the path count.
-      onChange: (scopes) => liveness.onChange(scopes),
-    });
-
     const startServer = this.deps.startServer ?? startWorkspaceServer;
     const server = await startServer({
       cwd,
       vaultRoot,
       cache,
-      sse,
-      watcher: asServerWatcher(watcher),
-      // The idle timeout closed the server behind our back; forget it so the
-      // next `/weave-view` boots a fresh one instead of handing out a dead port.
-      onIdleShutdown: () => {
-        this.session = null;
-        this.deps.onStateChange?.();
-      },
     });
 
-    return { server, cache, sse, watcher, liveness };
+    return { server, cache };
   }
 
   /** Spawn the browser, reporting failure rather than throwing it. */
@@ -301,23 +208,6 @@ export class WebWorkspaceController {
       return false;
     }
   }
-}
-
-/**
- * Adapt the concrete {@link Watcher} to the promise-shaped contract
- * `server.ts` owns. The class is synchronous because `fs.watch` is; the
- * interface is async because a future watcher (a `chokidar`-style poller, a
- * remote FS) would not be.
- */
-function asServerWatcher(watcher: Watcher): ServerWatcher {
-  return {
-    start: async () => {
-      watcher.start();
-    },
-    close: async () => {
-      watcher.close();
-    },
-  };
 }
 
 /** The one notification, worded for whichever path got us here. */

@@ -1,7 +1,7 @@
 /**
  * The status bar (weave-workspace §1.2).
  *
- * Working directory, current selection, data-as-of stamp, connection. The
+ * Working directory, current selection, and data-as-of stamp. The
  * model is built by `statusBarModel`; this renders it.
  */
 
@@ -19,9 +19,6 @@ export function StatusBar({ model }: { model: StatusBarModel }) {
       </span>
       <span class="weave-status-stamp" title="data as of">
         {shortStamp(model.stamp)}
-      </span>
-      <span class={`weave-conn weave-conn-${model.connection.tone}`} title={model.connection.hint}>
-        {model.connection.label}
       </span>
     </footer>
   );

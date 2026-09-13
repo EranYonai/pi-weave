@@ -244,20 +244,6 @@ body{font-size:var(--weave-px-base)}
 }
 .weave-theme:hover{color:var(--weave-fg);background:var(--weave-line)}
 
-/* connection indicator -------------------------------------------------- */
-.weave-conn{display:inline-flex;align-items:center;gap:5px;font-size:var(--weave-px-ui);white-space:nowrap}
-.weave-conn-dot{font-size:var(--weave-px-prov);line-height:1}
-/* Reconnecting breathes instead of sitting there: the one state whose whole
-   message is "hold on, I am still working" is the one that should keep
-   saying it. The offline dot stays still — its message needs a decision,
-   not patience. The global reduced-motion kill switch restores the static
-   dot, the same way it does every animation in this sheet. */
-.weave-conn-ok .weave-conn-dot,.weave-conn-ok{color:var(--weave-ok)}
-.weave-conn-warn .weave-conn-dot,.weave-conn-warn{color:var(--weave-warn)}
-.weave-conn-warn .weave-conn-dot{animation:weave-conn-pulse 1.6s ease-in-out infinite}
-.weave-conn-bad .weave-conn-dot,.weave-conn-bad{color:var(--weave-bad)}
-@keyframes weave-conn-pulse{0%,100%{opacity:1}50%{opacity:.35}}
-
 /* the grid -------------------------------------------------------------- */
 /* Widths arrive as custom properties from cssvars.ts — the CSSOM path. The
    fallbacks keep the layout sane for the first frame and if a write is ever
@@ -636,14 +622,14 @@ body{font-size:var(--weave-px-base)}
 /* status bar ------------------------------------------------------------ */
 /* One separator vocabulary, shared with the header summary: every run of
    status items after the first opens with the same mid-dot, in the same
-   --weave-faint. cwd · selection | stamp · connection reads as one grammar,
+   --weave-faint. cwd · selection · stamp reads as one grammar,
    the same way the header's three-part summary does. */
 .weave-status{
   display:flex;align-items:center;gap:8px;height:22px;padding:0 var(--weave-gutter);
   font-family:var(--weave-mono);font-size:var(--weave-px-ui);color:var(--weave-dim);
   border-top:1px solid var(--weave-line);background:var(--weave-panel);
 }
-.weave-status-sel::before,.weave-conn::before{content:"·";margin-right:8px;color:var(--weave-faint)}
+.weave-status-sel::before{content:"·";margin-right:8px;color:var(--weave-faint)}
 .weave-status-cwd,.weave-status-sel{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .weave-status-cwd{max-width:38%;color:var(--weave-faint)}
 .weave-status-sel{color:var(--weave-fg)}

@@ -1,13 +1,10 @@
 /**
- * The controller: fetches, signals, and the SSE loop joined up
- * (weave-workspace §1.3, §6).
+ * The controller: fetches, signals, and the polling loop joined up.
  *
  * Three modules already exist and none of them knows about the others —
- * `api.ts` fetches, `live.ts` listens, `state.ts` holds. This is the seam
- * that connects them, and it is a plain `.ts` with every dependency injected
- * so it is covered by ordinary tests: `fetch` comes in as a {@link FetchLike}
- * and the socket as an {@link EventSourceFactory}, exactly as those modules
- * were designed to allow.
+ * `api.ts` fetches and `state.ts` holds. This is the seam that connects them,
+ * and it is a plain `.ts` with every dependency injected so it is covered by
+ * ordinary tests.
  *
  * Keeping it out of a component is what makes the shell's `useEffect` a
  * two-liner (`start`, return `stop`). A `.tsx` cannot be tested here, so any
@@ -15,44 +12,36 @@
  *
  * ## Refetch is ordered and conditional
  *
- * A plan can ask for both endpoints; the graph is fetched first because it
- * carries the stamp that `seen()` records and therefore the dedupe key for
- * every subsequent frame. Both requests are conditional in the sense that
- * matters: the graph sends `If-None-Match` and a `304` costs an empty body,
- * so "refetch everything on reconnect" (§6) is genuinely cheap rather than
- * merely correct.
+ * Every poll is conditional: the graph sends `If-None-Match` and a `304`
+ * costs an empty body.
  *
  * ## Failures are absorbed, not thrown
  *
  * `api.ts` returns a discriminated result precisely so this layer never
  * catches. A failed refetch leaves the previous signal value in place — a
  * stale graph is strictly better than a blank workspace, and the next frame
- * or the `⟳` button retries. The connection indicator, driven separately by
- * the socket, is what tells the user something is wrong.
+ * or the `⟳` button retries.
  */
 
 import type { GraphPayload } from "../shared/wire";
 import type { ApiResult, FetchLike } from "./api";
 import { fetchGraph, fetchNote } from "./api";
-import { graphFailed, recentIds } from "./state";
-import type { EventSourceFactory, LiveHandle } from "./live";
-import { startLive } from "./live";
-import type { RefetchPlan } from "./live.model";
-import { connection, graph, noteBody, selectedId } from "./state";
+import { graphFailed, graph, noteBody, recentIds, selectedId } from "./state";
 
 /** What {@link startWorkspace} needs. Everything injectable is injected. */
 export interface WorkspaceOptions {
   fetch: FetchLike;
-  /** Socket constructor. `domEventSource` at the real call site. */
-  open: EventSourceFactory;
-  /** Overrides the SSE path. Tests use it; the shell does not. */
-  path?: string;
   /**
    * One-shot timer, injectable for tests. Defaults to `setTimeout`. Used
    * only to expire the recent-arrivals highlight ({@link RECENT_TTL_MS}).
    */
   defer?: (fn: () => void, ms: number) => () => void;
+  /** Test seam for the fixed poll timer. */
+  repeat?: (fn: () => void, ms: number) => () => void;
 }
+
+/** Two seconds is responsive enough for a local viewer and costs one 304. */
+export const POLL_MS = 2_000;
 
 /** How long a newly-arrived node stays flagged in the tree (the animation is shorter). */
 export const RECENT_TTL_MS = 3_000;
@@ -83,25 +72,20 @@ export interface WorkspaceHandle {
   refresh(): void;
   /** Fetch the body for the current selection, or clear it. */
   syncNote(): Promise<void>;
-  /** Close the socket. Idempotent. */
+  /** Stop polling. Idempotent. */
   stop(): void;
 }
 
 /**
  * Fetch the graph and publish it.
  *
- * The stamp is handed to {@link LiveHandle.seen} only on success, which is
- * the invariant `live.model.ts` documents: a stamp recorded for a fetch that
- * failed would dedupe away the very frame that would have retried it.
- *
  * A `304` arrives as `cached: true` with the caller's own payload, so
  * re-assigning the signal would be a no-op write that still wakes every
  * subscriber. Skipping it is the difference between an idle workspace doing
- * nothing and one re-rendering three columns every time the watcher twitches.
+ * nothing and one re-rendering three columns every two seconds.
  */
 async function loadGraph(
   fetchImpl: FetchLike,
-  live: LiveHandle | null,
   onPublished?: (previous: GraphPayload | null, next: GraphPayload) => void,
 ): Promise<ApiResult<unknown>> {
   // Captured before the fetch so the diff describes exactly what the reader
@@ -120,7 +104,6 @@ async function loadGraph(
     graph.value = result.data;
     onPublished?.(previous, result.data);
   }
-  live?.seen(result.data.stamp);
   return result;
 }
 
@@ -161,16 +144,10 @@ export function noteSlug(id: string | null): string | null {
 }
 
 /**
- * Boot the workspace: first graph fetch, then the event stream.
- *
- * In that order, deliberately. The mount fetch seeds the stamp via `seen()`,
- * so the hello frame `sse.ts` sends every newly attached client is recognised
- * as already-held and deduped away. Opening the socket first would make the
- * first frame arrive before there is a stamp to compare it to, and the
- * workspace would fetch the same graph twice on every single load.
+ * Boot the workspace: fetch immediately, then poll conditionally.
  */
 export function startWorkspace(opts: WorkspaceOptions): WorkspaceHandle {
-  let live: LiveHandle | null = null;
+  let stopped = false;
   let cancelRecentExpiry: (() => void) | null = null;
   const defer =
     opts.defer ??
@@ -193,35 +170,34 @@ export function startWorkspace(opts: WorkspaceOptions): WorkspaceHandle {
     }
   };
 
-  const runPlan = (plan: RefetchPlan): void => {
-    // Fire-and-forget: this is called from a socket callback, which cannot
-    // await. Failures are values (`api.ts`), so there is nothing to reject —
-    // `void` documents that rather than hiding a floating promise.
-    void (async () => {
-      if (plan.graph) await loadGraph(opts.fetch, live, onPublished);
-      if (plan.note) await loadNote(opts.fetch);
-    })();
+  let polling = false;
+  const poll = async (): Promise<void> => {
+    if (stopped || polling) return;
+    polling = true;
+    try {
+      const result = await loadGraph(opts.fetch, onPublished);
+      if (result.ok && !result.cached && noteSlug(selectedId.value) !== null) await loadNote(opts.fetch);
+    } finally {
+      polling = false;
+    }
   };
-
-  live = startLive({
-    open: opts.open,
-    refetch: runPlan,
-    hasSelection: () => noteSlug(selectedId.value) !== null,
-    ...(opts.path === undefined ? {} : { path: opts.path }),
+  const repeat = opts.repeat ?? ((fn, ms) => {
+    const timer = setInterval(fn, ms);
+    return () => clearInterval(timer);
   });
-
-  void loadGraph(opts.fetch, live, onPublished);
+  const cancelPoll = repeat(() => void poll(), POLL_MS);
+  void poll();
 
   return {
     refresh() {
-      live?.refresh();
+      void poll();
     },
     syncNote() {
       return loadNote(opts.fetch);
     },
     stop() {
-      live?.stop();
-      live = null;
+      stopped = true;
+      cancelPoll();
       cancelRecentExpiry?.();
       cancelRecentExpiry = null;
       recentIds.value = NO_IDS;
@@ -249,6 +225,5 @@ export function resetWorkspace(): void {
   graph.value = null;
   noteBody.value = null;
   graphFailed.value = false;
-  connection.value = "live";
   recentIds.value = NO_IDS;
 }
