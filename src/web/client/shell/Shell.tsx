@@ -1,28 +1,23 @@
 /**
  * The workspace shell (weave-workspace §1.2).
  *
- * Header, three resizable columns, context rail, status bar. This component
- * holds the wiring and nothing else — every value it renders comes from a
- * pure function in `shell.model.ts`, `layout.model.ts` or `drag.model.ts`,
+ * Header, three fixed columns, context rail, status bar. This component holds
+ * the wiring and nothing else — every value it renders comes from pure
+ * functions in the shell models,
  * and the fetch/poll loop is `workspace.ts`. What is left here is hooks:
  * signals in, callbacks out.
  *
- * The three effects, all one-liners over injected units:
+ * The main effects are one-liners over injected units:
  *
  *  1. **mount** — `startWorkspace` fetches the graph and starts polling;
  *     the returned `stop` is the cleanup, so a hot reload cannot leak a timer.
- *  2. **resize** — `watchViewport` keeps `width` current, because the width
- *     picks the breakpoint, which decides how many columns exist.
- *  3. **keys** — `watchKeys` attaches the one global `keydown` listener
+ *  2. **keys** — `watchKeys` attaches the one global `keydown` listener
  *     (§11 P4). Its context is read through `live`, because a listener
  *     registered at mount outlives every render and a captured overlay flag
  *     would let `⌘K` stack a palette on top of itself.
- *
- * Layout persistence is not an effect: `dividerHandlers` writes to
- * `localStorage` on release and on a keyboard nudge, never per frame.
  */
 
-import { useEffect, useMemo, useRef, useState } from "preact/hooks";
+import { useEffect, useRef, useState } from "preact/hooks";
 import { fetchJson } from "../api.dom";
 import { openNote } from "../api";
 import type { ColorScheme } from "../graph/graph.model";
@@ -35,25 +30,19 @@ import type { WorkspaceHandle } from "../workspace";
 import { select, startWorkspace } from "../workspace";
 import { Columns } from "./Columns";
 import { deeplinkSelection, formatHash } from "./deeplink.model";
-import { dividerHandlers } from "./drag.model";
 import { Header } from "./Header";
 import { HelpOverlay } from "./HelpOverlay";
 import { watchKeys } from "./keys";
 import { focusSelector, runShellAction } from "./keys.model";
-import type { LayoutState } from "./layout.model";
-import { breakpointFor, loadLayout, resolveColumns, saveLayout } from "./layout.model";
 import { StatusBar } from "./StatusBar";
 import type { OverlayId } from "./shell.model";
 import { TICK_MS, looksApple, searchShortcut, statusBarModel, summarize } from "./shell.model";
 import { cycleTheme, effectiveScheme, loadTheme, saveTheme, themeAttr, themeButton } from "./theme.model";
 import type { ThemeChoice } from "./theme.model";
-import { watchViewport } from "./viewport";
 
 /**
  * Write the choice onto `<html>`, so the sheet's attribute branch and the
- * media query agree on who is in charge (see `theme.model.ts`'s header). The
- * one DOM write the theme needs, and it is here rather than in the model for
- * the same reason `applyVars` is: it is an effect, not a decision.
+ * media query agree on who is in charge (see `theme.model.ts`'s header).
  */
 function applyThemeAttr(choice: ReturnType<typeof themeAttr>): void {
   if (choice === null) delete document.documentElement.dataset.weaveTheme;
@@ -63,16 +52,12 @@ function applyThemeAttr(choice: ReturnType<typeof themeAttr>): void {
 export interface ShellProps {
   /** From the page bootstrap. Shown in the status bar. */
   cwd: string;
-  /** `window.innerWidth` at mount. Injected so the first render is testable. */
-  initialWidth: number;
   /** `navigator.platform`, for the `⌘K` vs `Ctrl K` hint. */
   platform: string;
 }
 
 export function Shell(props: ShellProps) {
-  const [width, setWidth] = useState(props.initialWidth);
   const [overlay, setOverlay] = useState<OverlayId>(null);
-  const [layout, setLayout] = useState<LayoutState>(() => loadLayout(localStorage, props.initialWidth));
   // The theme: what the user picked, and what the OS is currently saying. Two
   // states because they answer different questions — `theme` changes on a
   // button press or the `t` key, `systemScheme` on an OS flip while the user
@@ -83,10 +68,10 @@ export function Shell(props: ShellProps) {
   // Filled by the graph column at mount, cleared on unmount. The global `g`
   // key's only route to the renderer — see `Graph.tsx`'s `fit` prop.
   const fit = useRef<(() => void) | null>(null);
-  // The gesture and the global key listener read through these so a handler
-  // built on an early render still sees current state — see `DragHost`.
-  const live = useRef({ layout, width, overlay });
-  live.current = { layout, width, overlay };
+  // The global key listener reads through this so a handler registered at
+  // mount still sees the current overlay.
+  const live = useRef({ overlay });
+  live.current = { overlay };
 
   useEffect(() => {
     const handle = startWorkspace({ fetch: fetchJson });
@@ -124,8 +109,6 @@ export function Shell(props: ShellProps) {
       if (saved !== null) void select(fetchJson, saved);
     }
   }, [graph.value]);
-
-  useEffect(() => watchViewport(window, setWidth), []);
 
   // The relative-time clock. Every "8h ago" in the tree and the note meta is
   // computed from a `now` stamped per render, and a resting workspace never
@@ -167,21 +150,6 @@ export function Shell(props: ShellProps) {
     [],
   );
 
-  const resolved = useMemo(() => resolveColumns(layout, width, breakpointFor(width)), [layout, width]);
-
-  // Built once: the handlers read state through `live`, so they never go
-  // stale and never need to be rebuilt.
-  const drag = useMemo(
-    () =>
-      dividerHandlers({
-        layout: () => live.current.layout,
-        width: () => live.current.width,
-        setLayout,
-        persist: (next) => void saveLayout(localStorage, next),
-      }),
-    [],
-  );
-
   return (
     <>
       <Header
@@ -193,11 +161,6 @@ export function Shell(props: ShellProps) {
         onTheme={() => setTheme((current) => cycleTheme(current))}
       />
       <Columns
-        resolved={resolved}
-        onDown={drag.onDown}
-        onMove={drag.onMove}
-        onUp={drag.onUp}
-        onKey={drag.onKey}
         scheme={effectiveScheme(theme, systemScheme)}
         bootFailed={graphFailed.value}
         graph={graph.value}
@@ -216,8 +179,8 @@ export function Shell(props: ShellProps) {
       />
       {/*
         `model.generatedAt`, not `stamp`. The two used to be the same string;
-        since §15.6 `stamp` is a content digest (a hex validator for the ETag
-        and the ETag validator) and would render as `a3f9c2…` under a label that
+        since §15.6 `stamp` is the ETag's content digest and would render as
+        `a3f9c2…` under a label that
         says "data as of". `generatedAt` kept the data-as-of job, which is
         exactly what this bar wants.
       */}

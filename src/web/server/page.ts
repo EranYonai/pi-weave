@@ -32,8 +32,7 @@
  *
  * `default-src 'none'` and a per-response nonce. Nothing loads that we did
  * not name: no `'unsafe-inline'`, no `'unsafe-eval'`, no `blob:`, no remote
- * origin. `connect-src 'self'` is what permits `/api/*` and the `/events`
- * stream; `frame-ancestors 'none'` means no page can embed us, which
+ * origin. `connect-src 'self'` is what permits `/api/*`; `frame-ancestors 'none'` means no page can embed us, which
  * matters because a framed workspace plus a stolen click is a way to reach
  * `POST /api/open`.
  *
@@ -215,7 +214,7 @@ const THEME_CSS = [
   "html,body{height:100%}",
   "body{margin:0;background:var(--weave-bg);color:var(--weave-fg);",
   "font-family:var(--weave-sans);font-size:14px;line-height:1.5}",
-  "#app{height:100%;display:flex;flex-direction:column}",
+  "#app{height:100%;display:grid;grid-template-rows:auto 1fr auto}",
 ].join("");
 
 /**

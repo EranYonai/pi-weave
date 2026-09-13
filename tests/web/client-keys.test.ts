@@ -39,7 +39,7 @@ import {
 } from "../../src/web/client/shell/keys.model";
 import { watchKeys } from "../../src/web/client/shell/keys";
 import type { KeyHost } from "../../src/web/client/shell/keys";
-import { COLUMNS } from "../../src/web/client/shell/layout.model";
+import { COLUMNS } from "../../src/web/client/shell/shell.model";
 import { VIM_KEYS, normalizeTreeKey, treeKey } from "../../src/web/client/tree/tree.model";
 import type { TreeRow } from "../../src/web/shared/view";
 

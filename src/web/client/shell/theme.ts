@@ -6,8 +6,8 @@
  *
  * `page.ts` emits a nonce'd `<style>` block, but it is deliberately tiny —
  * the custom-property palette and enough body rules that the first paint has
- * a background colour before `app.js` parses. It knows nothing about a grid,
- * a divider or a status bar, and it is owned by the server tier, which this
+ * a background colour before `app.js` parses. It knows nothing about the
+ * status bar, and it is owned by the server tier, which this
  * work may not edit. There is also no `/app.css` route. So the shell's own
  * rules have to travel in the bundle and be installed at runtime.
  *
@@ -19,8 +19,8 @@
  *  1. **A literal `style="…"` attribute in markup is blocked.** That is what
  *     `'unsafe-inline'` governs for styles, and it is absent.
  *  2. **CSSOM writes are not.** `el.style.setProperty(…)` has no CSP hook at
- *     all, which is why `cssvars.ts` applies column widths that way and why
- *     dynamic layout works here. Confirmed against Preact's own behaviour:
+ *     all, which is why dynamic note preview positions use CSSOM. Confirmed
+ *     against Preact's own behaviour:
  *     `preact/src/diff/props.js` handles a `style` prop via
  *     `dom.style.cssText` or `style.setProperty`, never `setAttribute`.
  *  3. **A script-created `<style>` element needs the nonce.** Inserting a
@@ -245,15 +245,20 @@ body{font-size:var(--weave-px-base)}
 .weave-theme:hover{color:var(--weave-fg);background:var(--weave-line)}
 
 /* the grid -------------------------------------------------------------- */
-/* Widths arrive as custom properties from cssvars.ts — the CSSOM path. The
-   fallbacks keep the layout sane for the first frame and if a write is ever
-   missed. */
-.weave-grid{display:grid;min-height:0;overflow:hidden;background:var(--weave-line)}
-.weave-grid[data-columns="3"]{
-  grid-template-columns:var(--weave-col-tree,22%) 1px var(--weave-col-note,46%) 1px var(--weave-col-graph,32%);
+/* One boring grid. CSS owns the breakpoints; no saved widths, divider state
+   or viewport listener can make the shell disagree with the browser. */
+.weave-grid{
+  display:grid;min-height:0;overflow:hidden;background:var(--weave-line);
+  grid-template-columns:minmax(180px,22fr) minmax(320px,46fr) minmax(260px,32fr);
 }
-.weave-grid[data-columns="2"]{grid-template-columns:var(--weave-col-tree,32%) 1px var(--weave-col-note,68%)}
-.weave-grid[data-columns="1"]{grid-template-columns:1fr}
+@media (max-width:1099px){
+  .weave-grid{grid-template-columns:minmax(180px,32fr) minmax(320px,68fr)}
+  .weave-col-graph{display:none}
+}
+@media (max-width:799px){
+  .weave-grid{grid-template-columns:1fr}
+  .weave-col-tree{display:none}
+}
 
 .weave-col{
   display:flex;flex-direction:column;min-width:0;min-height:0;overflow:hidden;
@@ -272,18 +277,8 @@ body{font-size:var(--weave-px-base)}
    inside the same region instead of squeezing the graph. */
 .weave-col-graph{display:grid;grid-template-rows:auto minmax(0,1fr) minmax(96px,40%);background:var(--weave-bg)}
 
-/* dividers -------------------------------------------------------------- */
-.weave-divider{
-  background:var(--weave-line);cursor:col-resize;position:relative;
-  touch-action:none;
-}
-/* A 1 px target is unhittable, so the hit area is widened with a pseudo
-   element rather than by making the visible rule thicker. */
-.weave-divider::after{content:"";position:absolute;inset:0 -3px;z-index:1}
-.weave-divider:hover,.weave-divider:focus-visible{background:var(--weave-accent);outline:none}
-
 /* tree column ----------------------------------------------------------- */
-/* --weave-depth is written per row by \`depthVar\`, through the same CSSOM
+/* --weave-depth is written per row by \`depthVar\`, through CSSOM
    path as the column widths, and multiplied by a step this sheet owns — so
    the tree's density stays a CSS decision. */
 .weave-tree{display:flex;flex-direction:column;min-height:0;flex:1}
@@ -718,7 +713,7 @@ body{font-size:var(--weave-px-base)}
    properties only — colour, border, opacity, transform; height and padding
    snap. */
 .weave-row,.weave-ctx-link,.weave-chip,.weave-search,.weave-refresh,.weave-theme,
-.weave-divider,.weave-hit,.weave-note-open{
+.weave-hit,.weave-note-open{
   transition:background-color 120ms ease,border-color 120ms ease,color 120ms ease;
 }
 .weave-scrim{animation:weave-fade-in 140ms ease-out both}

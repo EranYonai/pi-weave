@@ -15,8 +15,11 @@
  */
 
 import type { GraphPayload, WireNodeKind, WireStalenessState } from "../../shared/wire";
-import type { ColumnId, DividerId, ResolvedColumn } from "./layout.model";
-import { DIVIDERS } from "./layout.model";
+/** The three fixed workspace surfaces. */
+export type ColumnId = "tree" | "note" | "graph";
+
+/** Columns in keyboard and visual order. */
+export const COLUMNS: readonly ColumnId[] = ["tree", "note", "graph"];
 
 // --- the header summary --------------------------------------------------------
 
@@ -153,48 +156,6 @@ export function shortStamp(stamp: string | null): string {
   if (stamp === null) return NO_VALUE;
   const match = /T(\d{2}:\d{2}:\d{2})/.exec(stamp);
   return match?.[1] ?? stamp;
-}
-
-// --- pairing columns with dividers ---------------------------------------------------
-
-/**
- * One rendered column, plus the divider that follows it (if any).
- *
- * `divider` is `null` for the last column: there are three columns and two
- * dividers, and the trailing edge of the grid is the window, not a handle.
- */
-export interface ColumnSlot {
-  readonly column: ResolvedColumn;
-  readonly divider: DividerId | null;
-}
-
-/**
- * Interleave resolved columns with the dividers between them.
- *
- * This exists as a model function rather than an `index + 1 < length` check
- * inside the JSX for two reasons. The first is coverage: that check is a
- * branch, and a branch in a `.tsx` is a branch no test can reach (§10). The
- * second is that the naive version is *wrong at a breakpoint* — at `"medium"`
- * only tree and note render, so the divider after `note` must not appear even
- * though `DIVIDERS` contains one. Deriving the pairing from the columns
- * actually being rendered, rather than from the static divider list, makes
- * that impossible to get wrong.
- */
-export function columnSlots(resolved: readonly ResolvedColumn[]): readonly ColumnSlot[] {
-  return resolved.map((column, index) => ({
-    column,
-    // A divider is *named by the column to its left* (`layout.model.ts`'s
-    // `dividerPair`), so the id is the column's own — no index arithmetic into
-    // `DIVIDERS`, which would need an unreachable `?? null` to satisfy
-    // `noUncheckedIndexedAccess` and would leave a branch no test can cover.
-    // It exists only where a next column follows to resize against.
-    divider: index < resolved.length - 1 && isDivider(column.id) ? column.id : null,
-  }));
-}
-
-/** Whether a column has a divider named after it — i.e. is not the last one. */
-function isDivider(column: ColumnId): column is DividerId {
-  return (DIVIDERS as readonly ColumnId[]).includes(column);
 }
 
 // --- the refresh button ------------------------------------------------------------

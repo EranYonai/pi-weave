@@ -41,9 +41,7 @@
  * `⌘K`, which would otherwise re-open the palette on top of itself.
  */
 
-import { COLUMNS, columnsAt } from "./layout.model";
-import type { ColumnId } from "./layout.model";
-import type { OverlayId } from "./shell.model";
+import { COLUMNS, type ColumnId, type OverlayId } from "./shell.model";
 
 // --- the event, without the DOM ---------------------------------------------------
 
@@ -122,9 +120,7 @@ export const COLUMN_DIGITS: Readonly<Record<string, ColumnId>> = { "1": "tree", 
  * search button once was. Derived from `columnsAt`, not listed, so the caveat
  * cannot drift from the breakpoints the sheet is attached to.
  */
-const COLLAPSIBLE_COLUMNS: ReadonlySet<ColumnId> = new Set(
-  COLUMNS.filter((c) => columnsAt("medium").includes(c) === false || columnsAt("narrow").includes(c) === false),
-);
+const COLLAPSIBLE_COLUMNS: ReadonlySet<ColumnId> = new Set(["tree", "graph"]);
 
 /**
  * Whether a modifier combination counts as "the platform's command key".
@@ -231,7 +227,7 @@ export interface KeyTarget {
  * The slice of `KeyboardEvent` the subscription reads.
  *
  * Structural, so the platform's satisfies it without a cast and a fake is an
- * object literal — the same port shape `EventSourceLike` and `HttpResponse`
+ * object literal — the same port shape as `HttpResponse`
  * use, for the same reason: there is no DOM test environment (§10).
  */
 export interface KeyboardEventLike {
