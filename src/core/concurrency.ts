@@ -1,10 +1,7 @@
 /**
- * Bounded-concurrency task runner shared by the deep scan (summaries.ts) and
- * the session scan (sessions.ts).
+ * Bounded-concurrency task runner shared by repository scans.
  *
- * Extracted from summaries.ts so the two scanners cannot drift: a second copy
- * of the scheduler is a second place for an off-by-one or a lost
- * cancellation check.
+ * Keeping the scheduler here gives every scan the same cancellation behavior.
  */
 
 /**

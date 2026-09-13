@@ -13,7 +13,6 @@ export * from "./git";
 export * from "./vault";
 export * from "./repoIndex";
 export * from "./summaries";
-export * from "./sessions";
 export * from "./concurrency";
 export * from "./workspace";
 export * from "./openInEditor";
