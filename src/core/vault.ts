@@ -331,8 +331,8 @@ export async function finalizeNote(
     const structured = input.body.trim();
     // A note whose body carries no `## Raw` marker yet is treated as *all*
     // raw: the entire pre-finalize body is preserved verbatim beneath the
-    // restructured body as a freshly created tail (docs/notepad.md §4 — the
-    // user's words are never silently destroyed by finalization).
+    // restructured body as a freshly created tail so the user's words are
+    // never silently destroyed by finalization.
     const body =
       structured +
       (rawTail !== ""

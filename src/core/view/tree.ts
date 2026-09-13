@@ -269,7 +269,7 @@ export function treeRows(model: GraphModel, state: TreeState): TreeRow[] {
   return rows;
 }
 
-/** Empty-state hint for the tree surface (weave-view-tui-design §5.1). */
+/** Empty-state hint for the tree surface. */
 export function treeEmptyHint(model: GraphModel): string | null {
   const vault = model.nodes.find((n) => n.kind === "vault");
   if (!vault) return null;

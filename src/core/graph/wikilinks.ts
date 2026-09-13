@@ -1,6 +1,6 @@
 /**
  * Obsidian-compatible [[wiki-link]] extraction from note bodies.
- * Pure module — see docs/weave-view.md §3.
+ * Pure module used by graph construction and viewer view-models.
  */
 
 import { slugify } from "../slug";

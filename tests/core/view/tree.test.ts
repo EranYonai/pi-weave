@@ -6,7 +6,7 @@
  */
 
 import { describe, expect, it } from "vitest";
-import { buildCurrentGraph } from "../../../src/core";
+import { buildCurrentGraph } from "../../../src/core/graph/current";
 import { buildRepoIndex, writeRepoIndex } from "../../../src/core/repoIndex";
 import { addNote } from "../../../src/core/vault";
 import { graphRoots, listLabel, treeEmptyHint, treeRows } from "../../../src/core/view";

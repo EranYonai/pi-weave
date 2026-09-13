@@ -1,6 +1,6 @@
 # scan-modes.md — light and deep repository scanning
 
-> Status: **implemented** (folds `docs/TODO.md` items **Todo 1** and **Todo 3** — the codebase-memory-mcp study — into one design).
+> Status: **implemented**.
 
 ## As-built deltas
 
@@ -94,9 +94,9 @@ Result shape: `{ considered, written, skippedFresh, skippedTooBig, failed, prune
 ### Why not…
 
 - …summaries inside `index.json`? Two copies of the truth; sidecars are git-diffable, human-browsable, and independently prunable.
-- …a separate `/weave-deep` command? The TODO's own answer: one concept (scan) with two depths; a flag scales better as modes grow (`deep`
-  future siblings: `--files`, `--modules`).
-- …auto-deep on session start? Cost must be opt-in (TODO rationale).
+- …a separate `/weave-deep` command? One concept (scan) with two depths; a flag scales better as modes grow (`deep` future siblings:
+  `--files`, `--modules`).
+- …auto-deep on session start? Cost must be opt-in.
 
 ## Non-goals
 

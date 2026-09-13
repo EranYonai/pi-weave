@@ -1,6 +1,6 @@
 /**
  * healthModel — staleness + link health, derived exclusively from the
- * GraphModel (weave-view-tui-design §5.4 / weave-workspace §3).
+ * GraphModel (weave-workspace §3).
  *
  * Zero new server/core fields: everything here is a projection of nodes,
  * edges, and `model.staleness`.

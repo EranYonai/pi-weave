@@ -33,7 +33,7 @@ export interface DetailModel {
   backlinks: DetailLinkRow[];
 }
 
-/** Ordered meta keys shown in the detail header (weave-view-tui-design §5.2). */
+/** Ordered meta keys shown in the detail header. */
 const META_ORDER = [
   "path",
   "slug",
