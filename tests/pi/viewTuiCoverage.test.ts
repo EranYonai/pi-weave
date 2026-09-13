@@ -20,10 +20,8 @@ import {
 import { provenanceStyle, kindStyle, chevron, PROVENANCE_CYCLE } from "../../src/pi/viewer/tui/theme";
 import type { GraphModel, GraphNode, NodeKind } from "../../src/core/graph/model";
 import type { NoteSource } from "../../src/core/types";
-import { addNote } from "../../src/core/vault";
-import { buildRepoIndex, writeRepoIndex } from "../../src/core/repoIndex";
-import { commitAll, gitInit, makeTempDir, withVaultEnv, writeFixture, createMockCtx } from "../helpers";
-import { runWeaveViewTui, buildTuiModel } from "../../src/pi/viewer/tui/run";
+import { makeTempDir, withVaultEnv, createMockCtx } from "../helpers";
+import { runWeaveViewTui } from "../../src/pi/viewer/tui/run";
 import { visibleWidth } from "@earendil-works/pi-tui";
 
 // ---------------------------------------------------------------------------
@@ -226,24 +224,10 @@ describe("decodeAction search-mode arms", () => {
 });
 
 // ---------------------------------------------------------------------------
-// run.ts guard + buildTuiModel
+// run.ts guard
 // ---------------------------------------------------------------------------
 
 describe("run.ts", () => {
-  it("buildTuiModel assembles the graph from disk", async () => {
-    const vault = await makeTempDir();
-    await withVaultEnv(vault, async () => {
-      const repo = await makeTempDir();
-      gitInit(repo);
-      await writeFixture(repo, "src/index.ts", "export const x = 1;\n");
-      commitAll(repo, "init");
-      const index = await buildRepoIndex(repo);
-      await writeRepoIndex(repo, index!);
-      await addNote(vault, { title: "X", body: "body", source: "human" });
-      const model = await buildTuiModel(repo, vault);
-      expect(model.nodes.some((n) => n.id === "vault")).toBe(true);
-    });
-  });
   it("runWeaveViewTui warns without UI and returns without throwing", async () => {
     const ctx = createMockCtx(await makeTempDir(), false, "tui");
     await runWeaveViewTui(ctx as never);

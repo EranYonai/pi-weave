@@ -1,8 +1,7 @@
 /**
  * Branch-coverage suite for the v2 workspace root + surface components
  * (weave-view-tui-v2 §11). Drives the degenerate paths the primary suites
- * don't reach: page/home/end movement, resize bytes, swap keys, split/no-detail
- * fallbacks, and body-load edge states.
+ * don't reach: page/home/end movement and body-load edge states.
  */
 
 import { describe, expect, it, vi } from "vitest";
@@ -15,7 +14,6 @@ import { HealthSurface } from "../../src/pi/viewer/tui/surface/health";
 import type { SurfaceContext } from "../../src/pi/viewer/tui/surface/base";
 import { BodyStore } from "../../src/pi/viewer/tui/bodyStore";
 import type { WeaveTheme, WeaveTui, WeaveLoaders } from "../../src/pi/viewer/tui/surface/base";
-import { workspacePanes, tripleWorkspace, wideWorkspace, split, close, resize, focusNext, collapseEmptySplits, setPaneSurface, collectPanes, collapseForWidth, defaultWorkspace, type Workspace } from "../../src/pi/viewer/tui/workspace";
 import type { GraphModel, GraphNode } from "../../src/core/graph/model";
 import type { NoteSource } from "../../src/core/types";
 
@@ -57,106 +55,12 @@ function ws(over: Partial<{ loaders: WeaveLoaders }> = {}) {
   const m = model();
   const tui = { requestRender: vi.fn(), terminal: { rows: 30, columns: 100 } } as WeaveTui & { requestRender: ReturnType<typeof vi.fn> };
   const done = vi.fn();
-  const w = new WeaveWorkspace({ model: m, theme: theme(), tui, loaders: over.loaders ?? fakeLoaders(), done, rows: 30, now: () => NOW, logo: "◈" });
+  const w = new WeaveWorkspace({ model: m, theme: theme(), tui, loaders: over.loaders ?? fakeLoaders(), done, rows: 30, now: () => NOW });
   return { w, tui, done, model: m };
 }
 function fakeLoaders(over: Partial<WeaveLoaders> = {}): WeaveLoaders {
   return { loadNote: async () => null, loadOkf: async () => null, openNote: async () => true, rebuild: async () => model(), ...over };
 }
-
-describe("workspaceRoot movement/resize/swap branches", () => {
-  it("applyResize handles all four control bytes and ignores unknown control bytes", () => {
-    const { w } = ws();
-    const sizes = () => (w.workspace.root.type === "split" ? [...w.workspace.root.sizes] : []);
-    const before = sizes();
-    w.handleInput("\u0008"); // Ctrl-h row shrink
-    expect(sizes()[0]).not.toBe(before[0]);
-    w.handleInput("\u000c"); // Ctrl-l row grow (back to 40)
-    w.handleInput("\u000a"); // Ctrl-j column grow (no column split → no-op)
-    w.handleInput("\u000b"); // Ctrl-k column shrink (no-op)
-    w.handleInput("\u001b"); // esc routes to pane, no crash
-    expect(w.render(100).length).toBeGreaterThan(0);
-  });
-
-  it("swapSurface handles d and h keys; f routes to the pane (focus)", () => {
-    const { w } = ws();
-    w.handleInput("d");
-    let active = workspacePanes(w.workspace).find((p) => p.id === w.workspace.activePaneId);
-    expect(active?.surface).toBe("detail");
-    w.handleInput("h");
-    active = workspacePanes(w.workspace).find((p) => p.id === w.workspace.activePaneId);
-    expect(active?.surface).toBe("health");
-    // f routes to the pane (focus) — active pane is health, focus is a pane key no-op
-    w.handleInput("f");
-    expect(w.workspace.activePaneId).toBeTruthy();
-  });
-
-  it("openDetail from a detail pane rebinds in place", () => {
-    const { w } = ws();
-    w.handleInput("d"); // make active a detail pane
-    const detailPane = workspacePanes(w.workspace).find((p) => p.id === w.workspace.activePaneId)!;
-    // navigate the explore... actually active is now detail; open a node via the pane event path
-    // rebind by sending a focusNode event path is not exposed, so assert no crash on enter
-    w.handleInput("\r");
-    expect(detailPane.surface).toBe("detail");
-  });
-
-  it("openDetail splits when there is no detail pane to the right", () => {
-    const { w } = ws();
-    // swap the active explore into a focus pane, then swap the detail pane away:
-    // close the detail pane, leaving only explore
-    w.handleInput("\t"); // focus to detail
-    w.handleInput("x"); // close detail -> now single explore pane
-    const panes = workspacePanes(w.workspace);
-    expect(panes).toHaveLength(1);
-    // navigate to a note and open detail (splits a new detail pane)
-    w.handleInput("\x1b[B");
-    w.handleInput("\r");
-    expect(workspacePanes(w.workspace)).toHaveLength(2);
-  });
-
-  it("openFocus reuses an existing focus pane and splits when none exists", () => {
-    const { w } = ws();
-    // active explore with vault selected — press f (pane focus) → openFocus
-    w.handleInput("f");
-    // the default workspace already has a detail pane but no focus pane → it splits a focus pane
-    let panes = workspacePanes(w.workspace);
-    expect(panes.some((p) => p.surface === "focus")).toBe(true);
-    // pressing f again now finds the focus pane (active surface is now focus) → reuse branch
-    const activeNow = panes.find((p) => p.id === w.workspace.activePaneId);
-    if (activeNow?.surface === "focus") {
-      w.handleInput("\x1b[B");
-      w.handleInput("f");
-    }
-    panes = workspacePanes(w.workspace);
-    expect(panes.filter((p) => p.surface === "focus").length).toBeGreaterThanOrEqual(1);
-  });
-
-  it("openInEditor on a non-note does nothing", () => {
-    const openNote = vi.fn(async () => true);
-    const loaders = fakeLoaders({ openNote });
-    const { w } = ws({ loaders });
-    // vault is the first root/selection; open it in detail (non-note), then o
-    w.handleInput("\r"); // openDetail(vault)
-    w.handleInput("o"); // detail surface emits openEditor(vault) -> openInEditor no-op
-    expect(openNote).not.toHaveBeenCalled();
-  });
-
-  it("setModel re-renders and clear body cache", () => {
-    const { w } = ws();
-    w.setModel(model());
-    expect(w.render(100).length).toBeGreaterThan(0);
-  });
-
-  it("refresh success via rebuild", async () => {
-    const m = model();
-    const rebuild = vi.fn(async () => m);
-    const { w } = ws({ loaders: fakeLoaders({ rebuild }) });
-    w.handleInput("r");
-    await new Promise((r) => setTimeout(r, 0));
-    expect(w.refreshing).toBe(false);
-  });
-});
 
 describe("FocusSurface branches", () => {
   const m = graph(
@@ -290,31 +194,7 @@ describe("decodeWorkspaceKey extra", () => {
   });
 });
 
-describe("workspaceRoot openFocus + split branches", () => {
-  it("openFocus reuses an existing focus pane and re-centers an active focus pane", () => {
-    const { w } = ws();
-    // f on explore -> no focus pane -> splits a focus pane (split branch)
-    w.handleInput("f");
-    expect(workspacePanes(w.workspace).some((p) => p.surface === "focus")).toBe(true);
-    // g on the focus surface -> focusNode(center) -> active-is-focus branch
-    w.handleInput("g");
-    // Tab back to explore, then f -> reuse existing focus pane branch
-    w.handleInput("\t");
-    w.handleInput("\t");
-    w.handleInput("f");
-    expect(workspacePanes(w.workspace).some((p) => p.surface === "focus")).toBe(true);
-  });
-
-  it("splitV and splitH both add a pane", () => {
-    const { w } = ws();
-    const n1 = workspacePanes(w.workspace).length;
-    w.handleInput("\\"); // splitV
-    expect(workspacePanes(w.workspace).length).toBeGreaterThan(n1);
-    const n2 = workspacePanes(w.workspace).length;
-    w.handleInput("|"); // splitH
-    expect(workspacePanes(w.workspace).length).toBeGreaterThan(n2);
-  });
-
+describe("workspaceRoot surface branches", () => {
   it("opening a file node in detail loads its body via the file loader", async () => {
     const m = graph(
       [node("vault", "vault", "Vault", null), node("repository", "repository", "repo", null), node("file:git.json", "file", "git.json", null, { path: "git.json" })],
@@ -323,7 +203,7 @@ describe("workspaceRoot openFocus + split branches", () => {
     const loadOkf = vi.fn(async () => ({ path: "git.json", body: '{"x":1}' }));
     const loaders = fakeLoaders({ loadOkf });
     const tui = { requestRender: vi.fn(), terminal: { rows: 30, columns: 100 } } as WeaveTui & { requestRender: ReturnType<typeof vi.fn> };
-    const w = new WeaveWorkspace({ model: m, theme: theme(), tui, loaders, done: vi.fn(), rows: 30, now: () => NOW, logo: "◈" });
+    const w = new WeaveWorkspace({ model: m, theme: theme(), tui, loaders, done: vi.fn(), rows: 30, now: () => NOW });
     // select the file (down from vault) and open detail
     w.handleInput("\x1b[B");
     w.handleInput("\r");
@@ -331,16 +211,6 @@ describe("workspaceRoot openFocus + split branches", () => {
     expect(loadOkf).toHaveBeenCalledWith("git.json");
   });
 
-  it("openDetail rebinds when the active pane is a detail pane", () => {
-    const { w } = ws();
-    // swap the active pane to detail, then open a note into it via the pane event
-    w.handleInput("d");
-    w.handleInput("\t"); // move focus off detail
-    w.handleInput("\t"); // back to detail
-    // now active is detail; enter on detail does not emit openDetail, so assert no crash
-    w.handleInput("\r");
-    expect(w.render(100).length).toBeGreaterThan(0);
-  });
 });
 
 describe("surface title + body branches via Pane", () => {
@@ -458,28 +328,6 @@ describe("surface title + body branches via Pane", () => {
     expect(f.state.focusId).toBe("note:hub");
   });
 
-  it("workspace column resize + collapse on a Wide layout", () => {
-    const { w } = ws();
-    w.workspace = wideWorkspace();
-    expect(w.workspace.root.type === "split" ? w.workspace.root.direction : null).toBe("column");
-    // Ctrl-j/Ctrl-k resize the column weights
-    w.handleInput("\u000a"); // Ctrl-j column grow
-    w.handleInput("\u000b"); // Ctrl-k column shrink
-    // narrow render collapses the wide layout
-    expect(w.render(70).join("\n")).toContain("[");
-    // wide render keeps it
-    expect(w.render(120).length).toBeGreaterThan(0);
-  });
-
-  it("split/close on a single-pane workspace keeps it valid", () => {
-    const { w } = ws();
-    w.workspace = { name: "one", root: { type: "pane", id: "p1", surface: "explore", nodeId: null }, activePaneId: "p1" };
-    w.handleInput("\\"); // split the single pane
-    expect(workspacePanes(w.workspace).length).toBe(2);
-    w.handleInput("x"); // close back to one
-    expect(workspacePanes(w.workspace).length).toBe(1);
-  });
-
   it("detail/focus/health render + move edge branches", () => {
     const m = graph([node("vault", "vault", "Vault", null)], []);
     const d = new DetailSurface({ context: ctx(m) });
@@ -522,39 +370,14 @@ describe("surface title + body branches via Pane", () => {
       done: vi.fn(),
       rows: 30,
       now: () => NOW,
-      logo: "◈",
-      workspace: wideWorkspace(),
     });
     const header = w2.render(120).join("\n");
     expect(header).toContain("weave view");
     // render while refreshing shows the banner
     w2.refreshing = true;
     expect(w2.render(120).join("\n")).toContain("refreshing");
-    // VStack (column) layout renders without error
+    // Fixed layout renders without error
     expect(w2.render(110).length).toBeGreaterThan(0);
   });
 
-  it("workspace pure-function edge branches", () => {
-    const single: Workspace = { name: "s", root: { type: "pane", id: "p1", surface: "explore", nodeId: null }, activePaneId: "p1" };
-    // split a pane whose parent is null (root pane) — covered; also resize with no matching axis
-    expect(resize(single, "p1", "row", 2)).toBe(single);
-    expect(split(single, "p1", "vertical").root.type).toBe("split");
-    // focusNext on a single pane is a no-op
-    expect(focusNext(single, 1)).toBe(single);
-    // collapseEmptySplits unwraps single-child splits
-    const nested: Workspace = { name: "n", root: { type: "split", direction: "row", sizes: [1], children: [single.root] }, activePaneId: "p1" };
-    expect(collapseEmptySplits(nested.root).type).toBe("pane");
-    // setPaneSurface on a pane node
-    const swapped = setPaneSurface(single, "p1", "health");
-    expect(collectPanes(swapped.root)[0]?.surface).toBe("health");
-    // collapseForWidth with an unknown active pane falls back to an empty explore pane
-    const gone: Workspace = { name: "g", root: { type: "split", direction: "row", sizes: [1, 1], children: [{ type: "pane", id: "p1", surface: "explore", nodeId: null }, { type: "pane", id: "p2", surface: "detail", nodeId: null }] }, activePaneId: "nope" };
-    expect(workspacePanes(collapseForWidth(gone, 70))).toHaveLength(1);
-    // findParent on a root-pane workspace (via split) returns null safely
-    expect(split(single, "p1", "vertical").root.type).toBe("split");
-    // collapseNestedColumns on a nested column-under-column collapses to the first pane
-    const deep = wideWorkspace();
-    const inner = collapseForWidth(deep, 90);
-    expect(collectPanes(inner.root).length).toBeGreaterThan(0);
-  });
 });

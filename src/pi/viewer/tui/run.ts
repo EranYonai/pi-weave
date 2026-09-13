@@ -15,10 +15,8 @@ import {
   readNoteForView,
   readOkfFileForView,
   resolveVaultRoot,
-  type GraphModel,
 } from "../../../core";
 import { openNoteInEditor } from "./openNote";
-import { bundledLogoImage, logoTier, renderMark } from "./branding";
 import { WeaveWorkspace } from "./workspaceRoot";
 import type { WeaveLoaders, WeaveTheme, WeaveTui } from "./surface/base";
 import { getWorkspaceStatus, formatStatusLine } from "../../../core";
@@ -47,11 +45,6 @@ export async function runWeaveViewTui(ctx: ExtensionCommandContext): Promise<voi
 
   await ctx.ui.custom(
     (tui, theme, _keybindings, done) => {
-      const tier = logoTier();
-      const logo = renderMark(tier, theme as unknown as WeaveTheme, 20);
-      // bundledLogoImage gates on Kitty support itself and returns null (glyph
-      // header) when unavailable.
-      const logoImage = bundledLogoImage(theme as unknown as WeaveTheme);
       const explorer = new WeaveWorkspace({
         model,
         theme: theme as unknown as WeaveTheme,
@@ -59,8 +52,6 @@ export async function runWeaveViewTui(ctx: ExtensionCommandContext): Promise<voi
         loaders,
         done,
         rows: tui.terminal.rows,
-        logo,
-        logoImage,
       });
       return explorer;
     },
@@ -77,9 +68,4 @@ export async function runWeaveViewTui(ctx: ExtensionCommandContext): Promise<voi
   }
   const indicator = theme?.fg ? theme.fg("dim", "○") : "○";
   ctx.ui.setStatus("weave", `${indicator} ${formatStatusLine(status)}`);
-}
-
-/** Test seam: build the model the explorer opens with, without a terminal. */
-export async function buildTuiModel(cwd: string, vaultRoot: string = resolveVaultRoot()): Promise<GraphModel> {
-  return buildCurrentGraph(cwd, vaultRoot);
 }
