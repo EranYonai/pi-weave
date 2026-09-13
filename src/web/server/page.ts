@@ -1,20 +1,19 @@
 /**
- * The HTML shell (weave-workspace §5.2, §5.3, §9).
+ * The HTML shell.
  *
  * Four elements and nothing else: a nonce'd `<style>` carrying the CSS
  * variable theme, `<div id="app">`, a nonce'd JSON bootstrap block, and
  * `<script nonce src="/app.js">`. All behaviour lives in the committed
- * bundle; this file exists to deliver a nonce, a CSP header and three
- * strings of context.
+ * bundle; this file exists to deliver a nonce, a CSP header and the cwd.
  *
  * ## Why the no-backtick guard survived the rewrite
  *
- * §9 retired the *source* guard for `dist/app.js` in favour of a stronger
+ *  retired the *source* guard for `dist/app.js` in favour of a stronger
  * invariant — `build:web:check` byte-compares the committed bundle against a
  * fresh build, so the shipped artifact provably matches its source. That
  * argument does not transfer here, because this file is not generated: it is
- * a template literal into which `cwd`, `vaultRoot` and a session id are
- * interpolated, and it is therefore still an injection surface. A vault path
+ * a template literal into which `cwd` is interpolated, and it is therefore
+ * still an injection surface. A path
  * containing `</script>` is not a hypothetical — it is one `mkdir` away.
  *
  * So the guard stays, in two forms, both in `tests/web/page.test.ts`:
@@ -75,7 +74,7 @@ export function cspNonce(nonce: string): string {
 }
 
 /**
- * The §5.2 policy, bound to one nonce.
+ * The  policy, bound to one nonce.
  *
  * Emitted as a single line with `; ` separators. `tests/web/routes.test.ts`
  * asserts the exact string — a policy that drifts silently is a policy that

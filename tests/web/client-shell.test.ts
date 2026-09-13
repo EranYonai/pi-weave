@@ -93,7 +93,7 @@ describe("repoLabel", () => {
 });
 
 describe("summaryParts", () => {
-  it("renders the §1.2 readout", () => {
+  it("renders the  readout", () => {
     expect(summaryParts({ notes: 34, repo: "fresh", nodes: 127 })).toEqual([
       "vault:34",
       "repo:fresh",
@@ -204,7 +204,7 @@ describe("OverlayId", () => {
 
 describe("readBootstrap", () => {
   it("decodes the block page.ts embeds", () => {
-    const boot = { cwd: "/repo", vaultRoot: "/home/u/.okf", session: "abc" };
+    const boot = { cwd: "/repo" };
     expect(readBootstrap(JSON.stringify(boot))).toEqual(boot);
   });
 
@@ -223,8 +223,8 @@ describe("readBootstrap", () => {
     expect(readBootstrap("null")).toEqual(EMPTY_BOOTSTRAP);
     expect(readBootstrap("[]")).toEqual(EMPTY_BOOTSTRAP);
     expect(readBootstrap('"a string"')).toEqual(EMPTY_BOOTSTRAP);
-    expect(readBootstrap('{"cwd":"/r","vaultRoot":"/v"}')).toEqual(EMPTY_BOOTSTRAP);
-    expect(readBootstrap('{"cwd":1,"vaultRoot":"/v","session":"s"}')).toEqual(EMPTY_BOOTSTRAP);
-    expect(readBootstrap('{"cwd":"/r","vaultRoot":"/v","session":7}')).toEqual(EMPTY_BOOTSTRAP);
+    expect(readBootstrap('{"vaultRoot":"/v"}')).toEqual(EMPTY_BOOTSTRAP);
+    expect(readBootstrap('{"cwd":1}')).toEqual(EMPTY_BOOTSTRAP);
+    expect(readBootstrap('{"cwd":null}')).toEqual(EMPTY_BOOTSTRAP);
   });
 });

@@ -1,6 +1,6 @@
 /**
  * The loopback workspace server — bind, lifecycle, teardown
- * (weave-workspace §5.1, §5.4).
+ *.
  *
  * This module owns three things and delegates everything else:
  *
@@ -13,7 +13,6 @@
  *  3. **Lifecycle.** `close()` releases the port.
  */
 
-import { randomBytes } from "node:crypto";
 import { createServer as createHttpServer, type Server } from "node:http";
 import { fileURLToPath } from "node:url";
 import { WorkspaceCache } from "../../core/cache/workspace";
@@ -38,7 +37,7 @@ export interface StartWorkspaceServerOptions {
   cache?: WorkspaceCache | undefined;
   /** Fixed token, for tests that need to know it before the boot resolves. */
   token?: string | undefined;
-  /** Cookie name override — the §5.1 footnote-1 fallback. */
+  /** Cookie name override — the  footnote-1 fallback. */
   cookieName?: string | undefined;
   /** Absolute path to the client bundle. Defaults to the committed one. */
   bundlePath?: string | undefined;
@@ -55,8 +54,6 @@ export interface WorkspaceServer {
   token: string;
   security: SecurityPolicy;
   cache: WorkspaceCache;
-  /** Random per-boot id, also embedded in the page bootstrap. */
-  session: string;
   /** Release the port. Idempotent. */
   close(): Promise<void>;
 }
@@ -64,8 +61,6 @@ export interface WorkspaceServer {
 export async function startWorkspaceServer(opts: StartWorkspaceServerOptions): Promise<WorkspaceServer> {
   const vaultRoot = opts.vaultRoot ?? resolveVaultRoot();
   const cache = opts.cache ?? new WorkspaceCache({ cwd: opts.cwd, vaultRoot });
-  const session = randomBytes(8).toString("hex");
-
   // `deps` is assembled before `listen` because the request handler closes
   // over it, but the security policy needs the bound port — so the policy
   // slot is filled after binding and the handler reads it through the
@@ -105,7 +100,6 @@ export async function startWorkspaceServer(opts: StartWorkspaceServerOptions): P
   deps = {
     cwd: opts.cwd,
     vaultRoot,
-    session,
     cache,
     security,
     bundlePath: opts.bundlePath ?? defaultBundlePath(),
@@ -119,7 +113,6 @@ export async function startWorkspaceServer(opts: StartWorkspaceServerOptions): P
     token: security.token,
     security,
     cache,
-    session,
     close,
   };
 }

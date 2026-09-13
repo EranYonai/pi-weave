@@ -1,5 +1,5 @@
 /**
- * Route handling for the workspace server (weave-workspace §5.3).
+ * Route handling for the workspace server.
  *
  * | Method | Path                     | Response                                     |
  * | ------ | ------------------------ | -------------------------------------------- |
@@ -62,8 +62,6 @@ import { requestFacts } from "./security";
 export interface RouteDeps {
   cwd: string;
   vaultRoot: string;
-  /** Random per-boot id, echoed into the page bootstrap. */
-  session: string;
   cache: WorkspaceCache;
   security: SecurityPolicy;
   /** Absolute path of the committed bundle. Injectable for tests. */
@@ -182,7 +180,7 @@ export async function readJsonBody(req: IncomingMessage): Promise<unknown | null
  * `notes` is what the graph was built from. It is a separate argument because
  * the graph deliberately does not carry structured tags — `detail.tags` is a
  * comma-joined display string and re-parsing it here would be exactly the
- * "grow structure inside `detail`" move §4.2/§4.3 rule out. The caller
+ * "grow structure inside `detail`" move / rule out. The caller
  * already holds the notes (the cache read them to build the model), so this
  * costs nothing. Omitted → `tags: {}`, which is what a caller that genuinely
  * has no note list should ship.
@@ -190,7 +188,7 @@ export async function readJsonBody(req: IncomingMessage): Promise<unknown | null
 export function toGraphPayload(model: CoreGraphModel, notes: readonly TaggedNote[] = []): GraphPayload {
   const payload: GraphPayload = {
     model: toWireModel(model),
-    // tag → slugs (§4.3). `deriveTagIndex` returns an ordered array because
+    // tag → slugs (). `deriveTagIndex` returns an ordered array because
     // order is meaningful (count desc, tag asc); the wire field is a record,
     // so that ordering survives only as JSON key insertion order. Good enough
     // deliberately: a client that wants the ranking re-derives it from the
@@ -198,12 +196,12 @@ export function toGraphPayload(model: CoreGraphModel, notes: readonly TaggedNote
     // a field the contract calls `Record<string, string[]>` — would be a
     // breaking change to a settled shape for a fact the client can compute.
     tags: Object.fromEntries(deriveTagIndex(notes).map((t) => [t.tag, t.slugs])),
-    // slug → unresolved wikilink targets (§4.2), carried on the model since
+    // slug → unresolved wikilink targets (), carried on the model since
     // the builder stopped discarding the names.
     dangling: model.danglingLinks,
     // Still `null`, and deliberately: server-side layout needs
     // `src/web/shared/layout`, which imports d3-force, and the server tier's
-    // npm allowlist is empty (§9: the published package has zero runtime
+    // npm allowlist is empty (: the published package has zero runtime
     // dependencies). The client runs the identical `shared/layout` code
     // itself, so this is a division of labour rather than a gap.
     positions: null,
@@ -217,7 +215,7 @@ export function toGraphPayload(model: CoreGraphModel, notes: readonly TaggedNote
 
 /**
  * Serialize a payload and stamp it with the digest of its own bytes
- * (weave-workspace §5.3, §15.6).
+ *.
  *
  * ## Why a digest and not `generatedAt`
  *
@@ -383,7 +381,7 @@ async function route(
 
 function sendShell(deps: RouteDeps, res: ServerResponse): void {
   const page = renderPage({
-    bootstrap: { cwd: deps.cwd, vaultRoot: deps.vaultRoot, session: deps.session },
+    bootstrap: { cwd: deps.cwd },
   });
   res.writeHead(200, {
     ...baseHeaders(),
@@ -411,7 +409,7 @@ async function sendBundle(deps: RouteDeps, res: ServerResponse): Promise<void> {
   res.writeHead(200, {
     ...baseHeaders(),
     "content-type": "text/javascript; charset=utf-8",
-    // §5.3. The artifact changes on rebuild and the server may outlive one.
+    // . The artifact changes on rebuild and the server may outlive one.
     "cache-control": "no-store",
   });
   res.end(source);
@@ -419,18 +417,18 @@ async function sendBundle(deps: RouteDeps, res: ServerResponse): Promise<void> {
 
 /**
  * Serialized payload + ETag, memoized per snapshot **identity**
- * (weave-workspace §4.1).
+ *.
  *
  * `WorkspaceCache` returns the *identical* snapshot object while nothing on
  * disk has moved, so this map turns a warm `/api/graph` into a pure lookup:
- * no `toGraphPayload`, no `JSON.stringify`, and — the point of §15.6's cost
+ * no `toGraphPayload`, no `JSON.stringify`, and — the point of 's cost
  * requirement — **no hashing at all**. The first request after a real change
  * gets a new snapshot object, misses, and pays once for the whole build.
  *
  * A `WeakMap` rather than a one-slot cache so that a request racing a rebuild
  * cannot evict the entry the other request is about to read, and so entries
  * for superseded snapshots are collected with them. The key is the snapshot
- * rather than the model because the payload depends on the notes too (§4.3).
+ * rather than the model because the payload depends on the notes too ().
  */
 const renderedGraphs = new WeakMap<WorkspaceSnapshot, { body: string; etag: string }>();
 
@@ -442,7 +440,7 @@ const renderedGraphs = new WeakMap<WorkspaceSnapshot, { body: string; etag: stri
  * rendered the same snapshot costs nothing.
  */
 export function graphStamp(snapshot: WorkspaceSnapshot): string {
-  // The memo stores the quoted ETag; the frame wants the bare digest.
+  // The memo stores the quoted ETag; the response exposes the bare digest.
   return renderGraph(snapshot).etag.slice(1, -1);
 }
 
@@ -461,11 +459,11 @@ function renderGraph(snapshot: WorkspaceSnapshot): { body: string; etag: string 
 async function sendGraph(deps: RouteDeps, req: IncomingMessage, res: ServerResponse): Promise<void> {
   // `snapshot()`, not `graph()`: the tag index has to be derived from the
   // same (already capped) note list the model was built from, or a tag could
-  // name a slug this graph has no node for (§4.3).
+  // name a slug this graph has no node for ().
   const snapshot = await deps.cache.snapshot();
   const { body, etag } = renderGraph(snapshot);
 
-  // The ETag is a digest of the serialized payload (§15.6, resolved), so it
+  // The ETag is a digest of the serialized payload (, resolved), so it
   // moves if and only if the bytes the client would receive have moved. The
   // three cases the old timestamp stamp missed — a body edit, a tag edit, and
   // the deletion of a non-newest note, none of which advance `generatedAt` —

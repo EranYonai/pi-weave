@@ -1,5 +1,5 @@
 /**
- * Routes, over a real socket (weave-workspace §5.3, §5.4, §10).
+ * Routes, over a real socket.
  *
  * A real `node:http` server on port 0 and real `fetch`, against a temp vault
  * and a temp git repo. Not a mocked `ServerResponse`: half of what this
@@ -49,7 +49,7 @@ import type { GraphPayload, NotePayload, OkfFilePayload, SearchPayload } from ".
 import { WIRE_MODEL_OMITTED_KEYS } from "../../src/web/shared/wire";
 import { commitAll, gitInit, makeTempDir, withVaultEnv, writeFixture } from "../helpers";
 
-/** The exact §5.2 policy, with the nonce elided. Asserted byte-for-byte. */
+/** The exact  policy, with the nonce elided. Asserted byte-for-byte. */
 const CSP_TEMPLATE =
   "default-src 'none'; script-src 'nonce-{N}'; style-src 'nonce-{N}'; " +
   "img-src 'self' data:; connect-src 'self'; font-src 'self'; " +
@@ -218,7 +218,7 @@ describe("toGraphPayload", () => {
   };
 
   it("carries a content digest as the stamp and leaves positions to the client", () => {
-    // §15.6: `stamp` is a digest of the payload, not `generatedAt`. It is
+    // : `stamp` is a digest of the payload, not `generatedAt`. It is
     // opaque, so this asserts its *shape* and its independence from the
     // timestamp rather than pinning a literal hash — a pinned hash would
     // turn every legitimate wire-shape change into a mystery failure here.
@@ -240,10 +240,10 @@ describe("toGraphPayload", () => {
   });
 
   it("changes the stamp when only a note body changes", () => {
-    // §15.6's residual blind spot: the payload carries only a display
+    // 's residual blind spot: the payload carries only a display
     // excerpt of a note body, so an edit below the fold used to reproduce
-    // byte-identical payload — and the dedupe layers on both ends discarded
-    // the frame that would have refetched the open note. The model's
+    // byte-identical payload — and the client would have kept its stale
+    // cached payload. The model's
     // `contentDigest` covers the bodies themselves, so any body edit moves
     // the stamp even when the excerpts and front matter stand still.
     const body = "x".repeat(300);
@@ -272,7 +272,7 @@ describe("toGraphPayload", () => {
     expect(later.stamp).not.toBe(toGraphPayload(EMPTY).stamp);
   });
 
-  it("changes the stamp when only `tags` moves (§4.3)", () => {
+  it("changes the stamp when only `tags` moves ()", () => {
     // `tags` is a top-level payload field the old timestamp stamp could not
     // see at all: editing front matter does not have to move `updated`.
     const before = toGraphPayload(EMPTY, [{ slug: "a", tags: ["before"] }]);
@@ -281,7 +281,7 @@ describe("toGraphPayload", () => {
     expect(before.stamp).not.toBe(after.stamp);
   });
 
-  it("changes the stamp when only `dangling` moves (§4.2)", () => {
+  it("changes the stamp when only `dangling` moves ()", () => {
     const before = toGraphPayload({ ...EMPTY, danglingLinks: { a: ["ghost"] } });
     const after = toGraphPayload({ ...EMPTY, danglingLinks: { a: ["phantom"] } });
     expect(before.stamp).not.toBe(after.stamp);
@@ -322,7 +322,7 @@ describe("toGraphPayload", () => {
     expect(stampPayload(once).stamp).toBe(once.stamp);
   });
 
-  it("hoists danglingLinks to `dangling` (§4.2)", () => {
+  it("hoists danglingLinks to `dangling` ()", () => {
     const payload = toGraphPayload({ ...EMPTY, danglingLinks: { alpha: ["ghost", "phantom"] } });
     expect(payload.dangling).toEqual({ alpha: ["ghost", "phantom"] });
   });
@@ -348,7 +348,7 @@ describe("toGraphPayload", () => {
     expect(model.danglingLinks).toEqual({ alpha: ["ghost"] });
   });
 
-  // --- §4.3: tags ----------------------------------------------------------
+  // --- : tags ----------------------------------------------------------
 
   it("builds `tags` from the notes, not from the graph's display string", () => {
     const payload = toGraphPayload(EMPTY, [
@@ -391,7 +391,7 @@ describe("toGraphPayload", () => {
 // --- the shell -----------------------------------------------------------------
 
 describe("GET /", () => {
-  it("serves the shell with the exact §5.2 CSP", async () => {
+  it("serves the shell with the exact  CSP", async () => {
     const { server } = await boot();
     const res = await get(server, "/");
     expect(res.status).toBe(200);
@@ -428,12 +428,12 @@ describe("GET /", () => {
     expect(res.headers.get("cache-control")).toBe("no-store");
   });
 
-  it("bootstraps the client with the cwd, the vault root and the session", async () => {
-    const { server, cwd, vaultRoot } = await boot();
+  it("bootstraps the client with the cwd", async () => {
+    const { server, cwd } = await boot();
     const html = await (await get(server, "/")).text();
     const open = html.indexOf(">", html.indexOf('<script type="application/json"')) + 1;
     const boot0 = JSON.parse(html.slice(open, html.indexOf("</script>", open)));
-    expect(boot0).toEqual({ cwd, vaultRoot, session: server.session });
+    expect(boot0).toEqual({ cwd });
   });
 });
 
@@ -445,7 +445,7 @@ describe("GET /app.js", () => {
     const res = await get(server, "/app.js");
     expect(res.status).toBe(200);
     expect(res.headers.get("content-type")).toBe("text/javascript; charset=utf-8");
-    // §5.3: the artifact changes on rebuild and the server may outlive one.
+    // : the artifact changes on rebuild and the server may outlive one.
     expect(res.headers.get("cache-control")).toBe("no-store");
     expect(await res.text()).toBe(await fs.readFile(defaultBundlePath(), "utf8"));
   });
@@ -466,7 +466,7 @@ describe("GET /api/graph", () => {
     const res = await get(server, "/api/graph");
     expect(res.status).toBe(200);
     const payload = (await res.json()) as GraphPayload;
-    // §15.6: a digest of the payload, *not* the data-as-of timestamp, which
+    // : a digest of the payload, *not* the data-as-of timestamp, which
     // remains available on the model for anything that wants to show a time.
     expect(payload.stamp).toMatch(/^[0-9a-f]{32}$/);
     expect(payload.stamp).not.toBe(payload.model.generatedAt);
@@ -476,13 +476,13 @@ describe("GET /api/graph", () => {
     expect(res.headers.get("etag")).toBe(`"${payload.stamp}"`);
     expect(res.headers.get("etag")?.startsWith("W/")).toBe(false);
     expect(payload.model.nodes.length).toBeGreaterThan(0);
-    // §4.3, no longer `{}`: the fixture's "Alpha Note" carries `t1`, and the
+    // , no longer `{}`: the fixture's "Alpha Note" carries `t1`, and the
     // slug — not the node id — is what the index reports.
     expect(payload.tags).toEqual({ t1: ["alpha-note"] });
-    // §4.2. The fixture's notes have no wiki-links at all, so nothing
+    // . The fixture's notes have no wiki-links at all, so nothing
     // dangles; that is an empty map for the right reason, not a stub.
     expect(payload.dangling).toEqual({});
-    // Still null by design (§7.3): the server tier cannot import d3-force.
+    // Still null by design (): the server tier cannot import d3-force.
     expect(payload.positions).toBeNull();
     expect(res.headers.get("etag")).toBe(`"${payload.stamp}"`);
     // `no-cache`, not `no-store`: the client should keep the body and
@@ -490,7 +490,7 @@ describe("GET /api/graph", () => {
     expect(res.headers.get("cache-control")).toBe("no-cache");
   });
 
-  it("serves tags and dangling built from the live vault (§4.2, §4.3)", async () => {
+  it("serves tags and dangling built from the live vault (, )", async () => {
     // End-to-end rather than through `toGraphPayload` directly: this is the
     // path that proves the route reaches the *notes*, not just the model.
     const ws = await freshWorkspace();
@@ -517,7 +517,7 @@ describe("GET /api/graph", () => {
     }
   });
 
-  // --- §15.6, resolved: the three cases a timestamp stamp could not see -----
+  // --- , resolved: the three cases a timestamp stamp could not see -----
   //
   // These were one test asserting the bug ("KNOWN LIMITATION: the stamp
   // misses an edit that does not move `updated`"). Each is now a positive
@@ -530,7 +530,7 @@ describe("GET /api/graph", () => {
   // the payload really did change, the stamp moved with it, and the
   // conditional GET on the old validator now answers `200` rather than `304`.
 
-  it("§15.6 case 1: a note body edit that does not move `updated` busts the cache", async () => {
+  it(" case 1: a note body edit that does not move `updated` busts the cache", async () => {
     const ws = await freshWorkspace();
     await addNote(ws.vaultRoot, { title: "Edited", body: "original body", tags: [], source: "human" });
     const { server } = await bootOn(ws, {});
@@ -563,7 +563,7 @@ describe("GET /api/graph", () => {
     expect(preview(second)).not.toBe(preview(first));
   });
 
-  it("§15.6 case 2: a front-matter tag edit that does not move `updated` busts the cache", async () => {
+  it(" case 2: a front-matter tag edit that does not move `updated` busts the cache", async () => {
     const ws = await freshWorkspace();
     await addNote(ws.vaultRoot, { title: "Edited", body: "b", tags: ["before"], source: "human" });
     const { server } = await bootOn(ws, {});
@@ -583,7 +583,7 @@ describe("GET /api/graph", () => {
     expect(conditional.status).toBe(200);
     const second = (await conditional.json()) as GraphPayload;
 
-    // The widened blast radius §15.6 warned about: a stale `tags` map is a
+    // The widened blast radius  warned about: a stale `tags` map is a
     // tag chip pointing at a note that no longer carries it.
     expect(second.tags).toHaveProperty("afterwards");
     expect(second.tags).not.toHaveProperty("before");
@@ -591,7 +591,7 @@ describe("GET /api/graph", () => {
     expect(second.stamp).not.toBe(first.stamp);
   });
 
-  it("§15.6 case 3: deleting a non-newest note busts the cache", async () => {
+  it(" case 3: deleting a non-newest note busts the cache", async () => {
     const ws = await freshWorkspace();
     await addNote(ws.vaultRoot, { title: "Older", body: "o", source: "human" });
     // Strictly newer, so deleting "Older" cannot move max(updated) — the
@@ -653,9 +653,9 @@ describe("GET /api/graph", () => {
     expect(a.stamp).toBe(b.stamp);
   });
 
-  it("a warm request re-uses the memoized rendering: zero extra hashing (§4.1)", async () => {
-    // §4.1's promise is that a no-change rebuild does zero note reads and
-    // zero git spawns; §15.6 adds "and no re-hashing" to that list, since the
+  it("a warm request re-uses the memoized rendering: zero extra hashing ()", async () => {
+    // 's promise is that a no-change rebuild does zero note reads and
+    // zero git spawns;  adds "and no re-hashing" to that list, since the
     // digest would otherwise be the one cost that scaled with request rate.
     //
     // Asserted through observable behaviour rather than a timer: the cache
@@ -683,7 +683,7 @@ describe("GET /api/graph", () => {
 
     // The snapshot identity is stable, which is what the memo keys on.
     expect(await cache.snapshot()).toBe(warmed);
-    // And §4.1's original guarantees still hold on that path.
+    // And 's original guarantees still hold on that path.
     expect(statsAfter.notesRead).toBe(statsBefore.notesRead);
     expect(statsAfter.gitCalls).toBe(statsBefore.gitCalls);
   });
@@ -734,7 +734,7 @@ describe("GET /api/graph", () => {
   });
 
   // `snapshot()`, not `graph()`: the route reads the graph *and* the notes it
-  // was built from in one call (§4.3), so that is the method whose failure
+  // was built from in one call (), so that is the method whose failure
   // has to reach the client as a 500.
   it("surfaces a cache failure as a 500, not a hung socket", async () => {
     const ws = await sharedWorkspace();
@@ -1168,7 +1168,7 @@ describe("unrouted requests", () => {
 
 // --- lifecycle ---------------------------------------------------------------------
 
-describe("lifecycle (§5.4)", () => {
+describe("lifecycle ()", () => {
   it("binds an ephemeral loopback port, never a fixed one", async () => {
     const a = await boot();
     const b = await boot();
@@ -1197,8 +1197,8 @@ describe("lifecycle (§5.4)", () => {
     const { cwd, vaultRoot } = await sharedWorkspace();
     const server = await withVaultEnv(vaultRoot, () => startWorkspaceServer({ cwd, token: TOKEN }));
     running.push(server);
-    const html = await (await get(server, "/")).text();
-    expect(html).toContain(JSON.stringify(vaultRoot).slice(1, -1));
+    const payload = (await (await get(server, "/api/graph")).json()) as GraphPayload;
+    expect(payload.model.nodes.some((node) => node.detail.slug === "alpha-note")).toBe(true);
   });
 
   it("builds its own cache when none is injected", async () => {
@@ -1211,15 +1211,7 @@ describe("lifecycle (§5.4)", () => {
     await res.json();
   });
 
-  it("gives every boot a distinct session id", async () => {
-    // The page bootstrap receives a fresh id on every server boot.
-    const a = await boot();
-    const b = await boot();
-    expect(a.server.session).not.toBe(b.server.session);
-    expect(a.server.session).toMatch(/^[0-9a-f]{16}$/);
-  });
-
-  it("uses the fallback cookie name when asked (§5.1 footnote 1)", async () => {
+  it("uses the fallback cookie name when asked ( footnote 1)", async () => {
     const { server } = await boot({ cookieName: "weave_token" });
     const res = await fetch(server.entryUrl, { redirect: "manual" });
     const cookie = res.headers.get("set-cookie") ?? "";
