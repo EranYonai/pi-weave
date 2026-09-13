@@ -1,21 +1,21 @@
 /**
- * Everything the tree column *decides* (weave-workspace §1.2, §3, §10).
+ * Everything the tree column *decides*.
  *
- * The column itself is `treeRows` with a different renderer — that is §3's
+ * The column itself is `treeRows` with a different renderer — that is 's
  * whole claim, and this module is what makes it true in the browser: it holds
  * the view state the TUI keeps in `ExplorerState`, the reducers that move it,
  * and the presentation mapping from a `TreeRow` to something a `<li>` can
  * render. `Tree.tsx` is left with a `useState`, a `map` and four handlers.
  *
- * That split is not stylistic. §10 forbids a DOM test environment, so a branch
+ * That split is not stylistic.  forbids a DOM test environment, so a branch
  * inside a `.tsx` is a branch no test can reach; every branch the tree needs
  * lives here, where an ordinary unit test covers it.
  *
- * ## Tier rules (§2)
+ * ## Tier rules ()
  *
  * `src/web/client/**`: `src/web/shared` and browser deps only. The view-models
  * arrive through `../../shared/view`, the one sanctioned door onto
- * `src/core/view` (§2.1) — never from `src/core` directly, even though the
+ * `src/core/view` () — never from `src/core` directly, even though the
  * modules behind the door are proven node-free. This file also touches no DOM
  * type at all, which is what lets the root `tsconfig.json` project (no `DOM`
  * lib) compile the tests that import it.
@@ -40,7 +40,7 @@ import type { IconName } from "../shell/icons.model";
  * It is **not** `src/web/client/state.ts`'s `TreeState`. That one is a P1
  * placeholder carrying only an expanded-id list, and it stays where it is:
  * this state is owned by the tree column, lives in the component that renders
- * it, and never crosses the context bus. §1.3's bus is `selectedId` — which
+ * it, and never crosses the context bus. 's bus is `selectedId` — which
  * rows happen to be open is not something the note column or the graph has any
  * business reacting to.
  */
@@ -81,7 +81,7 @@ export function initialTreeView(roots: readonly string[] = ["vault", "repository
  *
  * `WireGraphModel` is `Omit<GraphModel, "danglingLinks">` — the payload hoists
  * that map to its own top-level `dangling` rather than shipping it twice
- * (§4.2) — so exactly one field has to be put back before `treeRows` or
+ * () — so exactly one field has to be put back before `treeRows` or
  * `detailModel` will accept it. The door (`shared/view.ts`) deliberately does
  * not do this: it is a wire concern, and a door that carried a transformation
  * would be a second implementation rather than a re-export.
@@ -248,7 +248,7 @@ export function parentOf(rows: readonly TreeRow[], id: string): string | null {
 }
 
 /**
- * Vim-ish aliases: `j` is `ArrowDown`, `k` is `ArrowUp` (§11 P4).
+ * Vim-ish aliases: `j` is `ArrowDown`, `k` is `ArrowUp` ( P4).
  *
  * A *normalizer* rather than two more branches in {@link treeKey}, because
  * the aliasing and the navigation are separate concerns and folding them
@@ -257,7 +257,7 @@ export function parentOf(rows: readonly TreeRow[], id: string): string | null {
  *
  * ## Why the aliases are tree-scoped and not global
  *
- * §11 says "vim-ish `j/k` **in the tree**", and the qualifier is load-bearing
+ *  says "vim-ish `j/k` **in the tree**", and the qualifier is load-bearing
  * on both sides. A global `j` would move the tree's cursor while the user is
  * reading the note column — an invisible change to a surface they are not
  * looking at — and it would make `j` untypeable in the graph's depth control.
@@ -366,45 +366,6 @@ const KIND_ICONS: Readonly<Record<WireNodeKind, IconName>> = {
 /** The icon name for a node kind. */
 export function kindIcon(kind: WireNodeKind): IconName {
   return KIND_ICONS[kind];
-}
-
-// --- the session fold -----------------------------------------------------------------
-
-/**
- * The synthesized folder session memory lives under.
- *
- * Core's graph builder (`src/core/graph/build.ts`) nests notes whose slug has
- * a directory under a synthesized `vfolder:<dir>` node — kind `module`,
- * because reusing the tree's containment chain needs no client change. That
- * reuse is why there is no `session` node *kind*: a session note is an
- * ordinary `note` that happens to be filed there, and this client recognises
- * it by path, not by kind.
- */
-export const SESSION_DIR = "sessions";
-
-/** True when a node id names a note under the {@link SESSION_DIR} fold. */
-export function isSessionNote(id: string): boolean {
-  return id.startsWith(`note:${SESSION_DIR}/`);
-}
-
-/**
- * Whether a row renders a notch quieter.
- *
- * `sessions/<n>.md` notes are machine-written memory that accrues by the
- * dozens with near-duplicate titles, so at any real vault size they are most
- * of the tree's rows — and rows that all look alike at full weight make the
- * six notes a human actually wrote harder to find. So session rows sit in
- * `--weave-dim` until hovered or selected, which is how Obsidian treats its
- * own long tails.
- *
- * The *never* half is the load-bearing part: `selectedId` is the §1.3 bus, so
- * the selection is decided somewhere the tree does not own, and a rule that
- * could dim the selected row would be a rule the graph's click could silently
- * break. The class-coverage gate does not see this — it is asserted here,
- * which is where §10 says it belongs.
- */
-export function isMuted(row: TreeRow, selectedId: string | null): boolean {
-  return row.id !== selectedId && isSessionNote(row.id);
 }
 
 /**
@@ -557,14 +518,6 @@ export interface TreeRowView {
   readonly hasKids: boolean;
   readonly expanded: boolean;
   readonly selected: boolean;
-  /**
-   * Render a notch quieter — the session rows of {@link isMuted}.
-   *
-   * A view-model flag rather than a `.tsx` branch for the same reason every
-   * other branch is here, and the stylesheet keys off it with
-   * `.weave-row-muted`.
-   */
-  readonly muted: boolean;
   /** The trailing annotation, already formatted against `now`. */
   readonly meta: string;
   /** ARIA `aria-level`, which is 1-based where `depth` is 0-based. */
@@ -600,7 +553,6 @@ export function rowView(row: TreeRow, selectedId: string | null, now: number, po
     hasKids: row.hasKids,
     expanded: row.expanded,
     selected: row.id === selectedId,
-    muted: isMuted(row, selectedId),
     meta: formatTreeMeta(row.meta, now),
     level: row.depth + 1,
   };
@@ -616,7 +568,7 @@ export function rowViews(rows: readonly TreeRow[], selectedId: string | null, no
  * `aria-activedescendant` for the tree, or `null`.
  *
  * `null` when the selection is not a *visible* row — the selection is the
- * §1.3 bus and can name a node the tree has filtered away or collapsed under
+ *  bus and can name a node the tree has filtered away or collapsed under
  * a closed parent. Pointing `aria-activedescendant` at an id that is not in
  * the DOM is worse than omitting it: the attribute is a promise that the
  * element exists, and a screen reader that follows a dangling one announces
@@ -675,7 +627,7 @@ export const FILTER_PLACEHOLDER = "filter…";
  * Names *what is in it* rather than what it is: "Tree" is already the
  * column's heading and the role announces the widget type, so a second
  * "tree" would be read three times. "Vault and repository" is the sentence
- * §1.1 uses for the same thing.
+ *  uses for the same thing.
  */
 export const TREE_LABEL = "Vault and repository";
 
@@ -699,7 +651,7 @@ export const FILTER_HINT = "Filter the tree (/)";
  * The obvious order — "no rows? then work out why" — is wrong here, and it is
  * wrong in the case that matters most. A brand-new vault is not a graph with
  * no rows: `treeRows` still emits the `vault` root, so the column renders one
- * word and nothing else, and a user's first ever session says nothing about
+ * word and nothing else, and a user's first ever use says nothing about
  * how to add a note. `treeEmptyHint` is core's answer to exactly that
  * question, and it is deliberately narrow — it returns a string only for a
  * vault with no notes *and* no repository — so consulting it first cannot
@@ -708,7 +660,7 @@ export const FILTER_HINT = "Filter the tree (/)";
  * It also outranks the filter message, for the same reason: when the vault is
  * genuinely empty, "nothing matches this filter" is true and useless.
  *
- * Using core's sentence rather than writing one here is §3: the TUI's empty
+ * Using core's sentence rather than writing one here is : the TUI's empty
  * tree and the browser's say the same thing about the same vault, because
  * there is one sentence.
  */

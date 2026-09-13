@@ -1,5 +1,5 @@
 /**
- * The inline icon sprite (Tier 6, §8 P6.4).
+ * The inline icon sprite (Tier 6,  P6.4).
  *
  * The sprite is a constant, so — like `THEME_CSS` — it can be checked as
  * data. What matters here is not the artwork but the three properties the
@@ -13,7 +13,7 @@ import { describe, expect, it } from "vitest";
 import { ICON_BOX, ICONS, ICON_STROKE } from "../../src/web/client/shell/icons.model";
 import type { IconName } from "../../src/web/client/shell/icons.model";
 import { WIRE_NODE_KINDS } from "../../src/web/shared/wire";
-import { kindIcon, isSessionNote } from "../../src/web/client/tree/tree.model";
+import { kindIcon } from "../../src/web/client/tree/tree.model";
 
 describe("ICONS", () => {
   /** Coarse path-length check: an icon is small, a missing `d` is not. */
@@ -69,12 +69,6 @@ describe("ICONS", () => {
     for (const kind of WIRE_NODE_KINDS) expect(ICONS[kindIcon(kind)], kind).toBeDefined();
   });
 
-  it("gives the session fold its own glyph while notes keep the page", () => {
-    expect(isSessionNote("note:sessions/x")).toBe(true);
-    expect(ICONS.session).toBeDefined();
-    expect(ICONS.note).toBeDefined();
-    expect(ICONS.session).not.toBe(ICONS.note);
-  });
 });
 
 describe("ICON_BOX", () => {
@@ -89,7 +83,7 @@ describe("the names the two renderers ask for", () => {
   it("covers every call site's needs", () => {
     // `Tree.tsx`'s twisty and kind slots, and `ContextRail.tsx`'s row glyphs
     // and group chevrons, between them ask for these.
-    const asked: IconName[] = ["chevron", "session", "note", "module", "repository", "external"];
+    const asked: IconName[] = ["chevron", "note", "module", "repository", "external"];
     for (const name of asked) expect(ICONS[name], name).toBeDefined();
   });
 });

@@ -1,7 +1,7 @@
 /**
- * The context rail's pure model (weave-workspace §1.1, §1.2, §10, P2.5).
+ * The context rail's pure model.
  *
- * The property under test is §1.1's principle: *whatever is selected, the rail
+ * The property under test is 's principle: *whatever is selected, the rail
  * shows everything related without a navigation.* So the fixture is a graph
  * with all four relationship kinds present at once — wikilinks between notes,
  * shared tags, and `mentions` edges from notes to code — and the assertions
@@ -127,7 +127,7 @@ describe("contextModel groups", () => {
     expect(contextModel(GRAPH, "note:alpha").subject).toBe("Alpha");
   });
 
-  it("shows everything related to a note at once — the §1.1 principle", () => {
+  it("shows everything related to a note at once — the  principle", () => {
     // Standing on Alpha: it links to Beta, Gamma links to it, it mentions
     // src/core, and it shares tags with Beta and Gamma. All visible, no click.
     expect(shape(GRAPH, "note:alpha")).toEqual({
@@ -145,7 +145,7 @@ describe("contextModel groups", () => {
   });
 
   it("omits empty groups rather than rendering a heading over nothing", () => {
-    // The rail is a fixed-height region under the graph (§1.2). Four headings
+    // The rail is a fixed-height region under the graph (). Four headings
     // with one row between them wastes the space the populated group needed,
     // and an empty heading reads as a load that failed.
     expect(Object.keys(shape(GRAPH, "note:beta"))).toEqual([HEADINGS.backlinks, HEADINGS.mentions]);
@@ -168,7 +168,7 @@ describe("contextModel groups", () => {
     expect(mentions?.rows.map((row) => row.target)).toEqual(["module:src/core"]);
   });
 
-  it("orders the groups as §1.2 sketches them", () => {
+  it("orders the groups as  sketches them", () => {
     expect(contextModel(GRAPH, "note:alpha").groups.map((group) => group.heading)).toEqual([
       HEADINGS.links,
       HEADINGS.backlinks,
@@ -199,15 +199,6 @@ describe("context rows", () => {
     expect(backlink?.provenanceGlyph).toBe("○");
     expect(backlink?.provenanceTitle).toBe("generated-authored");
     expect(backlink?.kindIcon).toBe("note");
-  });
-
-  it("draws a session-memory note with the session icon, so the two columns agree", () => {
-    // A session note reaching the rail through a LINKS edge is the same object
-    // it is in the tree; the rail saying so is how the two columns read as one
-    // surface.
-    const session = { ...NODES[1]!, id: "note:sessions/2026-08-29" };
-    expect(rowFor("x", session, null).kindIcon).toBe("session");
-    expect(rowFor("x", NODES[1]!, null).kindIcon).toBe("note");
   });
 
   it("labels a row by the node, not by core's terminal-composed string", () => {
@@ -287,7 +278,7 @@ describe("tagsFor", () => {
   const byId = new Map(NODES.map((n) => [n.id, n]));
 
   it("reads the structured index, never the display string", () => {
-    // §4.2 forbids turning `detail.tags` back into structure, and it would be
+    //  forbids turning `detail.tags` back into structure, and it would be
     // lossy: a tag containing a comma round-trips wrong.
     const commas: GraphPayload = { ...GRAPH, tags: { "a, b": ["alpha"] } };
     expect(tagsFor(commas, "alpha", byId, null).map((tag) => tag.tag)).toEqual(["a, b"]);
@@ -307,7 +298,7 @@ describe("tagsFor", () => {
   });
 
   it("preserves the server's count-descending ranking rather than re-sorting", () => {
-    // `deriveTagIndex` already ordered these (§4.3) and the ETag depends on
+    // `deriveTagIndex` already ordered these () and the ETag depends on
     // that order; re-sorting here would discard a ranking already computed.
     expect(tagsFor(GRAPH, "alpha", byId, null).map((tag) => tag.tag)).toEqual(["architecture", "viewer", "solo"]);
   });
@@ -347,7 +338,7 @@ describe("incomingMentions", () => {
   });
 });
 
-// --- counts and collapse (Tier 6, §8 P6.4) -------------------------------------------------
+// --- counts and collapse (Tier 6,  P6.4) -------------------------------------------------
 
 /** A group of `n` unselected rows, for the collapse rules below. */
 function groupOf(n: number): ContextGroup {
@@ -402,7 +393,7 @@ describe("railCollapsed", () => {
   });
 
   it("never collapses a section holding the selection, however the user toggled it", () => {
-    // The selection is §1.3's bus and can arrive from the graph's stage click;
+    // The selection is 's bus and can arrive from the graph's stage click;
     // a selection that vanished into a fold reads as "the click did nothing".
     const everything = { open: new Set<string>(), closed: new Set([LINKS]) };
     expect(railCollapsed(everything, LINKS, 40, true)).toBe(false);

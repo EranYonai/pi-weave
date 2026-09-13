@@ -1,6 +1,6 @@
 /**
  * The workspace stylesheet, and how it gets past the CSP
- * (weave-workspace §1.2, §5.2).
+ *.
  *
  * ## Why the client ships CSS at all
  *
@@ -39,7 +39,7 @@
  * ## Testability
  *
  * The CSS is a pure constant and the installer takes a four-method port, so
- * both are covered without a DOM (§10). The port is narrow enough that the
+ * both are covered without a DOM (). The port is narrow enough that the
  * real `document` satisfies it structurally.
  */
 
@@ -64,7 +64,7 @@
  * `theme.model.ts`'s `effectiveScheme`, because its WebGL palette cannot
  * read any of this.
  *
- * ## "Dense but calm" (§1.2)
+ * ## "Dense but calm" ()
  *
  * The sketch is an information-dense IDE surface, not a marketing page, so
  * the rules below deliberately avoid the defaults that produce the opposite:
@@ -313,26 +313,17 @@ body{font-size:var(--weave-px-base)}
    hover from reading as a stray grey rectangle — the row answers the pointer
    in both channels at once. */
 .weave-row:hover .weave-label{color:var(--weave-fg)}
-/* The session fold (tree.model.ts's isMuted): machine-written memory that
-   accrues by the dozens with near-duplicate titles, dropped one notch so the
-   rows a human wrote keep the foreground. --weave-dim holds ≥ 4.5 on both
-   grounds, so this is quiet, not illegible — and the two states below always
-   restore full weight, which is why the model never emits both classes on
-   one row. */
-.weave-row-muted .weave-label{color:var(--weave-dim)}
-.weave-row-muted:hover .weave-label{color:var(--weave-fg)}
 /* The selection has one voice. On the tinted ground every quieter token still
    fails contrast — even --weave-dim lands under 4.5 — so a selected row's
    kind, provenance and meta children join its label in --weave-fg. The
    provenance glyph shape carries the distinction the colour swap drops;
    elsewhere the hues are unaffected. The palette's hit rows need the same
    remap: same selected ground, same failure. The label is restated last
-   because .weave-row-muted outranks the inheritance the row-on rule relies
-   on. */
+   so the selected row is always readable. */
 .weave-row-on .weave-twisty,.weave-row-on .weave-kind,.weave-row-on .weave-prov,
 .weave-row-on .weave-meta,.weave-row-on .weave-label{color:var(--weave-fg)}
 .weave-hit-on .weave-hit-badge,.weave-hit-on .weave-hit-detail{color:var(--weave-fg)}
-/* A newly-arrived node (a file or note added since the last update, §6):
+/* A newly-arrived node (a file or note added since the last update, ):
    one short highlight that fades while the label settles from bold back to
    normal. The class is computed from the frame diff in workspace.ts and
    expires with it, so collapsing and re-expanding later does not replay the
@@ -359,7 +350,7 @@ body{font-size:var(--weave-px-base)}
 
 /* icons ------------------------------------------------------------------
    The sprite's only CSS: one colour (the glyph inherits the row's, so a
-   muted row's icon recedes with it and a selected row's brightens with it)
+   quiet row's icon recedes with it and a selected row's brightens with it)
    and the twisty's rotation, which is the *same* 16px chevron the rail's
    group headings use — right-pointing closed, rotated 90° open. The
    rotation is not in the motion block's transition list, on purpose: that
@@ -457,7 +448,7 @@ body{font-size:var(--weave-px-base)}
 /* Two link species, one underline discipline. An external link is underlined
    *before* any hover, in the quiet line-strong rather than the accent — it
    announces "this leaves the workspace" while it is still inert. A wikilink
-   stays clean text until hover (it drives the §1.3 bus, not the browser, so
+   stays clean text until hover (it drives the  bus, not the browser, so
    the pointer is restored by hand); leaving vs staying is legible at a
    glance, with the same hover response once you commit. */
 .weave-note-body a{
@@ -479,7 +470,7 @@ body{font-size:var(--weave-px-base)}
    widths take. \`pointer-events: none\` is load-bearing rather than cosmetic:
    the card is delegated no clicks and may cover one, so it must stay a
    *displayer* — the click underneath still reaches the wikilink and the
-   §1.3 bus, and hovering "through" the card back to the link is impossible,
+    bus, and hovering "through" the card back to the link is impossible,
    which is what keeps hover and card from fighting each other. */
 .weave-preview{
   position:fixed;left:var(--weave-preview-x,0);top:var(--weave-preview-y,0);z-index:5;

@@ -1,10 +1,10 @@
 /**
- * The tree column's pure model (weave-workspace §1.2, §3, §10, P2.3).
+ * The tree column's pure model.
  *
  * `Tree.tsx` is a `useState`, a `map` and four handlers; every decision it
  * appears to make is one of the functions below. So this suite *is* the tree
  * column's coverage rather than a proxy for it, which is the whole point of
- * §10's split: there is no DOM test environment and none is needed.
+ * 's split: there is no DOM test environment and none is needed.
  *
  * The fixtures are real `GraphPayload`s built the way the server builds them
  * — `vault`/`repository` roots, `contains` edges, `note:` ids — because a
@@ -22,7 +22,6 @@ import {
   FILTER_LABEL,
   FILTER_PLACEHOLDER,
   PROVENANCE_CYCLE,
-  SESSION_DIR,
   TREE_LABEL,
   collapse,
   cycleProvenance,
@@ -33,8 +32,6 @@ import {
   initialTreeView,
   internalsHint,
   internalsLabel,
-  isMuted,
-  isSessionNote,
   kindIcon,
   moveSelection,
   parentOf,
@@ -166,7 +163,7 @@ describe("initialTreeView", () => {
 
 describe("viewModel", () => {
   it("puts danglingLinks back, which is the one field the wire splits out", () => {
-    // §4.2: `WireGraphModel` is `Omit<GraphModel, "danglingLinks">` because
+    // : `WireGraphModel` is `Omit<GraphModel, "danglingLinks">` because
     // the payload hoists the map to its own top level. Every view-model call
     // in the client goes through here so that reassembly has one spelling.
     const model = viewModel(GRAPH);
@@ -500,35 +497,6 @@ describe("kindIcon", () => {
    });
 });
 
-describe("session rows (the synthesized sessions fold)", () => {
-  it("recognises a session note by path, not by kind — core reuses the module kind", () => {
-    expect(isSessionNote("note:sessions/2026-08-29")).toBe(true);
-    expect(isSessionNote("note:sessions/deep/note")).toBe(true);
-    expect(isSessionNote("note:alpha")).toBe(false);
-    expect(isSessionNote("module:sessions")).toBe(false);
-    expect(isSessionNote("note:sessions")).toBe(false);
-  });
-
-  it("names the folder the same spelling core's graph builder uses", () => {
-    // The id format is a cross-tier contract; a typo here would mute nothing
-    // and nobody would notice without this pin.
-    expect(SESSION_DIR).toBe("sessions");
-  });
-
-  it("mutes session notes so forty near-duplicates stop competing with notes", () => {
-    expect(isMuted({ ...ALPHA_ROW, id: "note:sessions/2026-08-29" }, null)).toBe(true);
-  });
-
-  it("never mutes the selected row, wherever the selection came from", () => {
-    // `selectedId` is §1.3's bus: the graph's stage click can select a session
-    // row while the tree is scrolled elsewhere. Dimming a row the user just
-    // chose would read as "the click did nothing".
-    const session = { ...ALPHA_ROW, id: "note:sessions/2026-08-29" };
-    expect(isMuted(session, "note:sessions/2026-08-29")).toBe(false);
-    expect(isMuted(ALPHA_ROW, "note:alpha")).toBe(false);
-  });
-});
-
 describe("provenanceGlyph", () => {
   it("marks agent and generated content distinctly from human — AGENTS.md rule 4", () => {
     // Shape, not colour: the marker must survive greyscale and colour
@@ -603,12 +571,6 @@ describe("rowView", () => {
     expect(view.label).toBe("Alpha");
   });
 
-  it("mutes a session note and unmutes it when selected — via the view, not a .tsx branch", () => {
-    const session: TreeRow = { ...ALPHA_ROW, id: "note:sessions/2026-08-29" };
-    expect(rowView(session, null, NOW).muted).toBe(true);
-    expect(rowView(session, "note:sessions/2026-08-29", NOW).muted).toBe(false);
-    expect(rowView(ALPHA_ROW, null, NOW).muted).toBe(false);
-  });
 });
 
 describe("rowViews", () => {
@@ -708,7 +670,7 @@ describe("treeActiveDescendant", () => {
   });
 
   it("is null when the selection is not a visible row", () => {
-    // The selection is §1.3's bus and can name a node the tree has filtered
+    // The selection is 's bus and can name a node the tree has filtered
     // away or collapsed under a closed parent. Pointing the attribute at an
     // id that is not in the DOM is worse than omitting it: it is a promise
     // that the element exists, and a reader following a dangling one
@@ -801,7 +763,7 @@ describe("treeEmptyMessage", () => {
     // And it outranks the row count, deliberately: an empty vault is *not* a
     // graph with no rows — `treeRows` still emits the `vault` root — so a
     // naive "no rows? explain why" order says nothing at all on a user's very
-    // first session, which is the one time the hint is worth having.
+    // first use, which is the one time the hint is worth having.
     const empty = payloadOf([node("vault", "vault", "Vault")], []);
     const state = initialTreeView();
     expect(rowsFor(empty, state)).toHaveLength(1);

@@ -1,19 +1,19 @@
 /**
  * The workspace theme and its CSP-legal installation
- * (weave-workspace §1.2, §5.2).
+ *.
  *
  * Two things are asserted here, and the second is the one that matters.
  *
  * The CSS is a constant, so it can be checked as text: that it defines the
  * custom properties the components reference, that every class the `.tsx`
- * files emit has a rule, and — the §1.2 "dense but calm" brief — that it does
+ * files emit has a rule, and — the  "dense but calm" brief — that it does
  * not drift into the card-and-whitespace defaults it was written to avoid.
  *
  * The installer is the CSP half. `style-src 'nonce-{N}'` with no
  * `'unsafe-inline'` means a script-inserted `<style>` is dropped unless it
  * carries the per-response nonce, and that nonce is only readable through the
  * IDL property. These tests pin that behaviour with a four-method fake
- * `document`, no DOM required (§10).
+ * `document`, no DOM required ().
  */
 
 import { describe, expect, it } from "vitest";
@@ -120,7 +120,6 @@ describe("THEME_CSS", () => {
       "weave-row",
       "weave-row-new",
       "weave-row-on",
-      "weave-row-muted",
       "weave-icon",
       "weave-icon-open",
       "weave-twisty",
@@ -221,7 +220,7 @@ describe("THEME_CSS", () => {
   });
 
   it("stays dense: no card shadows, no oversized gutters", () => {
-    // §1.2 asks for "dense but calm" and the failure mode is a marketing
+    //  asks for "dense but calm" and the failure mode is a marketing
     // page. Shadows and 24 px padding are the tells. Tier 6 narrows the
     // shadow refusal to *elevation* only: the selection's inset accent bar
     // (`box-shadow:inset 2px 0 0 …`) is a hairline edge, not a shadow — it
@@ -382,7 +381,7 @@ describe("fetchJson", () => {
     await expect(response.json()).resolves.toEqual({ hi: true });
   });
 
-  it("always sends same-origin credentials — §5.1 authenticates by cookie", () => {
+  it("always sends same-origin credentials —  authenticates by cookie", () => {
     // The request uses same-origin credentials so the security model rides
     // the `__Host-weave` cookie. A default is a worse place for that
     // dependency than a line of code.
