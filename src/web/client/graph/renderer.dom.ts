@@ -13,7 +13,7 @@
  * whole renderer: `sigmaRenderer` holds the lifecycle, the reducers and the
  * delegation, and is unit-tested against `SigmaLike` with a recording fake.
  * Identical shape and identical reasoning to `api.dom.ts` for `fetch` and
- * `domEventSource` in `live.ts` for `EventSource`.
+ * the injected renderer port in the testable half of this module.
  *
  * This module is only reachable from a `.tsx` entry point, so it is compiled
  * exclusively by `tsconfig.web.json` (which has `DOM`) and never pulled into

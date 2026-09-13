@@ -39,7 +39,6 @@ export const DOM_GLOBALS = [
   "HTMLElement",
   "SVGElement",
   "getComputedStyle",
-  "EventSource",
 ];
 
 /** Globals that only exist in Node. The companion to a `node:*` import ban. */

@@ -36,7 +36,7 @@
  * that genuinely cannot be tested is the four-line adapter in
  * `renderer.dom.ts` that says `new Sigma(graph, container, settings)` — the
  * same shape, and the same reasoning, as `api.dom.ts` for `fetch` and
- * `domEventSource` for `EventSource`.
+ * the DOM renderer seam for the browser canvas.
  *
  * §7.5's promise is unaffected. "One file changes" is still true, and it is
  * now true of a file with no branches in it.
@@ -111,7 +111,7 @@ export interface GraphRenderer {
  * importing it drags the module into the **root** `tsconfig.json` project
  * (`exclude` filters the initial glob, not what an included file imports), and
  * that project has no `DOM` lib. The structural stand-in is the same trick
- * `cssvars.ts`, `api.ts` and `live.ts` use; the one cast lives in
+ * `cssvars.ts` and `api.ts` use; the one cast lives in
  * `renderer.dom.ts`, which is compiled only by `tsconfig.web.json`.
  */
 export interface RenderContainer {
@@ -144,7 +144,7 @@ export interface CameraLike {
  * The slice of `Sigma` this renderer drives.
  *
  * Structural, so the real class satisfies it without a cast and a fake is an
- * object literal — the same reasoning `EventSourceLike` in `live.ts` records.
+ * object literal — the same reasoning the injected renderer port records.
  * Six methods, and every one of them is called below, so the port cannot grow
  * a member nothing uses.
  *
