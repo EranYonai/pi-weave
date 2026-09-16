@@ -52,7 +52,7 @@ import { commitAll, gitInit, makeTempDir, withVaultEnv, writeFixture } from "../
 /** The exact §5.2 policy, with the nonce elided. Asserted byte-for-byte. */
 const CSP_TEMPLATE =
   "default-src 'none'; script-src 'nonce-{N}'; style-src 'nonce-{N}'; " +
-  "img-src 'self' data:; connect-src 'self'; font-src 'self'; " +
+  "img-src 'self' data:; connect-src 'self'; frame-src 'self'; font-src 'self'; " +
   "base-uri 'none'; form-action 'none'; frame-ancestors 'none'";
 
 const TOKEN = "test-token-" + "x".repeat(32);
@@ -887,6 +887,28 @@ describe("GET /api/okf/:rel", () => {
         expect(await res.text()).not.toContain("sensitive");
       }
     });
+  });
+});
+
+describe("GET /api/artifact/:rel", () => {
+  it("serves an HTML artifact with a sandboxed preview policy", async () => {
+    const { server, vaultRoot } = await bootFresh();
+    await fs.mkdir(join(vaultRoot, "notes", "reports"), { recursive: true });
+    const body = '<!doctype html><html><body><script>alert("no")</script><h1>Report</h1></body></html>';
+    await fs.writeFile(join(vaultRoot, "notes", "reports/report.html"), body, "utf8");
+
+    const res = await get(server, "/api/artifact/reports%2Freport.html");
+    expect(res.status).toBe(200);
+    expect(res.headers.get("content-type")).toBe("text/html; charset=utf-8");
+    expect(res.headers.get("content-security-policy")).toContain("sandbox allow-scripts");
+    expect(res.headers.get("cache-control")).toBe("no-store");
+    expect(await res.text()).toBe(body);
+  });
+
+  it.each(["../secret.html", "%2e%2e%2fsecret.html", "reports/report.md"])("refuses unsafe or non-HTML paths: %s", async (rel) => {
+    const { server } = await bootFresh();
+    const res = await get(server, `/api/artifact/${rel}`);
+    expect(res.status).toBe(404);
   });
 });
 

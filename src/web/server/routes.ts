@@ -8,6 +8,7 @@
  * | GET    | `/api/graph`             | {@link GraphPayload}, ETag'd on `stamp`      |
  * | GET    | `/api/note/:slug`        | {@link NotePayload}                          |
  * | GET    | `/api/okf/:rel`          | {@link OkfFilePayload}                       |
+ * | GET    | `/api/artifact/:rel`     | sandboxed HTML artifact                     |
  * | GET    | `/api/search?q=`         | {@link SearchPayload}                        |
  * | POST   | `/api/open`              | {@link OpenResult} — hand the note to `$EDITOR` |
  *
@@ -28,10 +29,11 @@
  * would tell a browser to hand a rebinding attacker's JavaScript the
  * response body it otherwise could not read. A test asserts the absence.
  *
- * **No path resolution of its own.** `/api/okf/:rel` and `/api/note/:slug`
- * carry untrusted path fragments straight from the URL. Both are handed to
- * the existing core guards — `readOkfFileForView` anchors under `<cwd>/.okf`
- * and `resolveNotePath` (via `getNote`) rejects unsafe slugs.
+ * **No path resolution of its own.** `/api/okf/:rel`, `/api/artifact/:rel` and `/api/note/:slug`
+ * carry untrusted path fragments straight from the URL. All three are handed to
+ * the existing core guards — `readOkfFileForView` anchors under `<cwd>/.okf`,
+ * `resolveHtmlPath` anchors under the vault notes directory, and
+ * `resolveNotePath` (via `getNote`) rejects unsafe slugs.
  */
 
 import { createHash } from "node:crypto";
@@ -43,7 +45,7 @@ import { readOkfFileForView } from "../../core/graph/current";
 import type { GraphModel as CoreGraphModel } from "../../core/graph/model";
 import { openNoteInEditor } from "../../core/openInEditor";
 import type { Note } from "../../core/types";
-import { getNote, searchNotes } from "../../core/vault";
+import { getNote, resolveHtmlPath, searchNotes } from "../../core/vault";
 import { deriveTagIndex, type TaggedNote } from "../../core/view/links";
 import type {
   GraphPayload,
@@ -372,6 +374,9 @@ async function route(
   if (method === "GET" && path.startsWith("/api/okf/")) {
     return sendOkf(deps, path.slice("/api/okf/".length), res);
   }
+  if (method === "GET" && path.startsWith("/api/artifact/")) {
+    return sendArtifact(deps, path.slice("/api/artifact/".length), res);
+  }
   if (method === "GET" && path === "/api/search") return sendSearch(deps, query, res);
   if (method === "POST" && path === "/api/open") return openNote(deps, req, res);
   sendText(res, 404, "not found\n");
@@ -574,6 +579,32 @@ async function sendOkf(deps: RouteDeps, rel: string, res: ServerResponse): Promi
   }
   const payload: OkfFilePayload = file;
   sendJson(res, 200, payload, { "cache-control": "no-store" });
+}
+
+/** Serve a vault HTML artifact as a sandboxed iframe document. */
+async function sendArtifact(deps: RouteDeps, rel: string, res: ServerResponse): Promise<void> {
+  const path = resolveHtmlPath(deps.vaultRoot, rel);
+  if (path === null) {
+    sendJson(res, 404, { error: "no such artifact" });
+    return;
+  }
+  let body: Buffer;
+  try {
+    body = await readFile(path);
+  } catch {
+    sendJson(res, 404, { error: "no such artifact" });
+    return;
+  }
+  res.writeHead(200, {
+    ...baseHeaders(),
+    "content-type": "text/html; charset=utf-8",
+    // The iframe is a preview, not an extension of the workspace origin.
+    // `sandbox allow-scripts` keeps demos interactive while retaining an
+    // opaque origin: scripts cannot reach the workspace or its cookies.
+    "content-security-policy": "sandbox allow-scripts; default-src 'none'; script-src 'unsafe-inline'; style-src 'unsafe-inline'; img-src data:",
+    "cache-control": "no-store",
+  });
+  res.end(body);
 }
 
 async function sendSearch(deps: RouteDeps, query: URLSearchParams, res: ServerResponse): Promise<void> {

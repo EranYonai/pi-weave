@@ -8,7 +8,7 @@
  * makes the page's refresh-polling cheap.
  */
 
-import type { Note, RepoIndex, StalenessReport, VaultStatus } from "../types";
+import type { HtmlArtifact, Note, RepoIndex, StalenessReport, VaultStatus } from "../types";
 import { createHash } from "node:crypto";
 import type { SummaryRecord } from "../summaries";
 import type { EdgeKind, GraphEdge, GraphModel, GraphNode } from "./model";
@@ -22,6 +22,8 @@ export interface BuildGraphInput {
   vault: VaultStatus;
   /** Full notes including bodies (for wiki-link extraction). */
   notes: Note[];
+  /** Standalone HTML/HTM artifacts under the vault's notes directory. */
+  artifacts?: HtmlArtifact[];
   /** Repository half; null when cwd is not an indexed git repository. */
   repository: { index: RepoIndex; staleness: StalenessReport } | null;
   /** Deep-scan summaries keyed by repo-relative path (docs/scan-modes.md). */
@@ -83,6 +85,9 @@ export function dataTimestamp(input: BuildGraphInput): string {
   for (const note of input.notes) {
     if (note.updated > max) max = note.updated;
   }
+  for (const artifact of input.artifacts ?? []) {
+    if (artifact.updated > max) max = artifact.updated;
+  }
   const repoStamp = input.repository?.index.updated ?? "";
   if (repoStamp > max) max = repoStamp;
   if (input.summaries) {
@@ -126,12 +131,18 @@ function buildVaultSide(
     root: input.vault.root,
     notes: String(input.vault.noteCount),
   };
+  const artifacts = input.artifacts ?? [];
+  if ((input.vault.artifactCount ?? artifacts.length) > 0) {
+    vaultDetail.artifacts = String(input.vault.artifactCount ?? artifacts.length);
+  }
   if (truncated) {
     vaultDetail.warning = `Graph shows the ${maxNotes} most recent notes — the vault holds ${input.vault.noteCount}. Wiki-links to older notes are omitted.`;
   }
   nodes.push({ id: "vault", kind: "vault", label: "Vault", provenance: null, detail: vaultDetail });
 
   const keptSlugs = new Set(kept.map((n) => n.slug));
+  const artifactSlugs = new Set(artifacts.map((a) => a.slug));
+  const artifactLinks = new Map<string, number>();
 
   // Nested notes nest under synthesized folder nodes so the vault tree groups
   // them the way the repository tree groups directories. Ids are prefixed
@@ -143,6 +154,7 @@ function buildVaultSide(
     ...new Set([
       ...(input.vault.folders ?? []),
       ...kept.map((n) => n.slug.split("/").slice(0, -1).join("/")),
+      ...artifacts.map((a) => a.slug.split("/").slice(0, -1).join("/")),
     ]),
   ]
     .filter((d) => d.length > 0)
@@ -179,7 +191,7 @@ function buildVaultSide(
     // The names, not just the count (§4.2). `detail` keeps carrying the count
     // because it is what the TUI's side panel prints; the structured targets
     // go on the model, where a UI can turn them into ghost nodes.
-    const dangling = links.filter((slug) => !keptSlugs.has(slug));
+    const dangling = links.filter((slug) => !keptSlugs.has(slug) && !artifactSlugs.has(slug));
     if (dangling.length > 0) {
       detail["dangling links"] = String(dangling.length);
       danglingLinks[note.slug] = dangling;
@@ -191,6 +203,10 @@ function buildVaultSide(
     for (const target of resolved) {
       edges.push({ source: `note:${note.slug}`, target: `note:${target}`, kind: "links-to" });
     }
+    for (const target of links.filter((slug) => artifactSlugs.has(slug))) {
+      edges.push({ source: `note:${note.slug}`, target: `artifact:${target}`, kind: "links-to" });
+      artifactLinks.set(target, (artifactLinks.get(target) ?? 0) + 1);
+    }
     // A note body naming a repo path → `mentions` (§4.4). Emitted after the
     // wiki-links so a note's edges read vault-ward first, then code-ward, and
     // only for paths that are already nodes — `paths` is built from the repo
@@ -199,6 +215,21 @@ function buildVaultSide(
     for (const target of resolveMentions(note.body, paths)) {
       edges.push({ source: `note:${note.slug}`, target, kind: "mentions" });
     }
+  }
+  for (const artifact of artifacts) {
+    const dir = artifact.slug.split("/").slice(0, -1).join("/");
+    const parent = (dir.length > 0 && folderIds.get(dir)) || "vault";
+    const detail: Record<string, string> = {
+      path: artifact.slug,
+      title: artifact.title,
+      updated: artifact.updated,
+      size: `${artifact.size} bytes`,
+    };
+    if (artifact.description) detail.description = artifact.description;
+    const links = artifactLinks.get(artifact.slug) ?? 0;
+    if (links > 0) detail["link references"] = String(links);
+    nodes.push({ id: `artifact:${artifact.slug}`, kind: "file", label: artifact.title, provenance: null, detail });
+    edges.push({ source: parent, target: `artifact:${artifact.slug}`, kind: "contains" });
   }
   return [...keptSlugs];
 }

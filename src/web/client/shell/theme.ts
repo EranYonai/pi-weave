@@ -374,6 +374,7 @@ body{font-size:var(--weave-px-base)}
 .weave-note-generated{--weave-spine:var(--weave-faint)}
 .weave-note{border-left:2px solid var(--weave-spine,transparent)}
 .weave-note-empty{flex:1;margin:0;padding:14px var(--weave-note-gutter);color:var(--weave-dim);max-width:44ch;line-height:1.5;background:var(--weave-page)}
+.weave-artifact-frame{display:block;flex:1;width:100%;min-height:320px;border:0;background:#fff}
 /* The head pins itself (P6.3): a long note scrolls its prose under the title,
    and the title is what says you are still in the right document — the
    alternative, a title that scrolls away, is how a reader ends up annotating

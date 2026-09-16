@@ -23,7 +23,11 @@ export function extractWikilinks(body: string): string[] {
   for (const match of body.matchAll(WIKILINK_RE)) {
     const raw = (match[1] ?? "").trim();
     if (raw.length === 0) continue;
-    const slug = raw.split("/").map((part) => slugify(part)).join("/");
+    // HTML artifacts are addressed by their vault-relative filename; unlike a
+    // Markdown note, the extension is part of the stable identity.
+    const slug = /\.html?$/i.test(raw)
+      ? raw.replace(/\\/g, "/").replace(/^\.\//, "")
+      : raw.split("/").map((part) => slugify(part)).join("/");
     if (seen.has(slug)) continue;
     seen.add(slug);
     out.push(slug);

@@ -29,6 +29,7 @@ import { describe, expect, it } from "vitest";
 import type { GraphPayload, ViewNote, WireGraphNode } from "../../src/web/shared/wire";
 import {
   EDITED_WORD,
+  artifactKeyOfNode,
   EMPTY_PREVIEW,
   EMPTY_WIKI_INDEX,
   GHOST_KIND,
@@ -55,6 +56,7 @@ import {
   renderWikilinkToken,
   resolveWikilink,
   safeUrl,
+  selectedArtifactPath,
   slugOfNode,
   stripMarkdown,
   tagLabel,
@@ -234,6 +236,36 @@ describe("escapeHtml", () => {
   it("escapes both quote styles, so an escaped string is safe in any attribute", () => {
     expect(escapeHtml(`a" onmouseover="x`)).not.toContain('"');
     expect(escapeHtml("a' onmouseover='x")).not.toContain("'");
+  });
+});
+
+describe("selectedArtifactPath", () => {
+  it("finds HTML and HTM file nodes", () => {
+    const payload = payloadOf([
+      { id: "artifact:reports/report.html", kind: "file", label: "Report", provenance: null, detail: { path: "reports/report.html" } },
+      { id: "artifact:legacy.htm", kind: "file", label: "Legacy", provenance: null, detail: { path: "legacy.htm" } },
+    ]);
+    expect(selectedArtifactPath(payload, "artifact:reports/report.html")).toBe("reports/report.html");
+    expect(selectedArtifactPath(payload, "artifact:legacy.htm")).toBe("legacy.htm");
+  });
+
+  it("ignores ordinary repository files and missing nodes", () => {
+    const payload = payloadOf([{ id: "file/index.html", kind: "file", label: "index.html", provenance: null, detail: { path: "index.html" } }]);
+    expect(selectedArtifactPath(payload, "file/index.html")).toBeNull();
+    expect(selectedArtifactPath(payload, "artifact:missing.html")).toBeNull();
+    expect(selectedArtifactPath(null, null)).toBeNull();
+  });
+
+  it("changes the iframe key when the artifact is updated", () => {
+    const node: WireGraphNode = {
+      id: "artifact:report.html",
+      kind: "file",
+      label: "Report",
+      provenance: null,
+      detail: { path: "report.html", updated: "2026-09-16T21:00:00.000Z" },
+    };
+    expect(artifactKeyOfNode(node)).toBe("report.html:2026-09-16T21:00:00.000Z");
+    expect(artifactKeyOfNode({ ...node, detail: { ...node.detail, updated: "2026-09-16T21:01:00.000Z" } })).not.toBe(artifactKeyOfNode(node));
   });
 });
 

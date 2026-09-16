@@ -1,16 +1,18 @@
 import { existsSync } from "node:fs";
 import { promises as fs } from "node:fs";
-import { dirname, isAbsolute, join, relative } from "node:path";
+import { basename, dirname, isAbsolute, join, relative } from "node:path";
 import {
   parseFrontMatter,
   parseNoteFile,
   serializeNote,
+  unquoteField,
 } from "./frontmatter";
 import { withMutationQueue } from "./mutex";
 import { NOTES_DIR, OKF_MANIFEST } from "./paths";
 import { slugify, uniqueSlug } from "./slug";
 import type {
   Note,
+  HtmlArtifact,
   NoteFrontMatter,
   NoteMeta,
   NoteSearchHit,
@@ -358,13 +360,89 @@ async function listNoteFiles(root: string): Promise<string[]> {
     for (const entry of entries) {
       if (entry.isDirectory()) {
         await walk(prefix.length > 0 ? `${prefix}/${entry.name}` : entry.name);
-      } else if (entry.isFile() && entry.name.endsWith(".md")) {
+      } else if (entry.isFile() && isVaultArtifact(entry.name)) {
         out.push(prefix.length > 0 ? `${prefix}/${entry.name}` : entry.name);
       }
     }
   }
   await walk("");
   return out.sort();
+}
+
+function isMarkdown(path: string): boolean {
+  return path.endsWith(".md");
+}
+
+function isHtml(path: string): boolean {
+  return path.toLowerCase().endsWith(".html") || path.toLowerCase().endsWith(".htm");
+}
+
+function isVaultArtifact(path: string): boolean {
+  return isMarkdown(path) || isHtml(path);
+}
+
+/** Resolve a vault-relative HTML path without allowing traversal. */
+export function resolveHtmlPath(root: string, slug: string): string | null {
+  if (slug.trim().length === 0 || !isHtml(slug)) return null;
+  const notesDir = join(root, NOTES_DIR);
+  const candidate = join(notesDir, slug);
+  const rel = relative(notesDir, candidate);
+  return rel.startsWith("..") || isAbsolute(rel) || rel.length === 0 ? null : candidate;
+}
+
+function decodeHtml(value: string): string {
+  return value
+    .replace(/&amp;/gi, "&")
+    .replace(/&lt;/gi, "<")
+    .replace(/&gt;/gi, ">")
+    .replace(/&quot;/gi, '"')
+    .replace(/&#39;|&apos;/gi, "'")
+    .replace(/&#(\d+);/g, (_, n: string) => String.fromCodePoint(Number(n)));
+}
+
+function htmlTagValue(text: string, tag: string): string {
+  const match = new RegExp(`<${tag}\\b[^>]*>([\\s\\S]*?)<\\/${tag}>`, "i").exec(text);
+  return match?.[1] === undefined ? "" : decodeHtml(match[1].replace(/<[^>]+>/g, "").trim());
+}
+
+function htmlMeta(text: string, name: string): string {
+  for (const match of text.matchAll(/<meta\b([^>]*)>/gi)) {
+    const attrs = match[1] ?? "";
+    const get = (key: string): string => {
+      const value = new RegExp(`\\b${key}\\s*=\\s*([\\\"'])(.*?)\\1`, "i").exec(attrs);
+      return value?.[2] ? decodeHtml(value[2].trim()) : "";
+    };
+    if (get("name").toLowerCase() === name.toLowerCase()) return get("content");
+  }
+  return "";
+}
+
+/** Parse metadata from an HTML file without attempting to interpret its body. */
+export function parseHtmlArtifact(slug: string, text: string, updated = "", size = Buffer.byteLength(text)): HtmlArtifact {
+  const comment = /<!--[\s\S]*?---\n([\s\S]*?)\n---[\s\S]*?-->/m.exec(text);
+  const fields = comment ? parseFrontMatter(`---\n${comment[1]}\n---\n`)?.fields : undefined;
+  const fallback = basename(slug).replace(/\.html?$/i, "").replace(/[-_]+/g, " ");
+  return {
+    slug,
+    title: fields?.get("title") ? unquoteField(fields.get("title")!) : htmlTagValue(text, "title") || fallback,
+    description: fields?.get("description")
+      ? unquoteField(fields.get("description")!)
+      : htmlMeta(text, "description"),
+    updated,
+    size,
+  };
+}
+
+/** Read one HTML artifact by its vault-relative path. */
+export async function getHtmlArtifact(root: string, slug: string): Promise<HtmlArtifact | null> {
+  const path = resolveHtmlPath(root, slug);
+  if (!path) return null;
+  try {
+    const [text, st] = await Promise.all([fs.readFile(path, "utf8"), fs.stat(path)]);
+    return parseHtmlArtifact(slug, text, st.mtime.toISOString(), st.size);
+  } catch {
+    return null;
+  }
 }
 
 export function summarizeNote(note: Note): NoteSummary {
@@ -422,21 +500,33 @@ export interface VaultSnapshot {
   fileCount: number;
   /** Subdirectories present in <vault>/notes/, including empty ones. */
   folders?: string[];
+  /** Readable standalone HTML/HTM artifacts. */
+  artifacts?: HtmlArtifact[];
+  /** Number of HTML/HTM files present, including malformed files. */
+  artifactCount?: number;
 }
 
 /** Read the whole vault in one pass: one readdir, one read per note. */
 export async function readVault(root: string): Promise<VaultSnapshot> {
   const [files, folders] = await Promise.all([listNoteFiles(root), listNoteFolders(root)]);
   const notes: Note[] = [];
+  const artifacts: HtmlArtifact[] = [];
   for (const file of files) {
-    const note = await getNote(root, file.slice(0, -".md".length));
-    if (!note) continue; // unreadable/malformed files are skipped, not fatal
-    notes.push(note);
+    if (isMarkdown(file)) {
+      const note = await getNote(root, file.slice(0, -".md".length));
+      if (note) notes.push(note);
+    } else if (isHtml(file)) {
+      const artifact = await getHtmlArtifact(root, file);
+      if (artifact) artifacts.push(artifact);
+    }
   }
+  const artifactCount = files.filter(isHtml).length;
   return {
     notes: notes.sort(byUpdatedDesc),
-    fileCount: files.length,
+    fileCount: files.filter(isMarkdown).length,
     ...(folders.length > 0 ? { folders } : {}),
+    ...(artifacts.length > 0 ? { artifacts: artifacts.sort(byUpdatedDesc) } : {}),
+    ...(artifactCount > 0 ? { artifactCount } : {}),
   };
 }
 
@@ -465,7 +555,7 @@ export async function statNotes(root: string): Promise<NoteStat[]> {
       const path = join(dir, file);
       try {
         const st = await fs.stat(path);
-        return { slug: file.slice(0, -".md".length), path, mtimeMs: st.mtimeMs, size: st.size };
+        return { slug: isMarkdown(file) ? file.slice(0, -".md".length) : file, path, mtimeMs: st.mtimeMs, size: st.size };
       } catch {
         return null; // raced a delete
       }
@@ -480,7 +570,7 @@ export async function listNotes(root: string): Promise<NoteSummary[]> {
 }
 
 export async function noteCount(root: string): Promise<number> {
-  return (await listNoteFiles(root)).length;
+  return (await listNoteFiles(root)).filter(isMarkdown).length;
 }
 
 /**
