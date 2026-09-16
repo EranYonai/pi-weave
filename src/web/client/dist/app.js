@@ -722,7 +722,7 @@ body{font-size:var(--weave-px-base)}
 /* Two link species, one underline discipline. An external link is underlined
    *before* any hover, in the quiet line-strong rather than the accent — it
    announces "this leaves the workspace" while it is still inert. A wikilink
-   stays clean text until hover (it drives the  bus, not the browser, so
+   stays clean text until hover (it drives the §1.3 bus, not the browser, so
    the pointer is restored by hand); leaving vs staying is legible at a
    glance, with the same hover response once you commit. */
 .weave-note-body a{
@@ -744,7 +744,7 @@ body{font-size:var(--weave-px-base)}
    widths take. \`pointer-events: none\` is load-bearing rather than cosmetic:
    the card is delegated no clicks and may cover one, so it must stay a
    *displayer* — the click underneath still reaches the wikilink and the
-    bus, and hovering "through" the card back to the link is impossible,
+   §1.3 bus, and hovering "through" the card back to the link is impossible,
    which is what keeps hover and card from fighting each other. */
 .weave-preview{
   position:fixed;left:var(--weave-preview-x,0);top:var(--weave-preview-y,0);z-index:5;
