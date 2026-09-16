@@ -35,6 +35,7 @@ import { useLayoutEffect, useMemo, useRef, useState } from "preact/hooks";
 import type { GraphPayload, NotePayload } from "../../shared/wire";
 import {
   CREATED_WORD,
+  artifactKeyOfNode,
   EDITED_WORD,
   EMPTY_PREVIEW,
   PREVIEW_ID,
@@ -47,6 +48,7 @@ import {
   previewPlacement,
   reducePreview,
   renderNote,
+  selectedArtifactPath,
   tagLabel,
   wikiIndex,
   wikilinkTargetOf,
@@ -117,6 +119,7 @@ function Header({
 
 export function Note(props: NoteProps) {
   const note = props.note?.note ?? null;
+  const artifactPath = selectedArtifactPath(props.graph, props.selectedId);
   const empty = noteEmptyMessage(props.selectedId, note);
 
   // Both hook calls sit before the empty-return so the hook order cannot
@@ -184,6 +187,27 @@ export function Note(props: NoteProps) {
     element.style.setProperty(`--${PREVIEW_X}`, `${spot.x}px`);
     element.style.setProperty(`--${PREVIEW_Y}`, `${spot.y}px`);
   }, [preview, card]);
+
+  if (artifactPath !== null) {
+    const artifact = props.graph?.model.nodes.find((node) => node.id === props.selectedId);
+    const title = artifact?.label ?? artifactPath;
+    const artifactKey = artifact === undefined ? artifactPath : artifactKeyOfNode(artifact) ?? artifactPath;
+    return (
+      <article key={artifactKey} class="weave-note weave-note-artifact">
+        <header class="weave-note-head">
+          <h3 class="weave-note-title">{title}</h3>
+          <p class="weave-note-meta"><span class="weave-note-time">{artifactPath}</span></p>
+        </header>
+        <iframe
+          key={artifactKey}
+          class="weave-artifact-frame"
+          title={title}
+          sandbox="allow-scripts"
+          src={`/api/artifact/${encodeURIComponent(artifactPath)}`}
+        />
+      </article>
+    );
+  }
 
   if (note === null || index === null) return <p class="weave-note-empty">{empty}</p>;
 

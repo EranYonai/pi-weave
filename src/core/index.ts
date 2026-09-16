@@ -21,11 +21,15 @@ export {
   finalizeNote,
   formatNote,
   formatRawAppend,
+  getHtmlArtifact,
   getNote,
   listNotes,
+  parseHtmlArtifact,
+  resolveHtmlPath,
   resolveNotePath,
   searchNotes,
 } from "./vault";
+export type { HtmlArtifact } from "./types";
 export { withMutationQueue } from "./mutex";
 export { formatDashboard, formatStatusLine, getWorkspaceStatus } from "./workspace";
 export { WorkspaceCache } from "./cache/workspace";

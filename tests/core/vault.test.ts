@@ -10,8 +10,10 @@ import {
   formatNote,
   formatRawAppend,
   getNote,
+  getHtmlArtifact,
   listNotes,
   noteCount,
+  parseHtmlArtifact,
   RAW_NOTES_HEADING,
   RAW_TAIL_NOTICE,
   readVault,
@@ -318,6 +320,32 @@ describe("readVault", () => {
     await addNote(vault, { title: "Two", body: "bbbb" });
     const snapshot = await readVault(vault);
     expect(await listNotes(vault)).toEqual(snapshot.notes.map(summarizeNote));
+  });
+
+  it("discovers HTML artifacts and extracts title and description metadata", async () => {
+    await ensureVault(vault);
+    await fs.mkdir(join(vault, "notes", "reports"), { recursive: true });
+    await fs.writeFile(
+      join(vault, "notes", "reports", "sprint.html"),
+      '<html><head><title>Sprint report</title><meta name="description" content="A summary"></head></html>',
+      "utf8",
+    );
+    const snapshot = await readVault(vault);
+    expect(snapshot.fileCount).toBe(0);
+    expect(snapshot.artifactCount).toBe(1);
+    expect(snapshot.artifacts).toEqual([
+      expect.objectContaining({ slug: "reports/sprint.html", title: "Sprint report", description: "A summary" }),
+    ]);
+    expect(await getHtmlArtifact(vault, "reports/sprint.html")).not.toBeNull();
+  });
+
+  it("lets a YAML-in-comment block override HTML metadata", () => {
+    const artifact = parseHtmlArtifact(
+      "report.htm",
+      '<!--\n---\ntitle: Hand-authored\ndescription: Details here\n---\n--><title>Ignored</title>',
+    );
+    expect(artifact.title).toBe("Hand-authored");
+    expect(artifact.description).toBe("Details here");
   });
 });
 

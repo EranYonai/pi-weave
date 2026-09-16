@@ -176,7 +176,7 @@ describe("contentSecurityPolicy", () => {
   it("is the exact §5.2 policy", () => {
     expect(contentSecurityPolicy("N")).toBe(
       "default-src 'none'; script-src 'nonce-N'; style-src 'nonce-N'; " +
-        "img-src 'self' data:; connect-src 'self'; font-src 'self'; " +
+        "img-src 'self' data:; connect-src 'self'; frame-src 'self'; font-src 'self'; " +
         "base-uri 'none'; form-action 'none'; frame-ancestors 'none'",
     );
   });

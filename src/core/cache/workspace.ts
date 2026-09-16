@@ -33,8 +33,8 @@ import { buildGraph, DEFAULT_MAX_NOTES, type BuildGraphInput } from "../graph/bu
 import type { GraphModel } from "../graph/model";
 import { readRepositorySide } from "../graph/current";
 import { withMutationQueue } from "../mutex";
-import { getNote, listNoteFolders, statNotes } from "../vault";
-import type { Note } from "../types";
+import { getHtmlArtifact, getNote, listNoteFolders, statNotes } from "../vault";
+import type { HtmlArtifact, Note } from "../types";
 
 /**
  * One build's outputs: the graph, and the notes it was built from.
@@ -53,6 +53,8 @@ export interface WorkspaceSnapshot {
    * caller mutating it would corrupt the next build.
    */
   notes: readonly Note[];
+  /** Exactly the HTML artifacts represented by the graph. */
+  artifacts: readonly HtmlArtifact[];
 }
 
 /** Cumulative counters, from construction. Callers take deltas. */
@@ -72,6 +74,12 @@ interface CachedNote {
   mtimeMs: number;
   size: number;
   note: Note;
+}
+
+interface CachedArtifact {
+  mtimeMs: number;
+  size: number;
+  artifact: HtmlArtifact;
 }
 
 /** The repository half, held behind a TTL because assessing it spawns git. */
@@ -107,8 +115,8 @@ export type InvalidationScope = "vault" | "repo" | "none";
  * whether an event is worth forwarding at all, and one implementation means
  * the two can never disagree.
  *
- *  - `vault`: a `*.md` under `<vaultRoot>/notes/`. Only note files count —
- *    the vault manifest does not participate in the graph.
+ *  - `vault`: a `*.md`, `*.html`, or `*.htm` under `<vaultRoot>/notes/`. Only
+ *    vault artifacts count — the vault manifest does not participate in graph.
  *  - `repo`:  anything under `<cwd>/.okf/` (the derived index and its summary
  *    sidecars) or under `<cwd>/.git/` (HEAD moves, staged changes), plus any
  *    tracked file in the repo, since editing one makes the index stale.
@@ -140,6 +148,9 @@ function classify(
     if (rel.endsWith(".md")) {
       const slug = rel.slice(0, -".md".length).split(sep).join("/");
       return { scope: "vault", slug };
+    }
+    if (rel.toLowerCase().endsWith(".html") || rel.toLowerCase().endsWith(".htm")) {
+      return { scope: "vault", slug: rel.split(sep).join("/") };
     }
     const base = rel.split(sep).pop() ?? rel;
     if (base.startsWith(".") || (base.includes(".") && !base.endsWith(".md"))) {
@@ -178,12 +189,14 @@ export class WorkspaceCache {
   private readonly stalenessTtlMs: number;
 
   private notes = new Map<string, CachedNote>();
+  private artifacts = new Map<string, CachedArtifact>();
   /**
    * `.md` files present at the last refresh, including ones too malformed to
    * parse — mirrors `readVault().fileCount` so the vault node's note count
-   * matches the uncached build exactly.
+   * matches the uncached build exactly. HTML artifacts have a separate count.
    */
   private fileCount = 0;
+  private artifactCount = 0;
   private folders: string[] = [];
   private repo: CachedRepo | null = null;
   /**
@@ -229,8 +242,8 @@ export class WorkspaceCache {
   private repoDirtiedDuringBuild = false;
   private building = false;
   /**
-   * Whether the last {@link refreshNotes} observed any note-side movement:
-   * a file read, a note that disappeared, or a change in the raw `.md` count.
+   * Whether the last {@link refreshNotes} observed any vault-side movement:
+   * a file read, a file that disappeared, or a change in raw file counts.
    * Read by {@link build} to decide whether {@link lastSnapshot} is reusable.
    */
   private notesChanged = true;
@@ -299,7 +312,8 @@ export class WorkspaceCache {
   invalidate(absPath: string): void {
     const { scope, slug } = classify(absPath, { cwd: this.cwd, vaultRoot: this.vaultRoot });
     if (scope === "vault" && slug !== null) {
-      this.notes.delete(slug);
+      if (slug.toLowerCase().endsWith(".html") || slug.toLowerCase().endsWith(".htm")) this.artifacts.delete(slug);
+      else this.notes.delete(slug);
       if (this.building) this.evictedDuringBuild.add(slug);
     } else if (scope === "repo") {
       this.repo = null;
@@ -310,6 +324,7 @@ export class WorkspaceCache {
   /** Drop everything: a repo scan landed, or the vault root moved. */
   invalidateAll(): void {
     this.notes.clear();
+    this.artifacts.clear();
     this.repo = null;
     if (this.building) {
       // Whatever the in-flight build writes back was read before this call,
@@ -336,7 +351,8 @@ export class WorkspaceCache {
     this.allEvictedDuringBuild = false;
     this.repoDirtiedDuringBuild = false;
     try {
-      const notes = await this.refreshNotes();
+      const refreshed = await this.refreshNotes();
+      const notes = refreshed.notes;
       const repoFresh = this.repoNeedsRefresh();
       const repo = await this.refreshRepo();
 
@@ -379,15 +395,21 @@ export class WorkspaceCache {
           exists: true,
           noteCount: this.fileCount,
           ...(this.folders.length > 0 ? { folders: this.folders } : {}),
+          ...(this.artifactCount > 0 ? { artifactCount: this.artifactCount } : {}),
         },
         notes: kept,
+        artifacts: refreshed.artifacts,
         repository: repo?.repository ?? null,
       };
       if (repo?.summaries !== undefined) input.summaries = repo.summaries;
 
       this.gitCalls += gitSpawnCount() - spawnsBefore;
       this.builtAt = this.now().toISOString();
-      const snapshot: WorkspaceSnapshot = { model: buildGraph(input), notes: Object.freeze(kept) };
+      const snapshot: WorkspaceSnapshot = {
+        model: buildGraph(input),
+        notes: Object.freeze(kept),
+        artifacts: Object.freeze(input.artifacts ?? []),
+      };
       this.lastSnapshot = snapshot;
       return snapshot;
     } finally {
@@ -416,8 +438,15 @@ export class WorkspaceCache {
    * something else touches it.
    */
   private applyDeferredInvalidations(): void {
-    if (this.allEvictedDuringBuild) this.notes.clear();
-    else for (const slug of this.evictedDuringBuild) this.notes.delete(slug);
+    if (this.allEvictedDuringBuild) {
+      this.notes.clear();
+      this.artifacts.clear();
+    } else {
+      for (const slug of this.evictedDuringBuild) {
+        if (/\.html?$/i.test(slug)) this.artifacts.delete(slug);
+        else this.notes.delete(slug);
+      }
+    }
     if (this.repoDirtiedDuringBuild) this.repo = null;
     this.evictedDuringBuild.clear();
     this.allEvictedDuringBuild = false;
@@ -428,18 +457,40 @@ export class WorkspaceCache {
    * Stat every note; re-read only the ones whose mtime or size moved. Notes
    * that disappeared are evicted, so the map never outgrows the vault.
    */
-  private async refreshNotes(): Promise<Note[]> {
+  private async refreshNotes(): Promise<{ notes: Note[]; artifacts: HtmlArtifact[] }> {
     const previousFolders = this.folders;
     const [stats, folders] = await Promise.all([statNotes(this.vaultRoot), listNoteFolders(this.vaultRoot)]);
     this.folders = folders;
     const previousCount = this.notes.size;
+    const previousArtifactCount = this.artifacts.size;
     const previousFileCount = this.fileCount;
-    this.fileCount = stats.length;
+    const previousRawArtifactCount = this.artifactCount;
+    this.fileCount = stats.filter((st) => st.path.toLowerCase().endsWith(".md")).length;
+    this.artifactCount = stats.filter((st) => /\.html?$/i.test(st.path)).length;
     let read = 0;
 
     const next = new Map<string, CachedNote>();
+    const nextArtifacts = new Map<string, CachedArtifact>();
     const out: Note[] = [];
+    const artifactOut: HtmlArtifact[] = [];
     for (const st of stats) {
+      if (/\.html?$/i.test(st.path)) {
+        const hit = this.artifacts.get(st.slug);
+        if (hit !== undefined && hit.mtimeMs === st.mtimeMs && hit.size === st.size) {
+          this.notesCached += 1;
+          nextArtifacts.set(st.slug, hit);
+          artifactOut.push(hit.artifact);
+          continue;
+        }
+        this.notesRead += 1;
+        read += 1;
+        const artifact = await getHtmlArtifact(this.vaultRoot, st.slug);
+        if (artifact === null) continue;
+        const cached = { mtimeMs: st.mtimeMs, size: st.size, artifact };
+        nextArtifacts.set(st.slug, cached);
+        artifactOut.push(artifact);
+        continue;
+      }
       const hit = this.notes.get(st.slug);
       if (hit !== undefined && hit.mtimeMs === st.mtimeMs && hit.size === st.size) {
         this.notesCached += 1;
@@ -463,11 +514,14 @@ export class WorkspaceCache {
       folders.length !== previousFolders.length ||
       folders.some((f, i) => f !== previousFolders[i]);
     this.notesChanged =
-      read > 0 || next.size !== previousCount || this.fileCount !== previousFileCount || foldersChanged;
+      read > 0 || next.size !== previousCount || nextArtifacts.size !== previousArtifactCount ||
+      this.fileCount !== previousFileCount || this.artifactCount !== previousRawArtifactCount || foldersChanged;
     this.notes = next;
+    this.artifacts = nextArtifacts;
+    const artifacts = artifactOut.sort((a, b) => b.updated.localeCompare(a.updated));
     // `statNotes` yields readdir (slug-ascending) order and sort is stable,
     // so ties break by slug — identical to `readVault`.
-    return out.sort((a, b) => b.updated.localeCompare(a.updated));
+    return { notes: out.sort((a, b) => b.updated.localeCompare(a.updated)), artifacts };
   }
 
   /** The repository half, re-assessed only when the TTL has expired. */

@@ -160,6 +160,25 @@ describe("DetailSurface", () => {
     s.handleInput("\r");
     expect(s.state.nodeId).toBe("note:b");
   });
+  it("shows HTML file metadata and link references", () => {
+    const html = node("file:report.html", "file", "report.html", null, {
+      title: "Sprint report",
+      description: "A generated report",
+      path: "reports/report.html",
+      size: "2048 bytes",
+      "link references": "2",
+    });
+    const css = node("file:report.css", "file", "report.css", null, { path: "reports/report.css" });
+    const m = graph([html, css], [{ source: html.id, target: css.id, kind: "links-to" }]);
+    const out = bindDetail({ context: ctx(m) }, html.id).render(120).join("\n");
+    expect(out).toContain("title: Sprint report");
+    expect(out).toContain("description: A generated report");
+    expect(out).toContain("path: reports/report.html");
+    expect(out).toContain("size: 2048 bytes");
+    expect(out).toContain("link references: 2");
+    expect(out).toContain("Links");
+    expect(out).toContain("report.css");
+  });
   it("arrow keys scroll a long note body and clamp at top/bottom", async () => {
     const longBody = "# Title\n\n" + Array.from({ length: 60 }, (_, i) => `line ${i + 1}`).join("\n");
     const loaders: WeaveLoaders = {

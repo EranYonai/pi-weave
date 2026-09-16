@@ -35,7 +35,10 @@ export interface DetailModel {
 
 /** Ordered meta keys shown in the detail header. */
 const META_ORDER = [
+  "title",
+  "description",
   "path",
+  "size",
   "slug",
   "source",
   "updated",
@@ -55,6 +58,7 @@ const META_ORDER = [
   "summarized at",
   "summary",
   "dangling links",
+  "link references",
   "warning",
   "stale",
   "preview",

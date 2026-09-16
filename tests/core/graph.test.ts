@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { buildGraph, dataTimestamp, DEFAULT_MAX_NOTES, type BuildGraphInput } from "../../src/core/graph/build";
 import { extractWikilinks } from "../../src/core/graph/wikilinks";
-import type { Note, NoteSource, RepoIndex, StalenessReport } from "../../src/core/types";
+import type { HtmlArtifact, Note, NoteSource, RepoIndex, StalenessReport } from "../../src/core/types";
 import type { SummaryRecord } from "../../src/core/summaries";
 import { NODE_KINDS } from "../../src/core/graph/model";
 
@@ -150,6 +150,41 @@ describe("buildGraph", () => {
     expect(links).toHaveLength(2); // [[Two|again]] dedupes, [[missing]] drops
     const one = model.nodes.find((n) => n.id === "note:one");
     expect(one?.detail["dangling links"]).toBe("1");
+  });
+
+  it("renders HTML artifacts as addressable file nodes and resolves wiki-links", () => {
+    const artifact: HtmlArtifact = {
+      slug: "reports/sprint.html",
+      title: "Sprint report",
+      description: "A summary",
+      updated: T1,
+      size: 123,
+    };
+    const model = buildGraph(input({
+      vault: { root: "/v", exists: true, noteCount: 1, artifactCount: 1 },
+      notes: [note("readme", "human", "See [[reports/sprint.html]]")],
+      artifacts: [artifact],
+    }));
+    expect(model.nodes).toContainEqual({
+      id: "artifact:reports/sprint.html",
+      kind: "file",
+      label: "Sprint report",
+      provenance: null,
+      detail: {
+        path: "reports/sprint.html",
+        title: "Sprint report",
+        updated: T1,
+        size: "123 bytes",
+        description: "A summary",
+        "link references": "1",
+      },
+    });
+    expect(model.edges).toContainEqual({
+      source: "note:readme",
+      target: "artifact:reports/sprint.html",
+      kind: "links-to",
+    });
+    expect(model.danglingLinks).toEqual({});
   });
 
   // --- §4.2: the *targets*, not just the count -----------------------------

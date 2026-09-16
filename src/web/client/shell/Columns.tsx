@@ -1,9 +1,10 @@
 /**
- * The fixed three-column grid and context rail. CSS owns responsive hiding;
- * keeping all three surfaces in the DOM preserves keyboard focus targets when
- * the viewport changes without a resize listener or persisted layout state.
+ * The resizable column grid and context rail. The shell supplies resolved
+ * widths and only the columns allowed by the current responsive breakpoint.
  */
 
+import { Fragment } from "preact";
+import { useLayoutEffect, useRef } from "preact/hooks";
 import { Graph } from "../graph/Graph";
 import type { ColorScheme } from "../graph/graph.model";
 import type { PositionStorage } from "../graph/positions";
@@ -12,11 +13,19 @@ import type { SchemeHost } from "../graph/scheme";
 import { Note } from "../note/Note";
 import { Tree } from "../tree/Tree";
 import type { GraphPayload, NotePayload } from "../../shared/wire";
-import type { ColumnId } from "./shell.model";
+import { applyVars } from "./cssvars";
+import type { ColumnId, DividerId, ResolvedColumn } from "./layout.model";
+import { columnVars } from "./layout.model";
 import { ContextRail } from "./ContextRail";
-import { emptyStateFor } from "./shell.model";
+import { columnSlots, emptyStateFor, type ColumnSlot } from "./shell.model";
+import { Divider } from "./Divider";
 
 export interface ColumnsProps {
+  resolved: readonly ResolvedColumn[];
+  onDown: (divider: DividerId, clientX: number, pointerId: number) => void;
+  onMove: (clientX: number) => void;
+  onUp: () => void;
+  onKey: (divider: DividerId, key: string) => void;
   /** The §1.3 context bus, as the columns see it. */
   graph: GraphPayload | null;
   note: NotePayload | null;
@@ -95,12 +104,20 @@ function Column({ id, props }: { id: ColumnId; props: ColumnsProps }) {
   );
 }
 
+function Slot({ slot, props }: { slot: ColumnSlot; props: ColumnsProps }) {
+  const divider = slot.divider;
+  return <Fragment>
+    <Column id={slot.column.id} props={props} />
+    {divider === null ? null : <Divider id={divider} label={`Resize ${slot.column.id} column`}
+      onDown={(x, pointerId) => props.onDown(divider, x, pointerId)} onMove={props.onMove} onUp={props.onUp}
+      onKey={(key) => props.onKey(divider, key)} />}
+  </Fragment>;
+}
+
 export function Columns(props: ColumnsProps) {
-  return (
-    <div class="weave-grid">
-      <Column id="tree" props={props} />
-      <Column id="note" props={props} />
-      <Column id="graph" props={props} />
-    </div>
-  );
+  const grid = useRef<HTMLDivElement | null>(null);
+  useLayoutEffect(() => { applyVars(grid.current, columnVars(props.resolved)); }, [props.resolved]);
+  return <div class="weave-grid" ref={grid} data-columns={props.resolved.length}>
+    {columnSlots(props.resolved).map((slot) => <Slot key={slot.column.id} slot={slot} props={props} />)}
+  </div>;
 }

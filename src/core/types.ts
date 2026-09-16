@@ -69,6 +69,17 @@ export interface Note extends NoteMeta {
   frontMatter?: NoteFrontMatter;
 }
 
+/** A standalone HTML artifact discovered under the vault's notes directory. */
+export interface HtmlArtifact {
+  /** Vault-relative path, including the `.html`/`.htm` extension. */
+  slug: string;
+  title: string;
+  description: string;
+  /** ISO mtime and byte size, used for graph display and cache invalidation. */
+  updated: string;
+  size: number;
+}
+
 /** Summary of one note for list/search output. */
 export interface NoteSummary extends NoteMeta {
   slug: string;
@@ -175,6 +186,8 @@ export interface VaultStatus {
   exists: boolean;
   noteCount: number;
   folders?: string[];
+  /** Number of discovered HTML/HTM artifacts. */
+  artifactCount?: number;
 }
 
 /** Status of the repository half of the workspace. */

@@ -256,6 +256,26 @@ export function slugOfNode(node: WireGraphNode): string | null {
   return slug === "" ? null : slug;
 }
 
+/** The vault-relative HTML path inside an `artifact:<path>` file node. */
+export function artifactPathOfNode(node: WireGraphNode): string | null {
+  if (node.kind !== "file" || !node.id.startsWith("artifact:")) return null;
+  const path = node.detail.path;
+  return path !== undefined && /\.html?$/i.test(path) ? path : null;
+}
+
+/** Stable iframe key that changes when the artifact on disk changes. */
+export function artifactKeyOfNode(node: WireGraphNode): string | null {
+  const path = artifactPathOfNode(node);
+  return path === null ? null : `${path}:${node.detail.updated ?? ""}`;
+}
+
+/** Resolve the selected HTML artifact, if the graph has one. */
+export function selectedArtifactPath(payload: GraphPayload | null, selectedId: string | null): string | null {
+  if (payload === null || selectedId === null) return null;
+  const node = payload.model.nodes.find((candidate) => candidate.id === selectedId);
+  return node === undefined ? null : artifactPathOfNode(node);
+}
+
 /**
  * Build the index for rendering the note with slug `slug`.
  *

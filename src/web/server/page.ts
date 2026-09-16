@@ -87,6 +87,7 @@ export function contentSecurityPolicy(nonce: string): string {
     `style-src 'nonce-${cspNonce(nonce)}'`,
     "img-src 'self' data:",
     "connect-src 'self'",
+    "frame-src 'self'",
     "font-src 'self'",
     "base-uri 'none'",
     "form-action 'none'",

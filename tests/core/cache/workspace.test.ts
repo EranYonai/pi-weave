@@ -98,6 +98,25 @@ describe("WorkspaceCache — cold build", () => {
     await cache.graph();
     expect(cache.stats().notesRead).toBe(readAfterFirst + 1);
   });
+
+  it("caches HTML artifacts and invalidates them on change", async () => {
+    const vault = await vaultWith([]);
+    await fs.mkdir(join(vault, NOTES_DIR, "reports"), { recursive: true });
+    const path = join(vault, NOTES_DIR, "reports", "sprint.html");
+    await fs.writeFile(path, "<title>Old</title>", "utf8");
+    const cache = new WorkspaceCache({ cwd: await makeTempDir(), vaultRoot: vault });
+
+    const first = await cache.snapshot();
+    expect(first.model.nodes.find((n) => n.id === "artifact:reports/sprint.html")?.label).toBe("Old");
+    const reads = cache.stats().notesRead;
+    await cache.snapshot();
+    expect(cache.stats().notesRead).toBe(reads);
+
+    await fs.writeFile(path, "<title>New</title>", "utf8");
+    cache.invalidate(path);
+    const second = await cache.snapshot();
+    expect(second.model.nodes.find((n) => n.id === "artifact:reports/sprint.html")?.label).toBe("New");
+  });
 });
 
 describe("WorkspaceCache — the no-change rebuild (§4.1 headline)", () => {
@@ -398,6 +417,7 @@ describe("classifyPath", () => {
   it("ignores non-markdown files in the notes directory", () => {
     expect(classifyPath("/home/u/.okf/notes/.DS_Store", opts)).toBe("none");
     expect(classifyPath("/home/u/.okf/okf.json", opts)).toBe("none");
+    expect(classifyPath("/home/u/.okf/notes/reports/sprint.html", opts)).toBe("vault");
   });
 
   it("resolves a vault nested inside the repo as vault, not repo", () => {
