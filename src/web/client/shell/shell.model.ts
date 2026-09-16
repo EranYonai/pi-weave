@@ -15,11 +15,9 @@
  */
 
 import type { GraphPayload, WireNodeKind, WireStalenessState } from "../../shared/wire";
-/** The three fixed workspace surfaces. */
-export type ColumnId = "tree" | "note" | "graph";
-
-/** Columns in keyboard and visual order. */
-export const COLUMNS: readonly ColumnId[] = ["tree", "note", "graph"];
+import { COLUMNS, type ColumnId, type DividerId, type ResolvedColumn } from "./layout.model";
+export { COLUMNS };
+export type { ColumnId };
 
 // --- the header summary --------------------------------------------------------
 
@@ -107,6 +105,22 @@ export function emptyStateFor(column: ColumnId): EmptyStateCopy {
 export const CONTEXT_EMPTY: EmptyStateCopy = {
   title: "Context",
 };
+
+export interface ColumnSlot {
+  readonly column: ResolvedColumn;
+  readonly divider: DividerId | null;
+}
+
+export function columnSlots(resolved: readonly ResolvedColumn[]): readonly ColumnSlot[] {
+  return resolved.map((column, index) => ({
+    column,
+    divider: index < resolved.length - 1 && isDivider(column.id) ? column.id : null,
+  }));
+}
+
+function isDivider(column: ColumnId): column is DividerId {
+  return column !== "graph";
+}
 
 // --- the status bar -------------------------------------------------------------------
 

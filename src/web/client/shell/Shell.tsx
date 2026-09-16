@@ -1,7 +1,7 @@
 /**
  * The workspace shell.
  *
- * Header, three fixed columns, context rail, status bar. This component holds
+ * Header, resizable columns, context rail, status bar. This component holds
  * the wiring and nothing else — every value it renders comes from pure
  * functions in the shell models,
  * and the fetch/poll loop is `workspace.ts`. What is left here is hooks:
@@ -17,7 +17,7 @@
  *     would let `⌘K` stack a palette on top of itself.
  */
 
-import { useEffect, useRef, useState } from "preact/hooks";
+import { useEffect, useMemo, useRef, useState } from "preact/hooks";
 import { fetchJson } from "../api.dom";
 import { openNote } from "../api";
 import type { ColorScheme } from "../graph/graph.model";
@@ -31,15 +31,19 @@ import type { WorkspaceHandle } from "../workspace";
 import { startWorkspace } from "../workspace";
 import { Columns } from "./Columns";
 import { deeplinkSelection, formatHash } from "./deeplink.model";
+import { dividerHandlers } from "./drag.model";
 import { Header } from "./Header";
 import { HelpOverlay } from "./HelpOverlay";
 import { watchKeys } from "./keys";
 import { focusSelector, runShellAction } from "./keys.model";
 import { StatusBar } from "./StatusBar";
+import type { LayoutState } from "./layout.model";
+import { breakpointFor, loadLayout, resolveColumns, saveLayout } from "./layout.model";
 import type { OverlayId } from "./shell.model";
 import { TICK_MS, looksApple, searchShortcut, statusBarModel, summarize } from "./shell.model";
 import { cycleTheme, effectiveScheme, loadTheme, saveTheme, themeAttr, themeButton } from "./theme.model";
 import type { ThemeChoice } from "./theme.model";
+import { watchViewport } from "./viewport";
 
 /**
  * Write the choice onto `<html>`, so the sheet's attribute branch and the
@@ -53,6 +57,8 @@ function applyThemeAttr(choice: ReturnType<typeof themeAttr>): void {
 export interface ShellProps {
   /** From the page bootstrap. Shown in the status bar. */
   cwd: string;
+  /** `window.innerWidth` at mount, used for the first breakpoint/layout. */
+  initialWidth: number;
   /** `navigator.platform`, for the `⌘K` vs `Ctrl K` hint. */
   platform: string;
 }
@@ -60,6 +66,8 @@ export interface ShellProps {
 export function Shell(props: ShellProps) {
   const [workspaceState, setWorkspaceState] = useState<WorkspaceState>(initialWorkspaceState);
   const [overlay, setOverlay] = useState<OverlayId>(null);
+  const [width, setWidth] = useState(props.initialWidth);
+  const [layout, setLayout] = useState<LayoutState>(() => loadLayout(localStorage, props.initialWidth));
   // The theme: what the user picked, and what the OS is currently saying. Two
   // states because they answer different questions — `theme` changes on a
   // button press or the `t` key, `systemScheme` on an OS flip while the user
@@ -72,14 +80,16 @@ export function Shell(props: ShellProps) {
   const fit = useRef<(() => void) | null>(null);
   // The global key listener reads through this so a handler registered at
   // mount still sees the current overlay.
-  const live = useRef({ overlay, selectedId: workspaceState.selectedId });
-  live.current = { overlay, selectedId: workspaceState.selectedId };
+  const live = useRef({ overlay, selectedId: workspaceState.selectedId, layout, width });
+  live.current = { overlay, selectedId: workspaceState.selectedId, layout, width };
 
   useEffect(() => {
     const handle = startWorkspace({ fetch: fetchJson, state: workspaceState, setState: setWorkspaceState });
     workspace.current = handle;
     return () => handle.stop();
   }, []);
+
+  useEffect(() => watchViewport(window, setWidth), []);
 
   // §1.3 continuity: a reload keeps the note you were reading. Saving is
   // gated on the restore decision so the mount-time `null` cannot wipe the
@@ -152,6 +162,14 @@ export function Shell(props: ShellProps) {
     [],
   );
 
+  const resolved = useMemo(() => resolveColumns(layout, width, breakpointFor(width)), [layout, width]);
+  const drag = useMemo(() => dividerHandlers({
+    layout: () => live.current.layout,
+    width: () => live.current.width,
+    setLayout,
+    persist: (next) => void saveLayout(localStorage, next),
+  }), []);
+
   return (
     <>
       <Header
@@ -163,6 +181,11 @@ export function Shell(props: ShellProps) {
         onTheme={() => setTheme((current) => cycleTheme(current))}
       />
       <Columns
+        resolved={resolved}
+        onDown={drag.onDown}
+        onMove={drag.onMove}
+        onUp={drag.onUp}
+        onKey={drag.onKey}
         scheme={effectiveScheme(theme, systemScheme)}
         bootFailed={workspaceState.graphFailed}
         graph={workspaceState.graph}

@@ -245,20 +245,20 @@ body{font-size:var(--weave-px-base)}
 .weave-theme:hover{color:var(--weave-fg);background:var(--weave-line)}
 
 /* the grid -------------------------------------------------------------- */
-/* One boring grid. CSS owns the breakpoints; no saved widths, divider state
-   or viewport listener can make the shell disagree with the browser. */
-.weave-grid{
-  display:grid;min-height:0;overflow:hidden;background:var(--weave-line);
-  grid-template-columns:minmax(180px,22fr) minmax(320px,46fr) minmax(260px,32fr);
+/* Widths arrive as custom properties from layout.model.ts. Shell/layout.model
+   selects the breakpoint; CSS consumes the resulting data-columns shape. */
+.weave-grid{display:grid;min-height:0;overflow:hidden;background:var(--weave-line)}
+.weave-grid[data-columns="3"]{grid-template-columns:var(--weave-col-tree,22%) 1px var(--weave-col-note,46%) 1px var(--weave-col-graph,32%)}
+.weave-grid[data-columns="2"]{grid-template-columns:var(--weave-col-tree,32%) 1px var(--weave-col-note,68%)}
+.weave-grid[data-columns="1"]{grid-template-columns:1fr}
+
+/* dividers -------------------------------------------------------------- */
+.weave-divider{
+  width:1px;cursor:col-resize;touch-action:none;background:var(--weave-line);position:relative;z-index:2;
 }
-@media (max-width:1099px){
-  .weave-grid{grid-template-columns:minmax(180px,32fr) minmax(320px,68fr)}
-  .weave-col-graph{display:none}
-}
-@media (max-width:799px){
-  .weave-grid{grid-template-columns:1fr}
-  .weave-col-tree{display:none}
-}
+.weave-divider::after{content:"";position:absolute;inset:0 -4px}
+.weave-divider:hover{background:var(--weave-faint)}
+.weave-divider:focus-visible{outline:2px solid var(--weave-accent);outline-offset:-1px}
 
 .weave-col{
   display:flex;flex-direction:column;min-width:0;min-height:0;overflow:hidden;

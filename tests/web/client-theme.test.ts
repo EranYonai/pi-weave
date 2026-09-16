@@ -211,12 +211,13 @@ describe("THEME_CSS", () => {
     for (const name of classes) expect(THEME_CSS).toContain(`.${name}`);
   });
 
-  it("uses CSS media queries for the fixed responsive grid", () => {
-    expect(THEME_CSS).toContain("grid-template-columns:minmax(180px,22fr)");
-    expect(THEME_CSS).toContain("@media (max-width:1099px)");
-    expect(THEME_CSS).toContain("@media (max-width:799px)");
-    expect(THEME_CSS).toContain(".weave-col-graph{display:none}");
-    expect(THEME_CSS).toContain(".weave-col-tree{display:none}");
+  it("uses layout custom properties for the responsive grid", () => {
+    expect(THEME_CSS).toContain("var(--weave-col-tree,22%)");
+    expect(THEME_CSS).toContain("var(--weave-col-note,46%)");
+    expect(THEME_CSS).toContain("var(--weave-col-graph,32%)");
+    expect(THEME_CSS).toContain('.weave-grid[data-columns="2"]');
+    expect(THEME_CSS).toContain('.weave-grid[data-columns="1"]');
+    expect(THEME_CSS).toContain(".weave-divider");
   });
 
   it("stays dense: no card shadows, no oversized gutters", () => {
