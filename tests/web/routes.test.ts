@@ -49,7 +49,7 @@ import type { GraphPayload, NotePayload, OkfFilePayload, SearchPayload } from ".
 import { WIRE_MODEL_OMITTED_KEYS } from "../../src/web/shared/wire";
 import { commitAll, gitInit, makeTempDir, withVaultEnv, writeFixture } from "../helpers";
 
-/** The exact  policy, with the nonce elided. Asserted byte-for-byte. */
+/** The exact §5.2 policy, with the nonce elided. Asserted byte-for-byte. */
 const CSP_TEMPLATE =
   "default-src 'none'; script-src 'nonce-{N}'; style-src 'nonce-{N}'; " +
   "img-src 'self' data:; connect-src 'self'; font-src 'self'; " +
@@ -272,7 +272,7 @@ describe("toGraphPayload", () => {
     expect(later.stamp).not.toBe(toGraphPayload(EMPTY).stamp);
   });
 
-  it("changes the stamp when only `tags` moves ()", () => {
+  it("changes the stamp when only `tags` moves (§4.3)", () => {
     // `tags` is a top-level payload field the old timestamp stamp could not
     // see at all: editing front matter does not have to move `updated`.
     const before = toGraphPayload(EMPTY, [{ slug: "a", tags: ["before"] }]);
@@ -281,7 +281,7 @@ describe("toGraphPayload", () => {
     expect(before.stamp).not.toBe(after.stamp);
   });
 
-  it("changes the stamp when only `dangling` moves ()", () => {
+  it("changes the stamp when only `dangling` moves (§4.2)", () => {
     const before = toGraphPayload({ ...EMPTY, danglingLinks: { a: ["ghost"] } });
     const after = toGraphPayload({ ...EMPTY, danglingLinks: { a: ["phantom"] } });
     expect(before.stamp).not.toBe(after.stamp);
@@ -322,7 +322,7 @@ describe("toGraphPayload", () => {
     expect(stampPayload(once).stamp).toBe(once.stamp);
   });
 
-  it("hoists danglingLinks to `dangling` ()", () => {
+  it("hoists danglingLinks to `dangling` (§4.2)", () => {
     const payload = toGraphPayload({ ...EMPTY, danglingLinks: { alpha: ["ghost", "phantom"] } });
     expect(payload.dangling).toEqual({ alpha: ["ghost", "phantom"] });
   });
@@ -391,7 +391,7 @@ describe("toGraphPayload", () => {
 // --- the shell -----------------------------------------------------------------
 
 describe("GET /", () => {
-  it("serves the shell with the exact  CSP", async () => {
+  it("serves the shell with the exact §5.2 CSP", async () => {
     const { server } = await boot();
     const res = await get(server, "/");
     expect(res.status).toBe(200);
@@ -482,7 +482,7 @@ describe("GET /api/graph", () => {
     // . The fixture's notes have no wiki-links at all, so nothing
     // dangles; that is an empty map for the right reason, not a stub.
     expect(payload.dangling).toEqual({});
-    // Still null by design (): the server tier cannot import d3-force.
+    // Still null by design (§2): the server tier cannot import d3-force.
     expect(payload.positions).toBeNull();
     expect(res.headers.get("etag")).toBe(`"${payload.stamp}"`);
     // `no-cache`, not `no-store`: the client should keep the body and
@@ -490,7 +490,7 @@ describe("GET /api/graph", () => {
     expect(res.headers.get("cache-control")).toBe("no-cache");
   });
 
-  it("serves tags and dangling built from the live vault (, )", async () => {
+  it("serves tags and dangling built from the live vault (§4.2, §4.3)", async () => {
     // End-to-end rather than through `toGraphPayload` directly: this is the
     // path that proves the route reaches the *notes*, not just the model.
     const ws = await freshWorkspace();
@@ -530,7 +530,7 @@ describe("GET /api/graph", () => {
   // the payload really did change, the stamp moved with it, and the
   // conditional GET on the old validator now answers `200` rather than `304`.
 
-  it(" case 1: a note body edit that does not move `updated` busts the cache", async () => {
+  it("§15.6 case 1: a note body edit that does not move `updated` busts the cache", async () => {
     const ws = await freshWorkspace();
     await addNote(ws.vaultRoot, { title: "Edited", body: "original body", tags: [], source: "human" });
     const { server } = await bootOn(ws, {});
@@ -563,7 +563,7 @@ describe("GET /api/graph", () => {
     expect(preview(second)).not.toBe(preview(first));
   });
 
-  it(" case 2: a front-matter tag edit that does not move `updated` busts the cache", async () => {
+  it("§15.6 case 2: a front-matter tag edit that does not move `updated` busts the cache", async () => {
     const ws = await freshWorkspace();
     await addNote(ws.vaultRoot, { title: "Edited", body: "b", tags: ["before"], source: "human" });
     const { server } = await bootOn(ws, {});
@@ -591,7 +591,7 @@ describe("GET /api/graph", () => {
     expect(second.stamp).not.toBe(first.stamp);
   });
 
-  it(" case 3: deleting a non-newest note busts the cache", async () => {
+  it("§15.6 case 3: deleting a non-newest note busts the cache", async () => {
     const ws = await freshWorkspace();
     await addNote(ws.vaultRoot, { title: "Older", body: "o", source: "human" });
     // Strictly newer, so deleting "Older" cannot move max(updated) — the
@@ -653,7 +653,7 @@ describe("GET /api/graph", () => {
     expect(a.stamp).toBe(b.stamp);
   });
 
-  it("a warm request re-uses the memoized rendering: zero extra hashing ()", async () => {
+  it("a warm request re-uses the memoized rendering: zero extra hashing (§4.1)", async () => {
     // 's promise is that a no-change rebuild does zero note reads and
     // zero git spawns;  adds "and no re-hashing" to that list, since the
     // digest would otherwise be the one cost that scaled with request rate.
@@ -734,7 +734,7 @@ describe("GET /api/graph", () => {
   });
 
   // `snapshot()`, not `graph()`: the route reads the graph *and* the notes it
-  // was built from in one call (), so that is the method whose failure
+  // was built from in one call (§4.1), so that is the method whose failure
   // has to reach the client as a 500.
   it("surfaces a cache failure as a 500, not a hung socket", async () => {
     const ws = await sharedWorkspace();
@@ -1168,7 +1168,7 @@ describe("unrouted requests", () => {
 
 // --- lifecycle ---------------------------------------------------------------------
 
-describe("lifecycle ()", () => {
+describe("lifecycle (§5.4)", () => {
   it("binds an ephemeral loopback port, never a fixed one", async () => {
     const a = await boot();
     const b = await boot();
@@ -1211,7 +1211,7 @@ describe("lifecycle ()", () => {
     await res.json();
   });
 
-  it("uses the fallback cookie name when asked ( footnote 1)", async () => {
+  it("uses the fallback cookie name when asked (§5.1 footnote 1)", async () => {
     const { server } = await boot({ cookieName: "weave_token" });
     const res = await fetch(server.entryUrl, { redirect: "manual" });
     const cookie = res.headers.get("set-cookie") ?? "";

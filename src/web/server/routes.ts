@@ -188,7 +188,7 @@ export async function readJsonBody(req: IncomingMessage): Promise<unknown | null
 export function toGraphPayload(model: CoreGraphModel, notes: readonly TaggedNote[] = []): GraphPayload {
   const payload: GraphPayload = {
     model: toWireModel(model),
-    // tag → slugs (). `deriveTagIndex` returns an ordered array because
+    // tag → slugs (§4.3). `deriveTagIndex` returns an ordered array because
     // order is meaningful (count desc, tag asc); the wire field is a record,
     // so that ordering survives only as JSON key insertion order. Good enough
     // deliberately: a client that wants the ranking re-derives it from the
@@ -196,7 +196,7 @@ export function toGraphPayload(model: CoreGraphModel, notes: readonly TaggedNote
     // a field the contract calls `Record<string, string[]>` — would be a
     // breaking change to a settled shape for a fact the client can compute.
     tags: Object.fromEntries(deriveTagIndex(notes).map((t) => [t.tag, t.slugs])),
-    // slug → unresolved wikilink targets (), carried on the model since
+    // slug → unresolved wikilink targets (§4.2), carried on the model since
     // the builder stopped discarding the names.
     dangling: model.danglingLinks,
     // Still `null`, and deliberately: server-side layout needs
@@ -215,7 +215,7 @@ export function toGraphPayload(model: CoreGraphModel, notes: readonly TaggedNote
 
 /**
  * Serialize a payload and stamp it with the digest of its own bytes
- *.
+ * (weave-workspace §5.3, §15.6).
  *
  * ## Why a digest and not `generatedAt`
  *
@@ -417,7 +417,7 @@ async function sendBundle(deps: RouteDeps, res: ServerResponse): Promise<void> {
 
 /**
  * Serialized payload + ETag, memoized per snapshot **identity**
- *.
+ * (weave-workspace §4.1).
  *
  * `WorkspaceCache` returns the *identical* snapshot object while nothing on
  * disk has moved, so this map turns a warm `/api/graph` into a pure lookup:
@@ -428,7 +428,7 @@ async function sendBundle(deps: RouteDeps, res: ServerResponse): Promise<void> {
  * A `WeakMap` rather than a one-slot cache so that a request racing a rebuild
  * cannot evict the entry the other request is about to read, and so entries
  * for superseded snapshots are collected with them. The key is the snapshot
- * rather than the model because the payload depends on the notes too ().
+ * rather than the model because the payload depends on the notes too (§4.1).
  */
 const renderedGraphs = new WeakMap<WorkspaceSnapshot, { body: string; etag: string }>();
 
@@ -459,11 +459,11 @@ function renderGraph(snapshot: WorkspaceSnapshot): { body: string; etag: string 
 async function sendGraph(deps: RouteDeps, req: IncomingMessage, res: ServerResponse): Promise<void> {
   // `snapshot()`, not `graph()`: the tag index has to be derived from the
   // same (already capped) note list the model was built from, or a tag could
-  // name a slug this graph has no node for ().
+  // name a slug this graph has no node for (§4.2).
   const snapshot = await deps.cache.snapshot();
   const { body, etag } = renderGraph(snapshot);
 
-  // The ETag is a digest of the serialized payload (, resolved), so it
+  // The ETag is a digest of the serialized payload (§15.6, resolved), so it
   // moves if and only if the bytes the client would receive have moved. The
   // three cases the old timestamp stamp missed — a body edit, a tag edit, and
   // the deletion of a non-newest note, none of which advance `generatedAt` —

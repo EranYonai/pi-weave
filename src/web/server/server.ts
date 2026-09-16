@@ -1,6 +1,6 @@
 /**
  * The loopback workspace server — bind, lifecycle, teardown
- *.
+ * (weave-workspace §5.3, §5.4, §10).
  *
  * This module owns three things and delegates everything else:
  *
@@ -37,7 +37,7 @@ export interface StartWorkspaceServerOptions {
   cache?: WorkspaceCache | undefined;
   /** Fixed token, for tests that need to know it before the boot resolves. */
   token?: string | undefined;
-  /** Cookie name override — the  footnote-1 fallback. */
+  /** Cookie name override — the §5.1 footnote-1 fallback. */
   cookieName?: string | undefined;
   /** Absolute path to the client bundle. Defaults to the committed one. */
   bundlePath?: string | undefined;

@@ -1,6 +1,6 @@
 /**
  * The HTML shell: escaping, nonces, and the source guard
- *.
+ * (weave-workspace §5.2, §5.3, §9).
  *
  * ## The guard, and why it is two tests
  *
@@ -173,7 +173,7 @@ describe("generateNonce", () => {
 });
 
 describe("contentSecurityPolicy", () => {
-  it("is the exact  policy", () => {
+  it("is the exact §5.2 policy", () => {
     expect(contentSecurityPolicy("N")).toBe(
       "default-src 'none'; script-src 'nonce-N'; style-src 'nonce-N'; " +
         "img-src 'self' data:; connect-src 'self'; font-src 'self'; " +
@@ -197,7 +197,7 @@ describe("contentSecurityPolicy", () => {
 // --- rendering ------------------------------------------------------------------
 
 describe("renderPage", () => {
-  it("is the four-element shell  describes", () => {
+  it("is the four-element shell §5.2 describes", () => {
     const { html } = renderPage({ bootstrap: bootstrap(), nonce: "NONCE" });
     expect(html.startsWith("<!doctype html>")).toBe(true);
     expect(html).toContain('<div id="app"');
@@ -266,7 +266,7 @@ describe("renderPage", () => {
   });
 
   describe("rendered output carries no template delimiters", () => {
-    // Guard form 1 (): the invariant a reader can check on the output.
+    // Guard form 1 (§9): the invariant a reader can check on the output.
     for (const hostile of HOSTILE) {
       it(`for cwd = ${JSON.stringify(hostile)}`, () => {
         const { html } = renderPage({ bootstrap: bootstrap({ cwd: hostile }), nonce: "N" });

@@ -127,7 +127,7 @@ describe("contextModel groups", () => {
     expect(contextModel(GRAPH, "note:alpha").subject).toBe("Alpha");
   });
 
-  it("shows everything related to a note at once — the  principle", () => {
+  it("shows everything related to a note at once — the §1.1 principle", () => {
     // Standing on Alpha: it links to Beta, Gamma links to it, it mentions
     // src/core, and it shares tags with Beta and Gamma. All visible, no click.
     expect(shape(GRAPH, "note:alpha")).toEqual({
@@ -145,7 +145,7 @@ describe("contextModel groups", () => {
   });
 
   it("omits empty groups rather than rendering a heading over nothing", () => {
-    // The rail is a fixed-height region under the graph (). Four headings
+    // The rail is a fixed-height region under the graph (§1.1). Four headings
     // with one row between them wastes the space the populated group needed,
     // and an empty heading reads as a load that failed.
     expect(Object.keys(shape(GRAPH, "note:beta"))).toEqual([HEADINGS.backlinks, HEADINGS.mentions]);
@@ -168,7 +168,7 @@ describe("contextModel groups", () => {
     expect(mentions?.rows.map((row) => row.target)).toEqual(["module:src/core"]);
   });
 
-  it("orders the groups as  sketches them", () => {
+  it("orders the groups as §1.2 sketches them", () => {
     expect(contextModel(GRAPH, "note:alpha").groups.map((group) => group.heading)).toEqual([
       HEADINGS.links,
       HEADINGS.backlinks,

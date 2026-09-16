@@ -1,21 +1,21 @@
 /**
  * Everything the tree column *decides*.
  *
- * The column itself is `treeRows` with a different renderer — that is 's
+ * The column itself is `treeRows` with a different renderer — that is §3's
  * whole claim, and this module is what makes it true in the browser: it holds
  * the view state the TUI keeps in `ExplorerState`, the reducers that move it,
  * and the presentation mapping from a `TreeRow` to something a `<li>` can
  * render. `Tree.tsx` is left with a `useState`, a `map` and four handlers.
  *
- * That split is not stylistic.  forbids a DOM test environment, so a branch
+ * That split is not stylistic. §10 forbids a DOM test environment, so a branch
  * inside a `.tsx` is a branch no test can reach; every branch the tree needs
  * lives here, where an ordinary unit test covers it.
  *
- * ## Tier rules ()
+ * ## Tier rules (§2)
  *
  * `src/web/client/**`: `src/web/shared` and browser deps only. The view-models
  * arrive through `../../shared/view`, the one sanctioned door onto
- * `src/core/view` () — never from `src/core` directly, even though the
+ * `src/core/view` (§2.1) — never from `src/core` directly, even though the
  * modules behind the door are proven node-free. This file also touches no DOM
  * type at all, which is what lets the root `tsconfig.json` project (no `DOM`
  * lib) compile the tests that import it.
@@ -81,7 +81,7 @@ export function initialTreeView(roots: readonly string[] = ["vault", "repository
  *
  * `WireGraphModel` is `Omit<GraphModel, "danglingLinks">` — the payload hoists
  * that map to its own top-level `dangling` rather than shipping it twice
- * () — so exactly one field has to be put back before `treeRows` or
+ * (§3) — so exactly one field has to be put back before `treeRows` or
  * `detailModel` will accept it. The door (`shared/view.ts`) deliberately does
  * not do this: it is a wire concern, and a door that carried a transformation
  * would be a second implementation rather than a re-export.
@@ -568,7 +568,7 @@ export function rowViews(rows: readonly TreeRow[], selectedId: string | null, no
  * `aria-activedescendant` for the tree, or `null`.
  *
  * `null` when the selection is not a *visible* row — the selection is the
- *  bus and can name a node the tree has filtered away or collapsed under
+ * §1.3 bus and can name a node the tree has filtered away or collapsed under
  * a closed parent. Pointing `aria-activedescendant` at an id that is not in
  * the DOM is worse than omitting it: the attribute is a promise that the
  * element exists, and a screen reader that follows a dangling one announces

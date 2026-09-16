@@ -1,8 +1,8 @@
 /**
  * The context rail: everything related, visible without navigating
- *.
+ * (weave-workspace §1.1, §1.2, §10, P2.5).
  *
- * 's UX principle is the one that decides arguments here:
+ * §1.1's UX principle is the one that decides arguments here:
  *
  * > **Don't make the user navigate to information. Bring related information
  * > into the current view.**
@@ -10,17 +10,17 @@
  * The rail is that principle made concrete. Whatever is selected, the four
  * groups below say what it points at, what points at it, what it is filed
  * under, and what code it talks about — all at a glance, with no click that
- * costs you your place.  sketches it as `LINKS` / `BACKLINKS`, and 's
- * P2 line adds mentions and tags now that  and  have shipped the data.
+ * costs you your place. §1.2 sketches it as `LINKS` / `BACKLINKS`, and §11's
+ * P2 line adds mentions and tags now that §4.3 and §4.4 have shipped the data.
  *
  * ## Where each group comes from
  *
  * | Group | Source | Why not something else |
  * | --- | --- | --- |
- * | LINKS | `detailModel().links`, minus mentions | Core's projection, shared with the TUI (). |
+ * | LINKS | `detailModel().links`, minus mentions | Core's projection, shared with the TUI (§3). |
  * | BACKLINKS | `deriveBacklinks()` over all edges | One pass for the whole graph, not O(nodes × edges) per selection. |
- * | TAGS | `GraphPayload.tags` () | The structured index. Never `detail.tags`, which is a display string. |
- * | MENTIONS | `mentions` edges () | Both directions: what a note names, and which notes name a file. |
+ * | TAGS | `GraphPayload.tags` (§4.3) | The structured index. Never `detail.tags`, which is a display string. |
+ * | MENTIONS | `mentions` edges (§4.4) | Both directions: what a note names, and which notes name a file. |
  *
  * `detailModel` is used rather than `focusModel` even though `focusModel`
  * groups the neighbourhood already: its grouping is by *edge kind* with the
@@ -29,7 +29,7 @@
  * through `detailModel` and regrouping keeps core's link/backlink derivation
  * shared while letting the browser decide its own section order.
  *
- * ## Tier rules ()
+ * ## Tier rules (§2)
  *
  * `src/web/client/**`. View-models via `../../shared/view`; never `src/core`.
  * No DOM type is named, so the root `tsconfig.json` project compiles the
@@ -100,7 +100,7 @@ export interface ContextModel {
   readonly empty: string | null;
 }
 
-/** Section headings, in the order  sketches them. */
+/** Section headings, in the order §1.2 sketches them. */
 export const HEADINGS = { links: "LINKS", backlinks: "BACKLINKS", tags: "TAGS", mentions: "MENTIONS" } as const;
 
 // --- building rows ------------------------------------------------------------------
@@ -182,9 +182,9 @@ function isMentionRow(row: DetailLinkRow): boolean {
 /**
  * Tag rows for a note.
  *
- * From `GraphPayload.tags` () — the structured `tag → slugs` index — and
+ * From `GraphPayload.tags` (§4.3) — the structured `tag → slugs` index — and
  * never from `WireGraphNode.detail.tags`, which is a comma-joined display
- * string that  forbids turning back into structure. The membership test is
+ * string that §4.3 forbids turning back into structure. The membership test is
  * therefore "does this tag's slug list contain mine", which is exact even for
  * a tag whose name contains a comma.
  *
@@ -205,7 +205,7 @@ export interface TagGroupRow {
 export function tagsFor(payload: GraphPayload, slug: string, byId: ReadonlyMap<string, WireGraphNode>, selectedId: string | null): TagGroupRow[] {
   const out: TagGroupRow[] = [];
   // Key order is `deriveTagIndex`'s: count descending, then tag ascending
-  // (), and `Object.entries` preserves it. So the popular tags surface
+  // (§4.3), and `Object.entries` preserves it. So the popular tags surface
   // first with no sorting here — re-sorting would discard a ranking the server
   // already computed and the ETag already depends on.
   for (const [tag, slugs] of Object.entries(payload.tags)) {
@@ -222,7 +222,7 @@ export function tagsFor(payload: GraphPayload, slug: string, byId: ReadonlyMap<s
 }
 
 /**
- * Incoming `mentions`: which notes name this file or module ().
+ * Incoming `mentions`: which notes name this file or module (§4.4).
  *
  * The complement of the outgoing half, and the more useful direction of the
  * two — standing on `src/core/vault.ts` and seeing which notes discuss it is
@@ -275,7 +275,7 @@ function emptyRail(reason: string): ContextModel {
  * Build the rail.
  *
  * Empty groups are **omitted**, not rendered as headings over nothing. The
- * rail sits under the graph column in a fixed-height region (), so four
+ * rail sits under the graph column in a fixed-height region (§1.1), so four
  * headings with one row between them wastes the space that the one populated
  * group needed — and a heading with nothing under it reads as a load that
  * failed rather than as an absence.
@@ -372,7 +372,7 @@ export function emptyRailToggles(): RailToggles {
  * A section longer than this opens collapsed.
  *
  * Eight is where a list stops being scannable without scrolling: the rail has
- * a fixed fraction of a fixed column (), so a MENTIONS section with forty
+ * a fixed fraction of a fixed column (§1.1), so a MENTIONS section with forty
  * entries would push the sections below it out of the viewport entirely —
  * which is how a rail meant to show *everything at once* ends up showing one
  * group. Under eight the rhythm would cost more than it saved.
@@ -385,7 +385,7 @@ export const RAIL_COLLAPSE_THRESHOLD = 8;
  * Order of precedence, most specific wins:
  *
  *  1. **The selection is never hidden.** If the selected row lives in this
- *     section, force-expand — `selectedId` is the  bus and can change a
+ *     section, force-expand — `selectedId` is the §1.3 bus and can change a
  *     hundred times a minute while the user is reading something else; a
  *     selection that vanished into a fold would be a bug the user experiences
  *     as "clicking did nothing" and never connects to a toggle 40px away.

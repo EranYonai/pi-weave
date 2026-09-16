@@ -1,10 +1,10 @@
 /**
  * The wire contract between the loopback server and the browser client
- *.
+ * (weave-workspace §5.3, §10).
  *
  * ## Why this file exists at all
  *
- * The client cannot import `src/core` ( tier table): core is
+ * The client cannot import `src/core` (§2 tier table): core is
  * Node-flavoured TypeScript and a value import would drag `node:fs` into the
  * bundle. So everything both sides need is either a **type** here or a pure
  * function in `src/web/shared/`. This module is the type half — it is the
@@ -17,7 +17,7 @@
  * `src/web/shared/**`: itself only. No `node:*`, no DOM globals, no
  * `src/pi`, and — as of the tier fix — **no `src/core`, not even as a type**.
  *
- * That last clause is stricter than the  table as originally written, and
+ * That last clause is stricter than the §2 table as originally written, and
  * it exists because "core types only" turned out not to be a real boundary.
  * `import type` erases from the *bundle*, but the compiler still has to
  * resolve it: pulling `GraphModel` in here made `tsc -p tsconfig.web.json`
@@ -80,7 +80,7 @@ export interface GraphPayload {
   /** Nodes, edges, staleness, `generatedAt`. The authoritative model. */
   model: GraphModel;
   /**
-   * tag → slugs ().
+   * tag → slugs (§4.3).
    *
    * Built by core's `deriveTagIndex` from the notes the graph was built from
    * — *not* by re-parsing `WireGraphNode.detail.tags`, which is a
@@ -97,7 +97,7 @@ export interface GraphPayload {
    */
   tags: Record<string, string[]>;
   /**
-   * slug → unresolved wikilink targets ().
+   * slug → unresolved wikilink targets (§4.2).
    *
    * The ghost-node affordance: a `[[target]]` that matches no note is an
    * offer to create one. Populated from core's `GraphModel.danglingLinks`,
@@ -112,7 +112,7 @@ export interface GraphPayload {
   dangling: Record<string, string[]>;
   /**
    * Server-precomputed layout, so the graph appears already laid out with no
-   * visible settling (). `null` when the server did not compute one —
+   * visible settling (§8). `null` when the server did not compute one —
    * which is the default, because the layout module imports `d3-force` and
    * the published package has zero runtime dependencies. The client then
    * runs the identical `src/web/shared/layout` code itself.
@@ -120,14 +120,14 @@ export interface GraphPayload {
   positions: Record<string, Point> | null;
   /**
    * A **content digest** of this payload. The ETag body and polling cache key
-   * (, ).
+   * (§15.6, §7.3).
    *
    * Opaque: a truncated SHA-256 of the serialized payload, and nothing may
    * parse it or derive meaning from its value. The only defined operation is
    * equality, and it has exactly one guarantee — two payloads share a stamp
    * if and only if they serialize to the same bytes.
    *
-   * This was `model.generatedAt` until . A max of input timestamps is
+   * This was `model.generatedAt` until §15.6. A max of input timestamps is
    * blind to any change that does not advance the maximum (a body edit, a
    * front-matter edit, deleting a note that is not the newest), so a
    * conditional GET answered `304` with stale content and the client cache

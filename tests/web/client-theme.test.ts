@@ -1,6 +1,6 @@
 /**
  * The workspace theme and its CSP-legal installation
- *.
+ * (weave-workspace §1.2, §5.2).
  *
  * Two things are asserted here, and the second is the one that matters.
  *
@@ -13,7 +13,7 @@
  * `'unsafe-inline'` means a script-inserted `<style>` is dropped unless it
  * carries the per-response nonce, and that nonce is only readable through the
  * IDL property. These tests pin that behaviour with a four-method fake
- * `document`, no DOM required ().
+ * `document`, no DOM required (§10).
  */
 
 import { describe, expect, it } from "vitest";
@@ -381,7 +381,7 @@ describe("fetchJson", () => {
     await expect(response.json()).resolves.toEqual({ hi: true });
   });
 
-  it("always sends same-origin credentials —  authenticates by cookie", () => {
+  it("always sends same-origin credentials — §5.1 authenticates by cookie", () => {
     // The request uses same-origin credentials so the security model rides
     // the `__Host-weave` cookie. A default is a worse place for that
     // dependency than a line of code.

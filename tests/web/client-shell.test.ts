@@ -93,7 +93,7 @@ describe("repoLabel", () => {
 });
 
 describe("summaryParts", () => {
-  it("renders the  readout", () => {
+  it("renders the §1.2 readout", () => {
     expect(summaryParts({ notes: 34, repo: "fresh", nodes: 127 })).toEqual([
       "vault:34",
       "repo:fresh",
