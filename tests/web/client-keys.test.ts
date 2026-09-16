@@ -39,7 +39,7 @@ import {
 } from "../../src/web/client/shell/keys.model";
 import { watchKeys } from "../../src/web/client/shell/keys";
 import type { KeyHost } from "../../src/web/client/shell/keys";
-import { COLUMNS } from "../../src/web/client/shell/layout.model";
+import { COLUMNS } from "../../src/web/client/shell/shell.model";
 import { VIM_KEYS, normalizeTreeKey, treeKey } from "../../src/web/client/tree/tree.model";
 import type { TreeRow } from "../../src/web/shared/view";
 
@@ -346,8 +346,6 @@ describe("runShellAction", () => {
       },
       fitGraph: () => void log.push("fit"),
       clearSelection: () => void log.push("clear"),
-      toggleEdit: () => void log.push("toggleEdit"),
-      saveNote: () => void log.push("saveNote"),
       cycleTheme: () => void log.push("cycleTheme"),
     };
   }
@@ -367,8 +365,6 @@ describe("runShellAction", () => {
       [{ type: "filterTree" }, `focus:${TREE_FILTER_SELECTOR}`],
       [{ type: "fitGraph" }, "fit"],
       [{ type: "clearSelection" }, "clear"],
-      [{ type: "toggleEdit" }, "toggleEdit"],
-      [{ type: "saveNote" }, "saveNote"],
       [{ type: "cycleTheme" }, "cycleTheme"],
     ];
     for (const [action, expected] of cases) {
@@ -416,8 +412,6 @@ describe("every action is reachable from a key", () => {
         "focusColumn",
         "openHelp",
         "openSearch",
-        "saveNote",
-        "toggleEdit",
       ].sort(),
     );
   });
@@ -543,7 +537,7 @@ describe("keyHelp", () => {
   });
 
   it("groups by surface, so the sheet reads as a map of the workspace", () => {
-    expect(groups.map((g) => g.title)).toEqual(["Global", "Tree", "Note", "Graph", "Search"]);
+    expect(groups.map((g) => g.title)).toEqual(["Global", "Tree", "Graph", "Search"]);
     for (const group of groups) expect(group.entries.length, group.title).toBeGreaterThan(0);
   });
 

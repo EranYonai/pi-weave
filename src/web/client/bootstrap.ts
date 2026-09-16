@@ -1,7 +1,7 @@
 /**
- * Reading the page's bootstrap block (weave-workspace §5.3).
+ * Reading the page's bootstrap block.
  *
- * `page.ts` embeds `{cwd, vaultRoot, session}` as a nonce'd
+ * `page.ts` embeds `{cwd}` as a nonce'd
  * `<script type="application/json">` so the first paint knows where it is
  * without a round trip. This decodes it.
  *
@@ -21,24 +21,15 @@
 import type { Bootstrap } from "../shared/wire";
 
 /** What the client assumes when the page told it nothing. */
-export const EMPTY_BOOTSTRAP: Bootstrap = { cwd: "", vaultRoot: "", session: "" };
+export const EMPTY_BOOTSTRAP: Bootstrap = { cwd: "" };
 
 /**
- * Structural guard. Every field is a string, and all three are read.
- *
- * `session` is unused at P1 and checked anyway: it is what a later phase uses
- * to tell "I missed frames" from "this is a different server" (see its
- * `wire.ts` comment), and a guard that admits a bootstrap without it would
- * let that distinction fail silently the day it starts mattering.
+ * Structural guard for the one value the client reads.
  */
 function isBootstrap(value: unknown): value is Bootstrap {
   if (typeof value !== "object" || value === null) return false;
   const candidate = value as Record<string, unknown>;
-  return (
-    typeof candidate["cwd"] === "string" &&
-    typeof candidate["vaultRoot"] === "string" &&
-    typeof candidate["session"] === "string"
-  );
+  return typeof candidate["cwd"] === "string";
 }
 
 /**

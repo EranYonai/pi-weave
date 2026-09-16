@@ -1,5 +1,5 @@
 /**
- * Everything the tree column *decides* (weave-workspace §1.2, §3, §10).
+ * Everything the tree column *decides*.
  *
  * The column itself is `treeRows` with a different renderer — that is §3's
  * whole claim, and this module is what makes it true in the browser: it holds
@@ -40,7 +40,7 @@ import type { IconName } from "../shell/icons.model";
  * It is **not** `src/web/client/state.ts`'s `TreeState`. That one is a P1
  * placeholder carrying only an expanded-id list, and it stays where it is:
  * this state is owned by the tree column, lives in the component that renders
- * it, and never crosses the context bus. §1.3's bus is `selectedId` — which
+ * it, and never crosses the context bus. 's bus is `selectedId` — which
  * rows happen to be open is not something the note column or the graph has any
  * business reacting to.
  */
@@ -81,7 +81,7 @@ export function initialTreeView(roots: readonly string[] = ["vault", "repository
  *
  * `WireGraphModel` is `Omit<GraphModel, "danglingLinks">` — the payload hoists
  * that map to its own top-level `dangling` rather than shipping it twice
- * (§4.2) — so exactly one field has to be put back before `treeRows` or
+ * (§3) — so exactly one field has to be put back before `treeRows` or
  * `detailModel` will accept it. The door (`shared/view.ts`) deliberately does
  * not do this: it is a wire concern, and a door that carried a transformation
  * would be a second implementation rather than a re-export.
@@ -135,112 +135,6 @@ export function collapse(state: TreeViewState, id: string): TreeViewState {
   const expanded = new Set(state.expanded);
   expanded.delete(id);
   return { ...state, expanded };
-}
-
-// --- drag & drop and folder helpers -------------------------------------------
-
-export const FOLDER_BTN_HINT = "Create a new folder in the vault";
-export const FOLDER_PLACEHOLDER = "Folder name…";
-
-/** True when a tree row can accept dropped notes (the vault root or a folder). */
-export function isDropTarget(id: string): boolean {
-  return id === "vault" || id.startsWith("vfolder:");
-}
-
-/** Extract folder path relative to notes/ from a drop target row id, or null for root. */
-export function folderPathFromId(id: string): string | null {
-  if (id === "vault") return null;
-  if (id.startsWith("vfolder:")) return id.slice("vfolder:".length);
-  return null;
-}
-
-/** True when a tree row represents a note that can be dragged into folders. */
-export function isDraggableNote(kind: WireNodeKind, id: string): boolean {
-  return kind === "note" && id.startsWith("note:");
-}
-
-/** Target descriptor for a deletable row (vault note or folder). */
-export type DeletableTarget =
-  | { readonly type: "note"; readonly slug: string }
-  | { readonly type: "folder"; readonly path: string };
-
-/** Extract deletable target descriptor, or null if the row is protected / non-deletable. */
-export function deletableTarget(id: string): DeletableTarget | null {
-  if (id.startsWith("note:")) return { type: "note", slug: id.slice("note:".length) };
-  if (id.startsWith("vfolder:")) return { type: "folder", path: id.slice("vfolder:".length) };
-  return null;
-}
-
-// --- context menu -------------------------------------------------------------
-
-export type TreeContextMenuItem =
-  | {
-      readonly kind: "action";
-      readonly id: string;
-      readonly label: string;
-      readonly icon?: string;
-      readonly destructive?: boolean;
-    }
-  | { readonly kind: "separator" };
-
-export interface TreeContextMenuState {
-  readonly x: number;
-  readonly y: number;
-  readonly rowId: string;
-  readonly rowLabel: string;
-  readonly kind: WireNodeKind;
-}
-
-/** Actions available in the context menu for a given tree row. */
-export function contextMenuItemsForRow(rowId: string, kind: WireNodeKind): readonly TreeContextMenuItem[] {
-  if (rowId === "vault") {
-    return [
-      { kind: "action", id: "new-folder", label: "New folder", icon: "📁" },
-      { kind: "separator" },
-      { kind: "action", id: "collapse-all", label: "Collapse all" },
-    ];
-  }
-  if (rowId.startsWith("vfolder:")) {
-    return [
-      { kind: "action", id: "new-subfolder", label: "New subfolder…", icon: "📁" },
-      { kind: "action", id: "rename-folder", label: "Rename folder…", icon: "✏️" },
-      { kind: "separator" },
-      { kind: "action", id: "delete-folder", label: "Delete folder", icon: "🗑", destructive: true },
-    ];
-  }
-  if (kind === "note" && rowId.startsWith("note:")) {
-    return [
-      { kind: "action", id: "open", label: "Open note", icon: "📄" },
-      { kind: "action", id: "rename", label: "Rename note…", icon: "✏️" },
-      { kind: "separator" },
-      { kind: "action", id: "delete-note", label: "Delete note", icon: "🗑", destructive: true },
-    ];
-  }
-  if (rowId.startsWith("module:") || rowId.startsWith("file:") || rowId.startsWith("entryPoint:")) {
-    return [{ kind: "action", id: "copy-id", label: "Copy node id", icon: "📋" }];
-  }
-  return [];
-}
-
-/** Calculate clamped viewport placement for the context menu. */
-export function contextMenuPlacement(
-  x: number,
-  y: number,
-  menuWidth: number,
-  menuHeight: number,
-  viewportWidth: number,
-  viewportHeight: number,
-  margin = 8,
-): { x: number; y: number } {
-  let left = x;
-  let top = y;
-  if (left + menuWidth > viewportWidth - margin) {
-    left = Math.max(margin, viewportWidth - menuWidth - margin);
-  }
-  if (top + menuHeight > viewportHeight - margin) {
-    top = Math.max(margin, viewportHeight - menuHeight - margin);
-  }
-  return { x: left, y: top };
 }
 
 /**
@@ -354,7 +248,7 @@ export function parentOf(rows: readonly TreeRow[], id: string): string | null {
 }
 
 /**
- * Vim-ish aliases: `j` is `ArrowDown`, `k` is `ArrowUp` (§11 P4).
+ * Vim-ish aliases: `j` is `ArrowDown`, `k` is `ArrowUp` ( P4).
  *
  * A *normalizer* rather than two more branches in {@link treeKey}, because
  * the aliasing and the navigation are separate concerns and folding them
@@ -363,7 +257,7 @@ export function parentOf(rows: readonly TreeRow[], id: string): string | null {
  *
  * ## Why the aliases are tree-scoped and not global
  *
- * §11 says "vim-ish `j/k` **in the tree**", and the qualifier is load-bearing
+ *  says "vim-ish `j/k` **in the tree**", and the qualifier is load-bearing
  * on both sides. A global `j` would move the tree's cursor while the user is
  * reading the note column — an invisible change to a surface they are not
  * looking at — and it would make `j` untypeable in the graph's depth control.
@@ -472,45 +366,6 @@ const KIND_ICONS: Readonly<Record<WireNodeKind, IconName>> = {
 /** The icon name for a node kind. */
 export function kindIcon(kind: WireNodeKind): IconName {
   return KIND_ICONS[kind];
-}
-
-// --- the session fold -----------------------------------------------------------------
-
-/**
- * The synthesized folder session memory lives under.
- *
- * Core's graph builder (`src/core/graph/build.ts`) nests notes whose slug has
- * a directory under a synthesized `vfolder:<dir>` node — kind `module`,
- * because reusing the tree's containment chain needs no client change. That
- * reuse is why there is no `session` node *kind*: a session note is an
- * ordinary `note` that happens to be filed there, and this client recognises
- * it by path, not by kind.
- */
-export const SESSION_DIR = "sessions";
-
-/** True when a node id names a note under the {@link SESSION_DIR} fold. */
-export function isSessionNote(id: string): boolean {
-  return id.startsWith(`note:${SESSION_DIR}/`);
-}
-
-/**
- * Whether a row renders a notch quieter.
- *
- * `sessions/<n>.md` notes are machine-written memory that accrues by the
- * dozens with near-duplicate titles, so at any real vault size they are most
- * of the tree's rows — and rows that all look alike at full weight make the
- * six notes a human actually wrote harder to find. So session rows sit in
- * `--weave-dim` until hovered or selected, which is how Obsidian treats its
- * own long tails.
- *
- * The *never* half is the load-bearing part: `selectedId` is the §1.3 bus, so
- * the selection is decided somewhere the tree does not own, and a rule that
- * could dim the selected row would be a rule the graph's click could silently
- * break. The class-coverage gate does not see this — it is asserted here,
- * which is where §10 says it belongs.
- */
-export function isMuted(row: TreeRow, selectedId: string | null): boolean {
-  return row.id !== selectedId && isSessionNote(row.id);
 }
 
 /**
@@ -663,14 +518,6 @@ export interface TreeRowView {
   readonly hasKids: boolean;
   readonly expanded: boolean;
   readonly selected: boolean;
-  /**
-   * Render a notch quieter — the session rows of {@link isMuted}.
-   *
-   * A view-model flag rather than a `.tsx` branch for the same reason every
-   * other branch is here, and the stylesheet keys off it with
-   * `.weave-row-muted`.
-   */
-  readonly muted: boolean;
   /** The trailing annotation, already formatted against `now`. */
   readonly meta: string;
   /** ARIA `aria-level`, which is 1-based where `depth` is 0-based. */
@@ -706,7 +553,6 @@ export function rowView(row: TreeRow, selectedId: string | null, now: number, po
     hasKids: row.hasKids,
     expanded: row.expanded,
     selected: row.id === selectedId,
-    muted: isMuted(row, selectedId),
     meta: formatTreeMeta(row.meta, now),
     level: row.depth + 1,
   };
@@ -781,7 +627,7 @@ export const FILTER_PLACEHOLDER = "filter…";
  * Names *what is in it* rather than what it is: "Tree" is already the
  * column's heading and the role announces the widget type, so a second
  * "tree" would be read three times. "Vault and repository" is the sentence
- * §1.1 uses for the same thing.
+ *  uses for the same thing.
  */
 export const TREE_LABEL = "Vault and repository";
 
@@ -805,7 +651,7 @@ export const FILTER_HINT = "Filter the tree (/)";
  * The obvious order — "no rows? then work out why" — is wrong here, and it is
  * wrong in the case that matters most. A brand-new vault is not a graph with
  * no rows: `treeRows` still emits the `vault` root, so the column renders one
- * word and nothing else, and a user's first ever session says nothing about
+ * word and nothing else, and a user's first ever use says nothing about
  * how to add a note. `treeEmptyHint` is core's answer to exactly that
  * question, and it is deliberately narrow — it returns a string only for a
  * vault with no notes *and* no repository — so consulting it first cannot
@@ -814,7 +660,7 @@ export const FILTER_HINT = "Filter the tree (/)";
  * It also outranks the filter message, for the same reason: when the vault is
  * genuinely empty, "nothing matches this filter" is true and useless.
  *
- * Using core's sentence rather than writing one here is §3: the TUI's empty
+ * Using core's sentence rather than writing one here is : the TUI's empty
  * tree and the browser's say the same thing about the same vault, because
  * there is one sentence.
  */

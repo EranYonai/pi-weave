@@ -1,28 +1,16 @@
 /**
- * The note column (weave-workspace §1.2, P2.4, P5, P6.3).
+ * The read-only note column (weave-workspace §1.2, P2.4, P6.3).
  *
- * Props in, JSX out. The markdown pipeline, the sanitiser config, the
- * wikilink resolution and every string are `note.model.ts`; the editor's
- * dirty tracking, save lifecycle and conflict resolution are
- * `editor.model.ts`. This file wires a click handler, sets `innerHTML` with
- * content that has already been through all three of that module's layers,
- * and swaps the rendered body for a `<textarea>` when the editor is open.
+ * Props in, JSX out. The markdown pipeline, sanitiser config, wikilink
+ * resolution and every string are in `note.model.ts`. This file wires the
+ * rendered body, selection-safe wikilink navigation, and the Open in
+ * `$EDITOR` action.
  *
- * `dangerouslySetInnerHTML` is used deliberately and exactly twice. The
+ * `dangerouslySetInnerHTML` is used deliberately for sanitized note HTML. The
  * alternative is parsing marked's output into a Preact tree, which means a
  * second HTML parser in the bundle and a second place for a sanitisation
  * mistake to hide. One clearly-marked line whose input is
- * `renderNote(DOMPurify, …)` is easier to audit than a hundred lines that
- * avoid the word "dangerously". The second is the ⌘E control's icon — a
- * constant from `editor.model.ts`, not note content, and small enough that
- * a second site is cheaper than an icon component.
- *
- * The read view is rendered from the **note**, not from the draft: what the
- * `<textarea>` holds is unsaved and un-sanitised, and piping it through
- * `renderNote` on every keystroke would be a live preview paid for with a
- * markdown parse and a DOMPurify pass per character. §11 P5.4 mentions a live
- * preview; the honest version of it is `⌘E`, which is instant and shows the
- * text that actually exists.
+ * `renderNote(DOMPurify, …)` is easier to audit than a second HTML parser.
  *
  * ## Wikilink preview (P6.3)
  *
@@ -45,9 +33,6 @@
 import DOMPurify from "dompurify";
 import { useLayoutEffect, useMemo, useRef, useState } from "preact/hooks";
 import type { GraphPayload, NotePayload } from "../../shared/wire";
-import { Editor, EditorBar } from "./Editor";
-import type { EditorEvent, EditorPrompt, EditorToolbar } from "./editor.model";
-import { OPEN_HINT, OPEN_ICON, OPEN_LABEL } from "./editor.model";
 import {
   CREATED_WORD,
   EDITED_WORD,
@@ -82,14 +67,9 @@ export interface NoteProps {
   graph: GraphPayload | null;
   selectedId: string | null;
   onSelect: (id: string) => void;
+  onOpen: (slug: string) => void;
   /** Epoch ms for relative times. Injected so the render is deterministic. */
   now: number;
-  /** The editor's view model, or `null` when the shell wired no editor. */
-  toolbar: EditorToolbar | null;
-  prompt: EditorPrompt | null;
-  /** The `<textarea>`'s content. Rendered only while `toolbar.editing`. */
-  draft: string;
-  send: (event: EditorEvent) => void;
 }
 
 /**
@@ -97,27 +77,23 @@ export interface NoteProps {
  *
  * The hierarchy is the point: the title is the page's largest voice and the
  * meta line is its footnote — provenance glyph and word, edited, created.
- * `⌘E` sits at the end of that line as an icon, where a control about
- * *workflow* belongs in a column whose job is *reading*; its explanation
- * rides the `title` attribute so the icon never has to explain itself on
- * screen.
+ * The Open in `$EDITOR` action sits at the end of that line as an icon, where
+ * a workflow control belongs in a column whose job is reading.
  */
 function Header({
   view,
   open,
 }: {
   view: NoteHeaderView;
-  open: (() => void) | null;
+  open: () => void;
 }) {
   return (
     <header class="weave-note-head">
       <h3 class="weave-note-title">{view.title}</h3>
       <p class="weave-note-meta">
-        {open === null ? null : (
-          <button type="button" class="weave-note-open" title={OPEN_HINT} aria-label={OPEN_LABEL} onClick={open}>
-            <span class="weave-note-open-mark" aria-hidden="true" dangerouslySetInnerHTML={{ __html: OPEN_ICON }} />
-          </button>
-        )}
+        <button type="button" class="weave-note-open" title="Open in $EDITOR" aria-label="Open in $EDITOR" onClick={open}>
+          <span class="weave-note-open-mark" aria-hidden="true">↗</span>
+        </button>
         <span class={`weave-prov weave-prov-${view.provenance}`} title={view.provenanceTitle}>
           {view.provenanceGlyph} {view.provenance}
         </span>
@@ -145,9 +121,8 @@ export function Note(props: NoteProps) {
 
   // Both hook calls sit before the empty-return so the hook order cannot
   // depend on whether a note is loaded. The memoization is cheap insurance:
-  // one marked parse + DOMPurify pass + O(nodes) index per *body or vault*
-  // instead of per shell render (every editor keystroke and divider pixel
-  // re-renders the shell). The instance the render builds —
+  // one marked parse + DOMPurify pass + O(nodes) index per body or vault
+  // instead of per shell render. The instance the render builds —
   // `markdownRenderer(index)` inside `renderNote` — stays per-call by design;
   // only the *result* is memoized.
   const index = useMemo(() => (note === null ? null : wikiIndex(props.graph, note.slug)), [note, props.graph]);
@@ -212,11 +187,6 @@ export function Note(props: NoteProps) {
 
   if (note === null || index === null) return <p class="weave-note-empty">{empty}</p>;
 
-  // Bound once so TypeScript narrows it for both uses below: `toolbar.editing`
-  // is what decides whether the textarea renders, and reading it twice off
-  // `props` would need a non-null assertion at the second read.
-  const toolbar = props.toolbar;
-  const shell = { draft: props.draft, prompt: props.prompt, send: props.send };
   // Keyed on the slug, not the body digest: the article is the scroll
   // container, so an in-place swap would open every note at the previous
   // note's scroll offset. A key change remounts it, and a fresh container
@@ -228,13 +198,9 @@ export function Note(props: NoteProps) {
     <article key={note.slug} class={`weave-note weave-note-${header.provenance}`}>
       <Header
         view={header}
-        open={toolbar === null ? null : () => props.send({ type: "open" })}
+        open={() => props.onOpen(note.slug)}
       />
-      {toolbar === null ? null : <EditorBar toolbar={toolbar} {...shell} />}
-      {toolbar !== null && toolbar.editing ? (
-        <Editor toolbar={toolbar} {...shell} />
-      ) : (
-        <div
+      <div
           ref={bodyRef}
           class="weave-note-body"
           // Programmatic focus target for `⌘2`: without a `tabindex`,
@@ -265,26 +231,19 @@ export function Note(props: NoteProps) {
           }}
           onBlur={() => dispatch({ type: "hide" })}
           onClick={(event) => {
-            // Selecting text to copy (or mouse drag) must not flip into edit
-            // mode or trigger wikilink navigation. Only a clean click with no
-            // active selection routes the gesture.
+            // Selecting text to copy must not trigger wikilink navigation.
             const selection =
               typeof window !== "undefined" && typeof window.getSelection === "function"
                 ? window.getSelection()
                 : null;
             if (hasTextSelection(selection)) return;
 
-            // A wikilink carries no href, so nothing is navigating; this only
-            // has to route the click onto the §1.3 context bus. Anywhere else
-            // on the page *is* the edit affordance: a click on the prose opens
-            // the editor. The two never fight, because the link check reads
-            // the exact element the click landed on.
+            // A wikilink carries no href, so route it onto the context bus.
             const target = wikilinkTargetOf(event.target as unknown as Parameters<typeof wikilinkTargetOf>[0]);
             if (target !== null) {
               props.onSelect(target);
               return;
             }
-            if (props.toolbar !== null) props.send({ type: "toggle" });
           }}
           onKeyDown={(event) => {
             // Escape is first so the card closes on the gesture a keyboard
@@ -306,7 +265,6 @@ export function Note(props: NoteProps) {
           // Sanitised by `renderNote`'s three layers — see note.model.ts.
           dangerouslySetInnerHTML={{ __html: html }}
         />
-      )}
       {card === null ? null : (
         <div
           ref={cardRef}

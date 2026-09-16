@@ -45,7 +45,7 @@ export type ThemeChoice = "system" | "light" | "dark";
 /** The choices in cycle order. */
 export const THEME_CHOICES: readonly ThemeChoice[] = ["system", "light", "dark"];
 
-/** The `localStorage` key. Namespaced and versioned, like the layout's. */
+/** The `localStorage` key. Namespaced and versioned. */
 export const THEME_STORAGE_KEY = "pi-weave.theme.v1";
 
 /** The slice of `Storage` this module needs. */

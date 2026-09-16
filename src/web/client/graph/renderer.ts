@@ -23,20 +23,20 @@
  * line of ours runs.
  *
  * That is a worse outcome than it looks. This repository's rule (§10, and
- * `docs/testing.md` §L5.2) is that *untestable lines* are kept to a handful,
+ * the browser coverage policy) is that *untestable lines* are kept to a handful,
  * not that untestable *files* are excluded — the one coverage exclusion that
  * exists is a type-only module, and a blanket `src/web/client/**` exclude is
  * explicitly "not acceptable". A whole renderer sitting outside the gate would
  * be exactly the erosion that rule prevents.
  *
- * So the dependency is inverted. {@link SigmaLike} and {@link SigmaFactory}
+ * So the dependency is inverted. {@link SigmaLike}
  * are the two-and-a-half-method port sigma satisfies structurally;
  * {@link sigmaRenderer} is the entire renderer written against the port, and
  * it is covered by ordinary unit tests with a recording fake. The only thing
  * that genuinely cannot be tested is the four-line adapter in
  * `renderer.dom.ts` that says `new Sigma(graph, container, settings)` — the
  * same shape, and the same reasoning, as `api.dom.ts` for `fetch` and
- * `domEventSource` for `EventSource`.
+ * the DOM renderer seam for the browser canvas.
  *
  * §7.5's promise is unaffected. "One file changes" is still true, and it is
  * now true of a file with no branches in it.
@@ -111,39 +111,12 @@ export interface GraphRenderer {
  * importing it drags the module into the **root** `tsconfig.json` project
  * (`exclude` filters the initial glob, not what an included file imports), and
  * that project has no `DOM` lib. The structural stand-in is the same trick
- * `cssvars.ts`, `api.ts` and `live.ts` use; the one cast lives in
+ * `cssvars.ts` and `api.ts` use; the one cast lives in
  * `renderer.dom.ts`, which is compiled only by `tsconfig.web.json`.
  */
 export interface RenderContainer {
   readonly clientWidth: number;
   readonly clientHeight: number;
-}
-
-/**
- * A renderer that draws nothing.
- *
- * Not a test double — a production path. The graph column renders before its
- * container exists (the first pass), may never mount at all (the `medium`
- * breakpoint collapses the column), and must keep working when it does not. A
- * null object removes the `renderer === null` check from every call site,
- * which is the check that is always missing from exactly one of them.
- */
-export function nullRenderer(): GraphRenderer {
-  return {
-    mount() {},
-    setGraph() {},
-    setPositions() {},
-    setHighlight() {},
-    onSelect() {},
-    fit() {},
-    onDragStart() {},
-    onDragMove() {},
-    onDragEnd() {},
-    positions() {
-      return new Map();
-    },
-    destroy() {},
-  };
 }
 
 /**
@@ -171,7 +144,7 @@ export interface CameraLike {
  * The slice of `Sigma` this renderer drives.
  *
  * Structural, so the real class satisfies it without a cast and a fake is an
- * object literal — the same reasoning `EventSourceLike` in `live.ts` records.
+ * object literal — the same reasoning the injected renderer port records.
  * Six methods, and every one of them is called below, so the port cannot grow
  * a member nothing uses.
  *
@@ -212,8 +185,6 @@ export interface SigmaLike {
  * everything *around* it can be. `renderer.dom.ts` is the four-line adapter
  * that supplies the real constructor.
  */
-export type SigmaFactory = (graph: ProjectedGraph, container: RenderContainer, settings: GraphSettings) => SigmaLike;
-
 // --- the implementation --------------------------------------------------------------
 
 /**
@@ -230,7 +201,10 @@ export type SigmaFactory = (graph: ProjectedGraph, container: RenderContainer, s
  * every node colour and re-projecting — a second code path for a case nobody
  * hits.
  */
-export function sigmaRenderer(create: SigmaFactory, scheme: ColorScheme): GraphRenderer {
+export function sigmaRenderer(
+  create: (graph: ProjectedGraph, container: RenderContainer, settings: GraphSettings) => SigmaLike,
+  scheme: ColorScheme,
+): GraphRenderer {
   let sigma: SigmaLike | null = null;
   let graph: ProjectedGraph = project({ nodes: [], edges: [] });
   let highlight: ReadonlySet<string> | null = null;

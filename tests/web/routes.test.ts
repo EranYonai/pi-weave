@@ -1,5 +1,5 @@
 /**
- * Routes, over a real socket (weave-workspace §5.3, §5.4, §10).
+ * Routes, over a real socket.
  *
  * A real `node:http` server on port 0 and real `fetch`, against a temp vault
  * and a temp git repo. Not a mocked `ServerResponse`: half of what this
@@ -22,7 +22,7 @@
  * machine and a squattable port in production.
  */
 
-import { promises as fs, readFileSync } from "node:fs";
+import { promises as fs } from "node:fs";
 import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 import { WorkspaceCache } from "../../src/core/cache/workspace";
@@ -33,24 +33,19 @@ import type { Note } from "../../src/core/types";
 import { addNote } from "../../src/core/vault";
 import { DEFAULT_COOKIE_NAME } from "../../src/web/server/security";
 import {
-  MAX_BODY_BYTES,
   graphStamp,
-  parseSaveRequest,
+  MAX_BODY_BYTES,
   parseTarget,
   stampPayload,
   toGraphPayload,
-  type SseHub,
-  type Watcher,
 } from "../../src/web/server/routes";
 import {
-  DEFAULT_IDLE_MS,
   defaultBundlePath,
   startWorkspaceServer,
   type StartWorkspaceServerOptions,
-  type TimerHandle,
   type WorkspaceServer,
 } from "../../src/web/server/server";
-import type { ConflictPayload, GraphPayload, NotePayload, OkfFilePayload, SearchPayload } from "../../src/web/shared/wire";
+import type { GraphPayload, NotePayload, OkfFilePayload, SearchPayload } from "../../src/web/shared/wire";
 import { WIRE_MODEL_OMITTED_KEYS } from "../../src/web/shared/wire";
 import { commitAll, gitInit, makeTempDir, withVaultEnv, writeFixture } from "../helpers";
 
@@ -168,26 +163,9 @@ function raw(server: WorkspaceServer, path: string, init: RequestInit = {}): Pro
   return fetch(server.url + path, init);
 }
 
-/** An authenticated write under an arbitrary method — `DELETE`, mostly. */
-function send(server: WorkspaceServer, method: string, path: string, body?: unknown): Promise<Response> {
-  return fetch(server.url + path, {
-    method,
-    headers: {
-      cookie: `${DEFAULT_COOKIE_NAME}=${TOKEN}`,
-      origin: server.url,
-      "content-type": "application/json",
-    },
-    ...(body === undefined ? {} : { body: typeof body === "string" ? body : JSON.stringify(body) }),
-  });
-}
-
 /**
- * Write a note file **byte-exactly**, bypassing `addNote`.
- *
- * The point of the P5 exit criterion is what an *external* editor writes, and
- * `addNote` can only produce the canonical five-key block. Anything with an
- * `aliases:`, a `cssclass:` or a `tags:` block list has to be written the way
- * Obsidian writes it, which is as bytes.
+ * Write a note file **byte-exactly**, bypassing `addNote`, so the read route
+ * can be checked against front matter written by another tool.
  */
 async function writeNoteFile(vaultRoot: string, slug: string, frontMatter: string[], body: string): Promise<string> {
   const path = join(vaultRoot, "notes", `${slug}.md`);
@@ -197,26 +175,6 @@ async function writeNoteFile(vaultRoot: string, slug: string, frontMatter: strin
   return text;
 }
 
-/** Read a note file back verbatim. */
-function readNoteFile(vaultRoot: string, slug: string): Promise<string> {
-  return fs.readFile(join(vaultRoot, "notes", `${slug}.md`), "utf8");
-}
-
-/**
- * Read a file synchronously, or `""`.
- *
- * Synchronous because it runs *inside* a `suppress` callback, which is how
- * the suppression-ordering test observes the file as it was at the moment
- * the window opened. An `await` there would let the write land first and the
- * assertion would pass whichever order the code actually used.
- */
-function readFileSyncSafe(path: string): string {
-  try {
-    return readFileSync(path, "utf8");
-  } catch {
-    return "";
-  }
-}
 
 // --- pure helpers --------------------------------------------------------------
 
@@ -260,7 +218,7 @@ describe("toGraphPayload", () => {
   };
 
   it("carries a content digest as the stamp and leaves positions to the client", () => {
-    // §15.6: `stamp` is a digest of the payload, not `generatedAt`. It is
+    // : `stamp` is a digest of the payload, not `generatedAt`. It is
     // opaque, so this asserts its *shape* and its independence from the
     // timestamp rather than pinning a literal hash — a pinned hash would
     // turn every legitimate wire-shape change into a mystery failure here.
@@ -282,10 +240,10 @@ describe("toGraphPayload", () => {
   });
 
   it("changes the stamp when only a note body changes", () => {
-    // §15.6's residual blind spot: the payload carries only a display
+    // 's residual blind spot: the payload carries only a display
     // excerpt of a note body, so an edit below the fold used to reproduce
-    // byte-identical payload — and the dedupe layers on both ends discarded
-    // the frame that would have refetched the open note. The model's
+    // byte-identical payload — and the client would have kept its stale
+    // cached payload. The model's
     // `contentDigest` covers the bodies themselves, so any body edit moves
     // the stamp even when the excerpts and front matter stand still.
     const body = "x".repeat(300);
@@ -336,11 +294,7 @@ describe("toGraphPayload", () => {
   });
 
   it("graphStamp agrees with the stamp the route serves, and is memoized", () => {
-    // The §6 consistency requirement at its source: the SSE bridge asks
-    // `graphStamp` for the frame's dedupe key and the route puts its own
-    // digest in the ETag. If those two ever disagreed, every frame would
-    // trigger a refetch whose validator could never match — so they are one
-    // function, and this pins that.
+    // The route's exported digest helper and its ETag must agree.
     const snapshot = {
       model: { ...EMPTY, danglingLinks: {} },
       notes: [{ slug: "a", tags: ["t"] }],
@@ -394,7 +348,7 @@ describe("toGraphPayload", () => {
     expect(model.danglingLinks).toEqual({ alpha: ["ghost"] });
   });
 
-  // --- §4.3: tags ----------------------------------------------------------
+  // --- : tags ----------------------------------------------------------
 
   it("builds `tags` from the notes, not from the graph's display string", () => {
     const payload = toGraphPayload(EMPTY, [
@@ -474,12 +428,12 @@ describe("GET /", () => {
     expect(res.headers.get("cache-control")).toBe("no-store");
   });
 
-  it("bootstraps the client with the cwd, the vault root and the session", async () => {
-    const { server, cwd, vaultRoot } = await boot();
+  it("bootstraps the client with the cwd", async () => {
+    const { server, cwd } = await boot();
     const html = await (await get(server, "/")).text();
     const open = html.indexOf(">", html.indexOf('<script type="application/json"')) + 1;
     const boot0 = JSON.parse(html.slice(open, html.indexOf("</script>", open)));
-    expect(boot0).toEqual({ cwd, vaultRoot, session: server.session });
+    expect(boot0).toEqual({ cwd });
   });
 });
 
@@ -491,7 +445,7 @@ describe("GET /app.js", () => {
     const res = await get(server, "/app.js");
     expect(res.status).toBe(200);
     expect(res.headers.get("content-type")).toBe("text/javascript; charset=utf-8");
-    // §5.3: the artifact changes on rebuild and the server may outlive one.
+    // : the artifact changes on rebuild and the server may outlive one.
     expect(res.headers.get("cache-control")).toBe("no-store");
     expect(await res.text()).toBe(await fs.readFile(defaultBundlePath(), "utf8"));
   });
@@ -512,7 +466,7 @@ describe("GET /api/graph", () => {
     const res = await get(server, "/api/graph");
     expect(res.status).toBe(200);
     const payload = (await res.json()) as GraphPayload;
-    // §15.6: a digest of the payload, *not* the data-as-of timestamp, which
+    // : a digest of the payload, *not* the data-as-of timestamp, which
     // remains available on the model for anything that wants to show a time.
     expect(payload.stamp).toMatch(/^[0-9a-f]{32}$/);
     expect(payload.stamp).not.toBe(payload.model.generatedAt);
@@ -522,13 +476,13 @@ describe("GET /api/graph", () => {
     expect(res.headers.get("etag")).toBe(`"${payload.stamp}"`);
     expect(res.headers.get("etag")?.startsWith("W/")).toBe(false);
     expect(payload.model.nodes.length).toBeGreaterThan(0);
-    // §4.3, no longer `{}`: the fixture's "Alpha Note" carries `t1`, and the
+    // , no longer `{}`: the fixture's "Alpha Note" carries `t1`, and the
     // slug — not the node id — is what the index reports.
     expect(payload.tags).toEqual({ t1: ["alpha-note"] });
-    // §4.2. The fixture's notes have no wiki-links at all, so nothing
+    // . The fixture's notes have no wiki-links at all, so nothing
     // dangles; that is an empty map for the right reason, not a stub.
     expect(payload.dangling).toEqual({});
-    // Still null by design (§7.3): the server tier cannot import d3-force.
+    // Still null by design (§2): the server tier cannot import d3-force.
     expect(payload.positions).toBeNull();
     expect(res.headers.get("etag")).toBe(`"${payload.stamp}"`);
     // `no-cache`, not `no-store`: the client should keep the body and
@@ -563,7 +517,7 @@ describe("GET /api/graph", () => {
     }
   });
 
-  // --- §15.6, resolved: the three cases a timestamp stamp could not see -----
+  // --- , resolved: the three cases a timestamp stamp could not see -----
   //
   // These were one test asserting the bug ("KNOWN LIMITATION: the stamp
   // misses an edit that does not move `updated`"). Each is now a positive
@@ -629,7 +583,7 @@ describe("GET /api/graph", () => {
     expect(conditional.status).toBe(200);
     const second = (await conditional.json()) as GraphPayload;
 
-    // The widened blast radius §15.6 warned about: a stale `tags` map is a
+    // The widened blast radius  warned about: a stale `tags` map is a
     // tag chip pointing at a note that no longer carries it.
     expect(second.tags).toHaveProperty("afterwards");
     expect(second.tags).not.toHaveProperty("before");
@@ -700,8 +654,8 @@ describe("GET /api/graph", () => {
   });
 
   it("a warm request re-uses the memoized rendering: zero extra hashing (§4.1)", async () => {
-    // §4.1's promise is that a no-change rebuild does zero note reads and
-    // zero git spawns; §15.6 adds "and no re-hashing" to that list, since the
+    // 's promise is that a no-change rebuild does zero note reads and
+    // zero git spawns;  adds "and no re-hashing" to that list, since the
     // digest would otherwise be the one cost that scaled with request rate.
     //
     // Asserted through observable behaviour rather than a timer: the cache
@@ -729,7 +683,7 @@ describe("GET /api/graph", () => {
 
     // The snapshot identity is stable, which is what the memo keys on.
     expect(await cache.snapshot()).toBe(warmed);
-    // And §4.1's original guarantees still hold on that path.
+    // And 's original guarantees still hold on that path.
     expect(statsAfter.notesRead).toBe(statsBefore.notesRead);
     expect(statsAfter.gitCalls).toBe(statsBefore.gitCalls);
   });
@@ -780,7 +734,7 @@ describe("GET /api/graph", () => {
   });
 
   // `snapshot()`, not `graph()`: the route reads the graph *and* the notes it
-  // was built from in one call (§4.3), so that is the method whose failure
+  // was built from in one call (§4.1), so that is the method whose failure
   // has to reach the client as a 500.
   it("surfaces a cache failure as a 500, not a hung socket", async () => {
     const ws = await sharedWorkspace();
@@ -804,45 +758,17 @@ describe("GET /api/graph", () => {
     expect(await res.text()).toContain("a bare string");
   });
 
-  it("ends the socket rather than hanging when a handler throws after writing headers", async () => {
-    // The un-rescuable case: headers are already on the wire, so there is no
-    // status left to send. Leaving the socket open would hang the browser
-    // tab on a response that is never coming.
-    const ws = await sharedWorkspace();
-    const cache = new WorkspaceCache({ cwd: ws.cwd, vaultRoot: ws.vaultRoot });
-    const { server } = await boot({
-      cache,
-      sse: {
-        attach: (_req, res) => {
-          res.writeHead(200, { "content-type": "text/event-stream" });
-          throw new Error("boom after headers");
-        },
-        broadcast: () => {},
-        clientCount: () => 0,
-        close: () => {},
-      },
-      idleMs: 0,
-    });
-    const res = await get(server, "/events");
-    expect(res.status).toBe(200);
-    expect(await res.text()).toBe("");
-  });
 });
 
 // --- notes ------------------------------------------------------------------------
 
 describe("GET /api/note/:slug", () => {
-  it("returns the note and its revision", async () => {
+  it("returns the note", async () => {
     const { server } = await boot();
     const res = await get(server, "/api/note/alpha-note");
     expect(res.status).toBe(200);
     const payload = (await res.json()) as NotePayload;
     expect(payload.note).toMatchObject({ slug: "alpha-note", title: "Alpha Note", source: "human" });
-    // Opaque by contract, so this asserts only that it is a non-empty string
-    // — pinning its shape here would re-create the coupling core's own doc
-    // comment forbids.
-    expect(typeof payload.revision).toBe("string");
-    expect(payload.revision.length).toBeGreaterThan(0);
   });
 
   it("never puts the raw front-matter block on the wire", async () => {
@@ -909,679 +835,6 @@ describe("GET /api/note/:slug", () => {
     });
   });
 });
-
-// --- writes (P5) ---------------------------------------------------------------------
-
-/** Boot over a private vault holding one note, and read its revision. */
-async function bootWritable(over: Partial<StartWorkspaceServerOptions> = {}): Promise<Fixture & { revision: string }> {
-  const fixture = await bootFresh(over);
-  const payload = (await (await get(fixture.server, "/api/note/alpha-note")).json()) as NotePayload;
-  return { ...fixture, revision: payload.revision };
-}
-
-describe("parseSaveRequest", () => {
-  it("accepts the three shapes a save can take", () => {
-    expect(parseSaveRequest({})).toEqual({});
-    expect(parseSaveRequest({ body: "text" })).toEqual({ body: "text" });
-    expect(parseSaveRequest({ meta: { title: "T", tags: ["a"], source: "agent" }, expectedRevision: "r" })).toEqual({
-      meta: { title: "T", tags: ["a"], source: "agent" },
-      expectedRevision: "r",
-    });
-  });
-
-  it("drops nothing it accepts and accepts nothing it should not", () => {
-    // The allowlist is the security control, not a formality: `updateNote`
-    // spreads `meta` straight over the note's front matter, so any key that
-    // survives here reaches the file. `created` and `updated` are the two
-    // that matter — one is not the caller's to set, the other is the
-    // server's — and both must be silently absent rather than an error,
-    // because a future client sending an extra field should not 400.
-    const parsed = parseSaveRequest({ meta: { title: "T", created: "1970-01-01", updated: "1970-01-01" } });
-    expect(parsed).toEqual({ meta: { title: "T" } });
-  });
-
-  it("rejects a malformed body rather than coercing it", () => {
-    for (const bad of [
-      null,
-      42,
-      "str",
-      [],
-      { body: 1 },
-      { body: null },
-      { expectedRevision: 7 },
-      { meta: null },
-      { meta: [] },
-      { meta: "x" },
-      { meta: { title: 1 } },
-      { meta: { tags: "a" } },
-      { meta: { tags: ["a", 2] } },
-      { meta: { source: "verified" } },
-      { meta: { source: null } },
-    ]) {
-      expect(parseSaveRequest(bad), JSON.stringify(bad)).toBeNull();
-    }
-  });
-});
-
-describe("POST /api/note/:slug", () => {
-  it("writes the body and returns the note with a fresh revision", async () => {
-    const { server, vaultRoot, revision } = await bootWritable();
-    const res = await post(server, "/api/note/alpha-note", { body: "rewritten", expectedRevision: revision });
-    expect(res.status).toBe(200);
-    const payload = (await res.json()) as NotePayload;
-    expect(payload.note.body).toBe("rewritten");
-    // The revision must describe the bytes now on disk, not the ones the
-    // request was written against — otherwise the very next save from the
-    // same editor would 409 against its own write.
-    expect(payload.revision).not.toBe(revision);
-    expect(await readNoteFile(vaultRoot, "alpha-note")).toContain("rewritten");
-  });
-
-  it("accepts a metadata-only save and bumps `updated`", async () => {
-    const { server, revision } = await bootWritable();
-    const before = (await (await get(server, "/api/note/alpha-note")).json()) as NotePayload;
-    const res = await post(server, "/api/note/alpha-note", {
-      meta: { title: "Renamed In Place", tags: ["x", "y"] },
-      expectedRevision: revision,
-    });
-    expect(res.status).toBe(200);
-    const payload = (await res.json()) as NotePayload;
-    expect(payload.note.title).toBe("Renamed In Place");
-    expect(payload.note.tags).toEqual(["x", "y"]);
-    expect(payload.note.body).toBe(before.note.body);
-    expect(payload.note.updated).not.toBe(before.note.updated);
-  });
-
-  it("saves without a revision (last-write-wins is opt-in, and is how overwrite works)", async () => {
-    const { server } = await bootWritable();
-    const res = await post(server, "/api/note/alpha-note", { body: "clobbered" });
-    expect(res.status).toBe(200);
-    expect(((await res.json()) as NotePayload).note.body).toBe("clobbered");
-  });
-
-  it("409s with the current note when the revision is stale", async () => {
-    const { server, revision } = await bootWritable();
-    // Someone else writes. The browser's held revision is now historical.
-    await post(server, "/api/note/alpha-note", { body: "from the other writer" });
-
-    const res = await post(server, "/api/note/alpha-note", { body: "from the browser", expectedRevision: revision });
-    expect(res.status).toBe(409);
-    const payload = (await res.json()) as ConflictPayload;
-    expect(payload.reason).toBe("conflict");
-    if (payload.reason !== "conflict") throw new Error("expected a conflict payload");
-    // The whole point: reload-or-overwrite is answerable from this body
-    // alone, with no second round trip.
-    expect(payload.current.note.body).toBe("from the other writer");
-    expect(payload.current.revision).not.toBe(revision);
-    // And re-sending with the revision the 409 handed back succeeds — that
-    // is "overwrite", expressed honestly rather than by disabling the check.
-    const retry = await post(server, "/api/note/alpha-note", {
-      body: "from the browser",
-      expectedRevision: payload.current.revision,
-    });
-    expect(retry.status).toBe(200);
-  });
-
-  it("404s for a missing note", async () => {
-    const { server } = await bootWritable();
-    const res = await post(server, "/api/note/no-such-note", { body: "x" });
-    expect(res.status).toBe(404);
-    expect(await res.json()).toEqual({ error: "no such note" });
-  });
-
-  it("404s every traversal slug, and writes nothing", async () => {
-    // Two guards in series, and they answer at different layers. A slug with
-    // a `/` in it is not a note route at all — the family matches the segment
-    // after `/api/note/` exactly — so it never reaches core; a `/`-free
-    // traversal (`..`) does reach core and is refused by `resolveNotePath`.
-    // Both are a `404`, which is the only thing a caller may rely on.
-    const { server, vaultRoot } = await bootWritable();
-    for (const slug of ["..", "../escape", "..%2f..%2fetc%2fpasswd", "%2e%2e%2fescape", "nested/note", ""]) {
-      const res = await post(server, `/api/note/${slug}`, { body: "clobbered" });
-      expect(res.status, slug).toBe(404);
-      const text = await res.text();
-      expect(text).not.toContain("root:");
-      expect(text).not.toContain("/etc");
-    }
-    await expect(readNoteFile(vaultRoot, "alpha-note")).resolves.toContain("the body of alpha");
-  });
-
-  it("404s rather than 409s when the note vanished before the revision check", async () => {
-    // `expectedRevision` on a note that is not there: core answers `missing`,
-    // not `conflict`, because there is nothing to conflict with.
-    const { server } = await bootWritable();
-    const res = await post(server, "/api/note/gone", { body: "x", expectedRevision: "1:1" });
-    expect(res.status).toBe(404);
-  });
-
-  it("400s a malformed body", async () => {
-    const { server } = await bootWritable();
-    for (const body of ["not json", "", "[]", '"str"', '{"body":1}', '{"meta":{"source":"nope"}}']) {
-      const res = await post(server, "/api/note/alpha-note", body);
-      expect(res.status, body).toBe(400);
-    }
-  });
-
-  it("refuses an oversized body instead of buffering it", async () => {
-    const { server } = await bootWritable();
-    const res = await post(server, "/api/note/alpha-note", JSON.stringify({ body: "x".repeat(MAX_BODY_BYTES + 1024) }));
-    expect(res.status).toBe(400);
-  });
-
-  it("404s when the note is deleted between the write and the re-read", async () => {
-    // A real race, not a defensive branch: the write succeeds, and a
-    // `weave_note` delete (or an `rm` in another terminal) lands before the
-    // re-read that supplies the new revision. The write did happen; the note
-    // is gone anyway; `404` is the honest answer and a `500` would not be.
-    //
-    // Driven through the `readNote` seam because the window is microseconds
-    // wide and a test that tried to hit it by timing would be the flakiest
-    // thing in the suite.
-    const { server } = await bootFresh({ readNote: async () => null });
-    const res = await post(server, "/api/note/alpha-note", { body: "x" });
-    expect(res.status).toBe(404);
-    expect(await res.json()).toEqual({ error: "no such note" });
-  });
-});
-
-describe("POST /api/note/:slug/rename", () => {
-  it("moves the file and returns the note at its new slug", async () => {
-    const { server, vaultRoot } = await bootWritable();
-    const res = await post(server, "/api/note/alpha-note/rename", { slug: "Alpha Renamed" });
-    expect(res.status).toBe(200);
-    const payload = (await res.json()) as NotePayload;
-    // `slugify` applies, so a human title is as acceptable as a slug.
-    expect(payload.note.slug).toBe("alpha-renamed");
-    await expect(readNoteFile(vaultRoot, "alpha-renamed")).resolves.toContain("Alpha Note");
-    await expect(readNoteFile(vaultRoot, "alpha-note")).rejects.toThrow();
-  });
-
-  it("409s with the taken slug rather than overwriting", async () => {
-    const { server } = await bootWritable();
-    const res = await post(server, "/api/note/alpha-note/rename", { slug: "beta-note" });
-    expect(res.status).toBe(409);
-    const payload = (await res.json()) as ConflictPayload;
-    expect(payload).toMatchObject({ reason: "collision", slug: "beta-note" });
-  });
-
-  it("404s for a missing source note", async () => {
-    const { server } = await bootWritable();
-    const res = await post(server, "/api/note/no-such-note/rename", { slug: "whatever" });
-    expect(res.status).toBe(404);
-  });
-
-  it("slugifies a punctuation-only destination rather than refusing it", async () => {
-    // `slugify` never returns the empty string — it falls back to `"note"`.
-    // Asserted here because the route's suppression calls `slugify` itself,
-    // and a change to that fallback would silently move which path gets
-    // suppressed. Documenting the current behaviour is the point.
-    const { server, vaultRoot } = await bootWritable();
-    const res = await post(server, "/api/note/alpha-note/rename", { slug: "---" });
-    expect(res.status).toBe(200);
-    expect(((await res.json()) as NotePayload).note.slug).toBe("note");
-    await expect(readNoteFile(vaultRoot, "note")).resolves.toContain("Alpha Note");
-  });
-
-  it("renames a nested note while keeping it in the same folder", async () => {
-    const { server, vaultRoot } = await bootWritable();
-    await post(server, "/api/folder", { path: "coverageathon" });
-    await post(server, "/api/note/alpha-note/move", { targetFolder: "coverageathon" });
-    const res = await post(server, "/api/note/coverageathon/alpha-note/rename", {
-      slug: "Beta Renamed",
-      title: "Beta Renamed",
-    });
-    expect(res.status).toBe(200);
-    const payload = (await res.json()) as NotePayload;
-    expect(payload.note.slug).toBe("coverageathon/beta-renamed");
-    expect(payload.note.title).toBe("Beta Renamed");
-    await expect(readNoteFile(vaultRoot, "coverageathon/beta-renamed")).resolves.toContain("Beta Renamed");
-    await expect(readNoteFile(vaultRoot, "coverageathon/alpha-note")).rejects.toThrow();
-  });
-
-  it("400s a body that is not { slug: string }", async () => {
-    const { server } = await bootWritable();
-    for (const body of ["{}", '{"slug":1}', '{"slug":""}', "[]", "not json", ""]) {
-      const res = await post(server, "/api/note/alpha-note/rename", body);
-      expect(res.status, body).toBe(400);
-      expect(await res.json()).toEqual({ error: "expected { slug: string }" });
-    }
-  });
-});
-
-describe("POST /api/note/:slug/move", () => {
-  it("moves note to a folder and automatically adds the folder tag", async () => {
-    const { server, vaultRoot } = await bootWritable();
-    const res = await post(server, "/api/note/alpha-note/move", { targetFolder: "projects" });
-    expect(res.status).toBe(200);
-    const payload = (await res.json()) as NotePayload;
-    expect(payload.note.slug).toBe("projects/alpha-note");
-    expect(payload.note.tags).toContain("projects");
-    await expect(readNoteFile(vaultRoot, "projects/alpha-note")).resolves.toContain("Alpha Note");
-    await expect(readNoteFile(vaultRoot, "alpha-note")).rejects.toThrow();
-
-    // move back to root
-    const back = await post(server, "/api/note/projects/alpha-note/move", { targetFolder: null });
-    expect(back.status).toBe(200);
-    const backPayload = (await back.json()) as NotePayload;
-    expect(backPayload.note.slug).toBe("alpha-note");
-    await expect(readNoteFile(vaultRoot, "alpha-note")).resolves.toContain("Alpha Note");
-  });
-
-  it("404s for a missing source note", async () => {
-    const { server } = await bootWritable();
-    const res = await post(server, "/api/note/nonexistent/move", { targetFolder: "projects" });
-    expect(res.status).toBe(404);
-  });
-});
-
-describe("POST /api/folder", () => {
-  it("creates a folder under notes/", async () => {
-    const { server, vaultRoot } = await bootWritable();
-    const res = await post(server, "/api/folder", { path: "my-folder" });
-    expect(res.status).toBe(200);
-    expect(await res.json()).toEqual({ ok: true, path: "my-folder" });
-    const stat = await fs.stat(join(vaultRoot, "notes", "my-folder"));
-    expect(stat.isDirectory()).toBe(true);
-  });
-
-  it("400s an empty or invalid folder path", async () => {
-    const { server } = await bootWritable();
-    const res = await post(server, "/api/folder", { path: "   " });
-    expect(res.status).toBe(400);
-  });
-
-  it("409s if destination is an existing non-directory file", async () => {
-    const { server, vaultRoot } = await bootWritable();
-    await fs.writeFile(join(vaultRoot, "notes", "file-collision"), "content", "utf8");
-    const res = await post(server, "/api/folder", { path: "file-collision" });
-    expect(res.status).toBe(409);
-  });
-});
-
-describe("DELETE /api/folder", () => {
-  it("deletes a folder under notes/", async () => {
-    const { server, vaultRoot } = await bootWritable();
-    await post(server, "/api/folder", { path: "temp-folder" });
-    expect((await fs.stat(join(vaultRoot, "notes", "temp-folder"))).isDirectory()).toBe(true);
-
-    const res = await send(server, "DELETE", "/api/folder/temp-folder");
-    expect(res.status).toBe(200);
-    expect(await res.json()).toEqual({ deleted: true });
-    await expect(fs.stat(join(vaultRoot, "notes", "temp-folder"))).rejects.toThrow();
-  });
-
-  it("404s for a non-existent folder", async () => {
-    const { server } = await bootWritable();
-    const res = await send(server, "DELETE", "/api/folder/nonexistent");
-    expect(res.status).toBe(404);
-  });
-});
-
-describe("POST /api/folder/:path/rename", () => {
-  it("renames a folder and moves its contents", async () => {
-    const { server, vaultRoot } = await bootWritable();
-    await post(server, "/api/folder", { path: "source-dir" });
-    const res = await post(server, "/api/folder/source-dir/rename", { newPath: "dest-dir" });
-    expect(res.status).toBe(200);
-    expect(await res.json()).toEqual({ ok: true, path: "dest-dir" });
-    expect((await fs.stat(join(vaultRoot, "notes", "dest-dir"))).isDirectory()).toBe(true);
-    await expect(fs.stat(join(vaultRoot, "notes", "source-dir"))).rejects.toThrow();
-  });
-
-  it("404s for a non-existent folder", async () => {
-    const { server } = await bootWritable();
-    const res = await post(server, "/api/folder/nonexistent/rename", { newPath: "new-dest" });
-    expect(res.status).toBe(404);
-  });
-
-  it("400s an empty newPath", async () => {
-    const { server } = await bootWritable();
-    await post(server, "/api/folder", { path: "another-dir" });
-    const res = await post(server, "/api/folder/another-dir/rename", { newPath: "   " });
-    expect(res.status).toBe(400);
-  });
-});
-
-describe("DELETE /api/note/:slug", () => {
-  it("unlinks the file", async () => {
-    const { server, vaultRoot } = await bootWritable();
-    const res = await send(server, "DELETE", "/api/note/alpha-note");
-    expect(res.status).toBe(200);
-    expect(await res.json()).toEqual({ deleted: true });
-    await expect(readNoteFile(vaultRoot, "alpha-note")).rejects.toThrow();
-  });
-
-  it("404s for a missing note", async () => {
-    const { server } = await bootWritable();
-    const res = await send(server, "DELETE", "/api/note/no-such-note");
-    expect(res.status).toBe(404);
-    expect(await res.json()).toEqual({ error: "no such note" });
-  });
-
-  it("404s a traversal slug, and deletes nothing", async () => {
-    const { server, vaultRoot } = await bootWritable();
-    for (const slug of ["..", "..%2fescape", "nested/note", ""]) {
-      expect((await send(server, "DELETE", `/api/note/${slug}`)).status, slug).toBe(404);
-    }
-    await expect(readNoteFile(vaultRoot, "alpha-note")).resolves.toContain("the body of alpha");
-  });
-});
-
-describe("write routes and §5.1", () => {
-  // The security gate runs in `handleRequest` before any routing, so these
-  // are inherited rather than re-implemented. They are asserted per route
-  // anyway: "inherited" is a property of the current call order, and the
-  // whole point of a gate is that it cannot be routed around by accident.
-  const writes: Array<[label: string, method: string, path: string, body: unknown]> = [
-    ["save", "POST", "/api/note/alpha-note", { body: "x" }],
-    ["rename", "POST", "/api/note/alpha-note/rename", { slug: "other" }],
-    ["delete", "DELETE", "/api/note/alpha-note", undefined],
-  ];
-
-  for (const [label, method, path, body] of writes) {
-    it(`${label} is refused with no Origin at all`, async () => {
-      // The CSRF shape: a valid cookie (the browser attaches it to *any*
-      // request to this origin) and no provenance. §5.1 requires Origin on
-      // every non-GET precisely so this cannot be a write.
-      const { server, vaultRoot } = await bootWritable();
-      const res = await fetch(server.url + path, {
-        method,
-        headers: { cookie: `${DEFAULT_COOKIE_NAME}=${TOKEN}`, "content-type": "application/json" },
-        ...(body === undefined ? {} : { body: JSON.stringify(body) }),
-      });
-      expect(res.status).toBe(403);
-      expect(await res.text()).toBe("forbidden\n");
-      // …and nothing happened. A 403 that still wrote would be the worst of
-      // both worlds, so the file is checked rather than the status alone.
-      await expect(readNoteFile(vaultRoot, "alpha-note")).resolves.toContain("the body of alpha");
-    });
-
-    it(`${label} is refused with a foreign Origin`, async () => {
-      const { server, vaultRoot } = await bootWritable();
-      const res = await fetch(server.url + path, {
-        method,
-        headers: {
-          cookie: `${DEFAULT_COOKIE_NAME}=${TOKEN}`,
-          origin: "http://evil.example",
-          "content-type": "application/json",
-        },
-        ...(body === undefined ? {} : { body: JSON.stringify(body) }),
-      });
-      expect(res.status).toBe(403);
-      await expect(readNoteFile(vaultRoot, "alpha-note")).resolves.toContain("the body of alpha");
-    });
-
-    it(`${label} is refused with no token`, async () => {
-      const { server, vaultRoot } = await bootWritable();
-      const res = await fetch(server.url + path, {
-        method,
-        headers: { origin: server.url, "content-type": "application/json" },
-        ...(body === undefined ? {} : { body: JSON.stringify(body) }),
-      });
-      expect(res.status).toBe(403);
-      await expect(readNoteFile(vaultRoot, "alpha-note")).resolves.toContain("the body of alpha");
-    });
-
-    it(`${label} is refused with a foreign Host (DNS rebinding)`, async () => {
-      const { server, vaultRoot } = await bootWritable();
-      const response = await rawSocket(server.port, [
-        `${method} ${path} HTTP/1.1`,
-        "Host: evil.example",
-        `Origin: ${server.url}`,
-        `Cookie: ${DEFAULT_COOKIE_NAME}=${TOKEN}`,
-        "Content-Type: application/json",
-        `Content-Length: ${body === undefined ? 0 : Buffer.byteLength(JSON.stringify(body))}`,
-        "Connection: close",
-        "",
-        body === undefined ? "" : JSON.stringify(body),
-      ].join("\r\n"));
-      expect(response).toContain("403");
-      await expect(readNoteFile(vaultRoot, "alpha-note")).resolves.toContain("the body of alpha");
-    });
-
-    it(`${label} does not become a token handoff via ?t=`, async () => {
-      // The handoff is `GET`-only in `createSecurityPolicy`. If it were not,
-      // a page that learned the token could turn a write into a redirect
-      // that also *set the cookie*, which is credential planting.
-      const { server } = await bootWritable();
-      const res = await fetch(`${server.url}${path}?t=${TOKEN}`, {
-        method,
-        headers: { origin: server.url, "content-type": "application/json" },
-        ...(body === undefined ? {} : { body: JSON.stringify(body) }),
-        redirect: "manual",
-      });
-      expect(res.status).toBe(403);
-      expect(res.headers.get("set-cookie")).toBeNull();
-    });
-  }
-});
-
-describe("self-write suppression (§6)", () => {
-  it("suppresses the note's path before each write", async () => {
-    // Before, not after: `fs.watch` can deliver an event while the write
-    // syscall is still returning, so a window opened afterwards is a window
-    // that opened second. The recorder captures the file's contents at the
-    // moment `suppress` is called, which is what makes the ordering
-    // assertable without a real watcher.
-    const seen: Array<{ path: string; bodyAtCall: string }> = [];
-    const { server, vaultRoot } = await bootWritable({
-      suppress: (absPath) => {
-        seen.push({ path: absPath, bodyAtCall: readFileSyncSafe(absPath) });
-      },
-    });
-    const notes = join(vaultRoot, "notes");
-
-    await post(server, "/api/note/alpha-note", { body: "saved" });
-    expect(seen).toEqual([{ path: join(notes, "alpha-note.md"), bodyAtCall: expect.stringContaining("the body of alpha") }]);
-
-    seen.length = 0;
-    await send(server, "DELETE", "/api/note/alpha-note");
-    expect(seen.map((s) => s.path)).toEqual([join(notes, "alpha-note.md")]);
-  });
-
-  it("suppresses both ends of a rename", async () => {
-    // Only suppressing the source would broadcast the *arrival* at the
-    // destination, which is the same feedback loop with an extra step.
-    const seen: string[] = [];
-    const { server, vaultRoot } = await bootWritable({ suppress: (absPath) => void seen.push(absPath) });
-    await post(server, "/api/note/alpha-note/rename", { slug: "moved" });
-    expect(seen).toEqual([join(vaultRoot, "notes", "alpha-note.md"), join(vaultRoot, "notes", "moved.md")]);
-  });
-
-  it("does not suppress a path it could not resolve", async () => {
-    // A traversal slug has no legitimate absolute path. Suppressing one
-    // would mean either fabricating a path or handing `null` to a watcher
-    // that would resolve it against the process's cwd.
-    const seen: string[] = [];
-    const { server } = await bootWritable({ suppress: (absPath) => void seen.push(absPath) });
-    await post(server, "/api/note/..%2fescape", { body: "x" });
-    await send(server, "DELETE", "/api/note/..%2fescape");
-    expect(seen).toEqual([]);
-  });
-
-  it("suppresses the rename's destination as `slugify` will write it", async () => {
-    // Suppressing the *requested* string would open the window over
-    // `notes/Alpha Renamed.md` while the write went to
-    // `notes/alpha-renamed.md` — a suppression that is present, plausible
-    // and useless.
-    const seen: string[] = [];
-    const { server, vaultRoot } = await bootWritable({ suppress: (absPath) => void seen.push(absPath) });
-    await post(server, "/api/note/alpha-note/rename", { slug: "Alpha Renamed" });
-    expect(seen).toEqual([join(vaultRoot, "notes", "alpha-note.md"), join(vaultRoot, "notes", "alpha-renamed.md")]);
-  });
-
-  it("writes fine with no watcher and no suppress hook", async () => {
-    // The route tests boot without a watcher, which is also the shape of a
-    // degraded session (§14). A write must not require the hook to exist.
-    const { server } = await bootWritable({ suppress: undefined });
-    expect((await post(server, "/api/note/alpha-note", { body: "x" })).status).toBe(200);
-  });
-
-  it("takes `suppress` from the watcher when the caller supplies one", async () => {
-    // The real wiring: `run.ts` hands `startWorkspaceServer` a watcher, and
-    // the watcher is the thing that owns the window. Requiring the caller to
-    // *also* pass `suppress` would be a second place to forget it.
-    const seen: string[] = [];
-    const watcher: Watcher = {
-      start: async () => {},
-      close: async () => {},
-      suppress(absPath: string) {
-        seen.push(absPath);
-      },
-    };
-    const { server, vaultRoot } = await bootWritable({ watcher });
-    await post(server, "/api/note/alpha-note", { body: "x" });
-    expect(seen).toEqual([join(vaultRoot, "notes", "alpha-note.md")]);
-  });
-
-  it("an explicit `suppress` wins over the watcher's", async () => {
-    const explicit: string[] = [];
-    const fromWatcher: string[] = [];
-    const watcher: Watcher = {
-      start: async () => {},
-      close: async () => {},
-      suppress: (p) => void fromWatcher.push(p),
-    };
-    const { server } = await bootWritable({ watcher, suppress: (p) => void explicit.push(p) });
-    await post(server, "/api/note/alpha-note", { body: "x" });
-    expect(explicit).toHaveLength(1);
-    expect(fromWatcher).toEqual([]);
-  });
-
-  it("a watcher without `suppress` is not an error", async () => {
-    const watcher: Watcher = { start: async () => {}, close: async () => {} };
-    const { server } = await bootWritable({ watcher });
-    expect((await post(server, "/api/note/alpha-note", { body: "x" })).status).toBe(200);
-  });
-});
-
-// --- the P5 exit criterion -----------------------------------------------------------
-
-describe("P5 exit: a browser-authored note is byte-compatible with an Obsidian one (§11)", () => {
-  /**
-   * The Obsidian-shaped note. Every line here is one the engine's subset
-   * cannot represent, and each is a different failure mode:
-   *
-   *  - `aliases:` inline array — an unknown key with punctuation in it;
-   *  - `cssclass:` — a bare unknown scalar;
-   *  - the `tags:` **block list** — an *owned* key in a syntax the serializer
-   *    cannot write, which is the case that would be silently rewritten to
-   *    `tags: []` with two orphaned children left underneath;
-   *  - a YAML comment and a blank line — content with no key at all;
-   *  - `nested:` with an indented child — a map the parser has no concept of.
-   */
-  const OBSIDIAN_FRONT_MATTER = [
-    "title: Auth Boundary",
-    "aliases: [Auth Boundary, ADR-7]",
-    "cssclass: wide-table",
-    "tags:",
-    "  - architecture",
-    "  - security",
-    "# a comment the parser has no concept of",
-    "",
-    "nested:",
-    "  key: value",
-    "publish: true",
-    "created: 2026-01-02T03:04:05.000Z",
-    "source: human",
-  ];
-
-  it("preserves every unknown line byte-for-byte across a browser save", async () => {
-    const { server, vaultRoot } = await bootFresh();
-    const before = await writeNoteFile(vaultRoot, "auth-boundary", OBSIDIAN_FRONT_MATTER, "The original body.");
-
-    // Read it the way the editor does…
-    const loaded = (await (await get(server, "/api/note/auth-boundary")).json()) as NotePayload;
-    expect(loaded.note.body).toBe("The original body.");
-
-    // …and save it the way the editor does.
-    const saved = await post(server, "/api/note/auth-boundary", {
-      body: "The body, rewritten in a browser textarea.",
-      expectedRevision: loaded.revision,
-    });
-    expect(saved.status).toBe(200);
-
-    const after = await readNoteFile(vaultRoot, "auth-boundary");
-
-    // The claim, stated line by line rather than as one blob, so a failure
-    // names the line that was destroyed.
-    const beforeLines = frontMatterOf(before);
-    const afterLines = frontMatterOf(after);
-    for (const line of [
-      "aliases: [Auth Boundary, ADR-7]",
-      "cssclass: wide-table",
-      "tags:",
-      "  - architecture",
-      "  - security",
-      "# a comment the parser has no concept of",
-      "",
-      "nested:",
-      "  key: value",
-      "publish: true",
-      "created: 2026-01-02T03:04:05.000Z",
-    ]) {
-      expect(afterLines, line).toContain(line);
-    }
-
-    // Order is preserved too — a set-equal check would pass on a block that
-    // had been sorted, and a reordered front matter is a diff in the user's
-    // git history that they did not make.
-    const kept = (lines: string[]): string[] => lines.filter((l) => !l.startsWith("updated:"));
-    expect(kept(afterLines)).toEqual(kept(beforeLines));
-
-    // The block list is *frozen*, not rewritten: no `tags: [...]` line was
-    // emitted alongside it, which is the duplication that would leave the
-    // user with two `tags` properties.
-    expect(afterLines.filter((l) => l.startsWith("tags:"))).toEqual(["tags:"]);
-
-    // The only intended change: the body, plus the `updated` bump the save
-    // asked for.
-    expect(after).toContain("The body, rewritten in a browser textarea.");
-    expect(after).not.toContain("The original body.");
-    expect(afterLines.filter((l) => l.startsWith("updated:"))).toHaveLength(1);
-  });
-
-  it("survives repeated saves — one cycle is a fixed point", async () => {
-    // Idempotence at the HTTP layer. `frontmatterRoundTrip.test.ts` proves it
-    // for `parse ∘ serialize`; this proves the browser's *path* to those
-    // functions did not add a lossy step of its own, which is the only part
-    // §11 P5's exit criterion is about.
-    const { server, vaultRoot } = await bootFresh();
-    await writeNoteFile(vaultRoot, "auth-boundary", OBSIDIAN_FRONT_MATTER, "Body.");
-
-    let revision = ((await (await get(server, "/api/note/auth-boundary")).json()) as NotePayload).revision;
-    for (let i = 0; i < 3; i += 1) {
-      const res = await post(server, "/api/note/auth-boundary", { body: `Body ${i}.`, expectedRevision: revision });
-      expect(res.status).toBe(200);
-      revision = ((await res.json()) as NotePayload).revision;
-    }
-
-    const after = frontMatterOf(await readNoteFile(vaultRoot, "auth-boundary"));
-    // Not "still contains" — *exactly* the original block, modulo the one
-    // line the engine owns and was asked to move.
-    expect(after.filter((l) => !l.startsWith("updated:"))).toEqual(
-      OBSIDIAN_FRONT_MATTER.filter((l) => !l.startsWith("updated:")),
-    );
-  });
-
-  it("preserves the block through a rename as well as a save", async () => {
-    const { server, vaultRoot } = await bootFresh();
-    await writeNoteFile(vaultRoot, "auth-boundary", OBSIDIAN_FRONT_MATTER, "Body.");
-    expect((await post(server, "/api/note/auth-boundary/rename", { slug: "auth-edge" })).status).toBe(200);
-
-    const after = frontMatterOf(await readNoteFile(vaultRoot, "auth-edge"));
-    expect(after.filter((l) => !l.startsWith("updated:"))).toEqual(
-      OBSIDIAN_FRONT_MATTER.filter((l) => !l.startsWith("updated:")),
-    );
-  });
-});
-
-/** The front-matter block of a note file, fences excluded. */
-function frontMatterOf(text: string): string[] {
-  const match = /^---\n([\s\S]*?)\n---\n/.exec(text);
-  if (match?.[1] === undefined) throw new Error("no front matter block");
-  return match[1].split("\n");
-}
 
 // --- okf files -----------------------------------------------------------------------
 
@@ -1739,70 +992,12 @@ describe("POST /api/open", () => {
   });
 });
 
-// --- events -----------------------------------------------------------------------
-
-describe("GET /events", () => {
-  it("503s when no SSE hub was injected", async () => {
-    // P1b wires the real hub. Until then — and in every route test — the
-    // endpoint must fail honestly rather than hang the browser on a stream
-    // that never produces a frame.
-    const { server } = await boot();
-    const res = await get(server, "/events");
-    expect(res.status).toBe(503);
-    expect(await res.text()).toContain("live updates unavailable");
-  });
-
-  it("hands the raw request and response to the hub", async () => {
-    // The route must not write anything itself: SSE needs the socket
-    // un-ended, with headers the hub chooses. Anything written here would
-    // be a header the hub then could not set.
-    let attached = 0;
-    const hub: SseHub = {
-      attach: (req, res) => {
-        attached += 1;
-        expect(req.url).toBe("/events");
-        expect(res.headersSent).toBe(false);
-        res.writeHead(200, { "content-type": "text/event-stream" });
-        res.end();
-      },
-      broadcast: () => {},
-      clientCount: () => 1,
-      close: () => {},
-    };
-    const { server } = await boot({ sse: hub, idleMs: 0 });
-    const res = await get(server, "/events");
-    expect(res.status).toBe(200);
-    expect(res.headers.get("content-type")).toBe("text/event-stream");
-    await res.text();
-    expect(attached).toBe(1);
-  });
-
-  it("resets the idle countdown when a client attaches", async () => {
-    // §5.4: a workspace with a live stream is not idle. The route calls
-    // `onActivity`, which cancels the timer armed at boot.
-    let cancelled = 0;
-    const hub = stubHub(1);
-    hub.attach = (_req, res) => res.end();
-    const { server } = await boot({
-      sse: hub,
-      idleMs: 1000,
-      setTimer: () => ({}),
-      clearTimer: () => {
-        cancelled += 1;
-      },
-    });
-    expect(cancelled).toBe(0);
-    await (await get(server, "/events")).text();
-    expect(cancelled).toBe(1);
-  });
-});
-
 // --- security, end to end ------------------------------------------------------------
 
 describe("security over the wire", () => {
   it("403s every route without a token", async () => {
     const { server } = await boot();
-    for (const path of ["/", "/app.js", "/api/graph", "/api/note/alpha-note", "/api/okf/x", "/api/search?q=a", "/events"]) {
+    for (const path of ["/", "/app.js", "/api/graph", "/api/note/alpha-note", "/api/okf/x", "/api/search?q=a"]) {
       const res = await raw(server, path);
       expect(res.status, path).toBe(403);
       // The body says nothing about which layer refused: telling a prober
@@ -1889,7 +1084,6 @@ describe("security over the wire", () => {
       get(server, "/api/note/missing"),
       get(server, "/api/okf/repository/identity.json"),
       get(server, "/api/search?q=a"),
-      get(server, "/events"),
       post(server, "/api/open", { slug: "alpha-note" }),
       raw(server, "/api/graph"),
       raw(server, "/nope"),
@@ -1924,7 +1118,7 @@ describe("security over the wire", () => {
 describe("unrouted requests", () => {
   it("404s an unknown path", async () => {
     const { server } = await boot();
-    for (const path of ["/nope", "/api", "/api/", "/api/nope", "/app.js/extra", "/events/x"]) {
+    for (const path of ["/nope", "/api", "/api/", "/api/nope", "/app.js/extra", "/live/x"]) {
       const res = await get(server, path);
       expect(res.status, path).toBe(404);
       expect(await res.text()).toBe("not found\n");
@@ -1997,198 +1191,24 @@ describe("lifecycle (§5.4)", () => {
     await expect(fetch(`http://127.0.0.1:${port}/`)).rejects.toThrow();
   });
 
-  it("defaults the idle timeout to 30 minutes", () => {
-    expect(DEFAULT_IDLE_MS).toBe(30 * 60 * 1000);
-  });
-
-  it("arms the idle timer at boot when a hub is present, and shuts down when it fires", async () => {
-    // A workspace nobody connected to should still release its port.
-    let fire: (() => void) | null = null;
-    let armed = 0;
-    let unrefed = 0;
-    let shutdown = false;
-    const hub = stubHub(0);
-
-    const { server } = await boot({
-      sse: hub,
-      idleMs: 1,
-      setTimer: (fn) => {
-        armed += 1;
-        fire = fn;
-        return {
-          unref: () => {
-            unrefed += 1;
-          },
-        };
-      },
-      clearTimer: () => {},
-      onIdleShutdown: () => {
-        shutdown = true;
-      },
-    });
-
-    expect(armed).toBe(1);
-    // A pending shutdown must not be the reason the process stays alive.
-    expect(unrefed).toBe(1);
-    expect(fire).not.toBeNull();
-    const port = server.port;
-    (fire as unknown as () => void)();
-    // `close()` inside the timer callback is async.
-    await new Promise((r) => setTimeout(r, 50));
-    expect(shutdown).toBe(true);
-    expect(hub.closed).toBe(true);
-    await expect(fetch(`http://127.0.0.1:${port}/`)).rejects.toThrow();
-  });
-
-  it("cancels the countdown while a client is attached and re-arms when it leaves", async () => {
-    const timers: Array<() => void> = [];
-    let cancelled = 0;
-    const hub = stubHub(0);
-    const { server } = await boot({
-      sse: hub,
-      idleMs: 1000,
-      setTimer: (fn) => {
-        timers.push(fn);
-        return { id: timers.length } as TimerHandle;
-      },
-      clearTimer: () => {
-        cancelled += 1;
-      },
-    });
-
-    expect(timers).toHaveLength(1); // armed at boot: nobody has connected
-
-    hub.count = 1;
-    server.noteActivity(); // a client attached
-    expect(cancelled).toBe(1);
-    expect(timers).toHaveLength(1); // not re-armed: someone is here
-
-    hub.count = 0;
-    server.noteActivity(); // the last client left
-    expect(timers).toHaveLength(2); // countdown restarts
-  });
-
-  it("never arms a timer when idleMs is 0", async () => {
-    let armed = 0;
-    const { server } = await boot({
-      sse: stubHub(0),
-      idleMs: 0,
-      setTimer: () => {
-        armed += 1;
-        return {};
-      },
-      clearTimer: () => {},
-    });
-    server.noteActivity();
-    server.noteActivity();
-    expect(armed).toBe(0);
-  });
-
-  it("does not arm the timer at boot when there is no hub", async () => {
-    // With `/events` answering 503 there is no such thing as a client, so
-    // there is nothing for an idle countdown to be counting down from. The
-    // server must stay up until its owner closes it.
-    let armed = 0;
-    await boot({
-      idleMs: 1000,
-      setTimer: () => {
-        armed += 1;
-        return {};
-      },
-      clearTimer: () => {},
-    });
-    expect(armed).toBe(0);
-  });
-
-  it("uses real timers by default, and unrefs them", async () => {
-    // The default `setTimer`/`clearTimer` are only exercised when nothing is
-    // injected. A pending 30-minute shutdown that kept the event loop alive
-    // would make this very test hang, so the assertion is partly the fact
-    // that the suite finishes.
-    const hub = stubHub(0);
-    const { server } = await boot({ sse: hub, idleMs: 60_000 });
-    // Arms at boot with a real `setTimeout`, then cancels with a real
-    // `clearTimeout` when a client shows up.
-    hub.count = 1;
-    server.noteActivity();
-    hub.count = 0;
-    server.noteActivity();
-    await server.close(); // cancels the pending real timer
-  });
-
   it("falls back to resolveVaultRoot when no vault is given", async () => {
     // `PI_WEAVE_VAULT` is what the adapter sets; a server booted without an
     // explicit root must honour it rather than inventing a default.
     const { cwd, vaultRoot } = await sharedWorkspace();
-    const server = await withVaultEnv(vaultRoot, () => startWorkspaceServer({ cwd, token: TOKEN, idleMs: 0 }));
+    const server = await withVaultEnv(vaultRoot, () => startWorkspaceServer({ cwd, token: TOKEN }));
     running.push(server);
-    const html = await (await get(server, "/")).text();
-    expect(html).toContain(JSON.stringify(vaultRoot).slice(1, -1));
+    const payload = (await (await get(server, "/api/graph")).json()) as GraphPayload;
+    expect(payload.model.nodes.some((node) => node.detail.slug === "alpha-note")).toBe(true);
   });
 
   it("builds its own cache when none is injected", async () => {
     const { cwd, vaultRoot } = await sharedWorkspace();
-    const server = await startWorkspaceServer({ cwd, vaultRoot, token: TOKEN, idleMs: 0 });
+    const server = await startWorkspaceServer({ cwd, vaultRoot, token: TOKEN });
     running.push(server);
     expect(server.cache).toBeInstanceOf(WorkspaceCache);
     const res = await get(server, "/api/graph");
     expect(res.status).toBe(200);
     await res.json();
-  });
-
-  it("gives every boot a distinct session id", async () => {
-    // The client uses it to tell "I missed frames" from "this is a different
-    // server" across an EventSource reconnect.
-    const a = await boot();
-    const b = await boot();
-    expect(a.server.session).not.toBe(b.server.session);
-    expect(a.server.session).toMatch(/^[0-9a-f]{16}$/);
-  });
-
-  it("does not re-arm after close", async () => {
-    let armed = 0;
-    const hub = stubHub(0);
-    const { server } = await boot({
-      sse: hub,
-      idleMs: 1000,
-      setTimer: () => {
-        armed += 1;
-        return {};
-      },
-      clearTimer: () => {},
-    });
-    const atBoot = armed;
-    await server.close();
-    server.noteActivity();
-    expect(armed).toBe(atBoot);
-  });
-
-  it("starts and closes an injected watcher", async () => {
-    let started = 0;
-    let closedTimes = 0;
-    const watcher: Watcher = {
-      start: async () => {
-        started += 1;
-      },
-      close: async () => {
-        closedTimes += 1;
-      },
-    };
-    const { server } = await boot({ watcher });
-    expect(started).toBe(1);
-    expect(closedTimes).toBe(0);
-    await server.close();
-    expect(closedTimes).toBe(1);
-    await server.close();
-    expect(closedTimes).toBe(1); // idempotent
-  });
-
-  it("closes the hub exactly once", async () => {
-    const hub = stubHub(0);
-    const { server } = await boot({ sse: hub, idleMs: 0 });
-    await server.close();
-    await server.close();
-    expect(hub.closeCalls).toBe(1);
   });
 
   it("uses the fallback cookie name when asked (§5.1 footnote 1)", async () => {
@@ -2210,28 +1230,6 @@ describe("lifecycle (§5.4)", () => {
 });
 
 // --- helpers ---------------------------------------------------------------------
-
-interface StubHub extends SseHub {
-  count: number;
-  closed: boolean;
-  closeCalls: number;
-}
-
-function stubHub(initial: number): StubHub {
-  const hub: StubHub = {
-    count: initial,
-    closed: false,
-    closeCalls: 0,
-    attach: (_req, res) => res.end(),
-    broadcast: () => {},
-    clientCount: () => hub.count,
-    close: () => {
-      hub.closed = true;
-      hub.closeCalls += 1;
-    },
-  };
-  return hub;
-}
 
 /**
  * Send a raw HTTP request and return the whole response as text.

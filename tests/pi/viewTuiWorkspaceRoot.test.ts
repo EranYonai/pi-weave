@@ -1,12 +1,11 @@
 import { describe, expect, it, vi, afterEach } from "vitest";
-import { resetCapabilitiesCache, setCapabilities } from "@earendil-works/pi-tui";
+import { resetCapabilitiesCache } from "@earendil-works/pi-tui";
 import { WeaveWorkspace, decodeWorkspaceKey } from "../../src/pi/viewer/tui/workspaceRoot";
-import type { WeaveTheme, WeaveTui, WeaveLoaders } from "../../src/pi/viewer/tui/explorer";
-import { collectPanes, paneNode, resetWorkspaceIds, splitNode, workspacePanes } from "../../src/pi/viewer/tui/workspace";
+import type { WeaveTheme, WeaveTui, WeaveLoaders } from "../../src/pi/viewer/tui/surface/base";
+import { workspacePanes } from "../../src/pi/viewer/tui/workspace";
 import type { GraphModel, GraphNode } from "../../src/core/graph/model";
 import type { NoteSource } from "../../src/core/types";
 import { visibleWidth } from "@earendil-works/pi-tui";
-import { bundledLogoImage } from "../../src/pi/viewer/tui/branding";
 
 const NOW = Date.parse("2026-06-01T00:00:00.000Z");
 function theme(): WeaveTheme {
@@ -53,16 +52,16 @@ function ws(over: Partial<ConstructorParameters<typeof WeaveWorkspace>[0]> = {})
   const tui = fakeTui();
   const loaders = fakeLoaders();
   const done = vi.fn();
-  const w = new WeaveWorkspace({ model: m, theme: theme(), tui, loaders, done, rows: 30, now: () => NOW, logo: "◈", ...over });
+  const w = new WeaveWorkspace({ model: m, theme: theme(), tui, loaders, done, rows: 30, now: () => NOW, ...over });
   return { w, tui, loaders, done, model: m };
 }
 
 describe("decodeWorkspaceKey", () => {
   it("maps workspace keys and null for pane keys", () => {
-    expect(decodeWorkspaceKey("\\")).toBe("splitV");
-    expect(decodeWorkspaceKey("|")).toBe("splitH");
-    expect(decodeWorkspaceKey("x")).toBe("close");
-    expect(decodeWorkspaceKey("w")).toBe("workspace");
+    expect(decodeWorkspaceKey("\\")).toBeNull();
+    expect(decodeWorkspaceKey("|")).toBeNull();
+    expect(decodeWorkspaceKey("x")).toBeNull();
+    expect(decodeWorkspaceKey("w")).toBeNull();
     expect(decodeWorkspaceKey("?")).toBe("help");
     expect(decodeWorkspaceKey("q")).toBe("quit");
     expect(decodeWorkspaceKey("r")).toBe("refresh");
@@ -75,7 +74,7 @@ describe("WeaveWorkspace render", () => {
     const { w } = ws();
     const lines = w.render(100);
     expect(lines.join("\n")).toContain("weave view");
-    expect(lines.join("\n")).toContain("Explore");
+    expect(lines.join("\n")).toContain("Health");
     for (const l of lines) expect(visibleWidth(l)).toBeLessThanOrEqual(100);
     expect(w.render(100)).toBe(lines);
   });
@@ -92,31 +91,11 @@ describe("WeaveWorkspace render", () => {
     const lines = w.render(100).join("\n");
     expect(lines).toContain("focus");
   });
-  it("keeps the one-line glyph header without the kitty image", () => {
+  it("keeps the one-line Unicode mark header", () => {
     const { w } = ws();
     const lines = w.render(100);
     expect(lines.join("\n")).toContain("◈");
     expect(lines.join("\n")).not.toContain("\x1b_G");
-  });
-  it("splices the kitty raster logo onto its own row(s) above the wordmark", () => {
-    // Simulate Kitty graphics so the bundled Image emits the Kitty sequence.
-    setCapabilities({ images: "kitty", trueColor: true, hyperlinks: false });
-    const { w } = ws({ logo: "◈", logoImage: bundledLogoImage(theme()) });
-    const lines = w.render(100).join("\n");
-    expect(lines).toContain("\x1b_G"); // the Image's kitty line is present
-    expect(lines).toContain("weave view");
-    // The raster replaces the glyph in the text strip (no inline ◈ + image).
-    expect(lines).not.toContain("◈");
-  });
-  it("falls back to the glyph header when the kitty image render throws", () => {
-    const throwing = { render: () => { throw new Error("boom"); }, invalidate: () => {} };
-    const { w } = ws({ logo: "◈", logoImage: throwing });
-    expect(w.render(100).join("\n")).toContain("◈");
-  });
-  it("falls back to the glyph header when the kitty image renders no lines", () => {
-    const empty = { render: () => [], invalidate: () => {} };
-    const { w } = ws({ logo: "◈", logoImage: empty });
-    expect(w.render(100).join("\n")).toContain("◈");
   });
 });
 
@@ -127,20 +106,9 @@ describe("WeaveWorkspace keys", () => {
     w.handleInput("\t");
     expect(w.workspace.activePaneId).not.toBe(first);
     w.handleInput("\t");
+    w.handleInput("\t");
+    w.handleInput("\t");
     expect(w.workspace.activePaneId).toBe(first);
-  });
-  it("backslash splits the active pane and adds a pane", () => {
-    const { w } = ws();
-    const before = workspacePanes(w.workspace).length;
-    w.handleInput("\\");
-    expect(workspacePanes(w.workspace).length).toBe(before + 1);
-  });
-  it("x closes the active pane but keeps one pane (never quits)", () => {
-    const { w, done } = ws();
-    const before = workspacePanes(w.workspace).length;
-    w.handleInput("x");
-    expect(workspacePanes(w.workspace).length).toBeLessThan(before);
-    expect(done).not.toHaveBeenCalled();
   });
   it("q quits exactly once", () => {
     const { w, done } = ws();
@@ -148,27 +116,6 @@ describe("WeaveWorkspace keys", () => {
     w.handleInput("q");
     expect(done).toHaveBeenCalledTimes(1);
     expect(done).toHaveBeenCalledWith(null);
-  });
-  it("w toggles the (placeholder) workspace switcher/help", () => {
-    const { w } = ws();
-    w.handleInput("w");
-    expect(w.render(100).join("\n")).toContain("focus");
-  });
-  it("Ctrl-h resizes the row split weights", () => {
-    const { w } = ws();
-    const before = w.workspace.root.type === "split" ? [...(w.workspace.root.sizes)] : [];
-    w.handleInput("\u0008"); // Ctrl-h
-    const after = w.workspace.root.type === "split" ? w.workspace.root.sizes : [];
-    expect(after[0]).not.toBe(before[0]);
-  });
-  it("e swaps the active surface in place", () => {
-    const { w } = ws();
-    w.handleInput("e");
-    const active = workspacePanes(w.workspace).find((p) => p.id === w.workspace.activePaneId);
-    expect(active?.surface).toBe("explore");
-    w.handleInput("h");
-    const active2 = workspacePanes(w.workspace).find((p) => p.id === w.workspace.activePaneId);
-    expect(active2?.surface).toBe("health");
   });
   it("r triggers rebuild and clears refreshing", async () => {
     const m = model();
@@ -233,23 +180,6 @@ describe("WeaveWorkspace cross-pane navigation", () => {
     // A second Esc, now that no sub-mode is active, quits.
     w.handleInput("\x1b");
     expect(done).toHaveBeenCalledTimes(1);
-  });
-});
-
-describe("WeaveWorkspace split rendering", () => {
-  it("a vertical split renders both panes (rows are partitioned, not overflowed)", () => {
-    resetWorkspaceIds();
-    // A workspace that is JUST a vertical (column) split of two panes.
-    const root = splitNode("column", [paneNode("explore"), paneNode("explore")]);
-    const panes = collectPanes(root);
-    const { w } = ws({ workspace: { name: "test", root, activePaneId: panes[0]!.id } });
-    expect(workspacePanes(w.workspace).length).toBe(2);
-    const lines = w.render(100).join("\n");
-    // Each Pane draws one bottom-left corner char; both must be present. The
-    // pre-fix VStack gave every child full body height, the stack overflowed,
-    // and the row clamp left only the first pane visible (one corner).
-    const corners = lines.split("└").length - 1;
-    expect(corners).toBe(2);
   });
 });
 

@@ -1,56 +1,15 @@
 /**
- * Route handling for the workspace server (weave-workspace §5.3).
+ * Route handling for the workspace server.
  *
  * | Method | Path                     | Response                                     |
  * | ------ | ------------------------ | -------------------------------------------- |
  * | GET    | `/`                      | the HTML shell, with its per-response nonce  |
  * | GET    | `/app.js`                | the committed bundle, `Cache-Control: no-store` |
  * | GET    | `/api/graph`             | {@link GraphPayload}, ETag'd on `stamp`      |
- * | GET    | `/api/note/:slug`        | {@link NotePayload} — the note plus its revision |
- * | POST   | `/api/note/:slug`        | update; {@link NotePayload} or a `409` (§5.3, P5) |
- * | POST   | `/api/note/:slug/rename` | rename; {@link NotePayload} or a `409`       |
- * | DELETE | `/api/note/:slug`        | {@link DeleteNoteResult} — hard delete       |
+ * | GET    | `/api/note/:slug`        | {@link NotePayload}                          |
  * | GET    | `/api/okf/:rel`          | {@link OkfFilePayload}                       |
  * | GET    | `/api/search?q=`         | {@link SearchPayload}                        |
  * | POST   | `/api/open`              | {@link OpenResult} — hand the note to `$EDITOR` |
- * | GET    | `/events`                | the SSE stream (delegated to an injected hub) |
- *
- * ## The write routes (P5)
- *
- * Three of them, and every one goes through the same security gate as every
- * read: {@link handleRequest} calls `security.authorize` **before** it routes,
- * so there is no way to add a route that skips it. That matters more for
- * writes than for reads, because §5.1's Origin rule is asymmetric — absent on
- * a `GET` is fine (a browser omits it on same-origin navigation), absent on
- * anything else is a `403`, and that asymmetry is the CSRF defence. It lives
- * in `checkOrigin` rather than here precisely so a new write route inherits
- * it rather than remembering it.
- *
- * `MutationResult` → status is the one mapping this file owns:
- *
- * | Core result           | Status | Body |
- * | --------------------- | -----: | ---- |
- * | `ok`                  | `200`  | {@link NotePayload}, re-read so the revision is the one just written |
- * | `reason: "missing"`   | `404`  | {@link ErrorPayload} |
- * | `reason: "conflict"`  | `409`  | {@link ConflictPayload} with the **current note and revision** |
- * | `reason: "collision"` | `409`  | {@link ConflictPayload} with the taken slug |
- *
- * `409` for both failures, with `reason` telling them apart in the body. They
- * are the same *kind* of answer — "the vault is not in the state you thought
- * it was" — and the client's response to each is a question for the user, so
- * splitting them across two status codes would buy a distinction the HTTP
- * layer has no use for while making the client branch twice.
- *
- * ## Self-write suppression (§6)
- *
- * Every one of these writes lands in the vault the watcher is watching, so
- * without suppression a save is a change event, which is a broadcast, which
- * makes the client refetch the note it just saved — and, worse, arrive
- * mid-typing with a "the file changed" prompt about its own keystroke. The
- * watcher exposes `suppress(absPath, ms)` for exactly this;
- * {@link RouteDeps.suppress} is the injected form, called with the note's
- * absolute path **before** the mutation runs, so the window is already open
- * when the write hits the filesystem.
  *
  * ## Shape
  *
@@ -58,8 +17,7 @@
  * injected — and a `ServerResponse`. It never constructs a cache, reads an
  * environment variable, or knows what port it is on. That is what lets
  * `tests/web/routes.test.ts` drive the real thing over a real socket with a
- * temp vault, and what lets P1b's SSE hub arrive as a constructor argument
- * rather than an import.
+ * temp vault without browser-specific state.
  *
  * ## Two things this file deliberately never does
  *
@@ -73,50 +31,25 @@
  * **No path resolution of its own.** `/api/okf/:rel` and `/api/note/:slug`
  * carry untrusted path fragments straight from the URL. Both are handed to
  * the existing core guards — `readOkfFileForView` anchors under `<cwd>/.okf`
- * and `resolveNotePath` (via `getNoteWithRevision`) rejects anything that is not
- * a flat slug. Re-implementing either check here would be a second
- * implementation to keep in sync, which is how traversal bugs are actually
- * born.
+ * and `resolveNotePath` (via `getNote`) rejects unsafe slugs.
  */
 
 import { createHash } from "node:crypto";
 import { readFile } from "node:fs/promises";
 import type { IncomingMessage, ServerResponse } from "node:http";
-import { join } from "node:path";
-import { NOTES_DIR } from "../../core/paths";
 import type { WorkspaceSnapshot } from "../../core/cache/workspace";
 import { WorkspaceCache } from "../../core/cache/workspace";
 import { readOkfFileForView } from "../../core/graph/current";
 import type { GraphModel as CoreGraphModel } from "../../core/graph/model";
 import { openNoteInEditor } from "../../core/openInEditor";
-import type { MutationResult, RevisionedNote } from "../../core/vault";
-import { slugify, slugifyPath } from "../../core/slug";
-import {
-  createFolder,
-  deleteFolder,
-  deleteNote,
-  getNoteWithRevision,
-  moveNoteToFolder,
-  renameFolder,
-  renameNote,
-  resolveNotePath,
-  searchNotes,
-  updateNote,
-} from "../../core/vault";
+import type { Note } from "../../core/types";
+import { getNote, searchNotes } from "../../core/vault";
 import { deriveTagIndex, type TaggedNote } from "../../core/view/links";
 import type {
-  ChangeEvent,
-  ConflictPayload,
-  CreateFolderRequest,
-  CreateFolderResult,
-  DeleteNoteResult,
   GraphPayload,
-  MoveNoteRequest,
   NotePayload,
   OkfFilePayload,
   OpenResult,
-  RenameNoteRequest,
-  SaveNoteRequest,
   SearchPayload,
   ViewNote,
 } from "../shared/wire";
@@ -125,99 +58,16 @@ import { renderPage } from "./page";
 import type { RequestFacts, SecurityPolicy } from "./security";
 import { requestFacts } from "./security";
 
-/**
- * The SSE hub contract.
- *
- * Declared here, in the consumer, rather than in the implementation: this
- * file is what needs the capability, and stating it here means the hub can
- * be written, replaced or omitted without `routes.ts` changing. It is also
- * the seam that lets the route tests boot a server with **no** hub and
- * assert the `503`.
- *
- * Implemented by `src/web/server/sse.ts`.
- */
-export interface SseHub {
-  /** Adopt a request/response pair as a long-lived event stream. */
-  attach(req: IncomingMessage, res: ServerResponse): void;
-  /** Fan a change out to every attached client. */
-  broadcast(event: ChangeEvent): void;
-  /** Currently attached clients. Drives the idle-shutdown timer (§5.4). */
-  clientCount(): number;
-  /** End every stream and stop the heartbeat. Idempotent. */
-  close(): void;
-}
-
-/**
- * The file watcher contract.
- *
- * Same reasoning as {@link SseHub} — the server owns the lifecycle, so it
- * declares the shape it will start and stop, and P1b's `watcher.ts` supplies
- * it. Deliberately minimal: the watcher's *output* reaches the world through
- * the hub it was constructed with, not through a return value here.
- *
- * Implemented by `src/web/server/watcher.ts`.
- */
-export interface Watcher {
-  /** Begin watching. Resolves once the watches are established. */
-  start(): Promise<void>;
-  /** Stop watching and release every handle. Idempotent. */
-  close(): Promise<void>;
-  /**
-   * Ignore events for `absPath` briefly — the §6 self-write window.
-   *
-   * **Optional**, and that is a deliberate contract choice rather than
-   * timidity. This interface is the *lifecycle* one: start, close. A future
-   * watcher over a remote filesystem or a stamp poller may have no concept
-   * of "a path I am about to write", and making suppression mandatory would
-   * force it to implement a no-op to satisfy a contract it does not
-   * participate in. `server.ts` bridges it to {@link RouteDeps.suppress}
-   * when it is present, and writes simply happen unsuppressed when it is
-   * not — which is the correct degradation: one spurious refetch, never a
-   * lost edit.
-   */
-  suppress?(absPath: string): void;
-}
-
 /** Everything a route needs, injected. */
 export interface RouteDeps {
   cwd: string;
   vaultRoot: string;
-  /** Random per-boot id, echoed into the page bootstrap. */
-  session: string;
   cache: WorkspaceCache;
   security: SecurityPolicy;
-  /** Absent → `/events` answers `503`. Wired by P1b. */
-  sse?: SseHub | undefined;
   /** Absolute path of the committed bundle. Injectable for tests. */
   bundlePath: string;
   /** Test seam for `POST /api/open`; defaults to the real editor shell-out. */
   openNote?: ((slug: string) => Promise<boolean>) | undefined;
-  /**
-   * Read a note plus its revision. Defaults to core's `getNoteWithRevision`.
-   *
-   * A seam for the same reason {@link RouteDeps.openNote} is one, and it
-   * earns its place on a specific branch: after a successful write this is
-   * called again to obtain the revision of the bytes now on disk, and it can
-   * legitimately return `null` — a `weave_note` delete or an `rm` in another
-   * terminal, landing in the window between the write and the re-read. That
-   * is a genuine race with a correct answer (`404`: the write happened, and
-   * the note is gone anyway), and it is unreachable from a test without
-   * being able to make the read fail on demand. The alternative was a
-   * coverage-ignore comment over a branch that really can fire in
-   * production, which is the wrong trade.
-   */
-  readNote?: ((slug: string) => Promise<RevisionedNote | null>) | undefined;
-  /** Called when an SSE client attaches or detaches — resets the idle timer. */
-  onActivity?: (() => void) | undefined;
-  /**
-   * Ignore filesystem events for `absPath` for a moment (§6).
-   *
-   * The watcher's `suppress`, injected. Absent in the route tests, which
-   * boot without a watcher — a write with nothing to suppress is a write,
-   * not an error, so this is optional rather than a required no-op the
-   * caller has to supply.
-   */
-  suppress?: ((absPath: string) => void) | undefined;
 }
 
 const JSON_TYPE = "application/json; charset=utf-8";
@@ -330,7 +180,7 @@ export async function readJsonBody(req: IncomingMessage): Promise<unknown | null
  * `notes` is what the graph was built from. It is a separate argument because
  * the graph deliberately does not carry structured tags — `detail.tags` is a
  * comma-joined display string and re-parsing it here would be exactly the
- * "grow structure inside `detail`" move §4.2/§4.3 rule out. The caller
+ * "grow structure inside `detail`" move / rule out. The caller
  * already holds the notes (the cache read them to build the model), so this
  * costs nothing. Omitted → `tags: {}`, which is what a caller that genuinely
  * has no note list should ship.
@@ -351,7 +201,7 @@ export function toGraphPayload(model: CoreGraphModel, notes: readonly TaggedNote
     dangling: model.danglingLinks,
     // Still `null`, and deliberately: server-side layout needs
     // `src/web/shared/layout`, which imports d3-force, and the server tier's
-    // npm allowlist is empty (§9: the published package has zero runtime
+    // npm allowlist is empty (: the published package has zero runtime
     // dependencies). The client runs the identical `shared/layout` code
     // itself, so this is a division of labour rather than a gap.
     positions: null,
@@ -375,7 +225,7 @@ export function toGraphPayload(model: CoreGraphModel, notes: readonly TaggedNote
  * front-matter tags without bumping `updated`, and deleting a note that is
  * not the newest. In each the payload differs and the old stamp did not, so a
  * conditional GET answered `304` and the client kept stale data — and, worse,
- * the SSE dedupe (which shares this key) discarded the frame that would have
+ * a client-side comparison could discard the update that would have
  * prompted a refetch. A digest changes if and only if the bytes change, which
  * is the property both consumers actually need.
  *
@@ -422,7 +272,7 @@ export function stampPayload(payload: GraphPayload): GraphPayload {
  * The digest function. SHA-256, truncated to 128 bits and hex-encoded.
  *
  * Truncation is safe here and worth the 32 bytes it saves on every ETag
- * header and every SSE frame: at 128 bits an accidental collision between two
+ * header values: at 128 bits an accidental collision between two
  * payloads is far below the probability of the cache being wrong for any
  * other reason. This is a cache validator, not a security boundary — nobody
  * is choosing our note contents to force a collision, and if they could, they
@@ -515,22 +365,8 @@ async function route(
   if (method === "GET" && path === "/") return sendShell(deps, res);
   if (method === "GET" && path === "/app.js") return sendBundle(deps, res);
   if (method === "GET" && path === "/api/graph") return sendGraph(deps, req, res);
-  if (path === "/api/folder" || path.startsWith("/api/folder/")) {
-    if (method === "POST" && path.endsWith("/rename")) {
-      await handleRenameFolder(deps, path, req, res);
-      return;
-    }
-    if (method === "POST" && path === "/api/folder") {
-      await handleCreateFolder(deps, req, res);
-      return;
-    }
-    if (method === "DELETE") {
-      await handleDeleteFolder(deps, path, req, res);
-      return;
-    }
-  }
   if (path.startsWith("/api/note/")) {
-    const handled = await routeNote(deps, method, path.slice("/api/note/".length), req, res);
+    const handled = await routeNote(deps, method, path.slice("/api/note/".length), res);
     if (handled) return;
   }
   if (method === "GET" && path.startsWith("/api/okf/")) {
@@ -538,8 +374,6 @@ async function route(
   }
   if (method === "GET" && path === "/api/search") return sendSearch(deps, query, res);
   if (method === "POST" && path === "/api/open") return openNote(deps, req, res);
-  if (method === "GET" && path === "/events") return attachSse(deps, req, res);
-
   sendText(res, 404, "not found\n");
 }
 
@@ -547,7 +381,7 @@ async function route(
 
 function sendShell(deps: RouteDeps, res: ServerResponse): void {
   const page = renderPage({
-    bootstrap: { cwd: deps.cwd, vaultRoot: deps.vaultRoot, session: deps.session },
+    bootstrap: { cwd: deps.cwd },
   });
   res.writeHead(200, {
     ...baseHeaders(),
@@ -575,7 +409,7 @@ async function sendBundle(deps: RouteDeps, res: ServerResponse): Promise<void> {
   res.writeHead(200, {
     ...baseHeaders(),
     "content-type": "text/javascript; charset=utf-8",
-    // §5.3. The artifact changes on rebuild and the server may outlive one.
+    // . The artifact changes on rebuild and the server may outlive one.
     "cache-control": "no-store",
   });
   res.end(source);
@@ -587,29 +421,26 @@ async function sendBundle(deps: RouteDeps, res: ServerResponse): Promise<void> {
  *
  * `WorkspaceCache` returns the *identical* snapshot object while nothing on
  * disk has moved, so this map turns a warm `/api/graph` into a pure lookup:
- * no `toGraphPayload`, no `JSON.stringify`, and — the point of §15.6's cost
+ * no `toGraphPayload`, no `JSON.stringify`, and — the point of 's cost
  * requirement — **no hashing at all**. The first request after a real change
  * gets a new snapshot object, misses, and pays once for the whole build.
  *
  * A `WeakMap` rather than a one-slot cache so that a request racing a rebuild
  * cannot evict the entry the other request is about to read, and so entries
  * for superseded snapshots are collected with them. The key is the snapshot
- * rather than the model because the payload depends on the notes too (§4.3).
+ * rather than the model because the payload depends on the notes too (§4.1).
  */
 const renderedGraphs = new WeakMap<WorkspaceSnapshot, { body: string; etag: string }>();
 
 /**
  * The stamp `/api/graph` would serve for this snapshot.
  *
- * Exported so the SSE liveness bridge broadcasts the **same** key the ETag
- * carries (§6). Two derivations of "the current stamp" would be two things to
- * keep in sync, and the failure mode is silent: frames that never match the
- * validator the client then sends. It shares {@link renderGraph}'s memo, so
- * asking for the stamp after the route has rendered the same snapshot — the
- * common case, since a change triggers both — costs nothing.
+ * Exported for tests and for the conditional client contract. It shares
+ * {@link renderGraph}'s memo, so asking for the stamp after the route has
+ * rendered the same snapshot costs nothing.
  */
 export function graphStamp(snapshot: WorkspaceSnapshot): string {
-  // The memo stores the quoted ETag; the frame wants the bare digest.
+  // The memo stores the quoted ETag; the response exposes the bare digest.
   return renderGraph(snapshot).etag.slice(1, -1);
 }
 
@@ -628,7 +459,7 @@ function renderGraph(snapshot: WorkspaceSnapshot): { body: string; etag: string 
 async function sendGraph(deps: RouteDeps, req: IncomingMessage, res: ServerResponse): Promise<void> {
   // `snapshot()`, not `graph()`: the tag index has to be derived from the
   // same (already capped) note list the model was built from, or a tag could
-  // name a slug this graph has no node for (§4.3).
+  // name a slug this graph has no node for (§4.2).
   const snapshot = await deps.cache.snapshot();
   const { body, etag } = renderGraph(snapshot);
 
@@ -687,76 +518,30 @@ function normalizeEtag(value: string): string {
 /**
  * Everything under `/api/note/`, in one place.
  *
- * Returns `false` for a method/shape this family does not serve, so the
- * caller falls through to its own `404` rather than this function owning a
- * second copy of the not-found response. That is also what keeps
- * `DELETE /api/graph` and `PUT /api/note/x` answering the same `404` as any
- * other unrouted request: the family claims a request or it does not.
- *
- * The `rest` after the slug is matched **exactly**, not by prefix. Slugs may
- * nest (`sessions/foo` — session memory lives in a vault subdirectory), so
- * the family has exactly one sub-resource path (`/rename`) and everything
- * else after a `/` belongs to the slug itself; anything else a caller
- * appends is a request for nothing and gets the `404` it deserves. Core's
- * `resolveNotePath` remains the traversal guard for whatever slug arrives.
+ * Returns `false` for methods this family does not serve, so the caller
+ * falls through to its own `404`. Core's `resolveNotePath` remains the
+ * traversal guard for whatever slug arrives.
  */
-const renameSuffix = "/rename";
-const moveSuffix = "/move";
-
 async function routeNote(
   deps: RouteDeps,
   method: string,
   target: string,
-  req: IncomingMessage,
   res: ServerResponse,
 ): Promise<boolean> {
-  // Sub-resources matched at the end: a nested slug can itself contain
-  // slashes, so the split is anchored at the end, not the first slash.
-  const isRename = target.endsWith(renameSuffix);
-  const isMove = target.endsWith(moveSuffix);
-  const slug = isRename
-    ? target.slice(0, target.length - renameSuffix.length)
-    : isMove
-    ? target.slice(0, target.length - moveSuffix.length)
-    : target;
-  const rest = isRename ? renameSuffix : isMove ? moveSuffix : "";
-
-  if (rest === "" && method === "GET") {
-    await sendNote(deps, slug, res);
-    return true;
-  }
-  if (rest === "" && method === "POST") {
-    await saveNote(deps, slug, req, res);
-    return true;
-  }
-  if (rest === "" && method === "DELETE") {
-    await removeNote(deps, slug, res);
-    return true;
-  }
-  if (rest === "/rename" && method === "POST") {
-    await moveNote(deps, slug, req, res);
-    return true;
-  }
-  if (rest === "/move" && method === "POST") {
-    await moveNoteToFolderHandler(deps, slug, req, res);
+  if (method === "GET") {
+    await sendNote(deps, target, res);
     return true;
   }
   return false;
 }
 
 async function sendNote(deps: RouteDeps, rawSlug: string, res: ServerResponse): Promise<void> {
-  // Traversal is `resolveNotePath`'s job, inside `getNoteWithRevision`: an
+  // Traversal is `resolveNotePath`'s job, inside `getNote`: an
   // unsafe slug returns null before anything touches the disk. `%2e%2e%2f`
   // was already decoded by `parseTarget`, so what arrives here is the literal
   // `../` the guard is written to reject.
   //
-  // `getNoteWithRevision` rather than `readNoteForView`, because the editor
-  // cannot save safely without the revision it read at load, and fetching it
-  // separately would leave a window in which the two disagree. It stats
-  // before it reads, so a writer landing between the two calls yields a
-  // revision *older* than the content — the save that follows is refused
-  // rather than silently accepted (see core's own note on the ordering).
-  const current = await readNote(deps, rawSlug);
+  const current = await getNote(deps.vaultRoot, rawSlug);
   if (current === null) {
     sendJson(res, 404, { error: "no such note" });
     return;
@@ -764,31 +549,9 @@ async function sendNote(deps: RouteDeps, rawSlug: string, res: ServerResponse): 
   sendJson(res, 200, notePayload(current), { "cache-control": "no-store" });
 }
 
-/** {@link RouteDeps.readNote}, or core's. One resolution, used by both routes. */
-function readNote(deps: RouteDeps, slug: string): Promise<RevisionedNote | null> {
-  const read = deps.readNote ?? ((s: string) => getNoteWithRevision(deps.vaultRoot, s));
-  return read(slug);
-}
 
-/**
- * Core's `RevisionedNote` → the wire's {@link NotePayload}.
- *
- * The projection is `readNoteForView`'s, restated: a `Note` carries `body`,
- * the five managed fields **and** `frontMatter`, the verbatim block P5a added
- * so unknown keys survive a write. `frontMatter` must not cross the wire.
- * Not because it is secret, but because shipping it would invite a client to
- * send it back, and the moment a browser round-trips a user's raw metadata
- * through JSON the preservation guarantee stops being "the write path re-reads
- * the file" and becomes "the client remembered to return the block unedited".
- * The first is enforced by core; the second is a hope.
- *
- * So the field is dropped **explicitly**, by naming what is kept. A spread
- * with a `delete` would be exempt from the excess-property check and would
- * ship the block the day someone adds a sixth field — the same reasoning
- * `summarizeNote` gives for dropping it there.
- */
-function notePayload(current: RevisionedNote): NotePayload {
-  const { note } = current;
+
+function notePayload(note: Note): NotePayload {
   const view: ViewNote = {
     slug: note.slug,
     title: note.title,
@@ -798,293 +561,7 @@ function notePayload(current: RevisionedNote): NotePayload {
     tags: note.tags,
     source: note.source,
   };
-  return { note: view, revision: current.revision };
-}
-
-/**
- * Answer a core {@link MutationResult}.
- *
- * The whole status mapping, in one function shared by both write routes, so
- * "a conflict is a 409" is a fact about this server rather than about
- * whichever handler was written most recently.
- *
- * A success re-reads the note through {@link getNoteWithRevision} rather than
- * returning the `Note` core handed back. Core's value is correct about
- * *content* and says nothing about *revision*, and the client's next save
- * needs a revision that matches the bytes now on disk — deriving one from the
- * write we just performed would mean re-implementing `revisionOf` out here,
- * against a stat this function does not have. The re-read costs one `stat`
- * plus one `readFile` on a file that is certainly in the page cache, and it
- * is the only way to hand back a revision that is true rather than inferred.
- *
- * The `null` branch is not dead code being defensive: between the write and
- * the re-read, a `weave_note` delete or an `rm` in another terminal can
- * genuinely remove the file. `404` is then the honest answer — the write did
- * happen, and the note is gone anyway.
- */
-async function sendMutation(deps: RouteDeps, result: MutationResult, res: ServerResponse): Promise<void> {
-  if (!result.ok) {
-    sendMutationFailure(result, res);
-    return;
-  }
-  const written = await readNote(deps, result.note.slug);
-  if (written === null) {
-    sendJson(res, 404, { error: "no such note" });
-    return;
-  }
-  sendJson(res, 200, notePayload(written), { "cache-control": "no-store" });
-}
-
-function sendMutationFailure(failure: Extract<MutationResult, { ok: false }>, res: ServerResponse): void {
-  if (failure.reason === "missing") {
-    sendJson(res, 404, { error: "no such note" });
-    return;
-  }
-  const payload: ConflictPayload =
-    failure.reason === "conflict"
-      ? {
-          error: "the note changed on disk since it was read",
-          reason: "conflict",
-          // The whole note, not just its revision (§11 P5.3). This is what
-          // lets the client offer reload-or-overwrite without a second round
-          // trip — and the second round trip is another window in which the
-          // file moves again, which would make the prompt itself stale.
-          current: notePayload(failure.current),
-        }
-      : { error: "a note with that slug already exists", reason: "collision", slug: failure.slug };
-  sendJson(res, 409, payload, { "cache-control": "no-store" });
-}
-
-/**
- * Open the watcher's self-write window for a slug, if there is a watcher.
- *
- * Called **before** the mutation, never after: `fs.watch` can deliver an
- * event while the write syscall is still returning, and a window opened
- * afterwards is a window that opens second. Suppressing a path the write then
- * fails to touch costs nothing — the entry expires on its own.
- *
- * An unsafe slug resolves to `null` and is skipped rather than suppressed;
- * the mutation is about to refuse it anyway, and suppressing a path we could
- * not resolve would mean either fabricating one or passing `null` down to a
- * watcher that would `resolve()` it into the process's cwd.
- */
-function suppressSlug(deps: RouteDeps, slug: string): void {
-  const path = resolveNotePath(deps.vaultRoot, slug);
-  if (path !== null) deps.suppress?.(path);
-}
-
-async function saveNote(deps: RouteDeps, slug: string, req: IncomingMessage, res: ServerResponse): Promise<void> {
-  const body = await readJsonBody(req);
-  const input = parseSaveRequest(body);
-  if (input === null) {
-    sendJson(res, 400, { error: "expected { body?: string, meta?: object, expectedRevision?: string }" });
-    return;
-  }
-  suppressSlug(deps, slug);
-  await sendMutation(deps, await updateNote(deps.vaultRoot, slug, input), res);
-}
-
-async function moveNote(deps: RouteDeps, slug: string, req: IncomingMessage, res: ServerResponse): Promise<void> {
-  const body = await readJsonBody(req);
-  const target = typeof body === "object" && body !== null ? (body as Partial<RenameNoteRequest>).slug : undefined;
-  const newTitle = typeof body === "object" && body !== null ? (body as Partial<RenameNoteRequest>).title : undefined;
-  if (typeof target !== "string" || target.length === 0) {
-    sendJson(res, 400, { error: "expected { slug: string }" });
-    return;
-  }
-  const oldFolder = slug.includes("/") ? slug.split("/").slice(0, -1).join("/") : "";
-  const targetSlug = /[\/\\]/.test(target)
-    ? slugifyPath(target)
-    : oldFolder.length > 0
-    ? `${oldFolder}/${slugify(target)}`
-    : slugify(target);
-
-  suppressSlug(deps, slug);
-  suppressSlug(deps, targetSlug);
-  await sendMutation(deps, await renameNote(deps.vaultRoot, slug, target, undefined, newTitle), res);
-}
-
-async function moveNoteToFolderHandler(
-  deps: RouteDeps,
-  slug: string,
-  req: IncomingMessage,
-  res: ServerResponse,
-): Promise<void> {
-  const body = await readJsonBody(req);
-  const targetFolder =
-    typeof body === "object" && body !== null
-      ? (body as Partial<MoveNoteRequest>).targetFolder ?? null
-      : null;
-  suppressSlug(deps, slug);
-  const result = await moveNoteToFolder(deps.vaultRoot, slug, targetFolder);
-  if (result.ok) {
-    suppressSlug(deps, result.note.slug);
-  }
-  await sendMutation(deps, result, res);
-}
-
-async function handleCreateFolder(deps: RouteDeps, req: IncomingMessage, res: ServerResponse): Promise<void> {
-  const body = await readJsonBody(req);
-  const path =
-    typeof body === "object" && body !== null
-      ? ((body as Partial<CreateFolderRequest>).path ?? (body as { name?: string }).name)
-      : undefined;
-  if (typeof path !== "string" || path.trim().length === 0) {
-    sendJson(res, 400, { error: "expected { path: string }" });
-    return;
-  }
-  const result = await createFolder(deps.vaultRoot, path);
-  if (!result.ok) {
-    if (result.reason === "collision") {
-      sendJson(res, 409, { error: "a file already exists with that path", reason: "collision" });
-      return;
-    }
-    sendJson(res, 400, { error: "invalid folder path", reason: "invalid-name" });
-    return;
-  }
-  sendJson(res, 200, { ok: true, path: result.path });
-}
-
-async function handleDeleteFolder(
-  deps: RouteDeps,
-  urlPath: string,
-  req: IncomingMessage,
-  res: ServerResponse,
-): Promise<void> {
-  let folderPath: string | undefined;
-  if (urlPath.startsWith("/api/folder/")) {
-    folderPath = decodeURIComponent(urlPath.slice("/api/folder/".length));
-  } else {
-    const body = await readJsonBody(req);
-    folderPath = typeof body === "object" && body !== null ? (body as { path?: string }).path : undefined;
-  }
-  if (typeof folderPath !== "string" || folderPath.trim().length === 0) {
-    sendJson(res, 400, { error: "expected { path: string }" });
-    return;
-  }
-  const result = await deleteFolder(deps.vaultRoot, folderPath);
-  if (!result.ok) {
-    if (result.reason === "invalid-name") {
-      sendJson(res, 400, { error: "invalid folder path", reason: "invalid-name" });
-      return;
-    }
-    sendJson(res, 404, { error: "no such folder" });
-    return;
-  }
-  deps.suppress?.(join(deps.vaultRoot, NOTES_DIR, folderPath));
-  sendJson(res, 200, { deleted: true });
-}
-
-async function handleRenameFolder(
-  deps: RouteDeps,
-  urlPath: string,
-  req: IncomingMessage,
-  res: ServerResponse,
-): Promise<void> {
-  const suffix = "/rename";
-  const oldPathRaw = urlPath.slice("/api/folder/".length, urlPath.length - suffix.length);
-  const oldPath = decodeURIComponent(oldPathRaw);
-  const body = await readJsonBody(req);
-  const newPath =
-    typeof body === "object" && body !== null
-      ? ((body as { newPath?: string; path?: string; target?: string }).newPath ??
-         (body as { path?: string }).path ??
-         (body as { target?: string }).target)
-      : undefined;
-  if (typeof newPath !== "string" || newPath.trim().length === 0) {
-    sendJson(res, 400, { error: "expected { newPath: string }" });
-    return;
-  }
-  const result = await renameFolder(deps.vaultRoot, oldPath, newPath);
-  if (!result.ok) {
-    if (result.reason === "collision") {
-      sendJson(res, 409, { error: "a folder or file already exists with that path", reason: "collision" });
-      return;
-    }
-    if (result.reason === "invalid-name") {
-      sendJson(res, 400, { error: "invalid folder path", reason: "invalid-name" });
-      return;
-    }
-    sendJson(res, 404, { error: "no such folder" });
-    return;
-  }
-  deps.suppress?.(join(deps.vaultRoot, NOTES_DIR, oldPath));
-  deps.suppress?.(join(deps.vaultRoot, NOTES_DIR, result.path));
-  sendJson(res, 200, { ok: true, path: result.path });
-}
-
-async function removeNote(deps: RouteDeps, slug: string, res: ServerResponse): Promise<void> {
-  suppressSlug(deps, slug);
-  const result = await deleteNote(deps.vaultRoot, slug);
-  if (!result.ok) {
-    sendJson(res, 404, { error: "no such note" });
-    return;
-  }
-  const payload: DeleteNoteResult = { deleted: true };
-  sendJson(res, 200, payload, { "cache-control": "no-store" });
-}
-
-/**
- * Narrow a decoded request body to core's `UpdateNoteInput`, or `null`.
- *
- * An **allowlist**, field by field, and that is the point rather than
- * ceremony. `updateNote` spreads `input.meta` over the note's metadata, so
- * anything that reaches it reaches the front matter: passing the parsed body
- * straight through would let a local process `POST {"meta":{"created":"…"}}`
- * and rewrite a field the API deliberately does not expose, or
- * `{"meta":{"updated":"1970-…"}}` and make an edit look older than the state
- * it overwrote. Only `title`, `tags` and `source` are copied, and `source`
- * only when it is one of the three legal values — a note claiming
- * `source: "verified"` would render with a provenance badge nothing in the
- * palette matches.
- *
- * `null` for a body that is not an object, so the caller has exactly one
- * failure branch. An **empty** object is valid: a save with no fields bumps
- * `updated`, which is a meaningful (if unusual) request and not worth a
- * special case.
- */
-export function parseSaveRequest(value: unknown): SaveNoteRequest | null {
-  if (typeof value !== "object" || value === null || Array.isArray(value)) return null;
-  const raw = value as Record<string, unknown>;
-  const out: SaveNoteRequest = {};
-
-  if (raw["body"] !== undefined) {
-    if (typeof raw["body"] !== "string") return null;
-    out.body = raw["body"];
-  }
-  if (raw["expectedRevision"] !== undefined) {
-    if (typeof raw["expectedRevision"] !== "string") return null;
-    out.expectedRevision = raw["expectedRevision"];
-  }
-  if (raw["meta"] !== undefined) {
-    const meta = parseSaveMeta(raw["meta"]);
-    if (meta === null) return null;
-    out.meta = meta;
-  }
-  return out;
-}
-
-/** The three metadata fields a client may set. See {@link parseSaveRequest}. */
-function parseSaveMeta(value: unknown): NonNullable<SaveNoteRequest["meta"]> | null {
-  if (typeof value !== "object" || value === null || Array.isArray(value)) return null;
-  const raw = value as Record<string, unknown>;
-  const out: NonNullable<SaveNoteRequest["meta"]> = {};
-
-  if (raw["title"] !== undefined) {
-    if (typeof raw["title"] !== "string") return null;
-    out.title = raw["title"];
-  }
-  if (raw["tags"] !== undefined) {
-    const tags = raw["tags"];
-    if (!Array.isArray(tags) || !tags.every((tag) => typeof tag === "string")) return null;
-    out.tags = tags as string[];
-  }
-  if (raw["source"] !== undefined) {
-    const source = raw["source"];
-    if (source !== "human" && source !== "agent" && source !== "generated") return null;
-    out.source = source;
-  }
-  return out;
+  return { note: view };
 }
 
 async function sendOkf(deps: RouteDeps, rel: string, res: ServerResponse): Promise<void> {
@@ -1122,14 +599,4 @@ async function openNote(deps: RouteDeps, req: IncomingMessage, res: ServerRespon
   // shows an error either way, and a status code keeps the failure visible
   // in a network panel.
   sendJson(res, opened ? 200 : 404, payload, { "cache-control": "no-store" });
-}
-
-function attachSse(deps: RouteDeps, req: IncomingMessage, res: ServerResponse): void {
-  const hub = deps.sse;
-  if (hub === undefined) {
-    sendText(res, 503, "pi-weave: live updates unavailable\n");
-    return;
-  }
-  hub.attach(req, res);
-  deps.onActivity?.();
 }

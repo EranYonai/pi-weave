@@ -20,7 +20,7 @@ export default defineConfig({
       // Listed by exact path, never as a glob such as `**/types.ts`: a
       // pattern would silently swallow the next `types.ts` that *does* carry
       // a guard or a constant. Adding an entry here means proving the module
-      // is type-only, and `docs/testing.md` §L5.2 states the policy.
+      // is type-only, and the browser coverage policy states the same rule.
       exclude: ["src/core/view/types.ts"],
       reporter: ["text", "html"],
       thresholds: {

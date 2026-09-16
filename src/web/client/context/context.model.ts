@@ -39,7 +39,7 @@
 import type { DetailLinkRow, ViewGraphModel } from "../../shared/view";
 import { deriveBacklinks, detailModel, listLabel } from "../../shared/view";
 import type { GraphPayload, WireGraphNode, WireNodeKind, WireNoteSource } from "../../shared/wire";
-import { isSessionNote, kindIcon, provenanceGlyph, provenanceTitle, viewModel } from "../tree/tree.model";
+import { kindIcon, provenanceGlyph, provenanceTitle, viewModel } from "../tree/tree.model";
 import type { IconName } from "../shell/icons.model";
 
 // --- rows and groups ---------------------------------------------------------------
@@ -83,7 +83,7 @@ export interface ContextModel {
    * A tag has a name, a count and a list of sibling notes; flattening that
    * into the same array as the link rows would mean a union type and a
    * discriminant check inside the component — which is a branch, in a `.tsx`,
-   * where §10 says branches cannot be covered. Two fields is the cheaper
+   * where  says branches cannot be covered. Two fields is the cheaper
    * shape.
    */
   readonly tags: readonly TagGroupRow[];
@@ -108,10 +108,8 @@ export const HEADINGS = { links: "LINKS", backlinks: "BACKLINKS", tags: "TAGS", 
 /**
  * A row from a node. The rail's one place that reads a node's presentation.
  *
- * The icon follows the tree's rule, not the bare kind: a session-memory note
- * appears in LINKS just as often as in the tree, and the rail repeating the
- * tree's icon is how "this is the same thing" is communicated across the two
- * columns.
+ * The icon follows the tree's rule, so the same node is represented the same
+ * way in both columns.
  */
 export function rowFor(id: string, node: WireGraphNode, selectedId: string | null): ContextRow {
   return {
@@ -119,7 +117,7 @@ export function rowFor(id: string, node: WireGraphNode, selectedId: string | nul
     target: node.id,
     label: listLabel(node),
     kind: node.kind,
-    kindIcon: isSessionNote(node.id) ? "session" : kindIcon(node.kind),
+    kindIcon: kindIcon(node.kind),
     provenance: node.provenance,
     provenanceGlyph: provenanceGlyph(node.provenance),
     provenanceTitle: provenanceTitle(node.provenance),
@@ -186,7 +184,7 @@ function isMentionRow(row: DetailLinkRow): boolean {
  *
  * From `GraphPayload.tags` (§4.3) — the structured `tag → slugs` index — and
  * never from `WireGraphNode.detail.tags`, which is a comma-joined display
- * string that §4.2 forbids turning back into structure. The membership test is
+ * string that §4.3 forbids turning back into structure. The membership test is
  * therefore "does this tag's slug list contain mine", which is exact even for
  * a tag whose name contains a comma.
  *
@@ -277,7 +275,7 @@ function emptyRail(reason: string): ContextModel {
  * Build the rail.
  *
  * Empty groups are **omitted**, not rendered as headings over nothing. The
- * rail sits under the graph column in a fixed-height region (§1.2), so four
+ * rail sits under the graph column in a fixed-height region (§1.1), so four
  * headings with one row between them wastes the space that the one populated
  * group needed — and a heading with nothing under it reads as a load that
  * failed rather than as an absence.
@@ -332,7 +330,7 @@ export function contextModel(payload: GraphPayload | null, selectedId: string | 
   return { subject: detail.label, groups, tags, tagsCount: tags.length, empty: null };
 }
 
-// --- counts and collapse (Tier 6, §8 P6.4) ---------------------------------------------
+// --- counts and collapse (Tier 6,  P6.4) ---------------------------------------------
 
 /**
  * A rail section as the component renders it: the heading's count, whether it
@@ -374,7 +372,7 @@ export function emptyRailToggles(): RailToggles {
  * A section longer than this opens collapsed.
  *
  * Eight is where a list stops being scannable without scrolling: the rail has
- * a fixed fraction of a fixed column (§1.2), so a MENTIONS section with forty
+ * a fixed fraction of a fixed column (§1.1), so a MENTIONS section with forty
  * entries would push the sections below it out of the viewport entirely —
  * which is how a rail meant to show *everything at once* ends up showing one
  * group. Under eight the rhythm would cost more than it saved.

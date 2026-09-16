@@ -10,8 +10,7 @@
  * Something still has to call the real thing. That is this file, and it is
  * separate so the untestable surface — one reference to a DOM global — is
  * isolated in four lines rather than smeared through the module that holds
- * all the request logic. Same shape as `domEventSource` in `live.ts`, for the
- * same reason.
+ * all the request logic.
  *
  * This module is only reachable from `.tsx` entry points, so it is compiled
  * by `tsconfig.web.json` (which has `DOM`) and never pulled into the root
@@ -32,6 +31,7 @@ export const fetchJson: FetchLike = (url: string, init?: HttpRequest): Promise<H
     ...(init?.method === undefined ? {} : { method: init.method }),
     ...(init?.headers === undefined ? {} : { headers: init.headers }),
     ...(init?.body === undefined ? {} : { body: init.body }),
+    ...(init?.signal === undefined ? {} : { signal: init.signal as AbortSignal }),
     // Loopback only, and the `__Host-weave` cookie is how §5.1 authenticates.
     // `same-origin` is the default in modern browsers; stated explicitly
     // because the whole security model depends on it and a default is a worse

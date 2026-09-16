@@ -1,6 +1,5 @@
 /**
- * Workspace assembly readers for the viewers (docs/weave-view.md §2,
- * weave-view-tui-design §3.1).
+ * Workspace assembly readers for the viewers (docs/design.md §11).
  *
  * These functions are *workspace assembly*, symmetric to `getWorkspaceStatus`
  * (already in core): pure fan-out over `core/vault`, `core/repoIndex`,
@@ -92,7 +91,7 @@ export async function readRepositorySide(
 
 /**
  * Assemble the fresh graph from disk. Called on every viewer fetch
- * (no caching — docs/weave-view.md §2). Reads the vault (capped at
+ * (no caching). Reads the vault (capped at
  * DEFAULT_MAX_NOTES) and, when cwd is an indexed git repository, the repo
  * index + deep-scan summary sidecars. Degrades to a vault-only graph when
  * the repo has no index or the index is corrupt.
@@ -117,4 +116,3 @@ export async function buildCurrentGraph(cwd: string, vaultRoot: string = resolve
   }
   return buildGraph(input);
 }
-

@@ -1,6 +1,6 @@
 /**
  * Graph model shared between the builder (core) and the viewer (adapter).
- * Pure data — no harness imports (design §21). See docs/weave-view.md §3.
+ * Pure data — no harness imports (design §21).
  */
 
 import type { NoteSource, StalenessReport } from "../types";

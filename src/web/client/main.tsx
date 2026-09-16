@@ -28,7 +28,7 @@ if (host !== null) {
   // writes nothing — the media query already answered.
   applyPrePaintTheme();
   const boot = readBootstrap(document.getElementById(BOOTSTRAP_ELEMENT_ID)?.textContent ?? null);
-  render(<Shell cwd={boot.cwd} initialWidth={window.innerWidth} platform={navigator.platform} />, host);
+  render(<Shell cwd={boot.cwd} platform={navigator.platform} />, host);
 }
 
 /** Apply the stored theme choice to `<html>` synchronously, pre-render. */

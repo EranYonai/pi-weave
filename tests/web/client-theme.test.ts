@@ -6,7 +6,7 @@
  *
  * The CSS is a constant, so it can be checked as text: that it defines the
  * custom properties the components reference, that every class the `.tsx`
- * files emit has a rule, and — the §1.2 "dense but calm" brief — that it does
+ * files emit has a rule, and — the  "dense but calm" brief — that it does
  * not drift into the card-and-whitespace defaults it was written to avoid.
  *
  * The installer is the CSP half. `style-src 'nonce-{N}'` with no
@@ -20,8 +20,6 @@ import { describe, expect, it } from "vitest";
 import { fetchJson } from "../../src/web/client/api.dom";
 import { NONCE_SOURCES, THEME_CSS, findNonce, installTheme } from "../../src/web/client/shell/theme";
 import type { StyleElement, ThemeHost } from "../../src/web/client/shell/theme";
-import { COLUMNS, columnVar } from "../../src/web/client/shell/layout.model";
-import { EDITOR_PROMPT_KINDS } from "../../src/web/client/note/editor.model";
 import {
   THEME_CHOICES,
   THEME_STORAGE_KEY,
@@ -96,21 +94,6 @@ describe("THEME_CSS", () => {
     expect(THEME_CSS).toContain(':root:not([data-weave-theme="dark"])');
   });
 
-  it("consumes the column custom properties layout.model.ts produces", () => {
-    // The contract between `columnVars` and the grid rule. If either side is
-    // renamed, the columns silently fall back to percentages.
-    for (const column of COLUMNS) {
-      expect(THEME_CSS).toContain(`var(${columnVar(column)}`);
-    }
-  });
-
-  it("gives the grid a fallback width for every column", () => {
-    // The first frame runs before `useLayoutEffect` writes the properties.
-    for (const column of COLUMNS) {
-      expect(THEME_CSS).toMatch(new RegExp(`var\\(${columnVar(column)},\\s*\\d+%\\)`));
-    }
-  });
-
   it("has a rule for every class the components emit", () => {
     const classes = [
       "weave-header",
@@ -121,15 +104,9 @@ describe("THEME_CSS", () => {
       "weave-summary-part",
       "weave-refresh",
       "weave-theme",
-      "weave-conn",
-      "weave-conn-dot",
-      "weave-conn-ok",
-      "weave-conn-warn",
-      "weave-conn-bad",
       "weave-grid",
       "weave-col",
       "weave-col-title",
-      "weave-divider",
       // `weave-empty` / `-body` / `-phase` went with `EmptyState.tsx` in P3.
       // Every column now renders its own empty state as a plain paragraph
       // (`treeEmptyMessage`, `noteEmptyMessage`, `graphEmptyMessage`,
@@ -139,15 +116,10 @@ describe("THEME_CSS", () => {
       "weave-tree-controls",
       "weave-filter",
       "weave-chip",
-      "weave-chip-bad",
       "weave-rows",
       "weave-row",
       "weave-row-new",
       "weave-row-on",
-      "weave-row-muted",
-      "weave-row-droptarget",
-      "weave-row-del",
-      "weave-tree-new-folder",
       "weave-icon",
       "weave-icon-open",
       "weave-twisty",
@@ -186,22 +158,7 @@ describe("THEME_CSS", () => {
       "weave-preview-kind",
       "weave-preview-title",
       "weave-preview-text",
-      // The P5 editor. `weave-note-prompt-{conflict,collision,external,discard}`
-      // are generated from `EditorPromptKind`, so they get their own
-      // assertion below rather than four entries here.
-      "weave-note-bar",
-      "weave-note-toggle",
-      "weave-note-save",
       "weave-note-open",
-      "weave-note-action",
-      "weave-note-dirty",
-      "weave-note-status",
-      "weave-note-status-ok",
-      "weave-note-status-warn",
-      "weave-note-prompt",
-      "weave-note-prompt-text",
-      "weave-note-prompt-actions",
-      "weave-note-editor",
       "weave-ctx-empty",
       "weave-ctx-group",
       "weave-ctx-head",
@@ -245,16 +202,6 @@ describe("THEME_CSS", () => {
       "weave-help-title",
       "weave-help-foot",
       "weave-help-hint",
-      "weave-dialog",
-      "weave-dialog-title",
-      "weave-dialog-body",
-      "weave-dialog-input",
-      "weave-dialog-actions",
-      "weave-menu-backdrop",
-      "weave-menu",
-      "weave-menu-item",
-      "weave-menu-item-bad",
-      "weave-menu-sep",
       "weave-keys",
       "weave-key-group",
       "weave-key-row",
@@ -264,20 +211,16 @@ describe("THEME_CSS", () => {
     for (const name of classes) expect(THEME_CSS).toContain(`.${name}`);
   });
 
-  it("styles every prompt kind, derived from the union rather than listed", () => {
-    // `Editor.tsx` emits `weave-note-prompt-${prompt.kind}`, so the class set
-    // is generated at runtime from `EditorPromptKind`. Listing the four by
-    // hand above would pass on the day a fifth kind arrives unstyled; walking
-    // the union means the assertion grows with it.
-    for (const kind of EDITOR_PROMPT_KINDS) expect(THEME_CSS, kind).toContain(`.weave-note-prompt-${kind}`);
-  });
-
-  it("styles all three grid arities, so a breakpoint is never unstyled", () => {
-    for (const count of [1, 2, 3]) expect(THEME_CSS).toContain(`[data-columns="${count}"]`);
+  it("uses CSS media queries for the fixed responsive grid", () => {
+    expect(THEME_CSS).toContain("grid-template-columns:minmax(180px,22fr)");
+    expect(THEME_CSS).toContain("@media (max-width:1099px)");
+    expect(THEME_CSS).toContain("@media (max-width:799px)");
+    expect(THEME_CSS).toContain(".weave-col-graph{display:none}");
+    expect(THEME_CSS).toContain(".weave-col-tree{display:none}");
   });
 
   it("stays dense: no card shadows, no oversized gutters", () => {
-    // §1.2 asks for "dense but calm" and the failure mode is a marketing
+    //  asks for "dense but calm" and the failure mode is a marketing
     // page. Shadows and 24 px padding are the tells. Tier 6 narrows the
     // shadow refusal to *elevation* only: the selection's inset accent bar
     // (`box-shadow:inset 2px 0 0 …`) is a hairline edge, not a shadow — it
@@ -313,12 +256,6 @@ describe("THEME_CSS", () => {
       "999px",
     ]);
     expect(radii.filter((r) => !allowed.has(r))).toEqual([]);
-  });
-
-  it("widens the divider's hit area without thickening the visible rule", () => {
-    // A 1 px grid track is unhittable with a mouse.
-    expect(THEME_CSS).toContain(".weave-divider::after");
-    expect(THEME_CSS).toContain("col-resize");
   });
 
   it("keeps a visible focus ring, which P4's keyboard work depends on", () => {
@@ -414,8 +351,8 @@ describe("fetchJson", () => {
    * `api.ts` is deliberately free of `fetch`, `Response` and `RequestInit` so
    * it compiles under the root project (no `DOM` lib) and is testable with a
    * fake. `api.dom.ts` is the four-line adapter that calls the real thing, and
-   * it is proven here the same way `domEventSource` is: by stubbing the
-   * global and asserting the delegation, not by opening a socket.
+   * it is proven here by stubbing the global and asserting the delegation,
+   * not by opening a socket.
    */
   function withFetch<T>(impl: (url: string, init: unknown) => Promise<unknown>, run: () => T): T {
     const globals = globalThis as { fetch?: unknown };
@@ -445,9 +382,9 @@ describe("fetchJson", () => {
   });
 
   it("always sends same-origin credentials — §5.1 authenticates by cookie", () => {
-    // `EventSource` cannot set headers, so the whole security model rides the
-    // `__Host-weave` cookie. A default is a worse place for that dependency
-    // than a line of code.
+    // The request uses same-origin credentials so the security model rides
+    // the `__Host-weave` cookie. A default is a worse place for that
+    // dependency than a line of code.
     const seen: Array<Record<string, unknown>> = [];
     withFetch(
       (_url, init) => {

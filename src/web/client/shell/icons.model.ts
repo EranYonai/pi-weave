@@ -1,5 +1,5 @@
 /**
- * The inline icon sprite (Tier 6, §8 P6.4).
+ * The inline icon sprite (Tier 6,  P6.4).
  *
  * ## Why a sprite of path data
  *
@@ -26,7 +26,7 @@
  *
  * ## Why the renderer is not here
  *
- * §10: this module decides (which glyphs exist, which are filled, how fat a
+ * : this module decides (which glyphs exist, which are filled, how fat a
  * dot is), and the `.tsx` renders (`<svg>` JSX from {@link IconDef}). That
  * also keeps this file free of JSX and DOM types, so the root `tsconfig.json`
  * project compiles its tests.
@@ -43,8 +43,7 @@ export type IconName =
   | "entryPoint"
   | "gitState"
   | "external"
-  | "file"
-  | "session";
+  | "file";
 
 /** The box every path is drawn in, and the stroke the sheet's aesthetic asks for. */
 export const ICON_BOX = 16;
@@ -82,8 +81,6 @@ export const ICONS: Readonly<Record<IconName, IconDef>> = {
   vault: { d: ["M8 2.6 13.4 8 8 13.4 2.6 8Z"], filled: true },
   /** A note page with a folded corner — the vault's contents. */
   note: { d: ["M4.5 2.75h4.75l2.25 2.25v8.25h-7Z", "M9.25 2.75V5h2.25"], filled: false },
-  /** A session memory page: a rounded speech bubble with a tail. */
-  session: { d: ["M3 3.75h10v6.5H6.75L3.75 13v-2.75H3Z"], filled: false },
   /** The repository root, a framed card with a header rule — the TUI's ▣. */
   repository: { d: ["M2.75 4.25h10.5v7.5H2.75Z", "M2.75 6.75h10.5"], filled: false },
   /** A folder — the tree's module / synthesized vault directory. */

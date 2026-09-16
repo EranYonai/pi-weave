@@ -174,7 +174,7 @@ const TIERS: readonly Tier[] = [
   },
   {
     id: "src/web/client",
-    npm: new Set(["preact", "preact/hooks", "preact/jsx-runtime", "@preact/signals", "marked", "dompurify", "sigma", "graphology"]),
+    npm: new Set(["preact", "preact/hooks", "preact/jsx-runtime", "marked", "dompurify", "sigma", "graphology"]),
     // Unchanged by the §2.1 narrowing, and that is the point: the client
     // reaches the view-models through `src/web/shared/view.ts`, never
     // directly. One door, one guard on it.

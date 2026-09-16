@@ -1,45 +1,7 @@
-/**
- * Live force dynamics for the graph's current shape — the Obsidian-style
- * "the graph is alive" feel while the user drags.
- *
- * ## One physics, two drivers
- *
- * The static layout (`shared/layout.ts`) and this module now share ONE force
- * configuration: {@link createForceSimulation}. They used to be two
- * independent physics — the static path ring-sized its link distances per
- * fan-out and anchored every node to its seed; this one pulled at a flat 90
- * units toward its own equilibrium. Every graph therefore *visibly re-laid
- * itself* after mount (a 215-node repo graph migrated from a ~1200-unit ring
- * to the bespoke sim's ~300-unit cloud over about thirty seconds), and the
- * constant-alpha loop ticked at 60 fps forever, because a bespoke integrator
- * has no alpha to decay. Sharing the factory fixes both by construction: the
- * warm start is already at the shared equilibrium, so there is nothing to
- * migrate to, and d3's alpha decay is what says "settled".
- *
- * ## The lifecycle
- *
- * A new engine starts at {@link SETTLE_ALPHA} (an expand/collapse lands new
- * nodes already laid out; the brief settle is the "alive" response, not a
- * re-layout) and decays to d3's alpha floor, at which point {@link awake}
- * turns false and the component's clock puts itself to sleep — no frames are
- * spent on a graph that is holding still. `pin` re-heats to
- * {@link DRAG_ALPHA_TARGET} (d3's own drag pattern), so neighbours make room
- * while the user drags; `release` clears the pin AND retargets the node's
- * anchor to its drop point, so a dragged node stays where it was dropped
- * instead of springing back to its seed.
- *
- * ## The §7.2 vertical-line freeze
- *
- * Inherited from d3 itself: `manyBody`, `collide` and `link` all inject a
- * seeded `jiggle` into a zero axis component, so coincident or collinear
- * nodes always acquire a direction. The seeded LCG (`seed: 1`) keeps the
- * whole thing deterministic — the same graph, the same gestures, byte-identical
- * positions — which is what the test gate asserts.
- */
+/** Live d3-force dynamics used while a node is dragged. */
 
 import type { Point } from "../../shared/layout";
-import { branchAnchors, collideRadius, createForceSimulation, isContainment } from "../../shared/layout";
-import type { WireEdgeKind } from "../../shared/graph";
+import { collideRadius, createForceSimulation } from "../../shared/layout";
 import type { RenderGraph } from "./graph.model";
 
 interface SimNode {
@@ -53,12 +15,6 @@ interface SimNode {
   fy?: number | null;
   /** The node's collision disc, from its drawn size (`CollideNode`). */
   r?: number;
-}
-
-interface SimLink {
-  source: string | SimNode;
-  target: string | SimNode;
-  kind: WireEdgeKind;
 }
 
 export interface GraphSimulation {
@@ -118,7 +74,7 @@ export function createGraphSimulation(graph: RenderGraph, initial?: ReadonlyMap<
   // would throw on them, so they are dropped here and the layout's own
   // `pathologicalGraph` fixture remains the gate for degenerate *outputs*.
   const seen = new Set<string>();
-  const links: SimLink[] = [];
+  const links: { source: string; target: string; kind: RenderGraph["edges"][number]["kind"] }[] = [];
   for (const edge of graph.edges) {
     if (edge.source === edge.target) continue;
     if (!byId.has(edge.source) || !byId.has(edge.target)) continue;
@@ -128,18 +84,7 @@ export function createGraphSimulation(graph: RenderGraph, initial?: ReadonlyMap<
     links.push({ source: edge.source, target: edge.target, kind: edge.kind });
   }
 
-  // No invented seeding; centre gravity lives in the factory (`forceX()`/
-  // `forceY()`). The anchors start as the **branch ring** (`branchAnchors`),
-  // so a released graph holds the separated equilibrium the static layout
-  // settled into instead of gliding back toward one centre — the live and
-  // static paths share one physics, and that includes its gravity targets.
-  // `release` then overrides a dropped node's entry with its drop point, so a
-  // placement sticks (the anchor is five times stronger than the leaf
-  // spring, so the node rests where the user left it).
-  const settled = new Map<string, Point>();
-  for (const node of graph.nodes) settled.set(node.id, { x: node.x, y: node.y });
-  const anchors = new Map<string, Point>(branchAnchors(graph, settled));
-  const sim = createForceSimulation({ nodes, links, anchors, seed: 1 })
+  const sim = createForceSimulation({ nodes, links, seed: 1 })
     .alpha(SETTLE_ALPHA)
     .alphaMin(ALPHA_MIN);
 
@@ -174,11 +119,6 @@ export function createGraphSimulation(graph: RenderGraph, initial?: ReadonlyMap<
     release(id) {
       const node = byId.get(id);
       if (!node) return;
-      // Unfix, like d3's `dragended` — and retarget the node's centre-gravity
-      // anchor to the drop point, so the graph reads the drop as a placement:
-      // the node rests where the user left it instead of gliding back into
-      // the tree.
-      anchors.set(id, { x: node.x ?? 0, y: node.y ?? 0 });
       node.fx = null;
       node.fy = null;
       sim.alphaTarget(0);

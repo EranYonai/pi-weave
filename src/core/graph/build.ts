@@ -2,7 +2,7 @@
  * Pure graph builder: knowledge workspace inputs → GraphModel.
  *
  * No I/O, no clock access, no harness imports (design §21,
- * docs/weave-view.md §3). Stability contract: identical inputs produce
+ * docs/design.md §11). Stability contract: identical inputs produce
  * byte-identical JSON (ids derive from slugs/paths only; `generatedAt` is
  * derived from input timestamps, never from the wall clock) — that is what
  * makes the page's refresh-polling cheap.
@@ -15,7 +15,7 @@ import type { EdgeKind, GraphEdge, GraphModel, GraphNode } from "./model";
 import { buildPathIndex, resolveMentions, type PathIndex } from "./mentions";
 import { extractWikilinks } from "./wikilinks";
 
-/** Hard cap on note nodes (docs/weave-view.md M3 guard). */
+/** Hard cap on note nodes so a large vault cannot overwhelm the viewer. */
 export const DEFAULT_MAX_NOTES = 500;
 
 export interface BuildGraphInput {
@@ -133,10 +133,9 @@ function buildVaultSide(
 
   const keptSlugs = new Set(kept.map((n) => n.slug));
 
-  // Nested notes (`sessions/foo` — session memory, docs/session-scan.md) nest
-  // under synthesized folder nodes so the vault tree groups them the way the
-  // repository tree groups directories. Ids are prefixed `vfolder:` because a
-  // repository module could legitimately share the path (`module:sessions`);
+  // Nested notes nest under synthesized folder nodes so the vault tree groups
+  // them the way the repository tree groups directories. Ids are prefixed
+  // `vfolder:` because a repository module could legitimately share the path;
   // the tree renders any `contains` chain, so the kind reuse needs no client
   // change. Deterministic: dirs sorted, parents before children.
   const folderIds = new Map<string, string>();
@@ -320,7 +319,7 @@ function buildRepositorySide(
 
 /**
  * Build the graph model for the viewer. Notes are capped at `maxNotes`
- * (docs/weave-view.md M3); the vault node carries a warning when truncated.
+ * (docs/design.md §11); the vault node carries a warning when truncated.
  */
 export function buildGraph(input: BuildGraphInput, options: { maxNotes?: number } = {}): GraphModel {
   const maxNotes = options.maxNotes ?? DEFAULT_MAX_NOTES;

@@ -3,8 +3,8 @@
  *
  * `keys.model.ts` decides what a keystroke means; this attaches one listener
  * and performs the answer. Four lines of it are the listener and the rest is
- * dispatch, which is deliberate — the same split `viewport.ts` uses, and for
- * the same reason: a subscription written inline in a `useEffect` is one no
+ * dispatch, which is deliberate — a subscription written inline in a
+ * `useEffect` is one no
  * test can reach.
  *
  * ## One listener, on the document, at the bubble phase

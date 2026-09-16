@@ -4,7 +4,7 @@
  *
  * ## The guard, and why it is two tests
  *
- * §9 retired the no-backtick *source* guard for `dist/app.js` — the bundle
+ *  retired the no-backtick *source* guard for `dist/app.js` — the bundle
  * is generated, and `build:web:check`'s byte comparison is a strictly
  * stronger invariant than any pattern match over its source. That argument
  * does not extend to `page.ts`, which is a hand-written template literal
@@ -41,7 +41,7 @@ import {
 const PAGE_SOURCE_PATH = new URL("../../src/web/server/page.ts", import.meta.url).pathname;
 
 function bootstrap(over: Partial<Bootstrap> = {}): Bootstrap {
-  return { cwd: "/tmp/repo", vaultRoot: "/home/u/.okf", session: "deadbeef", ...over };
+  return { cwd: "/tmp/repo", ...over };
 }
 
 /**
@@ -197,7 +197,7 @@ describe("contentSecurityPolicy", () => {
 // --- rendering ------------------------------------------------------------------
 
 describe("renderPage", () => {
-  it("is the four-element shell §5.3 describes", () => {
+  it("is the four-element shell §5.2 describes", () => {
     const { html } = renderPage({ bootstrap: bootstrap(), nonce: "NONCE" });
     expect(html.startsWith("<!doctype html>")).toBe(true);
     expect(html).toContain('<div id="app"');
@@ -236,7 +236,7 @@ describe("renderPage", () => {
   });
 
   it("embeds a bootstrap block that parses back to its input", () => {
-    const boot = bootstrap({ cwd: "/x/y", vaultRoot: "/v", session: "abc123" });
+    const boot = bootstrap({ cwd: "/x/y" });
     const { html } = renderPage({ bootstrap: boot, nonce: "N" });
     const start = html.indexOf('<script type="application/json"');
     const open = html.indexOf(">", start) + 1;
@@ -270,16 +270,6 @@ describe("renderPage", () => {
     for (const hostile of HOSTILE) {
       it(`for cwd = ${JSON.stringify(hostile)}`, () => {
         const { html } = renderPage({ bootstrap: bootstrap({ cwd: hostile }), nonce: "N" });
-        expect(html).not.toContain("`");
-        expect(html).not.toContain("${");
-      });
-      it(`for vaultRoot = ${JSON.stringify(hostile)}`, () => {
-        const { html } = renderPage({ bootstrap: bootstrap({ vaultRoot: hostile }), nonce: "N" });
-        expect(html).not.toContain("`");
-        expect(html).not.toContain("${");
-      });
-      it(`for session = ${JSON.stringify(hostile)}`, () => {
-        const { html } = renderPage({ bootstrap: bootstrap({ session: hostile }), nonce: "N" });
         expect(html).not.toContain("`");
         expect(html).not.toContain("${");
       });

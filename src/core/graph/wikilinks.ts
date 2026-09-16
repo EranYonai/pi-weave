@@ -1,6 +1,6 @@
 /**
  * Obsidian-compatible [[wiki-link]] extraction from note bodies.
- * Pure module — see docs/weave-view.md §3.
+ * Pure module used by graph construction and viewer view-models.
  */
 
 import { slugify } from "../slug";
@@ -14,8 +14,8 @@ const WIKILINK_RE = /\[\[([^\][|]+)(?:\|[^\]]*)?\]\]/g;
  * `release-plan`. Duplicates are removed, order of first appearance kept.
  *
  * Path separators survive: a nested note's slug is its path relative to
- * `notes/` (`sessions/foo`), so `[[sessions/foo]]` targets the session note,
- * not a flattened name. Each path segment is slugified independently.
+ * `notes/`, so links target the nested note rather than a flattened name.
+ * Each path segment is slugified independently.
  */
 export function extractWikilinks(body: string): string[] {
   const out: string[] = [];

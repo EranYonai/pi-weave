@@ -1,5 +1,5 @@
 /**
- * Graph-shape generators for the layout dynamics gate (weave-workspace §8).
+ * Graph-shape generators for the layout dynamics gate.
  *
  * Every shape here is a *valid* `GraphModel` — the same type `buildGraph`
  * emits — so the layout engine is exercised through its real contract. The
@@ -42,7 +42,7 @@ function pad(i: number): string {
 }
 
 /**
- * This repository's actual shape (weave-workspace §8): five top-level roots —
+ * This repository's actual shape: five top-level roots —
  * vault, repository, modules, git-state, external — where `repository` carries
  * a ~60-child containment fan. That hub is the hairball risk and the exact
  * case the graph column must render well.
@@ -197,11 +197,12 @@ export function pathologicalGraph(): GraphModel {
  * The sibling-blobs shape: the real repository's tangle, abstracted.
  *
  * Two roots whose big branches are blobs of their own — a `module:summaries`
- * fan of summary files and a `vfolder:sessions` fan of session notes — plus a
+ * fan of summary files and a `vfolder:notes` fan of nested notes — plus a
  * smaller `module:src` branch and the usual small twigs. Under single-centre
  * gravity these interleave into one hairball (measured on the real graph:
- * bounding-box gap 0 between the `module:.okf` and `vfolder:sessions`
- * subtrees), which is the bug `branchAnchors` exists to fix. A handful of
+ * bounding-box gap 0 between the `module:.okf` and `vfolder:notes`
+ * subtrees), which is the branch-separation case the layout must keep apart.
+ * A handful of
  * `links-to` edges cross the blobs, so separation is genuine work against
  * real edges rather than two disconnected components.
  */
@@ -234,14 +235,14 @@ export function siblingBlobsGraph(): GraphModel {
     edges.push(edge("module:docs", id));
   }
 
-  // 2. the vault — one big sessions branch, four loose notes.
+  // 2. the vault — one big notes branch, four loose notes.
   nodes.push(node("vault", "vault", "Vault"));
-  nodes.push(node("vfolder:sessions", "module", "sessions"));
-  edges.push(edge("vault", "vfolder:sessions"));
+  nodes.push(node("vfolder:notes", "module", "notes"));
+  edges.push(edge("vault", "vfolder:notes"));
   for (let i = 0; i < 20; i++) {
-    const id = `note:session-${pad(i)}`;
-    nodes.push(node(id, "note", `Session ${pad(i)}`, i % 2 ? "agent" : "human"));
-    edges.push(edge("vfolder:sessions", id));
+    const id = `note:note-${pad(i)}`;
+    nodes.push(node(id, "note", `Note ${pad(i)}`, i % 2 ? "agent" : "human"));
+    edges.push(edge("vfolder:notes", id));
   }
   for (let i = 0; i < 4; i++) {
     const id = `note:loose-${pad(i)}`;
@@ -250,11 +251,11 @@ export function siblingBlobsGraph(): GraphModel {
   }
 
   // Cross-blob associations — few, like the real thing.
-  edges.push(edge("note:session-000", "module:src/m000", "links-to"));
+  edges.push(edge("note:note-000", "module:src/m000", "links-to"));
   edges.push(edge("note:loose-001", "module:summaries", "mentions"));
 
   return model(nodes, edges);
 }
 
 /** The big branches of {@link siblingBlobsGraph}, in id order. */
-export const SIBLING_BLOB_BRANCHES: readonly string[] = ["module:src", "module:summaries", "vfolder:sessions"];
+export const SIBLING_BLOB_BRANCHES: readonly string[] = ["module:src", "module:summaries", "vfolder:notes"];

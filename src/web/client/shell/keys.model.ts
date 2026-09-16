@@ -25,18 +25,8 @@
  * | --- | --- |
  * | `⌘K` / `Ctrl K` | always — a modifier shortcut is unambiguous even mid-word |
  * | `⌘1` `⌘2` `⌘3` | always |
- * | `⌘E` `⌘S` | always — the editor's two keys (§11 P5.4) |
  * | `Esc` | an overlay is open, or something is selected. Never otherwise |
  * | `/` `g` `?` `t` | **only** when focus is not in a text field and no overlay is open |
- *
- * `⌘S` is claimed **even while typing**, which is the one place this map
- * deliberately overrides the browser. It has to be: the browser's `⌘S` is
- * "save this page as HTML", which in a note editor is never what the user
- * meant, and the moment they most want to save is the moment their cursor is
- * in the textarea. `⌘E` is claimed on the same grounds — the browser has no
- * default for it, and toggling out of the editor is a thing to do *from*
- * inside the editor. Neither fires when an overlay is open, because the
- * palette owns every key but `Escape`.
  *
  * `j` / `k` are not here at all: they are tree-scoped, so they live in
  * `tree.model.ts`'s `normalizeTreeKey` where the tree's own handler applies
@@ -51,9 +41,7 @@
  * `⌘K`, which would otherwise re-open the palette on top of itself.
  */
 
-import { COLUMNS, columnsAt } from "./layout.model";
-import type { ColumnId } from "./layout.model";
-import type { OverlayId } from "./shell.model";
+import { COLUMNS, type ColumnId, type OverlayId } from "./shell.model";
 
 // --- the event, without the DOM ---------------------------------------------------
 
@@ -102,25 +90,17 @@ export type ShellAction =
   | { readonly type: "filterTree" }
   | { readonly type: "fitGraph" }
   | { readonly type: "clearSelection" }
-  /** `⌘E` — toggle the note column between read and edit (§11 P5.4). */
-  | { readonly type: "toggleEdit" }
-  /** `⌘S` — save the open draft. */
-  | { readonly type: "saveNote" }
   /** `t` — cycle the colour theme: system → light → dark → system. */
   | { readonly type: "cycleTheme" };
 
 /**
  * The command-key letters, as data.
  *
- * A table for the same reason {@link COLUMN_DIGITS} is one: "every editor key
- * has a mapping" becomes a test over this object rather than three
- * hand-written cases, and the help sheet is generated from it so it cannot
- * document a key the code does not implement.
+ * A table for the same reason {@link COLUMN_DIGITS} is one: the help sheet is
+ * generated from it so it cannot document a key the code does not implement.
  */
 export const COMMAND_KEYS: Readonly<Record<string, ShellAction>> = {
   k: { type: "openSearch" },
-  e: { type: "toggleEdit" },
-  s: { type: "saveNote" },
 };
 
 /**
@@ -140,9 +120,7 @@ export const COLUMN_DIGITS: Readonly<Record<string, ColumnId>> = { "1": "tree", 
  * search button once was. Derived from `columnsAt`, not listed, so the caveat
  * cannot drift from the breakpoints the sheet is attached to.
  */
-const COLLAPSIBLE_COLUMNS: ReadonlySet<ColumnId> = new Set(
-  COLUMNS.filter((c) => columnsAt("medium").includes(c) === false || columnsAt("narrow").includes(c) === false),
-);
+const COLLAPSIBLE_COLUMNS: ReadonlySet<ColumnId> = new Set(["tree", "graph"]);
 
 /**
  * Whether a modifier combination counts as "the platform's command key".
@@ -249,7 +227,7 @@ export interface KeyTarget {
  * The slice of `KeyboardEvent` the subscription reads.
  *
  * Structural, so the platform's satisfies it without a cast and a fake is an
- * object literal — the same port shape `EventSourceLike` and `HttpResponse`
+ * object literal — the same port shape as `HttpResponse`
  * use, for the same reason: there is no DOM test environment (§10).
  */
 export interface KeyboardEventLike {
@@ -358,10 +336,6 @@ export interface ShellEffects {
   fitGraph(): void;
   /** Write `null` to §1.3's `selectedId`. */
   clearSelection(): void;
-  /** `⌘E` — dispatch `toggle` into the note editor. */
-  toggleEdit(): void;
-  /** `⌘S` — dispatch `save` into the note editor. */
-  saveNote(): void;
   /** `t` — advance the user's theme choice by one step in its cycle. */
   cycleTheme(): void;
 }
@@ -385,10 +359,6 @@ export function runShellAction(action: ShellAction, fx: ShellEffects): void {
       return fx.fitGraph();
     case "clearSelection":
       return fx.clearSelection();
-    case "toggleEdit":
-      return fx.toggleEdit();
-    case "saveNote":
-      return fx.saveNote();
     case "cycleTheme":
       return fx.cycleTheme();
   }
@@ -446,13 +416,6 @@ export function keyHelp(cmd: string): readonly KeyHelpGroup[] {
         { combo: "→", what: "Expand, or step into" },
         { combo: "←", what: "Collapse, or step out" },
         { combo: "Home / End", what: "First / last row" },
-      ],
-    },
-    {
-      title: "Note",
-      entries: [
-        { combo: `${cmd}E`, what: "Toggle read / edit" },
-        { combo: `${cmd}S`, what: "Save the open draft" },
       ],
     },
     {

@@ -84,8 +84,6 @@ const GZIP_BUDGET_BYTES = 150 * 1024;
  */
 const LICENCES = {
   preact: "MIT",
-  "@preact/signals": "MIT",
-  "@preact/signals-core": "MIT",
   sigma: "MIT",
   graphology: "MIT",
   "graphology-utils": "MIT",
@@ -105,7 +103,7 @@ const LICENCES = {
  *
  * Inputs are relative to `absWorkingDir`, so third-party modules look like
  * `node_modules/preact/dist/preact.module.js` or
- * `node_modules/@preact/signals/dist/signals.mjs`. First-party sources (`src/…`)
+ * `node_modules/preact/hooks/dist/hooks.mjs`. First-party sources (`src/…`)
  * return `null`. Nested `node_modules` resolve to the innermost package, which
  * is the one actually contributing bytes.
  */

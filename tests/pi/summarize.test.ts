@@ -6,7 +6,7 @@
 import { fauxAssistantMessage } from "@earendil-works/pi-ai";
 import type { ExtensionContext } from "@earendil-works/pi-coding-agent";
 import { describe, expect, it } from "vitest";
-import { readSummaryMap } from "../../src/core";
+import { readSummaryMap } from "../../src/core/summaries";
 import {
   createLlmSummarizer,
   deepScanRepository,

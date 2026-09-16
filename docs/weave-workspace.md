@@ -1,8 +1,9 @@
-# weave-workspace — the browser knowledge workspace
+# weave-workspace — historical browser workspace notes
 
-> Status: **P0, P1, P2 and P3 are built and green; P4–P5 are still design.** This doc supersedes `docs/weave-view-handoff.md` (post-mortem
-> of the retired SVG viewer, kept as a stub pointing here). It is the plan of record for `/weave-view`. §16 is the two-minute summary of
-> where things stand.
+> Historical record, superseded by [docs/design.md](design.md), [README.md](../README.md), and [`AGENTS.md`](../AGENTS.md). Use those documents and the current code for present behavior.
+
+> Historical status at time of writing: **P0, P1, P2 and P3 were built and green; P4–P5 were still design.** This was the plan of record for `/weave-view`. §16 is the
+> two-minute summary of where things stand.
 >
 > Scope: a local web workspace over the same `GraphModel` the TUI already uses. Notes are the product; the graph is one column of it.
 >
@@ -818,10 +819,8 @@ So the dependency is inverted, and what exists is:
 | --- | --- | ---: |
 | `GraphRenderer` — the §7.5 interface | `renderer.ts` | — |
 | `SigmaLike` / `CameraLike` — the six-method port sigma satisfies **structurally** (no cast, and a fake is an object literal) | `renderer.ts` | — |
-| `SigmaFactory` — `new Sigma(graph, container, settings)` as a function type | `renderer.ts` | — |
 | `sigmaRenderer(create, scheme)` — the entire renderer, written against the port | `renderer.ts` | **100 %** |
-| `nullRenderer()` — a production null object, not a test double: the column renders before its container exists and may never mount at all | `renderer.ts` | **100 %** |
-| `createSigma` / `createSigmaRenderer` — the adapter that names sigma | `renderer.dom.ts` | 0 % (lines 30–52) |
+| `createSigmaRenderer` — the adapter that names sigma | `renderer.dom.ts` | 0 % (lines 30–52) |
 
 `renderer.ts` imports **no npm package at all**, which is what lets the root `tsconfig.json` project (no `DOM` lib) compile the tests that
 import it; `RenderContainer` is a two-property structural stand-in for `HTMLElement` for the same reason, and the one cast lives in
@@ -971,7 +970,7 @@ strategy is: **push logic into pure modules, keep DOM shells trivial and exclude
 | Client DOM | `src/web/client/**/*.tsx` | **Outside the coverage set.** Kept to 30–50 lines each: props in, JSX out, no branching beyond rendering. |
 | End-to-end | `tests/web/smoke.test.ts` | Boot the server, `fetch /`, assert shell + CSP + bundle integrity. **No browser, no screenshots.** |
 
-Coverage excludes are listed explicitly in `vitest.config.ts` and justified in `docs/testing.md` — a blanket `src/web/client/**` exclude is
+Coverage excludes are listed explicitly in `vitest.config.ts` and justified in the test suite — a blanket `src/web/client/**` exclude is
 not acceptable.
 
 **As built, this turned out cheaper than planned.** `vitest.config.ts` declares exactly **one** exclusion, `src/core/view/types.ts`, by
@@ -984,7 +983,7 @@ logic-free. The moment a `.tsx` file wants a branch, the branch belongs in a sib
 **The hard constraint stands: no screenshots, ever.** Any live-browser verification is JS-eval/DOM-measurement only, via the `/browse`
 skill, and stays manual — it is not part of the CI gate.
 
-**Manual checklist** (added to `docs/testing.md` §3 as UC11–UC16): open in a repo with no `.okf`; open with an empty vault; edit a note in
+**Manual checklist** (recorded here as UC11–UC16): open in a repo with no `.okf`; open with an empty vault; edit a note in
 `$EDITOR` and watch it update live; run `/weave-scan` while open; kill the pi session and confirm the port closes; open two browser tabs.
 
 ---
@@ -1065,7 +1064,7 @@ still an empty state when P2 landed, and tree + note + rail were already a worki
 
 ### P3 — Graph — ✅ **done**
 
-1. ✅ **The renderer behind a seam** — `GraphRenderer` plus a `SigmaFactory` port, `sigmaRenderer` unit-tested against a recording fake, and
+1. ✅ **The renderer behind a seam** — `GraphRenderer`, `sigmaRenderer` unit-tested against a recording fake, and
    the real `new Sigma` isolated in `renderer.dom.ts`. §7.5 has the full account and the reason the literal plan was not buildable.
 2. ✅ **graphology projection** (`project.ts`) — `multi: true`, `type: "directed"`, no re-validation, `syncPositions` as the cheap re-run
    path. §7.1 records why `multi` is load-bearing.
@@ -1172,7 +1171,7 @@ product decision, and none is needed to prove this one.
 
 These land **with** the phases that require them, not afterwards.
 
-> **Status.** `docs/testing.md` and `docs/weave-view-handoff.md` are done. **`AGENTS.md` has not been updated** — it still describes only
+> **Historical status.** The testing ledger was complete at the time. **`AGENTS.md` had not been updated** — it still described only
 > the TUI surface and still carries the stale runtime-dependency line — and `docs/design.md` §19 has not been reconciled either. Both are
 > outstanding. **`README.md` is now overdue**: it was scheduled for P2, P2 and P3 have both landed, and it still says the browser viewer
 > "has been retired and is being rebuilt on pixi.js" and that `/weave-view` opens the terminal explorer — which is wrong on both counts
@@ -1192,7 +1191,7 @@ These land **with** the phases that require them, not afterwards.
 - Note the second typecheck project: `npm run typecheck` is now `tsc --noEmit && tsc --noEmit -p tsconfig.web.json`, and the second one is
   what makes the client's core-freedom mechanical (§2.1).
 
-**`docs/testing.md`** (P0 through P3) — ✅ **applied**:
+**The testing ledger** (P0 through P3) — ✅ **applied**:
 
 - New layer **L5 — Web**, with the §10 table and a per-row "Built?" column.
 - The dynamics smoke test documented as a first-class gate, with the graph-shape fixtures.
@@ -1204,8 +1203,6 @@ These land **with** the phases that require them, not afterwards.
 **`docs/design.md`** (P1) — **not yet applied**: §19's "Local Web Viewer" box is now real. Add a short subsection pointing here, and
 reconcile the Phase 3 bullet ("Local web viewer; query lights up nodes") with the notes-first framing — the viewer is not the deliverable,
 the workspace is.
-
-**`docs/weave-view-handoff.md`** — ✅ **applied**: replaced by a stub pointing here. Its post-mortem value is preserved in §0.2 and §7.2.
 
 **`README.md`** (P2, **overdue**): a screenshot-free description of `/weave-view` and what the three columns do. Today it still advertises
 the retired viewer and a pixi.js rebuild that §0.2 rejected, and it tells the reader `/weave-view` opens the terminal explorer, which
@@ -1332,7 +1329,7 @@ watcher works". Recursive watch behaviour on a normal `maxfiles` limit — and o
 `security.ts` emits `__Host-weave` with `Secure; HttpOnly; SameSite=Strict; Path=/`, a prefix-free fallback name exists for a browser that
 disagrees, and the tests pin both shapes — but no real browser has ever been checked, because the no-screenshots constraint (§10) keeps
 live-browser verification manual. If Chrome, Firefox or Safari rejects it, the symptom is a workspace that redirects and then 403s forever,
-which is a bad way to find out. **Belongs on the `docs/testing.md` manual checklist** as an explicit item.
+which is a bad way to find out. **Belongs on the manual checklist** as an explicit item.
 
 ### 15.4 `GraphPayload.tags` and `.dangling` are shipped empty — ✅ **resolved**
 

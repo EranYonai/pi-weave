@@ -1,9 +1,9 @@
 /**
  * Everything the shell *decides*, as pure functions (weave-workspace §1.2).
  *
- * The header's status summary, the connection indicator's wording, the
- * per-column empty-state copy and the status bar's text all live here rather
- * than inside the components that render them. That is not a stylistic
+ * The header's status summary, the per-column empty-state copy and the status
+ * bar's text all live here rather than inside the components that render them.
+ * That is not a stylistic
  * preference: §10 forbids adding a DOM test environment, so a conditional
  * inside a `.tsx` is a conditional that can never be covered, and §14 lists
  * "coverage gate blocks the UI work" as a live risk whose stated mitigation
@@ -15,9 +15,11 @@
  */
 
 import type { GraphPayload, WireNodeKind, WireStalenessState } from "../../shared/wire";
-import type { ConnectionState } from "../state";
-import type { ColumnId, DividerId, ResolvedColumn } from "./layout.model";
-import { DIVIDERS } from "./layout.model";
+/** The three fixed workspace surfaces. */
+export type ColumnId = "tree" | "note" | "graph";
+
+/** Columns in keyboard and visual order. */
+export const COLUMNS: readonly ColumnId[] = ["tree", "note", "graph"];
 
 // --- the header summary --------------------------------------------------------
 
@@ -77,93 +79,22 @@ export function summaryParts(summary: HeaderSummary): readonly string[] {
   return [`vault:${summary.notes}`, `repo:${repoLabel(summary.repo)}`, `${summary.nodes} nodes`];
 }
 
-// --- the connection indicator ----------------------------------------------------
-
-/**
- * How a connection state is presented.
- *
- * `tone` is a class suffix rather than a colour, so the palette stays in the
- * stylesheet where §5.2's nonce'd CSS can own it and this module stays free
- * of presentation constants it cannot test the appearance of.
- */
-export interface ConnectionView {
-  readonly label: string;
-  readonly tone: "ok" | "warn" | "bad";
-  /** The `title=` tooltip. Says what the user should expect to happen next. */
-  readonly hint: string;
-}
-
-const CONNECTION_VIEWS: Readonly<Record<ConnectionState, ConnectionView>> = {
-  live: { label: "live", tone: "ok", hint: "watching the vault and the repository for changes" },
-  reconnecting: {
-    label: "reconnecting",
-    tone: "warn",
-    // Naming the recovery matters: §6 has the client refetch everything on
-    // reopen, so the user's screen will catch up on its own and they should
-    // not go looking for a reload button.
-    hint: "the event stream dropped — retrying, and everything refetches when it returns",
-  },
-  offline: {
-    label: "offline",
-    tone: "bad",
-    hint: "the workspace server is gone — the header's refresh control retries",
-  },
-};
-
-/** Present a connection state. Total over the three states of §1.3. */
-export function connectionView(state: ConnectionState): ConnectionView {
-  return CONNECTION_VIEWS[state];
-}
-
 // --- empty states ------------------------------------------------------------------
 
-/**
- * A column's title, and the placeholder shown while its content is someone
- * else's phase.
- *
- * P1's deliverable for the three columns was an *honest* empty state naming
- * the phase that would fill it — more useful than a spinner implying a load,
- * and far more useful than a blank pane that reads as a bug.
- *
- * **As of P3 no column uses one.** All three are built, so `Columns.tsx`
- * renders their real surfaces and each has its *own* empty states —
- * `treeEmptyMessage`, `noteEmptyMessage` and `graphEmptyMessage`, which
- * distinguish "loading" from "filtered to nothing" from "genuinely empty" in a
- * way one static sentence cannot.
- *
- * The table stays because {@link EmptyStateCopy.title} is still every column's
- * heading and its `aria-label`. {@link EmptyStateCopy.body} and `phase` are
- * now dead for all three, and are kept accurate rather than deleted for one
- * reason: `tests/web/client-shell.test.ts` asserts the `phase` values against
- * §11, so a column whose phase silently disagreed with the doc would be the
- * first sign that this table had stopped tracking reality. `EmptyState.tsx`
- * itself now has no caller, and is deleted rather than kept warm — an unused
- * component is a thing the next reader has to work out is unused.
- */
+/** The title used by a column heading and its `aria-label`. */
 export interface EmptyStateCopy {
   readonly title: string;
-  readonly body: string;
-  /** The phase that fills this column in, e.g. `"P2"`. */
-  readonly phase: string;
 }
 
 const EMPTY_STATES: Readonly<Record<ColumnId, EmptyStateCopy>> = {
   tree: {
     title: "Tree",
-    // Built in P2; body and phase are no longer rendered. See the header.
-    body: "The vault and repository outline, expandable, filterable, with provenance markers.",
-    phase: "P2",
   },
   note: {
     title: "Note",
-    body: "Select anything to read it here — rendered Markdown, front matter, tags and wikilinks.",
-    phase: "P2",
   },
   graph: {
     title: "Graph",
-    // Built in P3; body and phase are no longer rendered. See the header.
-    body: "The knowledge graph, laid out and navigable, with the selection's neighbourhood highlighted.",
-    phase: "P3",
   },
 };
 
@@ -172,18 +103,9 @@ export function emptyStateFor(column: ColumnId): EmptyStateCopy {
   return EMPTY_STATES[column];
 }
 
-/**
- * The context rail's title.
- *
- * Built in P2.5, so `body`/`phase` are no longer rendered either — the rail's
- * real empty states are `RAIL_EMPTY` in `context/context.model.ts`, which
- * separates "loading" from "nothing selected" from "this node is isolated".
- * `title` is still the rail's heading and `aria-label`.
- */
+/** The context rail's heading and `aria-label`. */
 export const CONTEXT_EMPTY: EmptyStateCopy = {
   title: "Context",
-  body: "Links, backlinks and mentions for whatever is selected.",
-  phase: "P2",
 };
 
 // --- the status bar -------------------------------------------------------------------
@@ -200,7 +122,6 @@ export const CONTEXT_EMPTY: EmptyStateCopy = {
 export interface StatusBarModel {
   readonly cwd: string;
   readonly selection: string;
-  readonly connection: ConnectionView;
   /** `null` before the first successful graph fetch. */
   readonly stamp: string | null;
 }
@@ -212,13 +133,11 @@ export const NO_VALUE = "—";
 export function statusBarModel(
   cwd: string,
   selectedId: string | null,
-  connection: ConnectionState,
   stamp: string | null,
 ): StatusBarModel {
   return {
     cwd: cwd === "" ? NO_VALUE : cwd,
     selection: selectedId ?? "nothing selected",
-    connection: connectionView(connection),
     stamp,
   };
 }
@@ -237,48 +156,6 @@ export function shortStamp(stamp: string | null): string {
   if (stamp === null) return NO_VALUE;
   const match = /T(\d{2}:\d{2}:\d{2})/.exec(stamp);
   return match?.[1] ?? stamp;
-}
-
-// --- pairing columns with dividers ---------------------------------------------------
-
-/**
- * One rendered column, plus the divider that follows it (if any).
- *
- * `divider` is `null` for the last column: there are three columns and two
- * dividers, and the trailing edge of the grid is the window, not a handle.
- */
-export interface ColumnSlot {
-  readonly column: ResolvedColumn;
-  readonly divider: DividerId | null;
-}
-
-/**
- * Interleave resolved columns with the dividers between them.
- *
- * This exists as a model function rather than an `index + 1 < length` check
- * inside the JSX for two reasons. The first is coverage: that check is a
- * branch, and a branch in a `.tsx` is a branch no test can reach (§10). The
- * second is that the naive version is *wrong at a breakpoint* — at `"medium"`
- * only tree and note render, so the divider after `note` must not appear even
- * though `DIVIDERS` contains one. Deriving the pairing from the columns
- * actually being rendered, rather than from the static divider list, makes
- * that impossible to get wrong.
- */
-export function columnSlots(resolved: readonly ResolvedColumn[]): readonly ColumnSlot[] {
-  return resolved.map((column, index) => ({
-    column,
-    // A divider is *named by the column to its left* (`layout.model.ts`'s
-    // `dividerPair`), so the id is the column's own — no index arithmetic into
-    // `DIVIDERS`, which would need an unreachable `?? null` to satisfy
-    // `noUncheckedIndexedAccess` and would leave a branch no test can cover.
-    // It exists only where a next column follows to resize against.
-    divider: index < resolved.length - 1 && isDivider(column.id) ? column.id : null,
-  }));
-}
-
-/** Whether a column has a divider named after it — i.e. is not the last one. */
-function isDivider(column: ColumnId): column is DividerId {
-  return (DIVIDERS as readonly ColumnId[]).includes(column);
 }
 
 // --- the refresh button ------------------------------------------------------------
