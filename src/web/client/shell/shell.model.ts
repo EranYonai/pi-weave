@@ -15,7 +15,7 @@
  */
 
 import type { GraphPayload, WireNodeKind, WireStalenessState } from "../../shared/wire";
-import { COLUMNS, type ColumnId, type DividerId, type ResolvedColumn } from "./layout.model";
+import { COLUMNS, type ColumnId } from "./layout.model";
 export { COLUMNS };
 export type { ColumnId };
 
@@ -105,22 +105,6 @@ export function emptyStateFor(column: ColumnId): EmptyStateCopy {
 export const CONTEXT_EMPTY: EmptyStateCopy = {
   title: "Context",
 };
-
-export interface ColumnSlot {
-  readonly column: ResolvedColumn;
-  readonly divider: DividerId | null;
-}
-
-export function columnSlots(resolved: readonly ResolvedColumn[]): readonly ColumnSlot[] {
-  return resolved.map((column, index) => ({
-    column,
-    divider: index < resolved.length - 1 && isDivider(column.id) ? column.id : null,
-  }));
-}
-
-function isDivider(column: ColumnId): column is DividerId {
-  return column !== "graph";
-}
 
 // --- the status bar -------------------------------------------------------------------
 

@@ -3,7 +3,6 @@
  * widths and only the columns allowed by the current responsive breakpoint.
  */
 
-import { Fragment } from "preact";
 import { useLayoutEffect, useRef } from "preact/hooks";
 import { Graph } from "../graph/Graph";
 import type { ColorScheme } from "../graph/graph.model";
@@ -13,16 +12,14 @@ import type { SchemeHost } from "../graph/scheme";
 import { Note } from "../note/Note";
 import { Tree } from "../tree/Tree";
 import type { GraphPayload, NotePayload } from "../../shared/wire";
-import { applyVars } from "./cssvars";
 import type { ColumnId, DividerId, ResolvedColumn } from "./layout.model";
-import { columnVars } from "./layout.model";
 import { ContextRail } from "./ContextRail";
-import { columnSlots, emptyStateFor, type ColumnSlot } from "./shell.model";
+import { emptyStateFor } from "./shell.model";
 import { Divider } from "./Divider";
 
 export interface ColumnsProps {
   resolved: readonly ResolvedColumn[];
-  onDown: (divider: DividerId, clientX: number, pointerId: number) => void;
+  onDown: (divider: DividerId, clientX: number) => void;
   onMove: (clientX: number) => void;
   onUp: () => void;
   onKey: (divider: DividerId, key: string) => void;
@@ -104,20 +101,22 @@ function Column({ id, props }: { id: ColumnId; props: ColumnsProps }) {
   );
 }
 
-function Slot({ slot, props }: { slot: ColumnSlot; props: ColumnsProps }) {
-  const divider = slot.divider;
-  return <Fragment>
-    <Column id={slot.column.id} props={props} />
-    {divider === null ? null : <Divider id={divider} label={`Resize ${slot.column.id} column`}
-      onDown={(x, pointerId) => props.onDown(divider, x, pointerId)} onMove={props.onMove} onUp={props.onUp}
-      onKey={(key) => props.onKey(divider, key)} />}
-  </Fragment>;
-}
-
 export function Columns(props: ColumnsProps) {
   const grid = useRef<HTMLDivElement | null>(null);
-  useLayoutEffect(() => { applyVars(grid.current, columnVars(props.resolved)); }, [props.resolved]);
+  useLayoutEffect(() => {
+    const element = grid.current;
+    if (element === null) return;
+    for (const { id, width } of props.resolved) element.style.setProperty(`--weave-col-${id}`, `${Math.round(width)}px`);
+  }, [props.resolved]);
   return <div class="weave-grid" ref={grid} data-columns={props.resolved.length}>
-    {columnSlots(props.resolved).map((slot) => <Slot key={slot.column.id} slot={slot} props={props} />)}
+    {props.resolved.map((column, index) => {
+      const divider: DividerId | null = index < props.resolved.length - 1 && column.id !== "graph" ? column.id : null;
+      return [
+        <Column key={`${column.id}-column`} id={column.id} props={props} />,
+        divider === null ? null : <Divider key={`${column.id}-divider`} label={`Resize ${column.id} column`}
+          onDown={(x) => props.onDown(divider, x)} onMove={props.onMove} onUp={props.onUp}
+          onKey={(key) => props.onKey(divider, key)} />,
+      ];
+    })}
   </div>;
 }

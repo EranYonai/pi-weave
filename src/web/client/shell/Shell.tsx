@@ -43,7 +43,6 @@ import type { OverlayId } from "./shell.model";
 import { TICK_MS, looksApple, searchShortcut, statusBarModel, summarize } from "./shell.model";
 import { cycleTheme, effectiveScheme, loadTheme, saveTheme, themeAttr, themeButton } from "./theme.model";
 import type { ThemeChoice } from "./theme.model";
-import { watchViewport } from "./viewport";
 
 /**
  * Write the choice onto `<html>`, so the sheet's attribute branch and the
@@ -89,7 +88,11 @@ export function Shell(props: ShellProps) {
     return () => handle.stop();
   }, []);
 
-  useEffect(() => watchViewport(window, setWidth), []);
+  useEffect(() => {
+    const onResize = (): void => setWidth(window.innerWidth);
+    window.addEventListener("resize", onResize);
+    return () => window.removeEventListener("resize", onResize);
+  }, []);
 
   // §1.3 continuity: a reload keeps the note you were reading. Saving is
   // gated on the restore decision so the mount-time `null` cannot wipe the

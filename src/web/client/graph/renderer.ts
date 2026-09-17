@@ -1,108 +1,8 @@
-/**
- * The renderer seam (weave-workspace §7.5).
- *
- * > `src/web/client/graph/renderer.ts` exposes a narrow interface — `mount`,
- * > `setGraph(nodes, edges, positions)`, `setHighlight(Set<id>)`, `onSelect`,
- * > `fit`, `destroy` — with `SigmaRenderer` as the only implementation. If
- * > sigma ever stops being the right answer, one file changes.
- *
- * That is handoff design goal #5 (decouple simulation / rendering /
- * interaction) satisfied *structurally* rather than by discipline. The column
- * above holds a {@link GraphRenderer} and never a `Sigma`; §8 keeps layout
- * correctness independent of the renderer entirely.
- *
- * ## Why `new Sigma(...)` is a parameter
- *
- * §10 forbids a DOM test environment, and sigma needs a canvas and a WebGL
- * context — so the naive shape of this file (interface, then a
- * `createSigmaRenderer` that calls `new Sigma`) is a file that reports **0 %
- * coverage as a whole**, because it cannot even be imported. Verified rather
- * than assumed: `import Sigma from "sigma"` evaluates
- * `WebGL2RenderingContext.BOOL` at module scope while building its default
- * program table, so the import alone is a `ReferenceError` in Node, before a
- * line of ours runs.
- *
- * That is a worse outcome than it looks. This repository's rule (§10, and
- * the browser coverage policy) is that *untestable lines* are kept to a handful,
- * not that untestable *files* are excluded — the one coverage exclusion that
- * exists is a type-only module, and a blanket `src/web/client/**` exclude is
- * explicitly "not acceptable". A whole renderer sitting outside the gate would
- * be exactly the erosion that rule prevents.
- *
- * So the dependency is inverted. {@link SigmaLike}
- * are the two-and-a-half-method port sigma satisfies structurally;
- * {@link sigmaRenderer} is the entire renderer written against the port, and
- * it is covered by ordinary unit tests with a recording fake. The only thing
- * that genuinely cannot be tested is the four-line adapter in
- * `renderer.dom.ts` that says `new Sigma(graph, container, settings)` — the
- * same shape, and the same reasoning, as `api.dom.ts` for `fetch` and
- * the DOM renderer seam for the browser canvas.
- *
- * §7.5's promise is unaffected. "One file changes" is still true, and it is
- * now true of a file with no branches in it.
- *
- * ## Tier rules (§2)
- *
- * `src/web/client/**`. This file imports no npm package at all, which is what
- * lets the root `tsconfig.json` project (no `DOM` lib) compile the tests that
- * import it.
- */
-
 import type { Point } from "../../shared/layout";
 import type { ColorScheme, EdgeDisplayOverride, GraphSettings, NodeDisplayOverride, RenderEdge, RenderGraph, RenderNode, ViewBox } from "./graph.model";
 import { edgeReducer, frameBox, graphSettings, nodeReducer } from "./graph.model";
 import type { ProjectedGraph } from "./project";
 import { positionsOf, project, syncPositions } from "./project";
-
-// --- the seam -------------------------------------------------------------------
-
-/**
- * The narrow interface §7.5 specifies.
- *
- * `setGraph` takes a {@link RenderGraph} rather than §7.5's literal
- * `(nodes, edges, positions)` triple, and that is the one deviation worth
- * naming. The triple would make every implementation re-derive colours, sizes
- * and labels from raw wire nodes — i.e. it would put the decisions §7.5 wants
- * decoupled *behind* the seam. Passing the already-decided model keeps the
- * argument list to one and the second implementation, if there ever is one,
- * honest.
- */
-export interface GraphRenderer {
-  /** Attach to a container. Idempotent: mounting twice is a no-op. */
-  mount(container: RenderContainer): void;
-  /** Replace the drawn graph. Safe before {@link mount}. */
-  setGraph(graph: RenderGraph): void;
-  /**
-   * Move nodes without rebuilding.
-   *
-   * Separate from {@link setGraph} because a re-run of the simulation over an
-   * unchanged node set is the common case (drag, expand, resize) and
-   * rebuilding would drop the camera and every WebGL buffer.
-   */
-  setPositions(positions: ReadonlyMap<string, Point>): void;
-  /**
-   * Dim everything outside this set (§7.4). `null` clears the highlight.
-   *
-   * `null` is not the empty set: nothing selected means everything renders
-   * normally, an empty neighbourhood means everything dims. See
-   * `graph.model.ts`'s `nodeReducer`.
-   */
-  setHighlight(highlight: ReadonlySet<string> | null): void;
-  /** Called with a node id on click, and with `null` on a click off any node. */
-  onSelect(handler: (id: string | null) => void): void;
-  /** Frame the whole graph. The `[fit]` control. */
-  fit(): void;
-  /** Current positions, for warm-starting a re-run. */
-  positions(): Map<string, Point>;
-  /** Called when the user starts dragging a node. */
-  onDragStart(handler: (id: string) => void): void;
-  /** Called with graph-space coordinates while a node is dragged. */
-  onDragMove(handler: (id: string, at: Point) => void): void;
-  /** Called when a node drag ends. */
-  onDragEnd(handler: (id: string) => void): void;
-  /** Tear down. Idempotent, and must leave no listener behind. */
-  destroy(): void;
-}
 
 /**
  * The container, as far as this seam is concerned.
@@ -110,8 +10,7 @@ export interface GraphRenderer {
  * Sigma wants an `HTMLElement`, and this file may not say so — a test
  * importing it drags the module into the **root** `tsconfig.json` project
  * (`exclude` filters the initial glob, not what an included file imports), and
- * that project has no `DOM` lib. The structural stand-in is the same trick
- * `cssvars.ts` and `api.ts` use; the one cast lives in
+ * that project has no `DOM` lib. The structural stand-in keeps this module DOM-free; the one cast lives in
  * `renderer.dom.ts`, which is compiled only by `tsconfig.web.json`.
  */
 export interface RenderContainer {
@@ -129,16 +28,6 @@ export interface RenderContainer {
 export type RendererFactory = (scheme: ColorScheme) => GraphRenderer;
 
 // --- the sigma port -----------------------------------------------------------------
-
-/**
- * The camera, as far as this module uses it.
- *
- * One method. `animatedReset` is what `[fit]` is (§7.4: "Pan / zoom / fit →
- * `camera.animatedReset()`").
- */
-export interface CameraLike {
-  animatedReset(): Promise<void>;
-}
 
 /**
  * The slice of `Sigma` this renderer drives.
@@ -174,17 +63,10 @@ export interface SigmaLike {
    */
   setCustomBBox(box: ViewBox | null): unknown;
   refresh(): unknown;
-  getCamera(): CameraLike;
+  getCamera(): { animatedReset(): Promise<void> };
   kill(): void;
 }
 
-/**
- * `new Sigma(graph, container, settings)`, as a port.
- *
- * The one line that cannot be tested, isolated behind a function type so that
- * everything *around* it can be. `renderer.dom.ts` is the four-line adapter
- * that supplies the real constructor.
- */
 // --- the implementation --------------------------------------------------------------
 
 /**
@@ -204,7 +86,7 @@ export interface SigmaLike {
 export function sigmaRenderer(
   create: (graph: ProjectedGraph, container: RenderContainer, settings: GraphSettings) => SigmaLike,
   scheme: ColorScheme,
-): GraphRenderer {
+) {
   let sigma: SigmaLike | null = null;
   let graph: ProjectedGraph = project({ nodes: [], edges: [] });
   let highlight: ReadonlySet<string> | null = null;
@@ -244,7 +126,7 @@ export function sigmaRenderer(
   };
 
   return {
-    mount(container) {
+    mount(container: RenderContainer) {
       if (sigma !== null) return;
       const instance = create(graph, container, graphSettings(scheme));
       // §1.3's context bus: a click writes `selectedId`, and the note column,
@@ -278,7 +160,7 @@ export function sigmaRenderer(
       sigma = instance;
     },
 
-    setGraph(next) {
+    setGraph(next: RenderGraph) {
       graph = project(next);
       sigma?.setGraph(graph);
       // Re-frame on a shape change: new nodes legitimately change the extent,
@@ -288,31 +170,31 @@ export function sigmaRenderer(
       sigma?.setCustomBBox(boxOf());
     },
 
-    setPositions(positions) {
+    setPositions(positions: ReadonlyMap<string, Point>) {
       syncPositions(graph, positions);
       // `refresh` re-reads the node attributes just written; `setGraph` would
       // rebuild every WebGL buffer and reset the camera.
       sigma?.refresh();
     },
 
-    setHighlight(next) {
+    setHighlight(next: ReadonlySet<string> | null) {
       highlight = next;
       if (sigma !== null) applyReducers(sigma);
     },
 
-    onSelect(handler) {
+    onSelect(handler: (id: string | null) => void) {
       select = handler;
     },
 
-    onDragStart(handler) {
+    onDragStart(handler: (id: string) => void) {
       dragStart = handler;
     },
 
-    onDragMove(handler) {
+    onDragMove(handler: (id: string, at: Point) => void) {
       dragMove = handler;
     },
 
-    onDragEnd(handler) {
+    onDragEnd(handler: (id: string) => void) {
       dragEnd = handler;
     },
 
@@ -335,3 +217,5 @@ export function sigmaRenderer(
     },
   };
 }
+
+export type GraphRenderer = ReturnType<typeof sigmaRenderer>;

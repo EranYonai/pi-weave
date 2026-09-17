@@ -130,9 +130,3 @@ export function saveLayout(storage: LayoutStorage, state: LayoutState): boolean 
   try { storage.setItem(LAYOUT_STORAGE_KEY, serializeLayout(state)); return true; }
   catch { return false; }
 }
-
-export function columnVar(column: ColumnId): string { return `--weave-col-${column}`; }
-export function columnValue(width: number): string { return `${Math.round(width)}px`; }
-export function columnVars(resolved: readonly ResolvedColumn[]): readonly (readonly [string, string])[] {
-  return resolved.map((column) => [columnVar(column.id), columnValue(column.width)] as const);
-}
