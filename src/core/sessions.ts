@@ -116,7 +116,6 @@ export async function listSessionFiles(
   if (rootStat.isFile()) {
     return [{ path: root, name: basename(root), bytes: rootStat.size, mtimeMs: rootStat.mtimeMs }];
   }
-  if (!rootStat.isDirectory()) return [];
   let entries: Dirent<string>[];
   try {
     entries = await fs.readdir(root, { withFileTypes: true });
@@ -861,8 +860,9 @@ export async function runSessionScan(options: SessionScanOptions): Promise<Sessi
     hash: string;
     header: SessionHeader;
     pointer: SessionNotePointer | undefined;
+    /** Set together: parsed/opaque digest and the text handed to the model. */
     digest: SessionDigest | null;
-    content: string | null;
+    content: string;
   }
   const candidates: Candidate[] = [];
 
@@ -885,7 +885,7 @@ export async function runSessionScan(options: SessionScanOptions): Promise<Sessi
     const pointer = noteIndex.get(header.id);
     if (pointer && pointer.hash === hash) {
       result.skippedFresh += 1;
-      candidates.push({ file, hash, header, pointer, digest: null, content: null });
+      candidates.push({ file, hash, header, pointer, digest: null, content: "" });
       continue;
     }
     if ((parsed === null && (text.trim() === "" || buf.includes(0))) || (parsed !== null && !sessionHasContent(digest))) {
@@ -935,7 +935,7 @@ export async function runSessionScan(options: SessionScanOptions): Promise<Sessi
     onProgress?.({ current: index + 1, total: changed.length, path: candidate.file.name });
     const digest = candidate.digest as SessionDigest;
     try {
-      const summary = (await options.summarize({ path: candidate.file.path, content: candidate.content ?? renderSessionDigest(digest) })).trim();
+      const summary = (await options.summarize({ path: candidate.file.path, content: candidate.content })).trim();
       if (summary.length === 0) throw new Error("model returned an empty summary");
       await writeSessionNote(options.vaultRoot, {
         digest,
