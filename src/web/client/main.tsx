@@ -13,6 +13,7 @@
 import { render } from "preact";
 import { BOOTSTRAP_ELEMENT_ID } from "../shared/wire";
 import { readBootstrap } from "./bootstrap";
+import { forcesFlag } from "./graph/tuner.model";
 import { Shell } from "./shell/Shell";
 import { installTheme } from "./shell/theme";
 import { loadTheme, themeAttr } from "./shell/theme.model";
@@ -28,7 +29,17 @@ if (host !== null) {
   // writes nothing — the media query already answered.
   applyPrePaintTheme();
   const boot = readBootstrap(document.getElementById(BOOTSTRAP_ELEMENT_ID)?.textContent ?? null);
-  render(<Shell cwd={boot.cwd} initialWidth={window.innerWidth} platform={navigator.platform} />, host);
+  render(
+    <Shell
+      cwd={boot.cwd}
+      initialWidth={window.innerWidth}
+      platform={navigator.platform}
+      // The fourth DOM read that cannot be injected further up. `forcesFlag`
+      // owns the parsing, so this stays a read and the decision stays tested.
+      tuner={forcesFlag(window.location.search)}
+    />,
+    host,
+  );
 }
 
 /** Apply the stored theme choice to `<html>` synchronously, pre-render. */

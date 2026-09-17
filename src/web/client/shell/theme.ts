@@ -511,7 +511,7 @@ body{font-size:var(--weave-px-base)}
    the \`1fr\` row from \`.weave-col-graph\` above — a zero-height container makes
    sigma refuse to render (we pass \`allowInvalidContainer\`, so it degrades to
    blank rather than throwing). */
-.weave-graph{display:grid;grid-template-rows:1fr auto auto;min-height:0;overflow:hidden}
+.weave-graph{display:grid;grid-template-rows:1fr auto auto;min-height:0;overflow:hidden;position:relative}
 .weave-graph-canvas{min-height:120px;min-width:0;position:relative;overflow:hidden}
 /* A barely-there vignette, so the stage reads as a lit surface rather than a
    flat void. Sigma clears its WebGL layers transparent (no background colour
@@ -558,6 +558,30 @@ body{font-size:var(--weave-px-base)}
 .weave-graph-count{
   margin:0;padding:3px var(--weave-gutter);font-size:var(--weave-px-caption);color:var(--weave-faint);
   border-top:1px solid var(--weave-line);
+}
+
+/* the hidden force tuner (?forces=1, docs/weave-workspace.md 15.7) --------- */
+/* Absolutely positioned over the canvas rather than given a grid row: the
+   panel is a debug overlay and must not change the layout the graph is being
+   judged in — moving the canvas while tuning it would falsify the very thing
+   being looked at. */
+.weave-tuner{
+  position:absolute;top:8px;right:8px;z-index:3;width:232px;max-height:calc(100% - 16px);
+  overflow:auto;display:flex;flex-direction:column;gap:6px;padding:9px 10px;
+  font-size:var(--weave-px-caption);color:var(--weave-fg);
+  background:var(--weave-panel);border:1px solid var(--weave-line-strong);
+  border-radius:var(--weave-radius);
+}
+.weave-tuner-title{margin:0;color:var(--weave-faint);letter-spacing:.04em;text-transform:uppercase}
+.weave-tuner-row{display:flex;flex-direction:column;gap:2px;cursor:pointer}
+.weave-tuner-label{display:flex;justify-content:space-between;gap:8px;color:var(--weave-dim)}
+.weave-tuner-label b{color:var(--weave-accent);font-weight:600;font-variant-numeric:tabular-nums}
+.weave-tuner-row input{width:100%;margin:0;accent-color:var(--weave-accent)}
+.weave-tuner-actions{display:flex;gap:6px;margin-top:2px}
+.weave-tuner-snippet{
+  margin:0;padding:6px;overflow:auto;white-space:pre;color:var(--weave-faint);
+  background:var(--weave-bg);border:1px solid var(--weave-line);border-radius:var(--weave-radius);
+  font-size:var(--weave-px-prov);line-height:1.45;
 }
 
 /* context rail ---------------------------------------------------------- */

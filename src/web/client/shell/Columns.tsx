@@ -65,6 +65,8 @@ export interface ColumnsProps {
   bootFailed: boolean;
   /** Slot the graph column fills with its `fit`, for the global `g` key. */
   fit: { current: (() => void) | null };
+  /** `?forces=1` — the hidden force tuner (docs/weave-workspace.md §15.7). */
+  tuner: boolean;
 }
 
 /** One column: a titled region and whichever surface fills it. */
@@ -95,6 +97,7 @@ function Column({ id, props }: { id: ColumnId; props: ColumnsProps }) {
           scheme={props.scheme}
           bootFailed={props.bootFailed}
           fit={props.fit}
+          tuner={props.tuner}
         />
       ) : null}
       {id === "graph" ? <ContextRail graph={props.graph} selectedId={props.selectedId} onSelect={props.onSelect} /> : null}

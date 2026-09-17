@@ -52,6 +52,8 @@ import type { SchemeHost } from "./scheme";
 import type { ColorScheme } from "./graph.model";
 import { createGraphSimulation } from "./dynamics";
 import type { GraphSimulation } from "./dynamics";
+import { ForceTuner } from "./ForceTuner";
+import { POSITIONS_STORAGE_KEY } from "./positions";
 
 export interface GraphProps {
   graph: GraphPayload | null;
@@ -88,6 +90,14 @@ export interface GraphProps {
    * keeps the ownership where it is and costs one line at each end.
    */
   fit: { current: (() => void) | null };
+  /**
+   * Show the hidden force tuner (`?forces=1`, docs/weave-workspace.md §15.7).
+   *
+   * A prop rather than a `location.search` read here, for the same reason
+   * `cwd` and `platform` are props: the decision is `forcesFlag`'s, and it is
+   * testable where a `location` read is not.
+   */
+  tuner?: boolean;
 }
 
 export function Graph(props: GraphProps) {
@@ -120,6 +130,13 @@ export function Graph(props: GraphProps) {
   // `null` means "the user has not touched the expansion" — not "nothing is
   // expanded". `effectiveView` resolves the difference; see its doc comment.
   const [state, setState] = useState<GraphViewState | null>(null);
+  /**
+   * Bumped by the tuner after each write to `FORCES`. It enters the model memo
+   * below purely as a cache-buster: the graph's *shape* has not changed, so
+   * nothing else would recompute, and the whole point is that the same shape
+   * now lays out differently.
+   */
+  const [forceRev, setForceRev] = useState(0);
 
   // The shell's decision wins; `schemeOf` stays for a host-driven default.
   const scheme = props.scheme ?? schemeOf(props.host);
@@ -134,7 +151,7 @@ export function Graph(props: GraphProps) {
   // comparing set contents, the memo makes comparison unnecessary.
   const model = useMemo(
     () => graphColumnModel(props.graph, props.selectedId, view, props.storage, scheme, props.bootFailed),
-    [props.graph, props.selectedId, view, props.storage, scheme, props.bootFailed],
+    [props.graph, props.selectedId, view, props.storage, scheme, props.bootFailed, forceRev],
   );
   const everything = allExpanded(view, model.clusters);
 
@@ -186,7 +203,7 @@ export function Graph(props: GraphProps) {
 
   useEffect(() => {
     renderer.current?.setGraph(model.graph);
-  }, [model.key]);
+  }, [model.key, forceRev]);
 
   // Live layout, in two effects so pause/resume and re-layout are independent.
   //
@@ -202,7 +219,7 @@ export function Graph(props: GraphProps) {
     return () => {
       dynamics.current = null;
     };
-  }, [model.key, armClock]);
+  }, [model.key, armClock, forceRev]);
 
   // Effect 2 owns the clock's unmount cleanup: the engine's own lifecycle is
   // effect 1's, and the step self-terminates whenever the engine settles, so
@@ -229,6 +246,24 @@ export function Graph(props: GraphProps) {
       {/* `tabIndex={-1}` is the `⌘3` focus target — see `Note.tsx`'s matching
           comment. The tree's target is the rows `<ul>`, which has its own. */}
       <div class="weave-graph-canvas" ref={canvas} role="img" aria-label="Knowledge graph" tabIndex={-1} />
+      {props.tuner === true ? (
+        <ForceTuner
+          onChange={() => {
+            // Poison the stored layout rather than reading it: the cache is
+            // keyed by graph *shape*, which a force change does not touch, so
+            // a hit would hand back the arrangement of the previous constants
+            // and the sliders would appear to do nothing. An unparseable entry
+            // is a miss by `deserializePositions`' contract, and the two-method
+            // `PositionStorage` port has no `removeItem` to call instead.
+            try {
+              props.storage.setItem(POSITIONS_STORAGE_KEY, "");
+            } catch {
+              // A storage that refuses writes still lays out; see `savePositions`.
+            }
+            setForceRev((n) => n + 1);
+          }}
+        />
+      ) : null}
       <div class="weave-graph-controls">
         <button type="button" class="weave-chip" title={FIT_HINT} onClick={() => renderer.current?.fit()}>
           {FIT_LABEL}

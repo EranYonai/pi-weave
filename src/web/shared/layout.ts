@@ -34,12 +34,67 @@ export function collideRadius(drawnSize: number): number {
 const DEFAULT_TICKS = 300;
 const DEFAULT_SEED = 1;
 const ALPHA_MIN = 0.001;
-const CONTAINS_REST = 90;
-const CONTAINS_STRENGTH = 0.02;
-const RELATION_DISTANCE = 170;
-const RELATION_STRENGTH = 0.05;
-const CHARGE_STRENGTH = -50;
-const CENTER_STRENGTH = 0.09;
+
+/**
+ * The force constants, as one **mutable** record.
+ *
+ * Mutable because picking these numbers is an act of taste, not of
+ * derivation: the difference between "one hairball" and "legible groups" is a
+ * ratio between containment cohesion, charge and centre gravity that is far
+ * easier to *see* than to reason about. The hidden tuner (`?forces=1`, see
+ * `client/graph/tuner.model.ts` and docs/weave-workspace.md §15.7) writes here
+ * and re-lays out live, so a human can find the values by eye and they then
+ * get frozen back into {@link FORCE_DEFAULTS}.
+ *
+ * Determinism is untouched: every production and test path only ever *reads*
+ * this, so `computeLayout(model, { seed })` stays byte-identical. The tuner is
+ * the one writer, and it is unreachable without the query flag.
+ *
+ * ponytail: module-level mutable state, fine at one graph per page — thread it
+ * as a `LayoutOptions` field if a second concurrent consumer ever appears.
+ */
+export interface ForceConstants {
+  /** Rest length of a `contains` / `anchored-at` spring: a rosette's radius. */
+  containsRest: number;
+  /** Stiffness of that spring. This is what makes a group *be* a group. */
+  containsStrength: number;
+  /** Rest length of a `links-to` / `mentions` spring: the inter-group reach. */
+  relationDistance: number;
+  /** Stiffness of that spring. Weak, so associations bend without merging. */
+  relationStrength: number;
+  /** `forceManyBody` strength. Negative is repulsion. */
+  charge: number;
+  /**
+   * Distance past which charge is ignored (`forceManyBody.distanceMax`).
+   *
+   * A cap rather than `Infinity` is what keeps a strong charge from simply
+   * inflating the whole graph uniformly: beyond it, neighbours stop pushing
+   * and only the springs and centre gravity speak, so groups separate at
+   * local scale without the picture growing without bound.
+   */
+  chargeMax: number;
+  /** `forceX`/`forceY` pull toward the origin. The no-escape guarantee. */
+  center: number;
+}
+
+/** The live constants. See {@link ForceConstants} for why this is mutable. */
+export const FORCES: ForceConstants = {
+  containsRest: 90,
+  containsStrength: 0.02,
+  relationDistance: 170,
+  relationStrength: 0.05,
+  charge: -50,
+  chargeMax: Infinity,
+  center: 0.09,
+};
+
+/** The shipped values, for the tuner's reset and for a test to restore from. */
+export const FORCE_DEFAULTS: Readonly<ForceConstants> = { ...FORCES };
+
+/** Overwrite the live constants in place. The tuner's one write. */
+export function setForces(next: Partial<ForceConstants>): void {
+  Object.assign(FORCES, next);
+}
 
 export function isContainment(kind: EdgeKind): boolean {
   return kind === "contains" || kind === "anchored-at";
@@ -94,17 +149,19 @@ export function createForceSimulation<N extends SimulationNodeDatum & { id: stri
 ): Simulation<N, undefined> {
   const link = forceLink<N, { source: string | N; target: string | N; kind: EdgeKind }>(opts.links)
     .id((node) => node.id)
-    .distance((edge) => (isContainment(edge.kind) ? CONTAINS_REST : RELATION_DISTANCE))
-    .strength((edge) => (isContainment(edge.kind) ? CONTAINS_STRENGTH : RELATION_STRENGTH))
+    .distance((edge) => (isContainment(edge.kind) ? FORCES.containsRest : FORCES.relationDistance))
+    .strength((edge) => (isContainment(edge.kind) ? FORCES.containsStrength : FORCES.relationStrength))
     .iterations(2);
 
+  // Read out of `FORCES` here, at construction: a simulation is built fresh
+  // per layout run and per live mount, so a tuner write lands on the next one.
   return forceSimulation<N>(opts.nodes)
     .randomSource(lcg(opts.seed ?? DEFAULT_SEED))
-    .force("charge", forceManyBody<N>().strength(CHARGE_STRENGTH))
+    .force("charge", forceManyBody<N>().strength(FORCES.charge).distanceMax(FORCES.chargeMax))
     .force("link", link)
     .force("collide", forceCollide<N>((node) => node.r ?? COLLIDE_RADIUS).strength(1))
-    .force("x", forceX<N>(0).strength(CENTER_STRENGTH))
-    .force("y", forceY<N>(0).strength(CENTER_STRENGTH))
+    .force("x", forceX<N>(0).strength(FORCES.center))
+    .force("y", forceY<N>(0).strength(FORCES.center))
     .stop();
 }
 
