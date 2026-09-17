@@ -45,7 +45,7 @@ const MAX_OUTPUT_TOKENS = 220;
 const REQUEST_TIMEOUT_MS = 30_000;
 
 /**
- * The shared model wiring behind the deep scan: resolve the session's
+ * Shared model wiring for deep and session scans: resolve the session's
  * already-configured model — no
  * extra keys or providers (docs/scan-modes.md) — drive completion through
  * `ctx.modelRegistry`, which owns auth, and reject empty outputs so a
