@@ -25,6 +25,7 @@ import {
   TREE_LABEL,
   collapse,
   cycleProvenance,
+  deletesSelection,
   depthVar,
   dropFolder,
   expand,
@@ -256,6 +257,14 @@ describe("tree mutations", () => {
     expect(dropFolder("vault")).toBeNull();
     expect(dropFolder("vfolder:plans")).toBe("plans");
     expect(dropFolder("note:a")).toBeUndefined();
+  });
+
+  it("identifies selections removed by a delete", () => {
+    expect(deletesSelection("note:plans/a", { type: "note", path: "plans/a" })).toBe(true);
+    expect(deletesSelection("note:plans/a", { type: "folder", path: "plans" })).toBe(true);
+    expect(deletesSelection("vfolder:plans/nested", { type: "folder", path: "plans" })).toBe(true);
+    expect(deletesSelection("note:other", { type: "folder", path: "plans" })).toBe(false);
+    expect(deletesSelection(null, { type: "note", path: "plans/a" })).toBe(false);
   });
 });
 

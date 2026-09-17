@@ -867,6 +867,16 @@ describe("vault tree mutations", () => {
     expect((await post(server, "/api/folder/missing/rename", { name: "x" })).status).toBe(404);
     expect((await del(server, "/api/folder/missing")).status).toBe(404);
   });
+
+  it("deletes notes and folders whose final path segment looks like an action", async () => {
+    const { server, vaultRoot } = await bootFresh();
+    await fs.mkdir(join(vaultRoot, "notes", "archive"));
+    await writeNoteFile(vaultRoot, "archive/rename", ["title: Rename", "source: human"], "body");
+    await fs.mkdir(join(vaultRoot, "notes", "rename"));
+
+    expect((await del(server, "/api/note/archive%2Frename")).status).toBe(200);
+    expect((await del(server, "/api/folder/rename")).status).toBe(200);
+  });
 });
 
 // --- okf files -----------------------------------------------------------------------

@@ -99,7 +99,7 @@ export function resolveNotePath(root: string, slug: string): string | null {
  */
 export async function addNote(root: string, input: AddNoteInput): Promise<Note> {
   await ensureVault(root);
-  return withNoteLocks([join(root, NOTES_DIR)], async () => {
+  return withVaultLock(root, async () => {
     const now = (input.now ?? new Date()).toISOString();
     const base = slugify(input.title);
     const slug = uniqueSlug(base, (candidate) => existsSync(notePath(root, candidate)));
@@ -183,18 +183,12 @@ async function writeNote(
 const LOCK_NS = "vault:note:";
 
 /**
- * Run `task` with exclusive access to every given note path.
- *
- * Paths are locked in a fixed order so callers that need multiple locks cannot
- * deadlock. Every mutation in this module goes through here, keeping appends
- * and finalization serialized with one another.
+ * Run `task` with exclusive mutation access to this vault.
  */
-function withNoteLocks<T>(paths: readonly string[], task: () => Promise<T>): Promise<T> {
-  const ordered = [...new Set(paths)].sort();
-  return ordered.reduceRight<() => Promise<T>>(
-    (inner, path) => () => withMutationQueue(LOCK_NS + path, inner),
-    task,
-  )();
+function withVaultLock<T>(root: string, task: () => Promise<T>): Promise<T> {
+  // ponytail: one vault-wide lock is enough for a local notepad; use
+  // hierarchical locks only if independent-note write throughput matters.
+  return withMutationQueue(LOCK_NS + join(root, NOTES_DIR), task);
 }
 
 /** Options for {@link appendToNote}. */
@@ -219,7 +213,7 @@ export async function appendToNote(
 ): Promise<Note | null> {
   const path = resolveNotePath(root, slug);
   if (!path) return null;
-  return withNoteLocks([path], async () => {
+  return withVaultLock(root, async () => {
     const note = await getNote(root, slug);
     if (!note) return null;
     const tail = extractRawTail(note.body);
@@ -326,7 +320,7 @@ export async function finalizeNote(
 ): Promise<Note | null> {
   const path = resolveNotePath(root, slug);
   if (!path) return null;
-  return withNoteLocks([path], async () => {
+  return withVaultLock(root, async () => {
     const note = await getNote(root, slug);
     if (!note) return null;
     const rawTail = extractRawTail(note.body);
@@ -377,7 +371,7 @@ export async function renameNote(root: string, slug: string, name: string, now =
   const target = [...(parent === "" ? [] : [parent]), slugify(title)].join("/");
   const to = resolveNotePath(root, target);
   if (to === null) return { ok: false, reason: "invalid" };
-  return withNoteLocks([from, to], async () => {
+  return withVaultLock(root, async () => {
     const note = await getNote(root, slug);
     if (note === null) return { ok: false, reason: "missing" };
     if (from !== to && await exists(to)) return { ok: false, reason: "collision" };
@@ -396,7 +390,7 @@ export async function moveNote(root: string, slug: string, folder: string | null
   const target = folder === null ? basename(slug) : `${folder}/${basename(slug)}`;
   const to = resolveNotePath(root, target);
   if (to === null) return { ok: false, reason: "invalid" };
-  return withNoteLocks([from, to], async () => {
+  return withVaultLock(root, async () => {
     if (!(await exists(from))) return { ok: false, reason: "missing" };
     if (from === to) return { ok: true, slug };
     if (await exists(to)) return { ok: false, reason: "collision" };
@@ -409,7 +403,7 @@ export async function moveNote(root: string, slug: string, folder: string | null
 export async function deleteNote(root: string, slug: string): Promise<VaultMutationResult> {
   const path = resolveNotePath(root, slug);
   if (path === null) return { ok: false, reason: "invalid" };
-  return withNoteLocks([path], async () => {
+  return withVaultLock(root, async () => {
     if (!(await exists(path))) return { ok: false, reason: "missing" };
     await fs.unlink(path);
     return { ok: true };
@@ -425,7 +419,7 @@ export async function renameFolder(root: string, folder: string, name: string): 
   const target = [...(parent === "" ? [] : [parent]), slugify(title)].join("/");
   const to = resolveFolderPath(root, target);
   if (to === null) return { ok: false, reason: "invalid" };
-  return withNoteLocks([from, to], async () => {
+  return withVaultLock(root, async () => {
     if (!(await isDirectory(from))) return { ok: false, reason: "missing" };
     if (from !== to && await exists(to)) return { ok: false, reason: "collision" };
     if (from !== to) await fs.rename(from, to);
@@ -437,7 +431,7 @@ export async function renameFolder(root: string, folder: string, name: string): 
 export async function deleteFolder(root: string, folder: string): Promise<VaultMutationResult> {
   const path = resolveFolderPath(root, folder);
   if (path === null) return { ok: false, reason: "invalid" };
-  return withNoteLocks([path], async () => {
+  return withVaultLock(root, async () => {
     if (!(await isDirectory(path))) return { ok: false, reason: "missing" };
     await fs.rm(path, { recursive: true });
     return { ok: true };

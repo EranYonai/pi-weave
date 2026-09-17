@@ -1,7 +1,7 @@
 import { promises as fs } from "node:fs";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
-import { addNote, deleteFolder, deleteNote, getNote, moveNote, renameFolder, renameNote } from "../../src/core/vault";
+import { addNote, appendToNote, deleteFolder, deleteNote, getNote, moveNote, renameFolder, renameNote } from "../../src/core/vault";
 import { makeTempDir } from "../helpers";
 
 describe("vault mutations", () => {
@@ -55,5 +55,26 @@ describe("vault mutations", () => {
     expect(await deleteFolder(root, "done-work")).toEqual({ ok: true });
     expect(await deleteFolder(root, "done-work")).toEqual({ ok: false, reason: "missing" });
     expect(await deleteFolder(root, "../escape")).toEqual({ ok: false, reason: "invalid" });
+  });
+
+  it("serializes folder mutations with descendant note writes", async () => {
+    const root = await makeTempDir();
+    const note = await addNote(root, { title: "Note", body: "before" });
+    await fs.mkdir(join(root, "notes", "work"));
+    await moveNote(root, note.slug, "work");
+
+    await Promise.all([
+      appendToNote(root, "work/note", "after"),
+      renameFolder(root, "work", "done"),
+    ]);
+
+    expect(await getNote(root, "work/note")).toBeNull();
+    expect((await getNote(root, "done/note"))?.body).toContain("after");
+
+    await Promise.all([
+      appendToNote(root, "done/note", "last"),
+      deleteFolder(root, "done"),
+    ]);
+    expect(await getNote(root, "done/note")).toBeNull();
   });
 });

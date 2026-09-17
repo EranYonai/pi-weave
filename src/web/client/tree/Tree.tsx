@@ -14,6 +14,7 @@ import {
   TREE_LABEL,
   treeActiveDescendant,
   cycleProvenance,
+  deletesSelection,
   depthVar,
   dropFolder,
   initialTreeView,
@@ -99,11 +100,12 @@ export function Tree(props: TreeProps) {
   const [editing, setEditing] = useState<{ id: string; label: string; value: string } | null>(null);
   const rows = rowsFor(props.graph, state);
   const empty = treeEmptyMessage(props.graph, rows, state);
-  const run = async (pending: ReturnType<typeof deleteNote>): Promise<void> => {
+  const run = async (pending: ReturnType<typeof deleteNote>, select?: string): Promise<void> => {
     const result = await pending;
     if (!result.ok) window.alert(result.message);
     else {
-      if (result.data.id !== undefined) props.onSelect(result.data.id);
+      const id = result.data.id ?? select;
+      if (id !== undefined) props.onSelect(id);
       props.onRefresh();
     }
   };
@@ -115,7 +117,7 @@ export function Tree(props: TreeProps) {
     if (action === "rename") {
       setEditing({ id: menu.id, label: menu.label, value: menu.label });
     } else if (window.confirm(`Permanently delete ${target.type} “${menu.label}”${target.type === "folder" ? " and everything inside it" : ""}?`)) {
-      await run(target.type === "note" ? deleteNote(fetchJson, target.path) : deleteFolder(fetchJson, target.path));
+      await run(target.type === "note" ? deleteNote(fetchJson, target.path) : deleteFolder(fetchJson, target.path), deletesSelection(props.selectedId, target) ? "vault" : undefined);
     }
   };
   return (
@@ -134,7 +136,7 @@ export function Tree(props: TreeProps) {
       </div>
       {empty === null ? (
         <ul class="weave-rows" role="tree" tabIndex={0} aria-label={TREE_LABEL} aria-activedescendant={treeActiveDescendant(rows, props.selectedId) ?? undefined}>
-          {rowViews(rows, props.selectedId, props.now).map((view) => <Row key={view.id} view={view} recentIds={props.recentIds} edit={editing?.id === view.id ? editing.value : null} onEdit={(value) => setEditing((current) => current === null ? null : { ...current, value })} onRename={(value) => { const current = editing; setEditing(null); const target = current === null ? null : mutableTreeRow(current.id); const name = value?.trim(); if (target !== null && name && name !== current?.label) void run(target.type === "note" ? renameNote(fetchJson, target.path, name) : renameFolder(fetchJson, target.path, name)); }} onSelect={() => { props.onSelect(view.id); if (view.hasKids) setState((current) => toggleExpanded(current, view.id)); }} onToggle={() => setState(toggleExpanded(state, view.id))} onMenu={(x, y) => setMenu({ id: view.id, label: view.label, x, y })} onDrop={(dragged) => { const folder = dropFolder(view.id); if (dragged.startsWith("note:") && folder !== undefined) void run(moveNote(fetchJson, dragged.slice("note:".length), folder)); }} />)}
+          {rowViews(rows, props.selectedId, props.now).map((view) => <Row key={view.id} view={view} recentIds={props.recentIds} edit={editing?.id === view.id ? editing.value : null} onEdit={(value) => setEditing((current) => current === null ? null : { ...current, value })} onRename={(value) => { const current = editing; setEditing(null); const target = current === null ? null : mutableTreeRow(current.id); const name = value?.trim(); const label = current?.label; if (target !== null && name && label !== undefined && name !== label && window.confirm(`Rename “${label}”? Existing links to it may break.`)) void run(target.type === "note" ? renameNote(fetchJson, target.path, name) : renameFolder(fetchJson, target.path, name)); }} onSelect={() => { props.onSelect(view.id); if (view.hasKids) setState((current) => toggleExpanded(current, view.id)); }} onToggle={() => setState(toggleExpanded(state, view.id))} onMenu={(x, y) => setMenu({ id: view.id, label: view.label, x, y })} onDrop={(dragged) => { const folder = dropFolder(view.id); if (dragged.startsWith("note:") && folder !== undefined) void run(moveNote(fetchJson, dragged.slice("note:".length), folder)); }} />)}
         </ul>
       ) : <p class="weave-tree-empty">{empty}</p>}
       <p class="weave-tree-count">{rowCountLabel(rows)}</p>

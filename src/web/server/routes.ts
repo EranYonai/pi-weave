@@ -548,12 +548,12 @@ async function routeNote(
     await sendNote(deps, target, res);
     return true;
   }
-  const action = target.endsWith("/rename") ? "rename" : target.endsWith("/move") ? "move" : null;
-  const slug = action === null ? target : target.slice(0, -(action.length + 1));
-  if (method === "DELETE" && action === null) {
-    sendMutation(res, await deleteNote(deps.vaultRoot, slug));
+  if (method === "DELETE") {
+    sendMutation(res, await deleteNote(deps.vaultRoot, target));
     return true;
   }
+  const action = target.endsWith("/rename") ? "rename" : target.endsWith("/move") ? "move" : null;
+  const slug = action === null ? target : target.slice(0, -(action.length + 1));
   if (method === "POST" && action !== null) {
     const body = await readJsonBody(req);
     if (typeof body !== "object" || body === null) {
@@ -575,12 +575,12 @@ async function routeNote(
 }
 
 async function routeFolder(deps: RouteDeps, method: string, target: string, req: IncomingMessage, res: ServerResponse): Promise<boolean> {
-  const isRename = target.endsWith("/rename");
-  const path = isRename ? target.slice(0, -"/rename".length) : target;
-  if (method === "DELETE" && !isRename) {
-    sendMutation(res, await deleteFolder(deps.vaultRoot, path));
+  if (method === "DELETE") {
+    sendMutation(res, await deleteFolder(deps.vaultRoot, target));
     return true;
   }
+  const isRename = target.endsWith("/rename");
+  const path = isRename ? target.slice(0, -"/rename".length) : target;
   if (method === "POST" && isRename) {
     const body = await readJsonBody(req);
     const name = typeof body === "object" && body !== null ? (body as { name?: unknown }).name : undefined;
