@@ -158,6 +158,13 @@ function post(server: WorkspaceServer, path: string, body: unknown): Promise<Res
   });
 }
 
+function del(server: WorkspaceServer, path: string): Promise<Response> {
+  return fetch(server.url + path, {
+    method: "DELETE",
+    headers: { cookie: `${DEFAULT_COOKIE_NAME}=${TOKEN}`, origin: server.url },
+  });
+}
+
 /** No credentials at all — the shape a local prober or a rebound page sends. */
 function raw(server: WorkspaceServer, path: string, init: RequestInit = {}): Promise<Response> {
   return fetch(server.url + path, init);
@@ -833,6 +840,42 @@ describe("GET /api/note/:slug", () => {
       const res = await get(server, "/api/note/..%2f..%2fetc%2fhosts");
       expect(res.status).toBe(404);
     });
+  });
+});
+
+describe("vault tree mutations", () => {
+  it("renames, moves, and deletes notes and folders", async () => {
+    const { server, vaultRoot } = await bootFresh();
+    await fs.mkdir(join(vaultRoot, "notes", "archive"));
+
+    let res = await post(server, "/api/note/alpha-note/rename", { name: "Renamed" });
+    expect(await res.json()).toEqual({ ok: true, id: "note:renamed" });
+    res = await post(server, "/api/note/renamed/move", { folder: "archive" });
+    expect(await res.json()).toEqual({ ok: true, id: "note:archive/renamed" });
+    res = await post(server, "/api/folder/archive/rename", { name: "Filed" });
+    expect(await res.json()).toEqual({ ok: true, id: "vfolder:filed" });
+    expect((await get(server, "/api/note/filed%2Frenamed")).status).toBe(200);
+    expect((await del(server, "/api/note/filed%2Frenamed")).status).toBe(200);
+    expect((await del(server, "/api/folder/filed")).status).toBe(200);
+  });
+
+  it("rejects malformed and missing mutation targets", async () => {
+    const { server } = await bootFresh();
+    expect((await post(server, "/api/note/alpha-note/rename", {})).status).toBe(400);
+    expect((await post(server, "/api/note/alpha-note/move", { folder: 1 })).status).toBe(400);
+    expect((await del(server, "/api/note/missing")).status).toBe(404);
+    expect((await post(server, "/api/folder/missing/rename", { name: "x" })).status).toBe(404);
+    expect((await del(server, "/api/folder/missing")).status).toBe(404);
+  });
+
+  it("deletes notes and folders whose final path segment looks like an action", async () => {
+    const { server, vaultRoot } = await bootFresh();
+    await fs.mkdir(join(vaultRoot, "notes", "archive"));
+    await writeNoteFile(vaultRoot, "archive/rename", ["title: Rename", "source: human"], "body");
+    await fs.mkdir(join(vaultRoot, "notes", "rename"));
+
+    expect((await del(server, "/api/note/archive%2Frename")).status).toBe(200);
+    expect((await del(server, "/api/folder/rename")).status).toBe(200);
   });
 });
 

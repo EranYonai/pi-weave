@@ -7,6 +7,11 @@
  * | GET    | `/app.js`                | the committed bundle, `Cache-Control: no-store` |
  * | GET    | `/api/graph`             | {@link GraphPayload}, ETag'd on `stamp`      |
  * | GET    | `/api/note/:slug`        | {@link NotePayload}                          |
+ * | POST   | `/api/note/:slug/rename` | rename a vault note                          |
+ * | POST   | `/api/note/:slug/move`   | move a vault note                            |
+ * | DELETE | `/api/note/:slug`        | delete a vault note                          |
+ * | POST   | `/api/folder/:path/rename` | rename a vault folder                      |
+ * | DELETE | `/api/folder/:path`      | delete a vault folder                        |
  * | GET    | `/api/okf/:rel`          | {@link OkfFilePayload}                       |
  * | GET    | `/api/artifact/:rel`     | sandboxed HTML artifact                     |
  * | GET    | `/api/search?q=`         | {@link SearchPayload}                        |
@@ -45,7 +50,8 @@ import { readOkfFileForView } from "../../core/graph/current";
 import type { GraphModel as CoreGraphModel } from "../../core/graph/model";
 import { openNoteInEditor } from "../../core/openInEditor";
 import type { Note } from "../../core/types";
-import { getNote, resolveHtmlPath, searchNotes } from "../../core/vault";
+import type { VaultMutationResult } from "../../core/vault";
+import { deleteFolder, deleteNote, getNote, moveNote, renameFolder, renameNote, resolveHtmlPath, searchNotes } from "../../core/vault";
 import { deriveTagIndex, type TaggedNote } from "../../core/view/links";
 import type {
   GraphPayload,
@@ -367,8 +373,12 @@ async function route(
   if (method === "GET" && path === "/") return sendShell(deps, res);
   if (method === "GET" && path === "/app.js") return sendBundle(deps, res);
   if (method === "GET" && path === "/api/graph") return sendGraph(deps, req, res);
+  if (path.startsWith("/api/folder/")) {
+    const handled = await routeFolder(deps, method, path.slice("/api/folder/".length), req, res);
+    if (handled) return;
+  }
   if (path.startsWith("/api/note/")) {
-    const handled = await routeNote(deps, method, path.slice("/api/note/".length), res);
+    const handled = await routeNote(deps, method, path.slice("/api/note/".length), req, res);
     if (handled) return;
   }
   if (method === "GET" && path.startsWith("/api/okf/")) {
@@ -531,13 +541,64 @@ async function routeNote(
   deps: RouteDeps,
   method: string,
   target: string,
+  req: IncomingMessage,
   res: ServerResponse,
 ): Promise<boolean> {
   if (method === "GET") {
     await sendNote(deps, target, res);
     return true;
   }
+  if (method === "DELETE") {
+    sendMutation(res, await deleteNote(deps.vaultRoot, target));
+    return true;
+  }
+  const action = target.endsWith("/rename") ? "rename" : target.endsWith("/move") ? "move" : null;
+  const slug = action === null ? target : target.slice(0, -(action.length + 1));
+  if (method === "POST" && action !== null) {
+    const body = await readJsonBody(req);
+    if (typeof body !== "object" || body === null) {
+      sendJson(res, 400, { error: "expected JSON object" });
+      return true;
+    }
+    const result = action === "rename"
+      ? typeof (body as { name?: unknown }).name === "string"
+        ? await renameNote(deps.vaultRoot, slug, (body as { name: string }).name)
+        : null
+      : (body as { folder?: unknown }).folder === null || typeof (body as { folder?: unknown }).folder === "string"
+        ? await moveNote(deps.vaultRoot, slug, (body as { folder: string | null }).folder)
+        : null;
+    if (result === null) sendJson(res, 400, { error: action === "rename" ? "expected { name: string }" : "expected { folder: string | null }" });
+    else sendMutation(res, result);
+    return true;
+  }
   return false;
+}
+
+async function routeFolder(deps: RouteDeps, method: string, target: string, req: IncomingMessage, res: ServerResponse): Promise<boolean> {
+  if (method === "DELETE") {
+    sendMutation(res, await deleteFolder(deps.vaultRoot, target));
+    return true;
+  }
+  const isRename = target.endsWith("/rename");
+  const path = isRename ? target.slice(0, -"/rename".length) : target;
+  if (method === "POST" && isRename) {
+    const body = await readJsonBody(req);
+    const name = typeof body === "object" && body !== null ? (body as { name?: unknown }).name : undefined;
+    if (typeof name !== "string") sendJson(res, 400, { error: "expected { name: string }" });
+    else sendMutation(res, await renameFolder(deps.vaultRoot, path, name));
+    return true;
+  }
+  return false;
+}
+
+function sendMutation(res: ServerResponse, result: VaultMutationResult): void {
+  if (result.ok) {
+    const id = result.slug === undefined ? result.path === undefined ? undefined : `vfolder:${result.path}` : `note:${result.slug}`;
+    sendJson(res, 200, { ok: true, ...(id === undefined ? {} : { id }) });
+    return;
+  }
+  const status = result.reason === "collision" ? 409 : result.reason === "missing" ? 404 : 400;
+  sendJson(res, status, { error: result.reason });
 }
 
 async function sendNote(deps: RouteDeps, rawSlug: string, res: ServerResponse): Promise<void> {

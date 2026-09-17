@@ -244,10 +244,12 @@ export interface WikiIndex {
   readonly bySpelling: ReadonlyMap<string, string>;
   /** True when the note being rendered has at least one unresolved link. */
   readonly hasGhosts: boolean;
+  /** Slug of the note being rendered, for resolving relative Markdown links. */
+  readonly currentSlug: string | null;
 }
 
 /** The empty index, for the render that happens before the graph arrives. */
-export const EMPTY_WIKI_INDEX: WikiIndex = { bySpelling: new Map(), hasGhosts: false };
+export const EMPTY_WIKI_INDEX: WikiIndex = { bySpelling: new Map(), hasGhosts: false, currentSlug: null };
 
 /** The slug inside a `note:<slug>` id, or `null` for any other node. */
 export function slugOfNode(node: WireGraphNode): string | null {
@@ -299,13 +301,25 @@ export function wikiIndex(payload: GraphPayload | null, slug: string | null): Wi
     }
   }
   const hasGhosts = slug !== null && (payload.dangling[slug]?.length ?? 0) > 0;
-  return { bySpelling, hasGhosts };
+  return { bySpelling, hasGhosts, currentSlug: slug };
 }
 
 /** The slug a wikilink points at, or `null` when nothing in the vault matches. */
 export function resolveWikilink(index: WikiIndex, target: string): string | null {
   const trimmed = target.trim();
   return index.bySpelling.get(trimmed) ?? index.bySpelling.get(trimmed.toLowerCase()) ?? null;
+}
+
+/** Resolve a local `.md` href against the current note, when that note exists. */
+export function resolveMarkdownLink(index: WikiIndex, href: string): string | null {
+  if (index.currentSlug === null || SCHEME_RE.test(href.replace(URL_NOISE_RE, ""))) return null;
+  try {
+    const url = new URL(href, `https://weave.invalid/${index.currentSlug}.md`);
+    if (url.origin !== "https://weave.invalid" || !url.pathname.toLowerCase().endsWith(".md")) return null;
+    return resolveWikilink(index, decodeURIComponent(url.pathname.slice(1, -3)));
+  } catch {
+    return null;
+  }
 }
 
 /**
@@ -471,12 +485,17 @@ export function markdownRenderer(index: WikiIndex): Marked {
        * needs in order to notice that a note contains markup at all.
        */
       html({ text }) {
-        return escapeHtml(text);
+        return /^\s*<!--[\s\S]*?-->\s*$/.test(text) ? "" : escapeHtml(text);
       },
       /** Layer 2, for links. An unsafe scheme yields no `href`. */
       link({ href, title, tokens }) {
         const url = safeUrl(href);
         const text = this.parser.parseInline(tokens);
+        const note = url === null ? null : resolveMarkdownLink(index, url);
+        if (note !== null) {
+          const titleAttr = title === null || title === undefined || title === "" ? "" : ` title="${escapeHtml(title)}"`;
+          return `<a class="weave-wiki" ${WIKILINK_ATTR}="${escapeHtml(note)}" role="link" tabindex="0"${titleAttr}>${text}</a>`;
+        }
         const attrs = [
           url === null ? "" : ` href="${escapeHtml(url)}"`,
           title === null || title === undefined || title === "" ? "" : ` title="${escapeHtml(title)}"`,

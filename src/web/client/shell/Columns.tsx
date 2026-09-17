@@ -38,6 +38,7 @@ export interface ColumnsProps {
    * a handler accepting the wider type takes without a cast.
    */
   onSelect: (id: string | null) => void;
+  onRefresh: () => void;
   onOpen: (slug: string) => void;
   /** Epoch ms for relative times, read once per render by the shell. */
   now: number;
@@ -72,7 +73,7 @@ function Column({ id, props }: { id: ColumnId; props: ColumnsProps }) {
   return (
     <section class={`weave-col weave-col-${id}`} aria-label={copy.title}>
       <h2 class="weave-col-title">{copy.title}</h2>
-      {id === "tree" ? <Tree graph={props.graph} selectedId={props.selectedId} recentIds={props.recentIds} onSelect={props.onSelect} now={props.now} /> : null}
+      {id === "tree" ? <Tree graph={props.graph} selectedId={props.selectedId} recentIds={props.recentIds} onSelect={props.onSelect} onRefresh={props.onRefresh} now={props.now} /> : null}
       {id === "note" ? (
         <Note
           note={props.note}
