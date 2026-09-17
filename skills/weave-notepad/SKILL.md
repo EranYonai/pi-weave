@@ -95,6 +95,16 @@ down". Never promote conversation into a note on your own initiative — capture
    for user-scribbled notes. Notes you draft from scratch are `source: agent` (the default). Never overwrite a `source: human` note's
    meaning; append with a dated "Agent addendum" section instead.
 
+## Session memory (`notes/sessions/`)
+
+`/weave-scan sessions` summarizes past agent session transcripts into generated notes under `notes/sessions/`. These are ordinary vault notes — `search` and `get` reach them like any other — with three differences worth knowing:
+
+- They are `source: generated`, not human knowledge. Treat one as a recollection of what a past session did, not as a decision record; a human note that contradicts it wins.
+- Each carries a `## Takeaways` section: reusable technical lessons (gotchas, root causes, non-obvious rules) from that session. When the user hits a problem that smells familiar, search the vault before re-deriving the answer — a previous session may already have paid for it.
+- They are re-derivable. The scan rewrites a note in place when its transcript changes, preserving human edits above the raw tail, so no session note is the only copy of anything.
+
+The scan is opt-in and never runs on its own. Suggest it when the user asks why the agent keeps forgetting across sessions, or wants history from another tool (`/weave-scan sessions <path>` accepts any history file or directory). Never run it unprompted: it spends model tokens per changed session.
+
 ## Retrieving knowledge
 
 Use `weave_note` action=search with the user's key terms, then `get` the best hits. When a note and the repository index disagree, trust the

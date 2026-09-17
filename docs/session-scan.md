@@ -83,7 +83,7 @@ The deep scan's incremental trick, applied to sessions:
 1. Discover regular files at or recursively under the selected history path (stat each: size, mtime), newest first.
 2. Build a note index in one pass over the vault: `session_id → { slug, session_hash }` from note front matter. Marker-based, so renamed notes still resolve.
 3. For each candidate file (newest first, capped): **read it once, hash the bytes** (sha1, `hashContent`), and peek at the header line for the session id.
-4. If the note's `session_hash` matches — skip. No parse, no LLM call.
+4. If the note's `session_hash` matches — skip, no LLM call. (The digest parse currently still runs before this check; only the model call is saved.)
 5. Otherwise parse the full JSONL into a digest, summarize, and upsert the note (create or update in place, keyed by `session_id`).
 
 The hash is computed from the same single read that feeds the parse — the file is never read twice. A session that keeps growing (the live one, or a resumed one) simply changes hash and is re-summarized next scan; its note is updated **in place**, keeping its slug, title, `created`, and any human edits (unknown front-matter keys and the append-only `## Raw` tail are preserved, per the vault's round-trip guarantees).
@@ -126,7 +126,7 @@ Session files can be megabytes; the summarizer must not see all of it. `parseSes
 
 ## Title, tags, slug
 
-- **Title**: `session_info` name, else first user message, else `session <id8>` — flattened, clipped to 80 chars, always prefixed `Pi session: `. Set **at creation only**: on re-summarization the title, slug and `created` are preserved (a human may have retitled the note; the refreshed body carries the news).
+- **Title**: `session_info` name, else first user message, else `session <id8>` — flattened and clipped to 80 chars. Deliberately unprefixed: the `sessions/` folder carries the context the old `Pi session: ` prefix did (migration strips that prefix). Set **at creation only**: on re-summarization the title, slug and `created` are preserved (a human may have retitled the note; the refreshed body carries the news).
 - **Tags**: `["pi-session", <slugified project dir name>]` — graph-clusterable.
 - **Body**: the model's summary, then a `## Details` block with the session id, span, project, message counts, tools, models, transcript path, and summarizer provenance.
 
@@ -134,7 +134,7 @@ Session files can be megabytes; the summarizer must not see all of it. `parseSes
 
 ```ts
 {
-  discovered,        // *.jsonl files found under the sessions root
+  discovered,        // files found at or under the selected history path
   considered,        // after the size filter and maxSessions cap
   written,           // created + updated
   created, updated,  // new notes vs re-summarized notes
