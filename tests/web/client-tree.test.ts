@@ -26,6 +26,7 @@ import {
   collapse,
   cycleProvenance,
   deletesSelection,
+  deleteNeedsConfirmation,
   depthVar,
   dropFolder,
   expand,
@@ -265,6 +266,11 @@ describe("tree mutations", () => {
     expect(deletesSelection("vfolder:plans/nested", { type: "folder", path: "plans" })).toBe(true);
     expect(deletesSelection("note:other", { type: "folder", path: "plans" })).toBe(false);
     expect(deletesSelection(null, { type: "note", path: "plans/a" })).toBe(false);
+  });
+
+  it("deletes notes directly but confirms recursive folder deletion", () => {
+    expect(deleteNeedsConfirmation({ type: "note" })).toBe(false);
+    expect(deleteNeedsConfirmation({ type: "folder" })).toBe(true);
   });
 });
 

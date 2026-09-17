@@ -15,6 +15,7 @@ import {
   treeActiveDescendant,
   cycleProvenance,
   deletesSelection,
+  deleteNeedsConfirmation,
   depthVar,
   dropFolder,
   initialTreeView,
@@ -116,7 +117,7 @@ export function Tree(props: TreeProps) {
     if (target === null) return;
     if (action === "rename") {
       setEditing({ id: menu.id, label: menu.label, value: menu.label });
-    } else if (window.confirm(`Permanently delete ${target.type} “${menu.label}”${target.type === "folder" ? " and everything inside it" : ""}?`)) {
+    } else if (!deleteNeedsConfirmation(target) || window.confirm(`Permanently delete folder “${menu.label}” and everything inside it?`)) {
       await run(target.type === "note" ? deleteNote(fetchJson, target.path) : deleteFolder(fetchJson, target.path), deletesSelection(props.selectedId, target) ? "vault" : undefined);
     }
   };
@@ -144,7 +145,7 @@ export function Tree(props: TreeProps) {
         <button type="button" class="weave-menu-backdrop" aria-label="Close context menu" onClick={() => setMenu(null)} />
         <div class="weave-menu" role="menu" style={{ left: `${menu.x}px`, top: `${menu.y}px` }}>
           <button type="button" role="menuitem" onClick={() => void act("rename")}>Rename…</button>
-          <button type="button" role="menuitem" class="weave-menu-danger" onClick={() => void act("delete")}>Delete…</button>
+          <button type="button" role="menuitem" class="weave-menu-danger" onClick={() => void act("delete")}>Delete</button>
         </div>
       </> : null}
     </div>

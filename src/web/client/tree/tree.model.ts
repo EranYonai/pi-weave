@@ -155,6 +155,11 @@ export function deletesSelection(selectedId: string | null, target: { type: "not
   return selectedId === `vfolder:${target.path}` || selectedId.startsWith(`vfolder:${target.path}/`) || selectedId.startsWith(`note:${target.path}/`);
 }
 
+/** Notes delete directly; folders retain confirmation because they may contain many notes. */
+export function deleteNeedsConfirmation(target: { type: "note" | "folder" }): boolean {
+  return target.type === "folder";
+}
+
 /**
  * Set the substring filter.
  *
