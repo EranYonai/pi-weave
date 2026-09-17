@@ -54,6 +54,7 @@ import { createGraphSimulation } from "./dynamics";
 import type { GraphSimulation } from "./dynamics";
 import { ForceTuner } from "./ForceTuner";
 import { POSITIONS_STORAGE_KEY } from "./positions";
+import { loadGroupColors, saveGroupColors } from "./tuner.model";
 
 export interface GraphProps {
   graph: GraphPayload | null;
@@ -137,6 +138,13 @@ export function Graph(props: GraphProps) {
    * now lays out differently.
    */
   const [forceRev, setForceRev] = useState(0);
+  /**
+   * Colour nodes by group hue (§15.8). Persisted, because it is a taste the
+   * user holds across sessions rather than a per-visit mode, and read through
+   * the same `PositionStorage` port the layout cache uses so the column still
+   * names no browser global.
+   */
+  const [groupColors, setGroupColors] = useState(() => loadGroupColors(props.storage));
 
   // The shell's decision wins; `schemeOf` stays for a host-driven default.
   const scheme = props.scheme ?? schemeOf(props.host);
@@ -150,14 +158,14 @@ export function Graph(props: GraphProps) {
   // graph. Identity is the whole contract; do not switch the effect to
   // comparing set contents, the memo makes comparison unnecessary.
   const model = useMemo(
-    () => graphColumnModel(props.graph, props.selectedId, view, props.storage, scheme, props.bootFailed),
-    [props.graph, props.selectedId, view, props.storage, scheme, props.bootFailed, forceRev],
+    () => graphColumnModel(props.graph, props.selectedId, view, props.storage, scheme, props.bootFailed, groupColors),
+    [props.graph, props.selectedId, view, props.storage, scheme, props.bootFailed, forceRev, groupColors],
   );
   const everything = allExpanded(view, model.clusters);
 
   // Read by the mount-time `onSelect`, which outlives this render.
-  const live = useRef({ view, model, onSelect: props.onSelect });
-  live.current = { view, model, onSelect: props.onSelect };
+  const live = useRef({ view, model, onSelect: props.onSelect, selectedId: props.selectedId });
+  live.current = { view, model, onSelect: props.onSelect, selectedId: props.selectedId };
 
   useEffect(() => {
     const instance = props.renderer(scheme);
@@ -190,7 +198,7 @@ export function Graph(props: GraphProps) {
     // the render this effect was created in), so a remount carries whatever
     // the column is already showing.
     instance.setGraph(live.current.model.graph);
-    instance.setHighlight(live.current.model.highlight);
+    instance.setHighlight(live.current.model.highlight, live.current.selectedId);
     props.fit.current = () => instance.fit();
     return () => {
       instance.destroy();
@@ -203,7 +211,7 @@ export function Graph(props: GraphProps) {
 
   useEffect(() => {
     renderer.current?.setGraph(model.graph);
-  }, [model.key, forceRev]);
+  }, [model.key, forceRev, groupColors]);
 
   // Live layout, in two effects so pause/resume and re-layout are independent.
   //
@@ -235,8 +243,8 @@ export function Graph(props: GraphProps) {
   );
 
   useEffect(() => {
-    renderer.current?.setHighlight(model.highlight);
-  }, [model.highlight]);
+    renderer.current?.setHighlight(model.highlight, props.selectedId);
+  }, [model.highlight, props.selectedId]);
 
   return (
     <div class="weave-graph">
@@ -248,6 +256,11 @@ export function Graph(props: GraphProps) {
       <div class="weave-graph-canvas" ref={canvas} role="img" aria-label="Knowledge graph" tabIndex={-1} />
       {props.tuner === true ? (
         <ForceTuner
+          groupColors={groupColors}
+          onGroupColors={(next) => {
+            saveGroupColors(props.storage, next);
+            setGroupColors(next);
+          }}
           onChange={() => {
             // Poison the stored layout rather than reading it: the cache is
             // keyed by graph *shape*, which a force change does not touch, so

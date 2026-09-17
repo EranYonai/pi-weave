@@ -22,6 +22,10 @@ export interface ForceTunerProps {
    * itself — it mutates the constants and says so.
    */
   onChange: () => void;
+  /** Whether nodes are coloured by group hue (§15.8). */
+  groupColors: boolean;
+  /** Toggle that. Owned by the column, which persists it. */
+  onGroupColors: (next: boolean) => void;
 }
 
 export function ForceTuner(props: ForceTunerProps) {
@@ -47,6 +51,10 @@ export function ForceTuner(props: ForceTunerProps) {
   return (
     <div class="weave-tuner">
       <p class="weave-tuner-title">graph forces · ?forces=1</p>
+      <label class="weave-tuner-toggle" title="hue per containment group, shade per kind">
+        <input type="checkbox" checked={props.groupColors} onChange={(event) => props.onGroupColors((event.currentTarget as HTMLInputElement).checked)} />
+        <span>colour by group</span>
+      </label>
       {FORCE_SLIDERS.map((spec) => (
         <label class="weave-tuner-row" key={spec.key} title={spec.hint}>
           <span class="weave-tuner-label">

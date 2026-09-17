@@ -521,6 +521,15 @@ export function renderGraph(
   edges: readonly WireGraphEdge[],
   positions: ReadonlyMap<string, Point>,
   scheme: ColorScheme,
+  /**
+   * Per-node fills that override the kind palette — `groups.ts`'s
+   * group-hue assignment, or absent for the kind-only colouring.
+   *
+   * Injected rather than computed here because it is a *policy* (§15.8's
+   * `colors` setting) and this function is the mechanism. An id the map does
+   * not name falls back to {@link kindColor}, so a partial map is safe.
+   */
+  groupFills?: ReadonlyMap<string, string>,
 ): RenderGraph {
   const placed = new Map<string, WireGraphNode>();
   for (const node of nodes) {
@@ -543,7 +552,7 @@ export function renderGraph(
       y: at.y,
       size,
       label: nodeLabel(node),
-      color: kindColor(node.kind, scheme),
+      color: groupFills?.get(id) ?? kindColor(node.kind, scheme),
       kind: node.kind,
       provenance: node.provenance,
       zIndex: Math.round(size),
@@ -614,13 +623,49 @@ export interface EdgeDisplayOverride {
  */
 export function nodeReducer(
   highlight: ReadonlySet<string> | null,
+  /**
+   * The selected node itself, distinguished from its neighbours.
+   *
+   * `highlight` is `focusNeighborhood`'s answer — the selection *plus* its
+   * direct neighbours — and painting the two identically loses the one fact
+   * the gesture was about: which node was clicked. Optional, so a caller with
+   * only a neighbourhood keeps the previous two-tier behaviour.
+   */
+  selectedId?: string | null,
 ): (id: string, data: RenderNode, scheme: ColorScheme) => NodeDisplayOverride {
   return (id, data, scheme) => {
     if (highlight === null) return {};
-    if (highlight.has(id)) return { zIndex: data.zIndex + HIGHLIGHT_Z_LIFT };
+    if (id === selectedId && highlight.has(id)) {
+      // The subject of the gesture: lifted clear of its own neighbourhood and
+      // grown by a ratio rather than to a fixed radius, so a hub still reads
+      // as bigger than the leaf beside it while both read as "this one".
+      return { zIndex: data.zIndex + HIGHLIGHT_Z_LIFT * 2, size: data.size * SELECTED_GROWTH };
+    }
+    // A connected node: its own group colour at full strength, lifted above
+    // the cloud, and grown a little. The step between "connected" and
+    // "unrelated" used to be carried entirely by the *recession of everything
+    // else*, which reads as the graph dimming rather than as a neighbourhood
+    // being named — the difference matters most on a big canvas, where the
+    // receded cloud is far off-screen and the only thing visible is a
+    // neighbourhood that looks exactly like it did before the click.
+    if (highlight.has(id)) return { zIndex: data.zIndex + HIGHLIGHT_Z_LIFT, size: data.size * NEIGHBOUR_GROWTH };
     return { color: recessColor(data.color, scheme), label: null, zIndex: 0 };
   };
 }
+
+/**
+ * How much the selected node grows, as a size multiplier.
+ *
+ * A ratio, not a fixed radius: the degree ramp's whole job is that a hub is
+ * visibly bigger than a leaf, and selecting a leaf must not make it the
+ * largest thing on the stage. 1.45× is a clear step at every zoom — sizes are
+ * in layout units (`itemSizesReference: "positions"`), so it survives zooming
+ * out, unlike a pixel bump.
+ */
+export const SELECTED_GROWTH = 1.45;
+
+/** The same idea, one step down, for a directly connected node. */
+export const NEIGHBOUR_GROWTH = 1.15;
 
 /**
  * How far a highlighted node is lifted above the rest.
@@ -651,12 +696,25 @@ export const HIGHLIGHT_Z_LIFT = MAX_NODE_SIZE + 1;
  */
 export function edgeReducer(
   highlight: ReadonlySet<string> | null,
+  /** The selection, so an edge *touching* it outranks one merely near it. */
+  selectedId?: string | null,
 ): (key: string, data: RenderEdge, scheme: ColorScheme) => EdgeDisplayOverride {
   return (_key, data, scheme) => {
     if (highlight === null) return {};
-    return highlight.has(data.source) && highlight.has(data.target)
-      ? { zIndex: 1, size: data.size * EDGE_PRESENCE }
-      : { color: recessColor(data.color, scheme) };
+    if (!highlight.has(data.source) || !highlight.has(data.target)) {
+      return { color: recessColor(data.color, scheme) };
+    }
+    // Incident on the selection itself — these are the node's actual links,
+    // and they are what "connected" means drawn. Painted in the accent so a
+    // containment hairline joining the selection stops reading as scaffolding
+    // for as long as the selection stands, and thickened a step beyond the
+    // neighbourhood's own edges.
+    if (selectedId != null && (data.source === selectedId || data.target === selectedId)) {
+      return { zIndex: 2, size: data.size * EDGE_PRESENCE * 1.35, color: GRAPH_PALETTE[scheme].accent };
+    }
+    // Between two neighbours, but not touching the selection: real context,
+    // one step quieter.
+    return { zIndex: 1, size: data.size * EDGE_PRESENCE };
   };
 }
 

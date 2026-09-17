@@ -46,6 +46,7 @@ import type { GraphPayload, WireGraphEdge, WireGraphNode } from "../../shared/wi
 import { viewModel } from "../tree/tree.model";
 import type { ColorScheme, RenderGraph } from "./graph.model";
 import { EMPTY_RENDER_GRAPH, renderGraph } from "./graph.model";
+import { groupNodeColors } from "./groups";
 import type { PositionStorage } from "./positions";
 import { resolveLayout } from "./positions";
 
@@ -300,6 +301,16 @@ export function graphColumnModel(
   // Optional so every existing caller and test keeps its shape; only the
   // shell's boot-failure signal has a reason to pass it.
   bootFailed = false,
+  /**
+   * Colour nodes by their group's hue rather than by kind (§15.8).
+   *
+   * A parameter rather than a constant because it is a taste decision the
+   * user owns — the kind palette is three greys and an accent, which is calm
+   * but says nothing about which blob is which. Defaults to `true`: the
+   * grouping is what the forces went to the trouble of separating, so leaving
+   * it uncoloured by default would waste the layout.
+   */
+  groupColors = true,
 ): GraphColumnModel {
   if (payload === null)
     // Identity preserved on the ordinary path (`EMPTY_COLUMN` is compared by
@@ -311,9 +322,13 @@ export function graphColumnModel(
   const vaultOpen = state.expanded.has("vault");
   const edges = vaultOpen ? reduced.edges.filter((edge) => edge.source !== "vault" && edge.target !== "vault") : reduced.edges;
   const layout = resolveLayout(storage, reduced.nodes, edges);
+  // Over the *reduced* nodes and the same edges the layout used, so a
+  // collapsed cluster is coloured by the group it stands in for rather than
+  // by a branch that is not on screen.
+  const fills = groupColors ? groupNodeColors(reduced.nodes, edges, scheme) : undefined;
 
   return {
-    graph: renderGraph(reduced.nodes, edges, layout.positions, scheme),
+    graph: renderGraph(reduced.nodes, edges, layout.positions, scheme, fills),
     highlight: highlightFor(edges, selectedId),
     key: layout.key,
     cached: layout.cached,

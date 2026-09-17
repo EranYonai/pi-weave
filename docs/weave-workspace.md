@@ -1426,10 +1426,51 @@ that belongs in `layout.ts`, because transcribing seven floats by eye is where a
 chord to collide with the §11 P4 keymap, no persisted state leaking into a normal session. A build-time `define` would be more hidden still
 and was rejected — it breaks the byte-reproducible `build:web:check` contract for a panel that is already unreachable without the flag.
 
-**What remains open.** The constants have not been frozen yet. When they are: write them into `FORCES`, bump `POSITIONS_STORAGE_KEY` (stored
-layouts describe the old physics and the shape key cannot detect that), and turn the `SUGGESTED` separation assertion in
-`tests/web/client-graph-tuner.test.ts` into a gate on the shipped values. The panel stays behind the flag for the next time the physics
-needs a nudge.
+### 15.8 Group colour and the selection's three tiers — ✅ **built**
+
+Once the forces separated the graph into blobs, the blobs all looked the same. Two changes, both in the colour channel.
+
+**Hue carries the group, shade carries the kind.** A group is exactly what the forces pull apart — a **depth-1 containment branch** — so
+`groups.ts` walks each node to its root and keys it by the last step before it. A node with no branch of its own (a root, a loose note, an
+island) is its own group. The branch's anchor draws at full hue, its contents step back by kind (`KIND_SHADE`), so group identity reads at a
+glance and internal structure on a second look. Provenance is deliberately untouched: it was never a hue, and AGENTS.md rule 4 wants a glyph
+that survives greyscale and colour-blindness.
+
+Hues are assigned **biggest group first**, so the largest blob gets the shell's own accent and the canvas reads as part of the app. Ties
+break on the key, so the assignment is a pure function of the graph rather than of core's output order. More groups than hues wraps the
+ring, which is honest — past eleven simultaneous groups the colour channel is saturated and position is doing the work.
+
+Unlike every other colour in the graph, these hexes are **not** mirrored from `THEME_CSS`, because nothing in the sheet paints a graph group
+and a mirror test would be theatre. The guarantee asserted instead is contrast: every hue, at every kind's shade, clears the 3:1 WCAG
+non-text minimum on its ground. That test earns its keep — it caught stock Latte mauve at 2.98 under the `external` shade, and the whole
+light row is deepened as a result (stock Latte accents sit at 2.3–3.0 on `#eff1f5`, invisible as a 6-pixel disc).
+
+Toggle it with **colour by group** in the tuner panel; the choice persists under its own storage key, deliberately separate from the
+position cache so tuning the physics cannot reset the palette.
+
+**The selection now has three tiers, not two.** `focusNeighborhood` returns the selection *plus* its neighbours, and painting those
+identically lost the one fact the click was about. Now: the selected node grows 1.45× and lifts clear of everything; a connected node grows
+1.15× and lifts above the cloud; edges *incident on the selection* take the accent and outrank edges merely joining two neighbours. Growth
+is a ratio, not a fixed radius, so the degree ramp survives — selecting a leaf must not make it the biggest thing on the stage. Everything
+outside still recedes rather than hiding, for the reason it always did.
+
+### 15.9 A long press is not a drag — ✅ **fixed**
+
+Pressing and holding a node made every *other* node swim, and at the stronger post-tuner forces, orbit. `alphaTarget` is a **floor, not a
+decay**: held above the alpha floor it feeds the simulation energy indefinitely, and `pin()` set it unconditionally. d3's own drag example
+gets away with that because its `drag` subject only fires on real movement; sigma's `downNode` + `moveBody` pair also fires on a stationary
+press, so the distinction has to be made in `dynamics.ts`.
+
+Now `pin()` compares against the previous pin and only heats when the pointer has actually travelled more than `PIN_STILL` (half a layout
+unit — well under a screen pixel at any usable zoom, so it cannot swallow a real drag). Holding still releases the target to 0 and lets the
+graph cool *under* the held node, which is what a press should do. Measured on `repoLikeGraph`: 93 of 94 nodes displaced by a mean of 70
+units and never settling, against a max of under 3 units and asleep. The first pin of a gesture still counts as movement, or the opening
+frames of a real drag would be dead.
+
+**What remains open (§15.7).** The force constants have not been frozen yet. When they are: write them into `FORCES`, bump
+`POSITIONS_STORAGE_KEY` (stored layouts describe the old physics and the shape key cannot detect that), and turn the `SUGGESTED` separation
+assertion in `tests/web/client-graph-tuner.test.ts` into a gate on the shipped values. The panel stays behind the flag for the next time the
+physics needs a nudge.
 
 ---
 

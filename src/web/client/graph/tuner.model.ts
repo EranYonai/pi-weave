@@ -163,3 +163,45 @@ export function forcesSnippet(forces: ForceConstants): string {
 export function isDefault(forces: ForceConstants): boolean {
   return FORCE_SLIDERS.every((spec) => Object.is(forces[spec.key], FORCE_DEFAULTS[spec.key]));
 }
+
+// --- the group-colour setting (§15.8) ------------------------------------------------
+
+/**
+ * Where the group-colour choice is remembered.
+ *
+ * Versioned like the position cache, and stored separately from it: a palette
+ * preference must survive the layout invalidation that a force change causes,
+ * or tuning the physics would silently reset the user's colours.
+ */
+export const GROUP_COLORS_STORAGE_KEY = "pi-weave.graph.groupColors.v1";
+
+/** The two-method storage port, same shape as `PositionStorage`. */
+export interface SettingStorage {
+  getItem(key: string): string | null;
+  setItem(key: string, value: string): void;
+}
+
+/**
+ * Whether to colour by group. Defaults to **on**.
+ *
+ * On by default because the forces go to real trouble to separate the groups
+ * and leaving them one colour wastes that. A throwing `getItem` (Safari
+ * private browsing, partitioned storage) is a default, not an error — the
+ * same answer `loadPositions` gives.
+ */
+export function loadGroupColors(storage: SettingStorage): boolean {
+  try {
+    return storage.getItem(GROUP_COLORS_STORAGE_KEY) !== "off";
+  } catch {
+    return true;
+  }
+}
+
+/** Persist the choice, best-effort. A full or refusing quota is not an error. */
+export function saveGroupColors(storage: SettingStorage, on: boolean): void {
+  try {
+    storage.setItem(GROUP_COLORS_STORAGE_KEY, on ? "on" : "off");
+  } catch {
+    // A preference that does not survive a reload still works this session.
+  }
+}

@@ -577,7 +577,9 @@ body{font-size:var(--weave-px-base)}
 .weave-tuner-label{display:flex;justify-content:space-between;gap:8px;color:var(--weave-dim)}
 .weave-tuner-label b{color:var(--weave-accent);font-weight:600;font-variant-numeric:tabular-nums}
 .weave-tuner-row input{width:100%;margin:0;accent-color:var(--weave-accent)}
-.weave-tuner-actions{display:flex;gap:6px;margin-top:2px}
+.weave-tuner-toggle{display:flex;align-items:center;gap:6px;cursor:pointer;color:var(--weave-dim)}
+.weave-tuner-toggle input{margin:0;accent-color:var(--weave-accent)}
+.weave-tuner-actions{display:flex;gap:6px;margin-top:2px;flex-wrap:wrap}
 .weave-tuner-snippet{
   margin:0;padding:6px;overflow:auto;white-space:pre;color:var(--weave-faint);
   background:var(--weave-bg);border:1px solid var(--weave-line);border-radius:var(--weave-radius);
