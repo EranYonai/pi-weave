@@ -1575,13 +1575,17 @@ describe("migrateLegacySessionNotes", () => {
 
       );
 
-      // same session already migrated under the same name by an earlier pass
+      // same session already migrated under the same name by an earlier pass,
+
+      // then re-summarized and hand-edited since
+
+      const authoritative = LEGACY("id-2", "Clash").replace("The summary.", "A NEWER summary.");
 
       await fs.writeFile(
 
         join(vault, "notes", "sessions", "clash.md"),
 
-        LEGACY("id-2", "Clash"),
+        authoritative,
 
         "utf8",
 
@@ -1594,6 +1598,14 @@ describe("migrateLegacySessionNotes", () => {
       expect(await migrateLegacySessionNotes(vault)).toBe(1);
 
       await expect(fs.access(join(vault, "notes", "pi-session-clash.md"))).rejects.toThrow();
+
+      // ...and the authoritative note is left exactly as it was. Writing the
+
+      // legacy text over it would discard the newer summary and any human
+
+      // edit the note had accumulated.
+
+      expect(await fs.readFile(join(vault, "notes", "sessions", "clash.md"), "utf8")).toBe(authoritative);
 
       // second full migration run is a clean no-op once the dir is empty
 

@@ -6,10 +6,11 @@
 import { fauxAssistantMessage } from "@earendil-works/pi-ai";
 import type { ExtensionContext } from "@earendil-works/pi-coding-agent";
 import { promises as fs } from "node:fs";
+import { homedir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import { getNote } from "../../src/core";
-import piWeave, { sessionScanDone } from "../../src/pi/index";
+import piWeave, { resolveHistoryPath, sessionScanDone } from "../../src/pi/index";
 import {
   createSessionSummarizer,
   formatSessionScanResult,
@@ -335,6 +336,20 @@ describe("/weave-scan sessions command", () => {
       await fs.rm(sessions, { recursive: true, force: true });
       await fs.rm(vault, { recursive: true, force: true });
     }
+  });
+
+  it("expands a ~ history path, which shells do not do for command arguments", () => {
+    // The argument exists to point at another harness's history under $HOME,
+    // so `~/` is what users type; leaving it literal scans nothing and reports
+    // success.
+    const home = homedir();
+    expect(resolveHistoryPath("/cwd", "~/.claude/projects")).toBe(join(home, ".claude/projects"));
+    expect(resolveHistoryPath("/cwd", "~")).toBe(home);
+    expect(resolveHistoryPath("/cwd", "relative/history")).toBe("/cwd/relative/history");
+    expect(resolveHistoryPath("/cwd", "/absolute/history")).toBe("/absolute/history");
+    // `~user` is a shell construct this does not implement; it stays relative
+    // rather than silently resolving to the wrong home.
+    expect(resolveHistoryPath("/cwd", "~other/history")).toBe("/cwd/~other/history");
   });
 
   it("reports when nothing was found", async () => {

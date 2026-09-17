@@ -732,13 +732,17 @@ export async function migrateLegacySessionNotes(vaultRoot: string): Promise<numb
       try {
         if (existsSync(target)) {
           // A file already sits at the target name. When it carries the same
-          // session id it is the authoritative, rescanned copy — the legacy
-          // one is stale and goes. A different session keeps the legacy file
-          // where it is; the marker index and identity guard will separate
-          // them on the session's next re-summarize.
+          // session id it is the authoritative, rescanned copy — it may hold a
+          // newer summary, a human retitle, and a `## Raw` tail, so it is kept
+          // and the stale legacy duplicate is removed. A different session
+          // keeps the legacy file where it is; the marker index and identity
+          // guard separate them on that session's next re-summarize.
           const occupant = parseFrontMatter(await fs.readFile(target, "utf8"));
           const occupantId = occupant ? unquoteField(occupant.fields.get("session_id") ?? "") : "";
           if (occupantId !== id) continue;
+          await fs.unlink(join(legacyDir, name));
+          moved += 1;
+          continue;
         }
         await fs.mkdir(targetDir, { recursive: true });
         await fs.writeFile(target, newText, "utf8");

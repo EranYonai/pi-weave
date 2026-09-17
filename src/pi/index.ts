@@ -1,5 +1,6 @@
 import type { ExtensionAPI, ExtensionCommandContext, ExtensionContext } from "@earendil-works/pi-coding-agent";
-import { resolve } from "node:path";
+import { homedir } from "node:os";
+import { join, resolve } from "node:path";
 import {
   buildRepoIndex,
   findGitRoot,
@@ -170,7 +171,8 @@ export default function piWeave(pi: ExtensionAPI): void {
           return;
         }
         const status = await getWorkspaceStatus(ctx.cwd);
-        startSessionScan(ctx, status, updateStatus, rest.length > 0 ? resolve(ctx.cwd, rest.join(" ")) : undefined);
+        const path = rest.length > 0 ? resolveHistoryPath(ctx.cwd, rest.join(" ")) : undefined;
+        startSessionScan(ctx, status, updateStatus, path);
         return; // the background scan owns the status line until it settles
       }
 
@@ -211,7 +213,7 @@ export default function piWeave(pi: ExtensionAPI): void {
       const deep = root ? inFlightDeepScans.get(root) : undefined;
       const sessions = inFlightSessionScans.get(SESSIONS_SCAN_KEY);
       if (!deep && !sessions) {
-        ctx.ui.notify("pi-weave: no deep scan is currently running.", "info");
+        ctx.ui.notify("pi-weave: no scan is currently running.", "info");
         return;
       }
       deep?.controller.abort();
@@ -224,6 +226,20 @@ export default function piWeave(pi: ExtensionAPI): void {
 /* ------------------------------------------------------------------ */
 /* /weave-view argument parsing                                        */
 /* ------------------------------------------------------------------ */
+
+/**
+ * Resolve the optional `/weave-scan sessions <path>` argument.
+ *
+ * Command arguments reach the handler unexpanded, and the whole point of this
+ * argument is another harness's history under `$HOME` — so `~/` is the form
+ * users type, and leaving it literal silently scans nothing.
+ */
+export function resolveHistoryPath(cwd: string, input: string): string {
+  const trimmed = input.trim();
+  if (trimmed === "~") return homedir();
+  if (trimmed.startsWith("~/")) return join(homedir(), trimmed.slice(2));
+  return resolve(cwd, trimmed);
+}
 
 export const WEAVE_VIEW_USAGE = "usage: /weave-view [tui|web] [--no-open]";
 

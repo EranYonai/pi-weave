@@ -287,7 +287,7 @@ describe("/weave-scan-cancel", () => {
     await withVaultEnv(await makeTempDir(), async () => {
       const ctx = createMockCtx(repo);
       await mock.commands.get("weave-scan-cancel")!.handler("", ctx);
-      expect(ctx.ui.notifications.some((n) => n.message.includes("no deep scan is currently running"))).toBe(true);
+      expect(ctx.ui.notifications.some((n) => n.message.includes("no scan is currently running"))).toBe(true);
     });
   });
 

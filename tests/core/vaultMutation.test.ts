@@ -1,7 +1,7 @@
 import { promises as fs } from "node:fs";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
-import { addNote, appendToNote, deleteFolder, deleteNote, getNote, moveNote, renameFolder, renameNote } from "../../src/core/vault";
+import { addNote, appendToNote, deleteFolder, deleteNote, getNote, moveNote, renameFolder, renameNote, upsertNote } from "../../src/core/vault";
 import { makeTempDir } from "../helpers";
 
 describe("vault mutations", () => {
@@ -55,6 +55,52 @@ describe("vault mutations", () => {
     expect(await deleteFolder(root, "done-work")).toEqual({ ok: true });
     expect(await deleteFolder(root, "done-work")).toEqual({ ok: false, reason: "missing" });
     expect(await deleteFolder(root, "../escape")).toEqual({ ok: false, reason: "invalid" });
+  });
+
+  it("keeps the raw tail even when generated content mentions the heading", async () => {
+    // `## Raw` is append-only, verbatim human input. The replacement body here
+    // is model output, so a summary that merely *discusses* the raw-tail format
+    // must not be mistaken for one and delete the user's words.
+    const root = await makeTempDir();
+    await upsertNote(root, { slug: "sessions/s", title: "S", body: "first", fields: { session_id: "sid-1" } });
+    await appendToNote(root, "sessions/s", "spoken words", new Date(), { raw: true });
+
+    await upsertNote(root, {
+      slug: "sessions/s",
+      title: "S",
+      body: "The session documented the ## Raw tail format.",
+      fields: { session_id: "sid-1" },
+    });
+
+    const note = await getNote(root, "sessions/s");
+    expect(note?.body).toContain("spoken words");
+    expect(note?.body).toContain("NEVER edit below this line");
+  });
+
+  it("updates a generated note in place when its identity needs quoting", async () => {
+    // `quoteField` quotes any value containing `:` — an ISO-timestamp id, say.
+    // Comparing a quoted stored value against a raw one never matches, which
+    // would fork `-2`, `-3`… on every rescan instead of updating in place.
+    const root = await makeTempDir();
+    const identity = { field: "session_id", value: "2026-01-01T00:00:00Z" };
+    const first = await upsertNote(root, {
+      slug: "sessions/s",
+      title: "S",
+      body: "one",
+      fields: { session_id: identity.value },
+      identity,
+    });
+    const second = await upsertNote(root, {
+      slug: "sessions/s",
+      title: "S",
+      body: "two",
+      fields: { session_id: identity.value },
+      identity,
+    });
+
+    expect(second.slug).toBe(first.slug);
+    expect(await fs.readdir(join(root, "notes", "sessions"))).toEqual(["s.md"]);
+    expect((await getNote(root, "sessions/s"))?.body).toContain("two");
   });
 
   it("serializes folder mutations with descendant note writes", async () => {

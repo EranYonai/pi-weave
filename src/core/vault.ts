@@ -390,8 +390,12 @@ export async function upsertNote(root: string, input: UpsertNoteInput): Promise<
     }
     const fields = safeGeneratedFields(input.fields);
     const frontMatter = upsertFrontMatterFields(existing.frontMatter ?? [], fields);
+    // The existing tail is re-attached whenever there is one. `input.body` is
+    // generated content (a model summary), so probing it for a `## Raw` marker
+    // would let a summary that merely mentions the heading delete the human's
+    // verbatim tail.
     const tail = extractRawTail(existing.body);
-    const body = tail === "" || extractRawTail(input.body) !== "" ? input.body.trim() : `${input.body.trim()}\n\n${tail}`;
+    const body = tail === "" ? input.body.trim() : `${input.body.trim()}\n\n${tail}`;
     return writeNote(
       notePath(root, input.slug),
       input.slug,
@@ -402,14 +406,22 @@ export async function upsertNote(root: string, input: UpsertNoteInput): Promise<
   });
 }
 
+/**
+ * Identity values are compared **unquoted**, matching how the session note
+ * index reads them: `quoteField` wraps any value containing `:` (an ISO
+ * timestamp used as an id, say), and comparing a quoted value against a raw
+ * one never matches — which would fork a new `-2`, `-3`… note on every scan.
+ */
 function frontMatterField(lines: NoteFrontMatter | undefined, field: string): string | null {
   if (!lines) return null;
-  return parseFrontMatter(["---", ...lines, "---", ""].join("\n"))?.fields.get(field) ?? null;
+  const value = parseFrontMatter(["---", ...lines, "---", ""].join("\n"))?.fields.get(field);
+  return value === undefined ? null : unquoteField(value);
 }
 
 function fileFrontMatterField(path: string, field: string): string | null {
   try {
-    return parseFrontMatter(readFileSync(path, "utf8"))?.fields.get(field) ?? null;
+    const value = parseFrontMatter(readFileSync(path, "utf8"))?.fields.get(field);
+    return value === undefined ? null : unquoteField(value);
   } catch {
     return null;
   }
