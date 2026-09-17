@@ -102,9 +102,6 @@ function storage(): PositionStorage {
     setItem: (_k, v) => {
       value = v;
     },
-    removeItem: () => {
-      value = null;
-    },
   };
 }
 

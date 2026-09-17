@@ -1,15 +1,12 @@
 import { describe, expect, it, vi } from "vitest";
 import {
   BREAKPOINT_MEDIUM, BREAKPOINT_NARROW, COLUMNS, DEFAULT_FRACTIONS, DIVIDERS, LAYOUT_STORAGE_KEY,
-  MIN_WIDTHS, breakpointFor, columnValue, columnVar, columnVars, columnsAt, defaultLayout,
+  MIN_WIDTHS, breakpointFor, columnsAt, defaultLayout,
   deserializeLayout, dividerPair, isCollapsed, loadLayout, makeLayout, minShares, normalizeFractions,
   resolveColumns, resizeAt, saveLayout, serializeLayout,
 } from "../../src/web/client/shell/layout.model";
 import type { LayoutState, LayoutStorage } from "../../src/web/client/shell/layout.model";
-import { applyVars } from "../../src/web/client/shell/cssvars";
 import { beginDrag, dividerHandlers, dragChanged, dragTo, nudgeFor } from "../../src/web/client/shell/drag.model";
-import { watchViewport } from "../../src/web/client/shell/viewport";
-import { columnSlots } from "../../src/web/client/shell/shell.model";
 
 const WIDE = 1600;
 const sum = (state: LayoutState) => Object.values(state.fractions).reduce((a, b) => a + b, 0);
@@ -104,28 +101,21 @@ describe("layout persistence and CSS ports", () => {
     expect(saveLayout(target, defaultLayout(WIDE))).toBe(true);
     expect(target.map.has(LAYOUT_STORAGE_KEY)).toBe(true);
     expect(saveLayout({ getItem: () => null, setItem: () => { throw new Error(); } }, defaultLayout(WIDE))).toBe(false);
-    expect(columnVar("graph")).toBe("--weave-col-graph");
-    expect(columnValue(340.6)).toBe("341px");
-    expect(columnVars(resolveColumns(defaultLayout(WIDE), WIDE, "wide"))).toHaveLength(3);
-    const setProperty = vi.fn();
-    expect(applyVars(null, [["--x", "1px"]])).toBe(0);
-    expect(applyVars({ style: { setProperty } }, [["--x", "1px"]])).toBe(1);
-    expect(setProperty).toHaveBeenCalledWith("--x", "1px");
   });
 });
 
-describe("drag handlers and viewport", () => {
+describe("drag handlers", () => {
   it("tracks from the pointer origin and persists only changes", () => {
     let state = defaultLayout(WIDE);
     const persist = vi.fn();
     const host = { layout: () => state, width: () => WIDE, setLayout: (next: LayoutState) => { state = next; }, persist };
-    const drag = beginDrag("tree", 10, state, 4);
+    const drag = beginDrag("tree", 10, state);
     expect(dragTo(drag, 10, WIDE)).toBe(state);
     expect(dragChanged(drag, state)).toBe(false);
     const handlers = dividerHandlers(host);
     handlers.onMove(100);
     handlers.onUp();
-    handlers.onDown("tree", 10, 4);
+    handlers.onDown("tree", 10);
     handlers.onMove(100);
     handlers.onUp();
     expect(persist).toHaveBeenCalledTimes(1);
@@ -135,18 +125,5 @@ describe("drag handlers and viewport", () => {
     expect(nudgeFor("ArrowRight")).toBe(24);
     expect(nudgeFor("ArrowLeft")).toBe(-24);
     expect(nudgeFor("Tab")).toBe(0);
-  });
-
-  it("pairs only visible columns and watches resize", () => {
-    const resolved = resolveColumns(defaultLayout(WIDE), WIDE, "wide");
-    expect(columnSlots(resolved).map((slot) => slot.divider)).toEqual(["tree", "note", null]);
-    const listeners = new Set<() => void>();
-    const host = { innerWidth: 900, addEventListener: (_: "resize", listener: () => void) => void listeners.add(listener), removeEventListener: (_: "resize", listener: () => void) => void listeners.delete(listener) };
-    const onChange = vi.fn();
-    const stop = watchViewport(host, onChange);
-    listeners.forEach((listener) => listener());
-    expect(onChange).toHaveBeenCalledWith(900);
-    stop();
-    expect(listeners).toHaveLength(0);
   });
 });

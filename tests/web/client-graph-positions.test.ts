@@ -20,7 +20,6 @@ import {
   LAYOUT_SEED,
   LAYOUT_TICKS,
   POSITIONS_STORAGE_KEY,
-  clearPositions,
   deserializePositions,
   graphShapeKey,
   layoutFor,
@@ -59,10 +58,6 @@ function memoryStorage(initial: string | null = null) {
       calls.push(`set:${key}`);
       value = next;
     },
-    removeItem(key) {
-      calls.push(`remove:${key}`);
-      value = null;
-    },
     value: () => value,
     calls,
   };
@@ -76,9 +71,6 @@ const hostileStorage: PositionStorage = {
   },
   setItem() {
     throw new Error("QuotaExceededError");
-  },
-  removeItem() {
-    throw new Error("SecurityError");
   },
 };
 
@@ -341,20 +333,12 @@ describe("position storage", () => {
     expect(loadPositions(storage, "two")?.get("b")).toEqual({ x: 2, y: 2 });
   });
 
-  it("clears on request", () => {
-    const storage = memoryStorage();
-    savePositions(storage, "k", new Map([["a", { x: 1, y: 1 }]]));
-    expect(clearPositions(storage)).toBe(true);
-    expect(loadPositions(storage, "k")).toBeNull();
-  });
-
   it("survives a storage that throws on every method", () => {
     // Safari private browsing historically, and any partitioned-storage
     // embedding today. A workspace that lays out from scratch is not an error
     // worth surfacing; a workspace that fails to boot is.
     expect(loadPositions(hostileStorage, "k")).toBeNull();
     expect(savePositions(hostileStorage, "k", new Map([["a", { x: 1, y: 1 }]]))).toBe(false);
-    expect(clearPositions(hostileStorage)).toBe(false);
   });
 });
 

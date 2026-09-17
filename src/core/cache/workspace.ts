@@ -53,8 +53,6 @@ export interface WorkspaceSnapshot {
    * caller mutating it would corrupt the next build.
    */
   notes: readonly Note[];
-  /** Exactly the HTML artifacts represented by the graph. */
-  artifacts: readonly HtmlArtifact[];
 }
 
 /** Cumulative counters, from construction. Callers take deltas. */
@@ -408,7 +406,6 @@ export class WorkspaceCache {
       const snapshot: WorkspaceSnapshot = {
         model: buildGraph(input),
         notes: Object.freeze(kept),
-        artifacts: Object.freeze(input.artifacts ?? []),
       };
       this.lastSnapshot = snapshot;
       return snapshot;

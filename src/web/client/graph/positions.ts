@@ -198,7 +198,6 @@ export function shouldRelayout(previous: string | null, next: string): boolean {
 export interface PositionStorage {
   getItem(key: string): string | null;
   setItem(key: string, value: string): void;
-  removeItem(key: string): void;
 }
 
 /**
@@ -327,16 +326,6 @@ export function loadPositions(storage: PositionStorage, key: string): Map<string
 export function savePositions(storage: PositionStorage, key: string, positions: ReadonlyMap<string, Point>): boolean {
   try {
     storage.setItem(POSITIONS_STORAGE_KEY, serializePositions(key, positions));
-    return true;
-  } catch {
-    return false;
-  }
-}
-
-/** Drop the cache. The escape hatch behind a re-layout control. */
-export function clearPositions(storage: PositionStorage): boolean {
-  try {
-    storage.removeItem(POSITIONS_STORAGE_KEY);
     return true;
   } catch {
     return false;
