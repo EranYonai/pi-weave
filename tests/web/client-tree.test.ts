@@ -249,6 +249,7 @@ describe("expand and collapse", () => {
 
 describe("tree mutations", () => {
   it("recognises note and folder rows without making repository rows mutable", () => {
+    expect(mutableTreeRow("vault")).toEqual({ type: "vault", path: "" });
     expect(mutableTreeRow("note:plans/a")).toEqual({ type: "note", path: "plans/a" });
     expect(mutableTreeRow("vfolder:plans")).toEqual({ type: "folder", path: "plans" });
     expect(mutableTreeRow("module:src")).toBeNull();
@@ -265,12 +266,14 @@ describe("tree mutations", () => {
     expect(deletesSelection("note:plans/a", { type: "folder", path: "plans" })).toBe(true);
     expect(deletesSelection("vfolder:plans/nested", { type: "folder", path: "plans" })).toBe(true);
     expect(deletesSelection("note:other", { type: "folder", path: "plans" })).toBe(false);
+    expect(deletesSelection("note:other", { type: "vault", path: "" })).toBe(false);
     expect(deletesSelection(null, { type: "note", path: "plans/a" })).toBe(false);
   });
 
   it("deletes notes directly but confirms recursive folder deletion", () => {
     expect(deleteNeedsConfirmation({ type: "note" })).toBe(false);
     expect(deleteNeedsConfirmation({ type: "folder" })).toBe(true);
+    expect(deleteNeedsConfirmation({ type: "vault" })).toBe(false);
   });
 });
 

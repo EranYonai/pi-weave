@@ -1,7 +1,7 @@
 /** The vault and repository tree column. */
 
 import { useState } from "preact/hooks";
-import { deleteFolder, deleteNote, moveNote, renameFolder, renameNote } from "../api";
+import { createFolder, deleteFolder, deleteNote, moveNote, renameFolder, renameNote } from "../api";
 import { fetchJson } from "../api.dom";
 import { isTextEntry, type KeyTarget } from "../shell/keys.model";
 import { ICON_BOX, ICON_STROKE, ICONS } from "../shell/icons.model";
@@ -18,6 +18,7 @@ import {
   deleteNeedsConfirmation,
   depthVar,
   dropFolder,
+  expand,
   initialTreeView,
   internalsHint,
   internalsLabel,
@@ -110,14 +111,21 @@ export function Tree(props: TreeProps) {
       props.onRefresh();
     }
   };
-  const act = async (action: "rename" | "delete"): Promise<void> => {
+  const act = async (action: "rename" | "delete" | "newFolder"): Promise<void> => {
     if (menu === null) return;
     const target = mutableTreeRow(menu.id);
     setMenu(null);
     if (target === null) return;
-    if (action === "rename") {
+    if (action === "newFolder") {
+      const name = window.prompt("Folder name:")?.trim();
+      if (!name) return;
+      const parent = target.type === "vault" ? "" : target.type === "folder" ? target.path : target.path.split("/").slice(0, -1).join("/");
+      const targetPath = parent ? `${parent}/${name}` : name;
+      if (parent) setState((current) => expand(current, `vfolder:${parent}`));
+      await run(createFolder(fetchJson, targetPath));
+    } else if (action === "rename") {
       setEditing({ id: menu.id, label: menu.label, value: menu.label });
-    } else if (!deleteNeedsConfirmation(target) || window.confirm(`Permanently delete folder “${menu.label}” and everything inside it?`)) {
+    } else if (target.type !== "vault" && (!deleteNeedsConfirmation(target) || window.confirm(`Permanently delete folder “${menu.label}” and everything inside it?`))) {
       await run(target.type === "note" ? deleteNote(fetchJson, target.path) : deleteFolder(fetchJson, target.path), deletesSelection(props.selectedId, target) ? "vault" : undefined);
     }
   };
@@ -136,18 +144,38 @@ export function Tree(props: TreeProps) {
         <button type="button" class="weave-chip" title={internalsHint(state.showInternals)} onClick={() => setState(toggleInternals(state))}>◧ {internalsLabel(state.showInternals)}</button>
       </div>
       {empty === null ? (
-        <ul class="weave-rows" role="tree" tabIndex={0} aria-label={TREE_LABEL} aria-activedescendant={treeActiveDescendant(rows, props.selectedId) ?? undefined}>
+        <ul
+          class="weave-rows"
+          role="tree"
+          tabIndex={0}
+          aria-label={TREE_LABEL}
+          aria-activedescendant={treeActiveDescendant(rows, props.selectedId) ?? undefined}
+          onContextMenu={(event) => {
+            event.preventDefault();
+            setMenu({ id: "vault", label: "Vault", x: event.clientX, y: event.clientY });
+          }}
+        >
           {rowViews(rows, props.selectedId, props.now).map((view) => <Row key={view.id} view={view} recentIds={props.recentIds} edit={editing?.id === view.id ? editing.value : null} onEdit={(value) => setEditing((current) => current === null ? null : { ...current, value })} onRename={(value) => { const current = editing; setEditing(null); const target = current === null ? null : mutableTreeRow(current.id); const name = value?.trim(); const label = current?.label; if (target !== null && name && label !== undefined && name !== label && window.confirm(`Rename “${label}”? Existing links to it may break.`)) void run(target.type === "note" ? renameNote(fetchJson, target.path, name) : renameFolder(fetchJson, target.path, name)); }} onSelect={() => { props.onSelect(view.id); if (view.hasKids) setState((current) => toggleExpanded(current, view.id)); }} onToggle={() => setState(toggleExpanded(state, view.id))} onMenu={(x, y) => setMenu({ id: view.id, label: view.label, x, y })} onDrop={(dragged) => { const folder = dropFolder(view.id); if (dragged.startsWith("note:") && folder !== undefined) void run(moveNote(fetchJson, dragged.slice("note:".length), folder)); }} />)}
         </ul>
       ) : <p class="weave-tree-empty">{empty}</p>}
       <p class="weave-tree-count">{rowCountLabel(rows)}</p>
-      {menu !== null && mutableTreeRow(menu.id) !== null ? <>
-        <button type="button" class="weave-menu-backdrop" aria-label="Close context menu" onClick={() => setMenu(null)} />
-        <div class="weave-menu" role="menu" style={{ left: `${menu.x}px`, top: `${menu.y}px` }}>
-          <button type="button" role="menuitem" onClick={() => void act("rename")}>Rename…</button>
-          <button type="button" role="menuitem" class="weave-menu-danger" onClick={() => void act("delete")}>Delete</button>
-        </div>
-      </> : null}
+      {menu !== null && mutableTreeRow(menu.id) !== null ? (() => {
+        const target = mutableTreeRow(menu.id)!;
+        return (
+          <>
+            <button type="button" class="weave-menu-backdrop" aria-label="Close context menu" onClick={() => setMenu(null)} />
+            <div class="weave-menu" role="menu" style={{ left: `${menu.x}px`, top: `${menu.y}px` }}>
+              <button type="button" role="menuitem" onClick={() => void act("newFolder")}>New folder…</button>
+              {target.type !== "vault" ? (
+                <>
+                  <button type="button" role="menuitem" onClick={() => void act("rename")}>Rename…</button>
+                  <button type="button" role="menuitem" class="weave-menu-danger" onClick={() => void act("delete")}>Delete</button>
+                </>
+              ) : null}
+            </div>
+          </>
+        );
+      })() : null}
     </div>
   );
 }

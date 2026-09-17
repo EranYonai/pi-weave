@@ -72,6 +72,17 @@ describe("addNote / getNote", () => {
     expect(note.source).toBe("agent");
   });
 
+  it("falls back to file mtime when created/updated are missing from frontmatter", async () => {
+    await ensureVault(vault);
+    const rawNote = "---\ntitle: Hand Crafted\n---\nbody text\n";
+    await fs.writeFile(join(vault, "notes", "hand-crafted.md"), rawNote);
+    const note = await getNote(vault, "hand-crafted");
+    expect(note).not.toBeNull();
+    expect(note?.updated).not.toBe("");
+    expect(note?.created).not.toBe("");
+    expect(new Date(note!.updated).getTime()).toBeGreaterThan(0);
+  });
+
   it("uniquifies colliding slugs", async () => {
     const first = await addNote(vault, { title: "Decision", body: "one" });
     const second = await addNote(vault, { title: "Decision", body: "two" });

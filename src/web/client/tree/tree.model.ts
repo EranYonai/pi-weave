@@ -143,20 +143,22 @@ export function dropFolder(id: string): string | null | undefined {
   return id.startsWith("vfolder:") ? id.slice("vfolder:".length) : undefined;
 }
 
-export function mutableTreeRow(id: string): { type: "note" | "folder"; path: string } | null {
+export function mutableTreeRow(id: string): { type: "note" | "folder" | "vault"; path: string } | null {
+  if (id === "vault") return { type: "vault", path: "" };
   if (id.startsWith("note:")) return { type: "note", path: id.slice("note:".length) };
   if (id.startsWith("vfolder:")) return { type: "folder", path: id.slice("vfolder:".length) };
   return null;
 }
 
-export function deletesSelection(selectedId: string | null, target: { type: "note" | "folder"; path: string }): boolean {
+export function deletesSelection(selectedId: string | null, target: { type: "note" | "folder" | "vault"; path: string }): boolean {
   if (selectedId === null) return false;
   if (target.type === "note") return selectedId === `note:${target.path}`;
-  return selectedId === `vfolder:${target.path}` || selectedId.startsWith(`vfolder:${target.path}/`) || selectedId.startsWith(`note:${target.path}/`);
+  if (target.type === "folder") return selectedId === `vfolder:${target.path}` || selectedId.startsWith(`vfolder:${target.path}/`) || selectedId.startsWith(`note:${target.path}/`);
+  return false;
 }
 
 /** Notes delete directly; folders retain confirmation because they may contain many notes. */
-export function deleteNeedsConfirmation(target: { type: "note" | "folder" }): boolean {
+export function deleteNeedsConfirmation(target: { type: "note" | "folder" | "vault" }): boolean {
   return target.type === "folder";
 }
 
