@@ -347,26 +347,51 @@ export async function finalizeNote(
   });
 }
 
-async function listNoteFiles(root: string): Promise<string[]> {
+async function listVaultEntries(root: string): Promise<{ files: string[]; folders: string[] }> {
   const dir = join(root, NOTES_DIR);
-  const out: string[] = [];
-  async function walk(prefix: string): Promise<void> {
+  const files: string[] = [];
+  const folders: string[] = [];
+  const seen = new Set<string>();
+  async function walk(prefix: string, includeFolders = true): Promise<boolean> {
+    const path = prefix.length > 0 ? join(dir, prefix) : dir;
+    let realPath: string;
     let entries;
     try {
-      entries = await fs.readdir(prefix.length > 0 ? join(dir, prefix) : dir, { withFileTypes: true });
+      realPath = await fs.realpath(path);
+      if (seen.has(realPath)) return false;
+      seen.add(realPath);
+      entries = await fs.readdir(path, { withFileTypes: true });
     } catch {
-      return;
+      return false;
     }
     for (const entry of entries) {
-      if (entry.isDirectory()) {
-        await walk(prefix.length > 0 ? `${prefix}/${entry.name}` : entry.name);
-      } else if (entry.isFile() && isVaultArtifact(entry.name)) {
-        out.push(prefix.length > 0 ? `${prefix}/${entry.name}` : entry.name);
+      const child = prefix.length > 0 ? `${prefix}/${entry.name}` : entry.name;
+      let isDirectory = entry.isDirectory();
+      let isFile = entry.isFile();
+      if (entry.isSymbolicLink()) {
+        try {
+          const stat = await fs.stat(join(dir, child));
+          isDirectory = stat.isDirectory();
+          isFile = stat.isFile();
+        } catch {
+          continue;
+        }
+      }
+      if (isDirectory) {
+        const visible = includeFolders && !entry.name.startsWith(".");
+        if ((await walk(child, visible)) && visible) folders.push(child);
+      } else if (isFile && isVaultArtifact(entry.name)) {
+        files.push(child);
       }
     }
+    return true;
   }
   await walk("");
-  return out.sort();
+  return { files: files.sort(), folders: folders.sort() };
+}
+
+async function listNoteFiles(root: string): Promise<string[]> {
+  return (await listVaultEntries(root)).files;
 }
 
 function isMarkdown(path: string): boolean {
@@ -461,25 +486,7 @@ function byUpdatedDesc(a: { updated: string }, b: { updated: string }): number {
 }
 
 export async function listNoteFolders(root: string): Promise<string[]> {
-  const dir = join(root, NOTES_DIR);
-  const out: string[] = [];
-  async function walk(prefix: string): Promise<void> {
-    let entries;
-    try {
-      entries = await fs.readdir(prefix.length > 0 ? join(dir, prefix) : dir, { withFileTypes: true });
-    } catch {
-      return;
-    }
-    for (const entry of entries) {
-      if (entry.isDirectory() && !entry.name.startsWith(".")) {
-        const folder = prefix.length > 0 ? `${prefix}/${entry.name}` : entry.name;
-        out.push(folder);
-        await walk(folder);
-      }
-    }
-  }
-  await walk("");
-  return out.sort();
+  return (await listVaultEntries(root)).folders;
 }
 
 /**
@@ -508,7 +515,7 @@ export interface VaultSnapshot {
 
 /** Read the whole vault in one pass: one readdir, one read per note. */
 export async function readVault(root: string): Promise<VaultSnapshot> {
-  const [files, folders] = await Promise.all([listNoteFiles(root), listNoteFolders(root)]);
+  const { files, folders } = await listVaultEntries(root);
   const notes: Note[] = [];
   const artifacts: HtmlArtifact[] = [];
   for (const file of files) {

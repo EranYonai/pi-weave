@@ -339,6 +339,28 @@ describe("readVault", () => {
     expect(await getHtmlArtifact(vault, "reports/sprint.html")).not.toBeNull();
   });
 
+  it("discovers symlinked notes and folders without following cycles", async () => {
+    const linkedVault = await makeTempDir();
+    await addNote(linkedVault, { title: "Folder note", body: "inside linked folder" });
+    await addNote(linkedVault, { title: "Linked file", body: "linked individually" });
+    await ensureVault(vault);
+    await fs.symlink(join(linkedVault, "notes"), join(vault, "notes", "linked"));
+    await fs.symlink(
+      join(linkedVault, "notes", "linked-file.md"),
+      join(vault, "notes", "linked-file.md"),
+    );
+    await fs.symlink(".", join(linkedVault, "notes", "loop"));
+
+    const snapshot = await readVault(vault);
+    expect(snapshot.notes.map((note) => note.slug).sort()).toEqual([
+      "linked-file",
+      "linked/folder-note",
+      "linked/linked-file",
+    ]);
+    expect(snapshot.fileCount).toBe(3);
+    expect(snapshot.folders).toEqual(["linked"]);
+  });
+
   it("lets a YAML-in-comment block override HTML metadata", () => {
     const artifact = parseHtmlArtifact(
       "report.htm",
