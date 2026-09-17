@@ -1,6 +1,8 @@
-/** The read-only tree column. */
+/** The vault and repository tree column. */
 
 import { useState } from "preact/hooks";
+import { deleteFolder, deleteNote, moveNote, renameFolder, renameNote } from "../api";
+import { fetchJson } from "../api.dom";
 import { isTextEntry, type KeyTarget } from "../shell/keys.model";
 import { ICON_BOX, ICON_STROKE, ICONS } from "../shell/icons.model";
 import type { IconName } from "../shell/icons.model";
@@ -13,9 +15,11 @@ import {
   treeActiveDescendant,
   cycleProvenance,
   depthVar,
+  dropFolder,
   initialTreeView,
   internalsHint,
   internalsLabel,
+  mutableTreeRow,
   provenanceHint,
   provenanceLabel,
   rowCountLabel,
@@ -33,6 +37,7 @@ export interface TreeProps {
   selectedId: string | null;
   recentIds: ReadonlySet<string>;
   onSelect: (id: string) => void;
+  onRefresh: () => void;
   now: number;
 }
 
@@ -56,7 +61,8 @@ export function Icon({ name, class: className }: { name: IconName; class?: strin
   );
 }
 
-function Row({ view, recentIds, onSelect, onToggle }: { view: ReturnType<typeof rowViews>[number]; recentIds: ReadonlySet<string>; onSelect: () => void; onToggle: () => void }) {
+function Row({ view, recentIds, edit, onEdit, onRename, onSelect, onToggle, onMenu, onDrop }: { view: ReturnType<typeof rowViews>[number]; recentIds: ReadonlySet<string>; edit: string | null; onEdit: (value: string) => void; onRename: (value: string | null) => void; onSelect: () => void; onToggle: () => void; onMenu: (x: number, y: number) => void; onDrop: (id: string) => void }) {
+  const folder = dropFolder(view.id);
   return (
     <li
       id={view.domId}
@@ -70,13 +76,18 @@ function Row({ view, recentIds, onSelect, onToggle }: { view: ReturnType<typeof 
       aria-expanded={view.hasKids ? view.expanded : undefined}
       style={depthVar(view.depth)}
       onClick={onSelect}
+      draggable={view.id.startsWith("note:")}
+      onDragStart={(event) => event.dataTransfer?.setData("text/plain", view.id)}
+      onDragOver={folder === undefined ? undefined : (event) => event.preventDefault()}
+      onDrop={folder === undefined ? undefined : (event) => { event.preventDefault(); onDrop(event.dataTransfer?.getData("text/plain") ?? ""); }}
+      onContextMenu={(event) => { event.preventDefault(); event.stopPropagation(); onMenu(event.clientX, event.clientY); }}
     >
       <span class="weave-twisty" aria-hidden="true" onClick={(event) => { event.stopPropagation(); onToggle(); }}>
         {view.hasKids ? <Icon name="chevron" class={view.expanded ? "weave-icon weave-icon-open" : "weave-icon"} /> : null}
       </span>
       <span class="weave-kind" aria-hidden="true"><Icon name={view.kindIcon} class="weave-icon" /></span>
       <span class={`weave-prov weave-prov-${view.provenance ?? "none"}`} title={view.provenanceTitle}>{view.provenanceGlyph}</span>
-      <span class="weave-label">{view.label}</span>
+      {edit === null ? <span class="weave-label">{view.label}</span> : <input class="weave-tree-rename" value={edit} autoFocus onClick={(event) => event.stopPropagation()} onInput={(event) => onEdit(event.currentTarget.value)} onBlur={(event) => onRename(event.currentTarget.value)} onKeyDown={(event) => { event.stopPropagation(); if (event.key === "Enter") event.currentTarget.blur(); else if (event.key === "Escape") onRename(null); }} />}
       <span class="weave-meta">{view.meta}</span>
     </li>
   );
@@ -84,8 +95,29 @@ function Row({ view, recentIds, onSelect, onToggle }: { view: ReturnType<typeof 
 
 export function Tree(props: TreeProps) {
   const [state, setState] = useState(initialTreeView);
+  const [menu, setMenu] = useState<{ id: string; label: string; x: number; y: number } | null>(null);
+  const [editing, setEditing] = useState<{ id: string; label: string; value: string } | null>(null);
   const rows = rowsFor(props.graph, state);
   const empty = treeEmptyMessage(props.graph, rows, state);
+  const run = async (pending: ReturnType<typeof deleteNote>): Promise<void> => {
+    const result = await pending;
+    if (!result.ok) window.alert(result.message);
+    else {
+      if (result.data.id !== undefined) props.onSelect(result.data.id);
+      props.onRefresh();
+    }
+  };
+  const act = async (action: "rename" | "delete"): Promise<void> => {
+    if (menu === null) return;
+    const target = mutableTreeRow(menu.id);
+    setMenu(null);
+    if (target === null) return;
+    if (action === "rename") {
+      setEditing({ id: menu.id, label: menu.label, value: menu.label });
+    } else if (window.confirm(`Permanently delete ${target.type} “${menu.label}”${target.type === "folder" ? " and everything inside it" : ""}?`)) {
+      await run(target.type === "note" ? deleteNote(fetchJson, target.path) : deleteFolder(fetchJson, target.path));
+    }
+  };
   return (
     <div class="weave-tree" onKeyDown={(event) => {
       const target = event.target as KeyTarget;
@@ -102,10 +134,17 @@ export function Tree(props: TreeProps) {
       </div>
       {empty === null ? (
         <ul class="weave-rows" role="tree" tabIndex={0} aria-label={TREE_LABEL} aria-activedescendant={treeActiveDescendant(rows, props.selectedId) ?? undefined}>
-          {rowViews(rows, props.selectedId, props.now).map((view) => <Row key={view.id} view={view} recentIds={props.recentIds} onSelect={() => { props.onSelect(view.id); if (view.hasKids) setState((current) => toggleExpanded(current, view.id)); }} onToggle={() => setState(toggleExpanded(state, view.id))} />)}
+          {rowViews(rows, props.selectedId, props.now).map((view) => <Row key={view.id} view={view} recentIds={props.recentIds} edit={editing?.id === view.id ? editing.value : null} onEdit={(value) => setEditing((current) => current === null ? null : { ...current, value })} onRename={(value) => { const current = editing; setEditing(null); const target = current === null ? null : mutableTreeRow(current.id); const name = value?.trim(); if (target !== null && name && name !== current?.label) void run(target.type === "note" ? renameNote(fetchJson, target.path, name) : renameFolder(fetchJson, target.path, name)); }} onSelect={() => { props.onSelect(view.id); if (view.hasKids) setState((current) => toggleExpanded(current, view.id)); }} onToggle={() => setState(toggleExpanded(state, view.id))} onMenu={(x, y) => setMenu({ id: view.id, label: view.label, x, y })} onDrop={(dragged) => { const folder = dropFolder(view.id); if (dragged.startsWith("note:") && folder !== undefined) void run(moveNote(fetchJson, dragged.slice("note:".length), folder)); }} />)}
         </ul>
       ) : <p class="weave-tree-empty">{empty}</p>}
       <p class="weave-tree-count">{rowCountLabel(rows)}</p>
+      {menu !== null && mutableTreeRow(menu.id) !== null ? <>
+        <button type="button" class="weave-menu-backdrop" aria-label="Close context menu" onClick={() => setMenu(null)} />
+        <div class="weave-menu" role="menu" style={{ left: `${menu.x}px`, top: `${menu.y}px` }}>
+          <button type="button" role="menuitem" onClick={() => void act("rename")}>Rename…</button>
+          <button type="button" role="menuitem" class="weave-menu-danger" onClick={() => void act("delete")}>Delete…</button>
+        </div>
+      </> : null}
     </div>
   );
 }

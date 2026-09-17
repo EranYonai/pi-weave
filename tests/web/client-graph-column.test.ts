@@ -457,6 +457,7 @@ describe("graphColumnModel", () => {
     expect(open.visible).toBe(6);
     expect(open.total).toBe(6);
     expect(open.empty).toBeNull();
+    expect(open.graph.edges.some((edge) => edge.source === "vault" || edge.target === "vault")).toBe(false);
   });
 
   it("retargets a boundary-crossing edge onto the cluster standing in for it", () => {
@@ -617,7 +618,7 @@ describe("P3 exit criterion — selecting anywhere highlights everywhere (§11, 
     // `note:n000` links to `note:n003`-ish, `module:src/m000`, and is
     // contained by `vault` — a genuinely cross-cluster neighbourhood.
     expect(highlight.has("note:n000")).toBe(true);
-    expect(highlight.has("vault")).toBe(true);
+    expect(highlight.has("vault")).toBe(false);
     expect(highlight.has("module:src/m000")).toBe(true);
     // And it is a small fraction of an 89-node graph, so the dimming is doing
     // real work rather than lighting everything.

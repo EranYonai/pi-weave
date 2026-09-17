@@ -341,12 +341,18 @@ body{font-size:var(--weave-px-base)}
 .weave-prov-agent{color:var(--weave-accent)}
 .weave-prov-generated{color:var(--weave-faint)}
 .weave-label{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis}
+.weave-tree-rename{flex:1;min-width:0;height:20px;padding:0 4px;font:inherit;color:var(--weave-fg);background:var(--weave-panel);border:1px solid var(--weave-accent)}
 .weave-meta{flex:none;font-size:var(--weave-px-caption);color:var(--weave-faint)}
 .weave-tree-empty{flex:1;margin:0;padding:14px var(--weave-gutter);color:var(--weave-dim)}
 .weave-tree-count{
   margin:0;padding:3px var(--weave-gutter);font-size:var(--weave-px-caption);color:var(--weave-faint);
   border-top:1px solid var(--weave-line);
 }
+.weave-menu-backdrop{position:fixed;inset:0;border:0;background:transparent;z-index:20}
+.weave-menu{position:fixed;z-index:21;display:grid;min-width:120px;padding:4px;background:var(--weave-panel);border:1px solid var(--weave-line-strong)}
+.weave-menu button{padding:6px 10px;border:0;background:transparent;color:var(--weave-fg);text-align:left}
+.weave-menu button:hover{background:var(--weave-line)}
+.weave-menu .weave-menu-danger{color:var(--weave-bad)}
 
 /* icons ------------------------------------------------------------------
    The sprite's only CSS: one colour (the glyph inherits the row's, so a

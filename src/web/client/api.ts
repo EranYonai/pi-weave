@@ -36,7 +36,7 @@
  * fortnight.
  */
 
-import type { GraphPayload, NotePayload, OpenResult, SearchPayload, ViewNote } from "../shared/wire";
+import type { GraphPayload, MutationResult, NotePayload, OpenResult, SearchPayload, ViewNote } from "../shared/wire";
 
 // --- the injected HTTP port ------------------------------------------------------
 
@@ -229,6 +229,10 @@ export function isOpenResult(value: unknown): value is OpenResult {
   return isObject(value) && typeof value["opened"] === "boolean";
 }
 
+export function isMutationResult(value: unknown): value is MutationResult {
+  return isObject(value) && value["ok"] === true && (value["id"] === undefined || typeof value["id"] === "string");
+}
+
 // --- routes --------------------------------------------------------------------------
 
 /**
@@ -308,3 +312,19 @@ export function openNote(fetchImpl: FetchLike, slug: string): Promise<ApiResult<
     body: JSON.stringify({ slug }),
   });
 }
+
+function mutation(fetchImpl: FetchLike, url: string, method: string, body?: unknown): Promise<ApiResult<MutationResult>> {
+  return request(fetchImpl, url, isMutationResult, {
+    method,
+    ...(body === undefined ? {} : { headers: { "content-type": "application/json" }, body: JSON.stringify(body) }),
+  });
+}
+
+const noteUrl = (slug: string, suffix = ""): string => `/api/note/${encodeURIComponent(slug)}${suffix}`;
+const folderUrl = (path: string, suffix = ""): string => `/api/folder/${path.split("/").map(encodeURIComponent).join("/")}${suffix}`;
+
+export const renameNote = (fetchImpl: FetchLike, slug: string, name: string) => mutation(fetchImpl, noteUrl(slug, "/rename"), "POST", { name });
+export const moveNote = (fetchImpl: FetchLike, slug: string, folder: string | null) => mutation(fetchImpl, noteUrl(slug, "/move"), "POST", { folder });
+export const deleteNote = (fetchImpl: FetchLike, slug: string) => mutation(fetchImpl, noteUrl(slug), "DELETE");
+export const renameFolder = (fetchImpl: FetchLike, path: string, name: string) => mutation(fetchImpl, folderUrl(path, "/rename"), "POST", { name });
+export const deleteFolder = (fetchImpl: FetchLike, path: string) => mutation(fetchImpl, folderUrl(path), "DELETE");

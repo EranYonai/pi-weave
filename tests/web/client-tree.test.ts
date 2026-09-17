@@ -26,6 +26,7 @@ import {
   collapse,
   cycleProvenance,
   depthVar,
+  dropFolder,
   expand,
   idAt,
   indexOfRow,
@@ -34,6 +35,7 @@ import {
   internalsLabel,
   kindIcon,
   moveSelection,
+  mutableTreeRow,
   parentOf,
   provenanceGlyph,
   provenanceHint,
@@ -240,6 +242,20 @@ describe("expand and collapse", () => {
     const closed = collapse(initialTreeView(), "vault");
     expect(closed.expanded.has("vault")).toBe(false);
     expect(expand(closed, "vault").expanded.has("vault")).toBe(true);
+  });
+});
+
+describe("tree mutations", () => {
+  it("recognises note and folder rows without making repository rows mutable", () => {
+    expect(mutableTreeRow("note:plans/a")).toEqual({ type: "note", path: "plans/a" });
+    expect(mutableTreeRow("vfolder:plans")).toEqual({ type: "folder", path: "plans" });
+    expect(mutableTreeRow("module:src")).toBeNull();
+  });
+
+  it("accepts drops only on the vault root and vault folders", () => {
+    expect(dropFolder("vault")).toBeNull();
+    expect(dropFolder("vfolder:plans")).toBe("plans");
+    expect(dropFolder("note:a")).toBeUndefined();
   });
 });
 

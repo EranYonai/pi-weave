@@ -18,16 +18,22 @@
 import { describe, expect, it } from "vitest";
 import {
   classifyStatus,
+  deleteFolder,
+  deleteNote,
   fetchGraph,
   fetchNote,
   fetchSearch,
   isGraphPayload,
+  isMutationResult,
   isNotePayload,
   isOpenResult,
   isSearchPayload,
   isViewNote,
   messageForStatus,
+  moveNote,
   openNote,
+  renameFolder,
+  renameNote,
 } from "../../src/web/client/api";
 import type { FetchLike, HttpRequest, HttpResponse } from "../../src/web/client/api";
 import type { GraphPayload, NotePayload, ViewNote } from "../../src/web/shared/wire";
@@ -87,6 +93,30 @@ const NOTE: ViewNote = {
 };
 
 const PAYLOAD: NotePayload = { note: NOTE };
+
+describe("vault mutations", () => {
+  it("validates mutation responses", () => {
+    expect(isMutationResult({ ok: true })).toBe(true);
+    expect(isMutationResult({ ok: true, id: "note:a" })).toBe(true);
+    expect(isMutationResult({ ok: true, id: 1 })).toBe(false);
+  });
+
+  it("uses the narrow mutation routes", async () => {
+    const fetch = respondsWith({ ok: true });
+    await renameNote(fetch, "folder/a", "B");
+    await moveNote(fetch, "folder/a", null);
+    await deleteNote(fetch, "folder/a");
+    await renameFolder(fetch, "old/nested", "new");
+    await deleteFolder(fetch, "old/nested");
+    expect(fetch.calls.map((call) => [call.url, call.init?.method])).toEqual([
+      ["/api/note/folder%2Fa/rename", "POST"],
+      ["/api/note/folder%2Fa/move", "POST"],
+      ["/api/note/folder%2Fa", "DELETE"],
+      ["/api/folder/old/nested/rename", "POST"],
+      ["/api/folder/old/nested", "DELETE"],
+    ]);
+  });
+});
 
 // --- status classification ----------------------------------------------------
 

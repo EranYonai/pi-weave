@@ -196,6 +196,7 @@ export function Shell(props: ShellProps) {
         selectedId={workspaceState.selectedId}
         recentIds={workspaceState.recentIds}
         onSelect={(id) => void workspace.current?.select(id)}
+        onRefresh={() => workspace.current?.refresh()}
         onOpen={(slug) => void openNote(fetchJson, slug)}
         now={now}
         // The graph column's three ports (§7.5, §10). Supplied here, at the

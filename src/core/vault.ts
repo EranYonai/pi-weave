@@ -347,6 +347,103 @@ export async function finalizeNote(
   });
 }
 
+export type VaultMutationResult =
+  | { ok: true; slug?: string; path?: string }
+  | { ok: false; reason: "missing" | "collision" | "invalid" };
+
+function resolveFolderPath(root: string, folder: string): string | null {
+  const parts = folder.split("/");
+  if (parts.length === 0 || parts.some((part) => part === "" || part === "." || part === "..")) return null;
+  const notesDir = join(root, NOTES_DIR);
+  const candidate = join(notesDir, ...parts);
+  const rel = relative(notesDir, candidate);
+  return rel.startsWith("..") || isAbsolute(rel) || rel.length === 0 ? null : candidate;
+}
+
+async function isDirectory(path: string): Promise<boolean> {
+  try {
+    return (await fs.stat(path)).isDirectory();
+  } catch {
+    return false;
+  }
+}
+
+/** Rename a note in place and keep its front-matter title in sync. */
+export async function renameNote(root: string, slug: string, name: string, now = new Date()): Promise<VaultMutationResult> {
+  const from = resolveNotePath(root, slug);
+  const title = name.trim();
+  if (from === null || title === "") return { ok: false, reason: "invalid" };
+  const parent = slug.split("/").slice(0, -1).join("/");
+  const target = [...(parent === "" ? [] : [parent]), slugify(title)].join("/");
+  const to = resolveNotePath(root, target);
+  if (to === null) return { ok: false, reason: "invalid" };
+  return withNoteLocks([from, to], async () => {
+    const note = await getNote(root, slug);
+    if (note === null) return { ok: false, reason: "missing" };
+    if (from !== to && await exists(to)) return { ok: false, reason: "collision" };
+    if (from !== to) await fs.rename(from, to);
+    await writeNote(to, target, { ...note, title, updated: now.toISOString() }, note.body, note.frontMatter);
+    return { ok: true, slug: target };
+  });
+}
+
+/** Move a note to an existing vault folder, or to the vault root with `null`. */
+export async function moveNote(root: string, slug: string, folder: string | null): Promise<VaultMutationResult> {
+  const from = resolveNotePath(root, slug);
+  if (from === null) return { ok: false, reason: "invalid" };
+  const targetDir = folder === null ? join(root, NOTES_DIR) : resolveFolderPath(root, folder);
+  if (targetDir === null || !(await isDirectory(targetDir))) return { ok: false, reason: "missing" };
+  const target = folder === null ? basename(slug) : `${folder}/${basename(slug)}`;
+  const to = resolveNotePath(root, target);
+  if (to === null) return { ok: false, reason: "invalid" };
+  return withNoteLocks([from, to], async () => {
+    if (!(await exists(from))) return { ok: false, reason: "missing" };
+    if (from === to) return { ok: true, slug };
+    if (await exists(to)) return { ok: false, reason: "collision" };
+    await fs.rename(from, to);
+    return { ok: true, slug: target };
+  });
+}
+
+/** Permanently delete one note. */
+export async function deleteNote(root: string, slug: string): Promise<VaultMutationResult> {
+  const path = resolveNotePath(root, slug);
+  if (path === null) return { ok: false, reason: "invalid" };
+  return withNoteLocks([path], async () => {
+    if (!(await exists(path))) return { ok: false, reason: "missing" };
+    await fs.unlink(path);
+    return { ok: true };
+  });
+}
+
+/** Rename a vault folder without changing its parent. */
+export async function renameFolder(root: string, folder: string, name: string): Promise<VaultMutationResult> {
+  const from = resolveFolderPath(root, folder);
+  const title = name.trim();
+  if (from === null || title === "") return { ok: false, reason: "invalid" };
+  const parent = folder.split("/").slice(0, -1).join("/");
+  const target = [...(parent === "" ? [] : [parent]), slugify(title)].join("/");
+  const to = resolveFolderPath(root, target);
+  if (to === null) return { ok: false, reason: "invalid" };
+  return withNoteLocks([from, to], async () => {
+    if (!(await isDirectory(from))) return { ok: false, reason: "missing" };
+    if (from !== to && await exists(to)) return { ok: false, reason: "collision" };
+    if (from !== to) await fs.rename(from, to);
+    return { ok: true, path: target };
+  });
+}
+
+/** Permanently delete a vault folder and its contents. */
+export async function deleteFolder(root: string, folder: string): Promise<VaultMutationResult> {
+  const path = resolveFolderPath(root, folder);
+  if (path === null) return { ok: false, reason: "invalid" };
+  return withNoteLocks([path], async () => {
+    if (!(await isDirectory(path))) return { ok: false, reason: "missing" };
+    await fs.rm(path, { recursive: true });
+    return { ok: true };
+  });
+}
+
 async function listVaultEntries(root: string): Promise<{ files: string[]; folders: string[] }> {
   const dir = join(root, NOTES_DIR);
   const files: string[] = [];

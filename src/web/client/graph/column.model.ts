@@ -308,11 +308,13 @@ export function graphColumnModel(
 
   const model = viewModel(payload);
   const reduced: ClusterAggregate = clusterAggregate(model, state.expanded);
-  const layout = resolveLayout(storage, reduced.nodes, reduced.edges);
+  const vaultOpen = state.expanded.has("vault");
+  const edges = vaultOpen ? reduced.edges.filter((edge) => edge.source !== "vault" && edge.target !== "vault") : reduced.edges;
+  const layout = resolveLayout(storage, reduced.nodes, edges);
 
   return {
-    graph: renderGraph(reduced.nodes, reduced.edges, layout.positions, scheme),
-    highlight: highlightFor(reduced.edges, selectedId),
+    graph: renderGraph(reduced.nodes, edges, layout.positions, scheme),
+    highlight: highlightFor(edges, selectedId),
     key: layout.key,
     cached: layout.cached,
     clusters: reduced.clusters,

@@ -137,6 +137,18 @@ export function collapse(state: TreeViewState, id: string): TreeViewState {
   return { ...state, expanded };
 }
 
+/** Folder represented by a drop target: `null` is the vault root. */
+export function dropFolder(id: string): string | null | undefined {
+  if (id === "vault") return null;
+  return id.startsWith("vfolder:") ? id.slice("vfolder:".length) : undefined;
+}
+
+export function mutableTreeRow(id: string): { type: "note" | "folder"; path: string } | null {
+  if (id.startsWith("note:")) return { type: "note", path: id.slice("note:".length) };
+  if (id.startsWith("vfolder:")) return { type: "folder", path: id.slice("vfolder:".length) };
+  return null;
+}
+
 /**
  * Set the substring filter.
  *

@@ -167,6 +167,12 @@ export interface OpenResult {
   opened: boolean;
 }
 
+/** Successful vault tree mutation. `id` selects the moved/renamed item. */
+export interface MutationResult {
+  ok: true;
+  id?: string;
+}
+
 /**
  * Every non-2xx JSON response. One shape for all of them so the client has
  * exactly one error path.

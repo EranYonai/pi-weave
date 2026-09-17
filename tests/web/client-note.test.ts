@@ -51,6 +51,7 @@ import {
   previewPlacement,
   reducePreview,
   renderMarkdown,
+  resolveMarkdownLink,
   renderNote,
   renderWikilink,
   renderWikilinkToken,
@@ -387,6 +388,20 @@ describe("wikiIndex", () => {
   });
 });
 
+describe("resolveMarkdownLink", () => {
+  const index = wikiIndex(GRAPH, "plans/current");
+
+  it("resolves root and relative Markdown paths to existing notes", () => {
+    expect(resolveMarkdownLink(index, "/graph-architecture.md")).toBe("graph-architecture");
+    expect(resolveMarkdownLink(index, "../release-plan.md#next")).toBe("release-plan");
+  });
+
+  it("leaves external and missing notes alone", () => {
+    expect(resolveMarkdownLink(index, "https://example.com/release-plan.md")).toBeNull();
+    expect(resolveMarkdownLink(index, "./missing.md")).toBeNull();
+  });
+});
+
 // --- tokenising a wikilink ------------------------------------------------------------------
 
 describe("parseWikilink", () => {
@@ -537,6 +552,12 @@ describe("renderMarkdown", () => {
     expect(html).toContain(`${WIKILINK_ATTR}="graph-architecture"`);
   });
 
+  it("turns local Markdown paths into internal links", () => {
+    const html = renderMarkdown("See [the graph](/graph-architecture.md).", index);
+    expect(html).toContain(`${WIKILINK_ATTR}="graph-architecture"`);
+    expect(html).not.toContain('target="_blank"');
+  });
+
   it("leaves a wikilink inside a code span alone", () => {
     // The reason the extension is a real tokenizer and not a regex pass over
     // rendered HTML: marked never offers code-span content to the extension,
@@ -555,6 +576,13 @@ describe("renderMarkdown", () => {
   });
 
   describe("layer 1 — raw HTML never becomes HTML", () => {
+    it("hides HTML comments", () => {
+      const html = renderMarkdown("before\n\n<!-- evidence:jira:CORT-2181 -->\n\nafter", index);
+      expect(html).toContain("before");
+      expect(html).toContain("after");
+      expect(html).not.toContain("evidence:jira");
+    });
+
     it("escapes an inline tag into visible text", () => {
       const html = renderMarkdown("raw <b>bold</b> inline", index);
       expect(html).toContain("&lt;b&gt;");
