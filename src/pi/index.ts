@@ -1,4 +1,5 @@
 import type { ExtensionAPI, ExtensionCommandContext, ExtensionContext } from "@earendil-works/pi-coding-agent";
+import { resolve } from "node:path";
 import {
   buildRepoIndex,
   findGitRoot,
@@ -158,17 +159,18 @@ export default function piWeave(pi: ExtensionAPI): void {
 
   pi.registerCommand("weave-scan", {
     description:
-      "Build or refresh the repository knowledge index (.okf); 'deep' also summarizes files with the session model; 'sessions' summarizes pi session history into the vault",
+      "Build or refresh the repository index; 'deep' summarizes files; 'sessions [dir]' summarizes session history",
     handler: async (args, ctx) => {
-      const mode = args.trim().toLowerCase();
-      if (mode === "sessions") {
+      const input = args.trim();
+      const [mode = "", ...rest] = input.split(/\s+/);
+      if (mode.toLowerCase() === "sessions") {
         // Repo-agnostic by definition: no git requirement, works from any cwd.
         if (inFlightSessionScans.size > 0) {
           ctx.ui.notify("pi-weave: a session scan is already running — run /weave-scan-cancel to stop it.", "warning");
           return;
         }
         const status = await getWorkspaceStatus(ctx.cwd);
-        startSessionScan(ctx, status, updateStatus);
+        startSessionScan(ctx, status, updateStatus, rest.length > 0 ? resolve(ctx.cwd, rest.join(" ")) : undefined);
         return; // the background scan owns the status line until it settles
       }
 
@@ -185,7 +187,7 @@ export default function piWeave(pi: ExtensionAPI): void {
       await writeRepoIndex(root, index);
       ctx.ui.notify(`pi-weave: index refreshed\n${summarizeIndex(index).join("\n")}`, "info");
 
-      if (mode === "deep") {
+      if (mode.toLowerCase() === "deep") {
         if (inFlightDeepScans.has(root)) {
           ctx.ui.notify("pi-weave: a deep scan is already running for this repository — run /weave-scan-cancel to stop it.", "warning");
         } else {
@@ -388,6 +390,7 @@ function startSessionScan(
   ctx: ExtensionCommandContext,
   baseStatus: WorkspaceStatus,
   updateStatus: (ctx?: ExtensionContext | ExtensionCommandContext, text?: string) => void,
+  sessionsRoot?: string,
 ): void {
   startBackgroundScan(
     inFlightSessionScans,
@@ -398,6 +401,7 @@ function startSessionScan(
     async (signal) => {
       updateStatus(ctx, "🕸️ session scan: starting…");
       const outcome = await scanPiSessions(ctx, {
+        ...(sessionsRoot !== undefined ? { sessionsRoot } : {}),
         onProgress: ({ current, total, path }) => {
           const pct = total > 0 ? Math.round((current / total) * 100) : 100;
           updateStatus(ctx, `🕸️ session scan: ${current}/${total} (${pct}%) — ${path}`);

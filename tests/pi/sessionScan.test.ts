@@ -238,6 +238,30 @@ describe("/weave-scan sessions command", () => {
     }
   });
 
+  it("accepts an explicit recursive history directory", async () => {
+    const mock = buildExtension();
+    const sessions = await makeTempDir();
+    const vault = await makeTempDir();
+    const cwd = await makeTempDir();
+    try {
+      await writeFixture(sessions, "claude/project/history/session.log", "opaque external history");
+      await withVaultEnv(vault, async () => {
+        const ctx = createMockCtx(cwd, true, {
+          model: MODEL,
+          complete: async () => fauxAssistantMessage("Remembered external history."),
+        });
+        const relativeHistory = `../${sessions.split("/").pop()}`;
+        await mock.commands.get("weave-scan")!.handler(`sessions ${relativeHistory}`, ctx);
+        await sessionScanDone();
+        expect((await getNote(vault, "sessions/session-log"))!.body).toContain("Remembered external history.");
+      });
+    } finally {
+      await fs.rm(sessions, { recursive: true, force: true });
+      await fs.rm(vault, { recursive: true, force: true });
+      await fs.rm(cwd, { recursive: true, force: true });
+    }
+  });
+
   it("warns when no session model is active", async () => {
     const mock = buildExtension();
     const sessions = await makeTempDir();

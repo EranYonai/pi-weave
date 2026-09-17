@@ -14,7 +14,7 @@ import { type Dirent } from "node:fs";
 import { existsSync } from "node:fs";
 import * as fs from "node:fs/promises";
 import { homedir } from "node:os";
-import { basename, join } from "node:path";
+import { basename, dirname, join } from "node:path";
 import { mapWithConcurrency } from "./concurrency";
 import {
   parseFrontMatter,
@@ -58,11 +58,39 @@ const MAX_BRANCH_SUMMARIES = 2;
 const LAST_ASSISTANT_MAX_CHARS = 800;
 const FIRST_MESSAGE_MAX_CHARS = 200;
 
+function opaqueSession(file: SessionFileInfo): { header: SessionHeader; digest: SessionDigest } {
+  const startedAt = new Date(file.mtimeMs).toISOString();
+  const id = `file-${hashContent(file.path).slice(0, 16)}`;
+  return {
+    header: { id, cwd: dirname(file.path), startedAt },
+    digest: {
+      id,
+      cwd: dirname(file.path),
+      parentSession: null,
+      startedAt,
+      endedAt: startedAt,
+      name: file.name,
+      models: [],
+      userCount: 0,
+      assistantCount: 0,
+      toolResultCount: 0,
+      errors: 0,
+      bashCount: 0,
+      tools: {},
+      firstUserMessage: file.name,
+      userMessages: [],
+      compactions: [],
+      branchSummaries: [],
+      lastAssistantText: null,
+    },
+  };
+}
+
 /* ------------------------------------------------------------------ */
 /* Discovery                                                           */
 /* ------------------------------------------------------------------ */
 
-/** One discovered transcript: a `.jsonl` file under the sessions root. */
+/** One discovered history file under the selected root. */
 export interface SessionFileInfo {
   /** Absolute path. */
   path: string;
@@ -73,44 +101,50 @@ export interface SessionFileInfo {
 }
 
 /**
- * All session transcripts under `root`, newest first (mtime desc; ties break
- * by path so ordering is stable across scans). The pi layout is one
- * subdirectory per working directory; non-directories and non-`.jsonl` files
- * are ignored, and entries that vanish mid-listing are dropped quietly.
+ * All regular files at or recursively under `root`, newest first (mtime desc; ties break by path so ordering is stable across scans). Files are opaque model input; pi JSONL parsing only enriches metadata when available.
  */
 export async function listSessionFiles(
   root: string,
   opts: { limit?: number } = {},
 ): Promise<SessionFileInfo[]> {
+  let rootStat;
+  try {
+    rootStat = await fs.stat(root);
+  } catch {
+    return [];
+  }
+  if (rootStat.isFile()) {
+    return [{ path: root, name: basename(root), bytes: rootStat.size, mtimeMs: rootStat.mtimeMs }];
+  }
+  if (!rootStat.isDirectory()) return [];
   let entries: Dirent<string>[];
   try {
     entries = await fs.readdir(root, { withFileTypes: true });
   } catch {
-    return []; // no sessions dir — nothing to scan
+    return [];
   }
   const out: SessionFileInfo[] = [];
-  for (const ent of entries) {
-    if (!ent.isDirectory()) continue;
-    const dir = join(root, ent.name);
-    let names: string[];
-    try {
-      names = await fs.readdir(dir);
-    } catch {
-      continue; // raced a delete
-    }
-    for (const name of names) {
-      if (!name.endsWith(".jsonl")) continue;
-      const path = join(dir, name);
-      let st;
-      try {
-        st = await fs.stat(path);
-      } catch {
-        continue; // raced a delete
+  async function walk(dir: string, children: readonly Dirent<string>[]): Promise<void> {
+    for (const ent of children) {
+      const path = join(dir, ent.name);
+      if (ent.isDirectory()) {
+        try {
+          await walk(path, await fs.readdir(path, { withFileTypes: true }));
+        } catch {
+          // raced a delete or unreadable directory
+        }
+        continue;
       }
-      if (!st.isFile()) continue;
-      out.push({ path, name, bytes: st.size, mtimeMs: st.mtimeMs });
+      if (!ent.isFile()) continue;
+      try {
+        const st = await fs.stat(path);
+        out.push({ path, name: ent.name, bytes: st.size, mtimeMs: st.mtimeMs });
+      } catch {
+        // raced a delete
+      }
     }
   }
+  await walk(root, entries);
   out.sort((a, b) => b.mtimeMs - a.mtimeMs || a.path.localeCompare(b.path));
   return opts.limit !== undefined ? out.slice(0, opts.limit) : out;
 }
@@ -826,10 +860,9 @@ export async function runSessionScan(options: SessionScanOptions): Promise<Sessi
     file: SessionFileInfo;
     hash: string;
     header: SessionHeader;
-    /** Existing note pointer when the session was scanned before. */
     pointer: SessionNotePointer | undefined;
-    /** Parsed only when the hash changed — fresh sessions are never parsed. */
     digest: SessionDigest | null;
+    content: string | null;
   }
   const candidates: Candidate[] = [];
 
@@ -844,28 +877,25 @@ export async function runSessionScan(options: SessionScanOptions): Promise<Sessi
     // Hash from the same single read that feeds the parse — the file is
     // never read twice (docs/session-scan.md, "hash while reading").
     const hash = hashContent(buf);
-    const header = peekSessionHeader(buf.toString("utf8"));
-    if (header === null) {
-      result.skippedUnreadable += 1;
-      continue;
-    }
+    const text = buf.toString("utf8");
+    const parsed = parseSessionDigest(text);
+    const fallback = opaqueSession(file);
+    const digest = parsed ?? fallback.digest;
+    const header = peekSessionHeader(text) ?? { id: digest.id, cwd: digest.cwd, startedAt: digest.startedAt };
     const pointer = noteIndex.get(header.id);
     if (pointer && pointer.hash === hash) {
       result.skippedFresh += 1;
-      // Kept as a chain participant: it has a note, it has a header.
-      candidates.push({ file, hash, header, pointer, digest: null });
+      candidates.push({ file, hash, header, pointer, digest: null, content: null });
       continue;
     }
-    const digest = parseSessionDigest(buf.toString("utf8"));
-    if (digest === null) {
-      result.skippedUnreadable += 1;
-      continue;
-    }
-    if (!sessionHasContent(digest)) {
+    if ((parsed === null && (text.trim() === "" || buf.includes(0))) || (parsed !== null && !sessionHasContent(digest))) {
       result.skippedEmpty += 1;
       continue;
     }
-    candidates.push({ file, hash, header, pointer, digest });
+    const content = parsed === null
+      ? `History file: ${file.path}\n\n${text.slice(0, DIGEST_MAX_CHARS)}`
+      : renderSessionDigest(digest);
+    candidates.push({ file, hash, header, pointer, digest, content });
   }
 
   // -- Phase 2: per-project chains over every session with a note. --------
@@ -905,7 +935,7 @@ export async function runSessionScan(options: SessionScanOptions): Promise<Sessi
     onProgress?.({ current: index + 1, total: changed.length, path: candidate.file.name });
     const digest = candidate.digest as SessionDigest;
     try {
-      const summary = (await options.summarize({ path: candidate.file.path, content: renderSessionDigest(digest) })).trim();
+      const summary = (await options.summarize({ path: candidate.file.path, content: candidate.content ?? renderSessionDigest(digest) })).trim();
       if (summary.length === 0) throw new Error("model returned an empty summary");
       await writeSessionNote(options.vaultRoot, {
         digest,

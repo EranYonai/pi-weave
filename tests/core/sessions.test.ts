@@ -192,7 +192,7 @@ describe("resolveSessionsRoot", () => {
 
 describe("listSessionFiles", () => {
 
-  it("finds .jsonl across project dirs, ignores everything else, sorts newest first", async () => {
+  it("finds opaque files recursively and sorts newest first", async () => {
 
     const root = await makeTempDir();
 
@@ -200,21 +200,23 @@ describe("listSessionFiles", () => {
 
       await writeFixture(root, "--a--/old_1.jsonl", "{}\n");
 
-      await writeFixture(root, "--b--/new_2.jsonl", "{}\n");
+      await writeFixture(root, "--b--/nested/new_2.jsonl", "{}\n");
 
-      await writeFixture(root, "--b--/notes.txt", "nope");
+      await writeFixture(root, "--b--/notes.txt", "opaque history");
 
-      await writeFixture(root, "loose.jsonl", "{}\n"); // not inside a project dir: ignored
+      await writeFixture(root, "loose.jsonl", "{}\n");
 
       await fs.utimes(join(root, "--a--", "old_1.jsonl"), new Date(1000), new Date(1000));
 
-      await fs.utimes(join(root, "--b--", "new_2.jsonl"), new Date(3000), new Date(3000));
+      await fs.utimes(join(root, "--b--", "nested", "new_2.jsonl"), new Date(3000), new Date(3000));
 
-      // One level deep is the pi layout (sessions/<encoded-cwd>/<file>.jsonl).
+      await fs.utimes(join(root, "loose.jsonl"), new Date(2000), new Date(2000));
+
+      await fs.utimes(join(root, "--b--", "notes.txt"), new Date(1500), new Date(1500));
 
       const files = await listSessionFiles(root);
 
-      expect(files.map((f) => f.name)).toEqual(["new_2.jsonl", "old_1.jsonl"]);
+      expect(files.map((f) => f.name)).toEqual(["new_2.jsonl", "loose.jsonl", "notes.txt", "old_1.jsonl"]);
 
       expect(files[0]?.bytes).toBe(3);
 
@@ -230,9 +232,15 @@ describe("listSessionFiles", () => {
 
   });
 
-  it("returns empty for a missing root", async () => {
+  it("accepts one file and returns empty for a missing root", async () => {
 
-    expect(await listSessionFiles(join(await makeTempDir(), "absent"))).toEqual([]);
+    const root = await makeTempDir();
+
+    await writeFixture(root, "history.anything", "session material");
+
+    expect((await listSessionFiles(join(root, "history.anything"))).map((f) => f.name)).toEqual(["history.anything"]);
+
+    expect(await listSessionFiles(join(root, "absent"))).toEqual([]);
 
   });
 
@@ -1172,7 +1180,7 @@ describe("runSessionScan", () => {
 
   });
 
-  it("counts empty and header-less sessions without spending tokens", async () => {
+  it("skips empty pi sessions but treats header-less files as opaque model input", async () => {
 
     const { sessions, vault, deps } = await makeScenario();
 
@@ -1180,13 +1188,15 @@ describe("runSessionScan", () => {
 
       await putSession(sessions, "empty.jsonl", jsonl([header("zzz")]));
 
-      await putSession(sessions, "nosession.jsonl", "{\"type\":\"message\"}\n");
+      await putSession(sessions, "nosession.jsonl", "raw history from another harness\n");
 
       const result = await scan(deps);
 
-      expect(result).toMatchObject({ considered: 2, skippedEmpty: 1, skippedUnreadable: 1, written: 0 });
+      expect(result).toMatchObject({ considered: 2, skippedEmpty: 1, skippedUnreadable: 0, written: 1 });
 
-      expect(deps.calls).toHaveLength(0);
+      expect(deps.calls[0]?.content).toContain("raw history from another harness");
+
+      expect(await getNoteAt(vault, "nosession-jsonl")).not.toBeNull();
 
     } finally {
 
