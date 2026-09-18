@@ -23,6 +23,15 @@
  * silently rewrites knowledge. The degenerate case here is always "ask the
  * human", never "wrong link".
  *
+ * ## Relationship to `GraphModel.danglingLinks`
+ *
+ * Not the same set, deliberately. `buildGraph` counts every `[[…]]` in a body,
+ * including ones inside code fences and below the `## Raw` tail, because
+ * over-reporting a link on a graph is harmless. This module reports the
+ * **safe-to-repair subset**, so it excludes both: a link in a code sample is
+ * a string literal, and a link in the raw tail is the user's quoted words.
+ * An audit total below the graph's dangling count is therefore expected.
+ *
  * Pure: no I/O lives here. The disk-touching repair entry points are in
  * `../vault` (`repairVaultLinks`, and the backlink rewrite that rename/move
  * perform), which already owns the vault lock and the write path. The
