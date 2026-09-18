@@ -768,3 +768,21 @@ describe("weave_note slug hardening", () => {
     });
   });
 });
+
+describe("weave_note list stays bounded", () => {
+  it("truncates a large vault and points at search", async () => {
+    const mock = buildExtension();
+    const ctx = createMockCtx(await makeTempDir());
+    await withVaultEnv(await makeTempDir(), async () => {
+      for (let i = 0; i < 55; i++) {
+        await mock.runTool("weave_note", { action: "add", title: `Note ${i}`, text: "x" }, ctx);
+      }
+      const res = await mock.runTool("weave_note", { action: "list" }, ctx);
+      expect(res.content[0]?.text).toContain("55 note(s)");
+      expect(res.content[0]?.text).toContain("… and 5 more (newest 50 shown)");
+      expect(res.content[0]?.text).toContain("action=search");
+      // The full list still reaches a programmatic caller.
+      expect((res.details as { notes: unknown[] }).notes).toHaveLength(55);
+    });
+  });
+});

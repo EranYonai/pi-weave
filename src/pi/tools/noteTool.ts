@@ -26,6 +26,9 @@ import {
 /** Cap on how many rows of each link-audit category get printed. */
 const LINK_REPORT_CAP = 20;
 
+/** Cap on notes printed by `list`; `details.notes` still carries them all. */
+const LIST_CAP = 50;
+
 function capped<T>(items: readonly T[], render: (item: T) => string): string[] {
   const lines = items.slice(0, LINK_REPORT_CAP).map(render);
   if (items.length > LINK_REPORT_CAP) lines.push(`  … and ${items.length - LINK_REPORT_CAP} more`);
@@ -115,7 +118,7 @@ export function registerNoteTool(pi: ExtensionAPI): void {
     label: "Weave Note",
     description:
       "Read and write notes in the pi-weave vault — a persistent, human-readable knowledge base " +
-      "of Markdown notes. Actions: list (all notes), get (one note by slug), add (new note), " +
+      "of Markdown notes. Actions: list (all notes — avoid on large vaults, prefer search), get (one note by slug), add (new note), " +
       "append (extend a note; raw=true appends verbatim dictation into the ## Raw tail), " +
       "finalize (restructure a note above its raw tail), search (title/tags/body), " +
       "links (audit stale [[wiki-links]]; fix=true repairs the unambiguous ones), " +
@@ -152,9 +155,21 @@ export function registerNoteTool(pi: ExtensionAPI): void {
               details: { action: "list", notes: [] },
             };
           }
-          const lines = notes.map(
+          // Truncated, because the whole list is rarely the answer and on a
+          // large vault it is actively harmful: hundreds of lines of slugs
+          // crowd out the conversation that prompted the call. Newest first
+          // (`listNotes` order), so the cap keeps what is most likely wanted,
+          // and the footer names `search` — the action that answers "is there
+          // a note about X" without reading the vault aloud.
+          const shown = notes.slice(0, LIST_CAP);
+          const lines = shown.map(
             (n) => `- ${n.slug}: ${n.title}${n.tags.length > 0 ? ` [${n.tags.join(", ")}]` : ""} (updated ${n.updated}, source: ${n.source})`,
           );
+          if (notes.length > shown.length) {
+            lines.push(
+              `… and ${notes.length - shown.length} more (newest ${shown.length} shown) — use action=search to find a specific note.`,
+            );
+          }
           return {
             content: [{ type: "text", text: `${notes.length} note(s) in ${vault}:\n${lines.join("\n")}` }],
             details: { action: "list", notes },

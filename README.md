@@ -86,8 +86,9 @@ Useful requests include:
 
 ## Keeping the vault connected
 
-Wiki-links go stale: a note is renamed, or written as a bare title — `[[John Doe]]` when the note lives at `1-1s/john-doe`. Pi repairs them
-in one deterministic pass instead of rereading the vault and guessing.
+A wiki-link resolves to nothing when it is written as a bare title — `[[Quarterly Roadmap]]` when the note lives at
+`planning/roadmap-2026` — or when it points at a note that was never written. Pi repairs those in one deterministic pass instead of
+rereading the vault and guessing.
 
 ```text
 You: Check the links in my notes.
@@ -98,7 +99,7 @@ A target resolves by exact slug, then unique basename, then unique title — eac
 are reported with their candidates and never guessed; links to notes that were never written are listed, never invented. Repairs preserve
 the alias, so the visible text does not change, and never touch the `## Raw` tail or code fences.
 
-Renaming or moving a note rewrites its inbound links automatically, so the vault stops breaking itself.
+Renaming or moving a note rewrites its inbound links automatically, so its backlinks stay intact.
 
 ## `/weave-view`
 

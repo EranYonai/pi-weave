@@ -106,10 +106,9 @@ const ALL_SHUT: GraphViewState = { expanded: new Set() };
 // --- the view state ---------------------------------------------------------------------
 
 describe("large vaults on the canvas", () => {
-  // A former `MAX_CANVAS_NOTES = 500` prefix cap lived here. It cut across the
-  // containment tree, so whole folders whose notes ranked past the cap drew
-  // empty — the "populated directory looks empty" bug #45 removed from the
-  // tree, reappearing on the canvas. Clustering is the real bound.
+  // Clustering, not a payload-size cap, is what bounds the canvas: a note is
+  // drawn because the user expanded its folder, never withheld because of
+  // where it sits in the payload.
   const bigVault = (count: number) => {
     const nodes = [node("vault", "vault"), node("vfolder:deep", "module")];
     const edges: WireGraphEdge[] = [edge("vault", "vfolder:deep", "contains")];

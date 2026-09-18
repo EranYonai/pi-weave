@@ -51,7 +51,7 @@ export interface LinkSuggestion {
    * The terms that earned the score, strongest first.
    *
    * The most important field here. A bare number is unreviewable — "0.16,
-   * trust me" — while "they share `cort-2091`, `traps-pipelines`" is a claim
+   * trust me" — while "they share `acme-1234`, `release-pipeline`" is a claim
    * a human can accept or reject in a second. A suggestion nobody can check
    * is a suggestion nobody should act on.
    */

@@ -79,19 +79,26 @@ down". Never promote conversation into a note on your own initiative — capture
 
 ## How to write a good note
 
-1. **Search first** (`weave_note` action=search): if a note exists, `append` to it rather than creating a duplicate.
+0. **Go straight to the tool.** A note is one `weave_note` call. Do not `list` the vault, inspect the repository, or run `git` — none of that
+   informs what to write, and on a large vault `list` alone floods the context. When the user gives you the content ("note that says X"),
+   `add` it and report the slug.
+1. **Search first when adding to existing knowledge** (`weave_note` action=search, with the note's key terms): if a note on the subject
+   exists, `append` to it rather than creating a duplicate. Skip this when the user is clearly starting something new — one targeted search,
+   never a vault listing.
 2. Title: short noun phrase ("Auth boundary decision", not "Notes").
-3. **Scribble in, verbatim.** When the user is dictating, append their words to the note as rough, verbatim scribbles — no silent rewording.
+3. **Ask only when the content is genuinely missing.** A vague request ("write a note weave") needs one short question, not exploration —
+   searching the vault or the repo will not reveal what the user meant.
+4. **Scribble in, verbatim.** When the user is dictating, append their words to the note as rough, verbatim scribbles — no silent rewording.
    Append with `raw: true` so they land under the `## Raw` tail at the end of the note (the tail is created automatically if missing).
-4. **Compile continuously during dictation.** After *every* interactive append in dictation mode, immediately finalize the body *above* the
+5. **Compile continuously during dictation.** After *every* interactive append in dictation mode, immediately finalize the body *above* the
    raw tail so the compiled doc stays current (see [Dictation mode](#dictation-mode-continuous-compile)). Outside dictation mode,
    compilation stays on request.
-5. **Finalize on request.** When the user says "finalize this" / "clean this up", restructure the body *above* the raw tail: front-loaded
+6. **Finalize on request.** When the user says "finalize this" / "clean this up", restructure the body *above* the raw tail: front-loaded
    summary, sections, entities, links. Use `weave_note` action=finalize (or edit the file directly in other harnesses). Move nothing out of
    `## Raw` — it is append-only and never rewritten. A note with no `## Raw` tail yet gets its entire pre-finalize body preserved as a new
    raw tail: finalization is editorial, never destructive.
-6. Tags: 1–4 lowercase tags; reuse existing tags when possible.
-7. Provenance: notes the user scribbled stay `source: human` (finalization is editorial, not authorship) — pass `source: "human"` to `add`
+7. Tags: 1–4 lowercase tags; reuse existing tags when possible.
+8. Provenance: notes the user scribbled stay `source: human` (finalization is editorial, not authorship) — pass `source: "human"` to `add`
    for user-scribbled notes. Notes you draft from scratch are `source: agent` (the default). Never overwrite a `source: human` note's
    meaning; append with a dated "Agent addendum" section instead.
 
@@ -112,8 +119,8 @@ repository for facts about code and flag the discrepancy — the note may be sta
 
 ## Repairing stale links
 
-Links break when notes are renamed, moved, or written as bare titles — `[[John Doe]]` when the note is `1-1s/john-doe`. **Never reconnect a
-vault by reading every note and guessing which ones relate.** Run the deterministic pass instead:
+A link written as a bare title or basename — `[[Quarterly Roadmap]]` when the note is `planning/roadmap-2026` — resolves to nothing.
+**Never reconnect a vault by reading every note and guessing which ones relate.** Run the deterministic pass instead:
 
 ```jsonc
 weave_note { "action": "links" }              // report: fixable / ambiguous / unresolvable

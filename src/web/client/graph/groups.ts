@@ -7,10 +7,10 @@
  * `FORCES` pulls apart: a **depth-1 containment branch**.
  *
  * ```text
- * vault                      ← a root: its own group
- * ├── vfolder:sessions       ← group A, with all 323 descendants
- * ├── vfolder:manager-digest ← group B, with all 159
- * └── note:loose             ← no branch of its own: joins the root's group
+ * vault                   ← a root: its own group
+ * ├── vfolder:projects    ← group A, with all its descendants
+ * ├── vfolder:archive     ← group B, with all of its own
+ * └── note:loose          ← no branch of its own: joins the root's group
  * ```
  *
  * Depth 1 exactly, for the reason the retired `bigBranches` used it: deeper

@@ -1,7 +1,8 @@
 # Link repair — keeping the vault connected
 
-Wiki-links go stale. A note gets renamed or moved, or someone writes `[[John Doe]]` by hand while the note actually lives at
-`1-1s/john-doe`. The graph then shows an isolated note that is in fact well connected.
+A wiki-link resolves to nothing when it is written as a bare title or basename — `[[Quarterly Roadmap]]` while the note lives at
+`planning/roadmap-2026` — or when it points at a note that was never written. The graph then shows an isolated note that is in fact well
+connected.
 
 **Never reconnect a vault by reading it.** Do not search the vault note by note, infer which notes "feel related", and hand-write links.
 That is slow, costs tokens, and is not reproducible — two runs give two different answers. There is a deterministic pass that does it in
@@ -24,9 +25,9 @@ Three rules, tried in order. A rule fires only when it yields **exactly one** ca
 
 | # | Rule | Example |
 |---|------|---------|
-| 1 | exact slug | `[[1-1s/john-doe]]` — already correct, left alone |
-| 2 | unique basename | `[[john-doe]]` → `1-1s/john-doe` |
-| 3 | unique slugified title | `[[Infra Roadmap]]` → `infra/roadmap-fy27` |
+| 1 | exact slug | `[[planning/roadmap-2026]]` — already correct, left alone |
+| 2 | unique basename | `[[roadmap-2026]]` → `planning/roadmap-2026` |
+| 3 | unique slugified title | `[[Quarterly Roadmap]]` → `planning/roadmap-2026` |
 
 Anything else is reported, never guessed:
 
@@ -37,7 +38,7 @@ Anything else is reported, never guessed:
 
 ## What a repair does and does not do
 
-- Rewrites `[[John Doe]]` → `[[1-1s/john-doe|John Doe]]`. The **alias preserves the visible text**, so the rendered prose is unchanged —
+- Rewrites `[[Quarterly Roadmap]]` → `[[planning/roadmap-2026|Quarterly Roadmap]]`. The **alias preserves the visible text**, so the rendered prose is unchanged —
   only the target moves.
 - **Does not touch the `## Raw` tail.** A link inside dictation is the user's words, quoted. Off limits, always.
 - **Does not touch fenced code blocks.** `[[…]]` in a code sample is a string literal.
@@ -46,8 +47,8 @@ Anything else is reported, never guessed:
 
 ## Renames repair themselves
 
-`renameNote`, `moveNote` and `renameFolder` rewrite inbound links automatically. Moving a note no longer breaks its backlinks, so the
-repair pass exists for links that were *written* stale, not for links the vault broke itself.
+`renameNote`, `moveNote` and `renameFolder` rewrite inbound links automatically, so renaming or moving a note keeps its backlinks intact.
+The repair pass is for links that were *written* stale — typed as a bare title, or pointing somewhere that never existed.
 
 ## Finding connections that were never made
 
@@ -64,8 +65,8 @@ It ranks unlinked pairs by IDF-weighted cosine over every term a note carries �
 it is *in this vault*. Vocabulary shared by most notes (`sprint`, `meeting`, a tag on half the vault) scores near zero and connects nothing;
 a ticket id or an unusual name on a handful of notes scores high. Nothing is domain-specific: the vault's own frequencies decide.
 
-Every suggestion cites the shared terms that earned it. **Read the evidence, not the score** — `shared: cort-2091, traps-pipelines` is checkable,
-`0.16` is not.
+Every suggestion cites the shared terms that earned it. **Read the evidence, not the score** — a list like `shared: acme-1234, release-pipeline`
+is checkable, `0.16` is not.
 
 ### suggest never writes
 

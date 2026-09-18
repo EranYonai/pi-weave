@@ -53,38 +53,17 @@ import { resolveLayout } from "./positions";
 // --- the view state ------------------------------------------------------------------
 
 /**
- * ## Why there is no note cap here
+ * The canvas draws whatever the user has expanded — there is no note cap.
  *
- * There was one: `MAX_CANVAS_NOTES = 500`, applied to `model.nodes` before
- * clustering, to keep the force simulation bounded. It was the wrong
- * mechanism, in a way worth recording so it is not reintroduced.
+ * Clustering is the bound: a collapsed folder is one node standing in for its
+ * whole subtree, and `initialGraphView` opens the roots rather than the tree,
+ * so the default frame stays small at any vault size. A bound on the payload
+ * instead would decide visibility by a note's position in the list, which is
+ * unrelated to what the user is looking at and hides notes inside folders
+ * they explicitly opened.
  *
- * A flat slice of the first N notes cuts across the containment tree, so it
- * decided visibility by a note's *rank in the payload* rather than by what
- * the user had opened. On an 830-note vault that produced two bugs:
- *
- * 1. **Whole folders drew empty.** Expanding a folder whose notes all ranked
- *    past 500 (every `manager-digest/commitments/...` folder, ranks 534-589)
- *    showed the folder node with no children — the same "populated directory
- *    looks empty" symptom #45 removed from the tree, reappearing on the
- *    canvas.
- * 2. **Selections appeared to overwrite each other.** Exempting the selected
- *    node (the first attempt at a fix) changed the node set on every
- *    selection, which changes `graphShapeKey`, which invalidates the position
- *    cache and re-runs the layout — so moving between notes rearranged the
- *    picture each time.
- *
- * Clustering is the bound, and a much better one: it is what the user
- * actually asked to see. On the same 830-note vault, collapsed folders draw
- * 13 nodes, one expanded folder path draws 47, and fully expanding
- * *everything* draws 871 — an upper bound the simulation handles, reached
- * only by deliberate effort. `initialGraphView` opens the roots, not the
- * whole tree, so the default frame is small regardless of vault size.
- *
- * If a pathological vault ever does overwhelm the layout, the bound belongs
- * on the *expansion* (cap how much one expand reveals) or on the simulation
- * itself — never on a flat prefix of the payload, which is invisible to the
- * user and unrelated to what they are looking at.
+ * If a vault ever does overwhelm the layout, bound the *expansion* (how much
+ * one expand reveals) or the simulation itself.
  */
 
 /** The graph column's state. Owned by the column; never on the context bus. */
