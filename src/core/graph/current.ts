@@ -19,7 +19,7 @@ import { assessStaleness, readRepoIndex } from "../repoIndex";
 import { readSummaryMap } from "../summaries";
 import type { Note } from "../types";
 import { getNote, readVault, resolveNotePath } from "../vault";
-import { buildGraph, DEFAULT_MAX_NOTES, type BuildGraphInput } from "./build";
+import { buildGraph, type BuildGraphInput } from "./build";
 import type { GraphModel } from "./model";
 
 /** A note read for the viewers (read-only; never cached). Mirrors the vault `Note` shape. */
@@ -91,9 +91,8 @@ export async function readRepositorySide(
 
 /**
  * Assemble the fresh graph from disk. Called on every viewer fetch
- * (no caching). Reads the vault (capped at
- * DEFAULT_MAX_NOTES) and, when cwd is an indexed git repository, the repo
- * index + deep-scan summary sidecars. Degrades to a vault-only graph when
+ * (no caching). Reads the complete vault and, when cwd is an indexed git
+ * repository, the repo index + deep-scan summary sidecars. Degrades to a vault-only graph when
  * the repo has no index or the index is corrupt.
  *
  * One read per note: `readVault` returns bodies *and* the file count, so the
@@ -111,7 +110,7 @@ export async function buildCurrentGraph(cwd: string, vaultRoot: string = resolve
       ...(folders ? { folders } : {}),
       ...(artifactCount ? { artifactCount } : {}),
     },
-    notes: notes.slice(0, DEFAULT_MAX_NOTES),
+    notes,
     ...(artifacts ? { artifacts } : {}),
     repository: null,
   };

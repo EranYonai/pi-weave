@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { buildGraph, dataTimestamp, DEFAULT_MAX_NOTES, type BuildGraphInput } from "../../src/core/graph/build";
+import { buildGraph, dataTimestamp, type BuildGraphInput } from "../../src/core/graph/build";
 import { extractWikilinks } from "../../src/core/graph/wikilinks";
 import type { HtmlArtifact, Note, NoteSource, RepoIndex, StalenessReport } from "../../src/core/types";
 import type { SummaryRecord } from "../../src/core/summaries";
@@ -225,15 +225,13 @@ describe("buildGraph", () => {
     expect(buildGraph(input()).danglingLinks).toEqual({});
   });
 
-  it("treats links to notes elided by the cap as dangling", () => {
-    // The cap is a *view* over the vault, so a link to a real-but-elided note
-    // is unresolved from the graph's point of view. Reporting it as dangling
-    // is honest about what this graph can show; reporting it as a link would
-    // point at a node that is not there.
-    const notes: Note[] = [note("keep", "human", "[[elided0]]")];
-    for (let i = 0; i < 3; i++) notes.push(note(`elided${i}`, "agent", "x"));
-    const model = buildGraph(input({ vault: { root: "/v", exists: true, noteCount: 4 }, notes }), { maxNotes: 1 });
-    expect(model.danglingLinks).toEqual({ keep: ["elided0"] });
+  it("resolves links across a vault larger than the former 500-note cap", () => {
+    const notes: Note[] = [note("keep", "human", "[[note-500]]")];
+    for (let i = 0; i < 501; i++) notes.push(note(`note-${i}`, "agent", "x"));
+    const model = buildGraph(input({ vault: { root: "/v", exists: true, noteCount: notes.length }, notes }));
+    expect(model.nodes.filter((n) => n.kind === "note")).toHaveLength(notes.length);
+    expect(model.edges).toContainEqual({ source: "note:keep", target: "note:note-500", kind: "links-to" });
+    expect(model.danglingLinks).toEqual({});
   });
 
   it("works for an empty vault without a repository", () => {
@@ -261,19 +259,6 @@ describe("buildGraph", () => {
         repository: { index: makeIndex(), staleness: FRESH },
       })));
     expect(build()).toBe(build());
-  });
-
-  it("caps notes at maxNotes with a vault warning and drops links to elided notes", () => {
-    const notes: Note[] = [note("keep", "human", "[[elided]]")];
-    for (let i = 0; i < 5; i++) notes.push(note(`elided${i}`, "agent", "x"));
-    const model = buildGraph(input({ vault: { root: "/v", exists: true, noteCount: 6 }, notes }), { maxNotes: 1 });
-    expect(model.nodes.filter((n) => n.kind === "note")).toHaveLength(1);
-    expect(model.nodes.find((n) => n.id === "vault")?.detail.warning).toContain("1");
-    expect(model.edges.filter((e) => e.kind === "links-to")).toEqual([]);
-  });
-
-  it("has a sane default cap constant", () => {
-    expect(DEFAULT_MAX_NOTES).toBe(500);
   });
 
   it("derives generatedAt from the newest input timestamp, repo included", () => {
@@ -577,19 +562,18 @@ describe("buildGraph — nested vault notes", () => {
     expect(contains).toContainEqual({ source: "vault", target: "vfolder:empty-folder", kind: "contains" });
   });
 
-  it("warns on folders whose notes are omitted by maxNotes truncation", async () => {
+  it("keeps every child in folders larger than the former note cap", async () => {
     const { buildGraph } = await import("../../src/core/graph/build");
-    const note = (slug: string): import("../../src/core/graph/build").BuildGraphInput["notes"][number] => ({
-      slug, title: slug, body: "", created: "", updated: "2026-01-01", tags: [], source: "generated",
-    });
+    const notes = Array.from({ length: 501 }, (_, i) => ({
+      slug: `plans/${i}`, title: String(i), body: "", created: "", updated: "2026-01-01", tags: [], source: "generated" as const,
+    }));
     const model = buildGraph({
-      vault: { root: "/v", exists: true, noteCount: 2, folders: ["plans"] },
-      notes: [note("plans/a"), note("plans/b")],
+      vault: { root: "/v", exists: true, noteCount: notes.length, folders: ["plans"] },
+      notes,
       repository: null,
-    }, { maxNotes: 1 });
+    });
     const folder = model.nodes.find((n) => n.id === "vfolder:plans");
-    expect(folder).toBeDefined();
-    expect(folder?.detail.notes).toBe("1");
-    expect(folder?.detail.warning).toContain("1 older note(s) in this folder omitted by note limit");
+    expect(folder?.detail.notes).toBe("501");
+    expect(model.edges.filter((edge) => edge.source === "vfolder:plans")).toHaveLength(501);
   });
 });

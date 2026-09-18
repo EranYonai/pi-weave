@@ -20,6 +20,8 @@ import { clusterAggregate, focusNeighborhood } from "../../src/web/shared/view";
 import type { GraphPayload, WireGraphEdge, WireGraphNode } from "../../src/web/shared/wire";
 import {
   BOOT_FAILED_MESSAGE,
+  MAX_CANVAS_NOTES,
+  canvasModel,
   EMPTY_COLUMN,
   FIT_HINT,
   FIT_LABEL,
@@ -104,6 +106,25 @@ const ALL_OPEN: GraphViewState = { expanded: new Set(["vault", "repository", "mo
 const ALL_SHUT: GraphViewState = { expanded: new Set() };
 
 // --- the view state ---------------------------------------------------------------------
+
+describe("canvasModel", () => {
+  it("caps only canvas notes while retaining structural nodes and valid edges", () => {
+    const nodes = [node("vault", "vault"), node("repository", "repository")];
+    const edges: WireGraphEdge[] = [];
+    for (let i = 0; i <= MAX_CANVAS_NOTES; i++) {
+      nodes.push(node(`note:${i}`, "note"));
+      edges.push(edge("vault", `note:${i}`));
+    }
+    edges.push(edge("repository", `note:${MAX_CANVAS_NOTES}`));
+    const full = viewModel(payloadOf(nodes, edges));
+    const canvas = canvasModel(full);
+
+    expect(full.nodes.filter((n) => n.kind === "note")).toHaveLength(MAX_CANVAS_NOTES + 1);
+    expect(canvas.nodes.filter((n) => n.kind === "note")).toHaveLength(MAX_CANVAS_NOTES);
+    expect(canvas.nodes.some((n) => n.id === "repository")).toBe(true);
+    expect(canvas.edges.some((e) => e.target === `note:${MAX_CANVAS_NOTES}`)).toBe(false);
+  });
+});
 
 describe("initialGraphView", () => {
   it("opens a small graph whole", () => {
