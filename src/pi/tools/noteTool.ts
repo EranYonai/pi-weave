@@ -64,13 +64,18 @@ function formatSuggestions(report: SuggestionReport, focus: string | undefined):
 function formatLinkReport(result: LinkRepairResult, applied: boolean): string {
   const { audit } = result;
   const stale = audit.total - audit.resolved;
+  // Occurrences, not rows. `total`/`resolved` count every `[[…]]` in the
+  // vault, while `fixable`/`unresolvable` are grouped (per note+target, per
+  // target). Reporting "70 stale" beside "40 unresolvable" with no unit
+  // invites the reader to subtract them and find 30 phantom links; saying
+  // what each number counts is the whole fix.
   const lines = [
     `${audit.total} wiki-link(s): ${audit.resolved} resolved, ${stale} stale.`,
   ];
   if (applied) {
     lines.push(
       result.applied.length === 0
-        ? "Nothing to repair."
+        ? "Nothing to repair automatically."
         : `Repaired ${result.applied.length} link(s) across ${result.notes.length} note(s):`,
       ...capped(result.applied, (f) => `  ${f.slug}: [[${f.from}]] → [[${f.to}]] (${f.rule})`),
     );
@@ -82,13 +87,13 @@ function formatLinkReport(result: LinkRepairResult, applied: boolean): string {
   }
   if (audit.ambiguous.length > 0) {
     lines.push(
-      `${audit.ambiguous.length} ambiguous (several candidates — pick one and edit the note):`,
+      `${audit.ambiguous.length} ambiguous link(s) (several candidates — pick one and edit the note):`,
       ...capped(audit.ambiguous, (a) => `  ${a.slug}: [[${a.target}]] → ${a.candidates.join(" | ")}`),
     );
   }
   if (audit.unresolvable.length > 0) {
     lines.push(
-      `${audit.unresolvable.length} unresolvable (no such note — write it or drop the link):`,
+      `${audit.unresolvable.length} unresolvable target(s) (no such note — write it or drop the link):`,
       ...capped(audit.unresolvable, (u) => `  [[${u.target}]] ← ${u.notes.join(", ")}`),
     );
   }

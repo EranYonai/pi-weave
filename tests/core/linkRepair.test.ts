@@ -247,14 +247,43 @@ describe("repairVaultLinks", () => {
     expect(result.audit.total).toBe(0);
   });
 
-  it("skips unreadable files without failing the pass", async () => {
+  it("preserves every byte outside the rewritten link", async () => {
+    // Serialization normalizes line endings and trailing whitespace, which is
+    // fine for an edit and fatal for bookkeeping: those bytes can be inside
+    // the append-only raw tail. A repair must splice, not reserialize.
     const root = await makeTempDir();
-    await addNote(root, { title: "Hub", body: "[[target]]" });
-    await addNote(root, { title: "Target", body: "" });
-    // A file that parses as a note for the audit but vanishes before rewrite.
-    const result = await repairVaultLinks(root, { apply: true });
-    expect(result.notes).toEqual([]);
-    expect(result.audit.resolved).toBe(1);
+    await fs.mkdir(join(root, "notes", "1-1s"), { recursive: true });
+    const front = (t: string) =>
+      `---\ntitle: ${t}\ncreated: 2026-01-01T00:00:00.000Z\nupdated: 2026-01-01T00:00:00.000Z\ntags: []\nsource: agent\n---\n\n`;
+    await fs.writeFile(join(root, "notes", "1-1s", "target.md"), `${front("Target")}x\n`);
+    const tail = "## Raw\r\n\r\n```\r\nverbatim   \r\ntrailing spaces  \r\n```\r\n\r\n\r\n";
+    const hub = join(root, "notes", "hub.md");
+    await fs.writeFile(hub, `${front("Hub")}body [[target]]\r\n\r\n---\r\n\r\n${tail}`);
+
+    await repairVaultLinks(root, { apply: true });
+
+    const after = await fs.readFile(hub, "utf8");
+    expect(after).toContain("[[1-1s/target|target]]");
+    expect(after.slice(after.indexOf("## Raw"))).toBe(tail);
+  });
+
+  it("writes through a symlinked note without replacing the link", async () => {
+    // A vault may symlink in an externally managed bundle. Replacing the
+    // symlink with a regular file would orphan the real note.
+    const root = await makeTempDir();
+    const outside = await makeTempDir();
+    await fs.mkdir(join(root, "notes", "sub"), { recursive: true });
+    const front = (t: string) =>
+      `---\ntitle: ${t}\ncreated: 2026-01-01T00:00:00.000Z\nupdated: 2026-01-01T00:00:00.000Z\ntags: []\nsource: agent\n---\n\n`;
+    await fs.writeFile(join(root, "notes", "sub", "target.md"), `${front("Target")}x\n`);
+    const external = join(outside, "external.md");
+    await fs.writeFile(external, `${front("External")}see [[target]]\n`);
+    await fs.symlink(external, join(root, "notes", "external.md"));
+
+    await repairVaultLinks(root, { apply: true });
+
+    expect((await fs.lstat(join(root, "notes", "external.md"))).isSymbolicLink()).toBe(true);
+    expect(await fs.readFile(external, "utf8")).toContain("[[sub/target|target]]");
   });
 });
 
@@ -308,5 +337,29 @@ describe("backlinks follow the note", () => {
     await addNote(root, { title: "Hub", body: "[[keep/x]]" });
     expect(await renameFolder(root, "keep", "Keep")).toEqual({ ok: true, path: "keep" });
     expect((await getNote(root, "hub"))?.body).toBe("[[keep/x]]");
+  });
+});
+
+describe("fence and raw-tail boundaries", () => {
+  it("closes a fence only with its own marker, at its own length", () => {
+    // A blind open/close alternation gets both of these backwards, ending the
+    // protected region early and exposing documentation examples to rewriting.
+    expect(scanLinks("```md\n~~~\n[[inside]]\n```\n[[after]]").map((l) => l.target)).toEqual(["after"]);
+    expect(scanLinks("````\n```\n[[inside]]\n````\n[[after]]").map((l) => l.target)).toEqual(["after"]);
+  });
+
+  it("does not mistake a documented '## Raw' inside a fence for the tail", () => {
+    // A note explaining the raw-tail convention quotes the heading. Treating
+    // it as the real tail would silently refuse to repair everything below.
+    expect(scanLinks("```\n## Raw\n```\n\n[[genuine]]").map((l) => l.target)).toEqual(["genuine"]);
+  });
+
+  it("requires a whole heading line, so '## Rawhide' is prose", () => {
+    expect(scanLinks("## Rawhide notes\n[[genuine]]").map((l) => l.target)).toEqual(["genuine"]);
+  });
+
+  it("still protects a real tail, including CRLF files", () => {
+    expect(scanLinks("[[a]]\n\n## Raw\n\n[[b]]").map((l) => l.target)).toEqual(["a"]);
+    expect(scanLinks("[[a]]\r\n\r\n## Raw\r\n\r\n[[b]]").map((l) => l.target)).toEqual(["a"]);
   });
 });

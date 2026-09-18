@@ -75,7 +75,39 @@ export function normalizeTarget(raw: string): string {
 }
 
 const WIKILINK_RE = /\[\[([^\][|]+)(?:\|([^\]]*))?\]\]/g;
-const FENCE_RE = /^[ \t]*(?:`{3,}|~{3,}).*$/gm;
+const FENCE_RE = /^[ \t]*(`{3,}|~{3,})(.*)$/gm;
+/** A `## Raw` heading on a line of its own — not `## Rawhide`. */
+const RAW_HEADING_RE = new RegExp(`^${RAW_NOTES_HEADING}[ \\t]*\\r?$`, "m");
+
+/**
+ * Half-open `[start, end)` ranges covering fenced code blocks.
+ *
+ * CommonMark, not "every third-backtick-line toggles": a fence is closed only
+ * by the **same marker character**, at **at least the opening length**, and
+ * with no info string. Treating fences as a blind alternation gets two cases
+ * backwards — a `~~~` nested inside a ``` block would close it, and a ```
+ * inside a ```` block would too — and each mistake ends the protected region
+ * early, exposing example links in documentation to rewriting.
+ */
+function fenceRanges(body: string): [number, number][] {
+  const ranges: [number, number][] = [];
+  let open: { at: number; marker: string; length: number } | null = null;
+  for (const match of body.matchAll(FENCE_RE)) {
+    const run = match[1]!;
+    // Group 2 is `(.*)`, which always participates: the info string.
+    const info = match[2]!;
+    if (open === null) {
+      open = { at: match.index, marker: run[0]!, length: run.length };
+    } else if (run[0] === open.marker && run.length >= open.length && info.trim() === "") {
+      ranges.push([open.at, match.index + match[0].length]);
+      open = null;
+    }
+  }
+  // An unterminated fence runs to the end of the body, the way a renderer
+  // treats it.
+  if (open !== null) ranges.push([open.at, body.length]);
+  return ranges;
+}
 
 /**
  * The byte offset where the `## Raw` tail begins, or the body length when
@@ -84,30 +116,25 @@ const FENCE_RE = /^[ \t]*(?:`{3,}|~{3,}).*$/gm;
  * The tail is append-only and verbatim — "NEVER edit below this line" is
  * written into every note that has one. A link inside a user's dictation is
  * *their* text, quoted; repairing it would edit words the vault promises not
- * to touch. Rare (1 occurrence in a 1241-link vault) and absolutely off
- * limits.
+ * to touch.
+ *
+ * Fence-aware, and for the opposite reason to everything else here: a note
+ * *documenting* the raw-tail convention contains `## Raw` inside a code
+ * sample, and treating that as the real tail would silently protect — and so
+ * refuse to repair — every link below it. Matching a whole heading line also
+ * keeps `## Rawhide` from starting a tail.
  */
-function rawTailStart(body: string): number {
-  const idx = body.indexOf(`\n${RAW_NOTES_HEADING}`);
-  if (idx !== -1) return idx;
-  return body.startsWith(RAW_NOTES_HEADING) ? 0 : body.length;
-}
-
-/** Half-open `[start, end)` ranges covering fenced code blocks. */
-function fenceRanges(body: string): [number, number][] {
-  const ranges: [number, number][] = [];
-  let open: number | null = null;
-  for (const match of body.matchAll(FENCE_RE)) {
-    if (open === null) open = match.index;
-    else {
-      ranges.push([open, match.index + match[0].length]);
-      open = null;
-    }
+function rawTailStart(body: string, fences: readonly [number, number][]): number {
+  let from = 0;
+  for (;;) {
+    const rest = body.slice(from);
+    const hit = RAW_HEADING_RE.exec(rest);
+    if (hit === null) return body.length;
+    const at = from + hit.index;
+    const fence = fences.find(([a, b]) => at >= a && at < b);
+    if (fence === undefined) return at;
+    from = fence[1]; // skip the whole fenced block and keep looking
   }
-  // An unterminated fence runs to the end of the body, the way a renderer
-  // treats it.
-  if (open !== null) ranges.push([open, body.length]);
-  return ranges;
 }
 
 /**
@@ -119,8 +146,8 @@ function fenceRanges(body: string): [number, number][] {
  * sample is a string literal and must stay one.
  */
 export function scanLinks(body: string): LinkOccurrence[] {
-  const limit = rawTailStart(body);
   const fences = fenceRanges(body);
+  const limit = rawTailStart(body, fences);
   const out: LinkOccurrence[] = [];
   for (const match of body.matchAll(WIKILINK_RE)) {
     const start = match.index;

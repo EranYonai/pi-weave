@@ -670,7 +670,7 @@ describe("weave_note links action", () => {
       const clean = await mock.runTool("weave_note", { action: "links" }, ctx);
       expect(clean.content[0]?.text).toContain("Every link resolves.");
       const noop = await mock.runTool("weave_note", { action: "links", fix: true }, ctx);
-      expect(noop.content[0]?.text).toContain("Nothing to repair.");
+      expect(noop.content[0]?.text).toContain("Nothing to repair automatically.");
     });
   });
 

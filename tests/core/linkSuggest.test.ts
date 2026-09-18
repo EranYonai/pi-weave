@@ -163,3 +163,21 @@ describe("suggestionTarget", () => {
     expect(suggestionTarget("1-1s/Some Note")).toBe("1-1s/some-note");
   });
 });
+
+describe("already-linked exclusion walks the whole resolver ladder", () => {
+  it("counts a link that resolves only by unique title", () => {
+    // `[[Zephyrine Protocol]]` resolves to `b/deep-note` by title. Repair
+    // would fix it, so the pair is connected and must not be suggested.
+    const filler = Array.from({ length: 30 }, (_, i) =>
+      note(`filler/f${i}`, `Filler ${i}`, `routine standup notes number ${i}`),
+    );
+    const input = {
+      notes: [
+        ...filler,
+        note("a/alpha", "Alpha", "quorum handoff brackish — see [[Zephyrine Protocol]]"),
+        note("b/deep-note", "Zephyrine Protocol", "quorum handoff brackish"),
+      ],
+    };
+    expect(suggestLinks(input, { slug: "a/alpha" }).suggestions).toEqual([]);
+  });
+});

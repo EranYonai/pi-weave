@@ -176,19 +176,31 @@ export function suggestLinks(input: SuggestInput, options: SuggestOptions = {}):
   // Existing links, both directions, so a connection the user already made
   // is never offered back to them.
   const linked = new Set<string>();
-  const bySlug = new Map(notes.map((note) => [note.slug, note]));
+  const bySlug = new Set(notes.map((note) => note.slug));
   const byBasename = new Map<string, string[]>();
+  const byTitle = new Map<string, string[]>();
   for (const note of notes) {
     const base = note.slug.split("/").pop()!;
     byBasename.set(base, [...(byBasename.get(base) ?? []), note.slug]);
+    const title = slugify(note.title);
+    if (title.length > 0) byTitle.set(title, [...(byTitle.get(title) ?? []), note.slug]);
   }
   for (const note of notes) {
     for (const link of scanLinks(note.body)) {
-      // Resolve the same way repair does, so a link that repair would fix
-      // still counts as an existing connection rather than a suggestion.
-      const candidates = bySlug.has(link.target) ? [link.target] : (byBasename.get(link.target) ?? []);
-      if (candidates.length !== 1) continue;
-      linked.add(pairKey(note.slug, candidates[0]!));
+      // The same three-rung ladder `auditLinks` walks — exact slug, unique
+      // basename, unique title. It has to be all three: a link repair would
+      // resolve counts as a connection that already exists, so resolving a
+      // rung short here would suggest a pair the vault has already linked.
+      const byBase = byBasename.get(link.target) ?? [];
+      const byTtl = byTitle.get(link.target) ?? [];
+      const target = bySlug.has(link.target)
+        ? link.target
+        : byBase.length === 1
+          ? byBase[0]!
+          : byTtl.length === 1
+            ? byTtl[0]!
+            : null;
+      if (target !== null) linked.add(pairKey(note.slug, target));
     }
   }
 

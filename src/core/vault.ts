@@ -492,13 +492,46 @@ async function rewriteVaultLinks(
   let links = 0;
   for (const file of files) {
     const slug = file.slice(0, -".md".length);
+    const path = resolveNotePath(root, slug);
+    if (path === null) continue;
     const note = await getNote(root, slug);
     if (note === null) continue;
     const { body, changed } = rewriteLinks(note.body, (target) => resolve(target, slug));
     if (changed === 0) continue;
-    const path = resolveNotePath(root, slug);
-    if (path === null) continue;
-    await writeNote(path, slug, note, body, note.frontMatter);
+
+    // Splice the new body into the ORIGINAL file text rather than going
+    // through `writeNote`.
+    //
+    // `writeNote` reserializes from the parsed note, and serialization is
+    // lossy in ways that are harmless for an edit and unacceptable here: it
+    // normalizes line endings and trailing whitespace. Those bytes can lie
+    // inside the append-only `## Raw` tail, so a *link repair* — which must
+    // not touch the tail at all — would rewrite a user's verbatim dictation.
+    // `rewriteLinks` already guarantees it only edits offsets above the tail,
+    // so replacing exactly that span preserves every other byte in the file.
+    let original: string;
+    try {
+      original = await fs.readFile(path, "utf8");
+    } catch {
+      continue; // raced a delete
+    }
+    const at = original.lastIndexOf(note.body);
+    if (at === -1) continue; // body not found verbatim; refuse rather than guess
+    const next = original.slice(0, at) + body + original.slice(at + note.body.length);
+    // Atomic replace where it is safe: rename cannot truncate a note on a
+    // crash. A *file* symlink is the exception — renaming over it would
+    // silently replace the link with a regular file and orphan the real
+    // note — so those are written in place, through the link, as every other
+    // vault write already does. (A symlinked *directory* is unaffected:
+    // `path` then names a real file inside it.)
+    const link = await fs.lstat(path).then((s) => s.isSymbolicLink(), () => false);
+    if (link) {
+      await fs.writeFile(path, next, "utf8");
+    } else {
+      const tmp = `${path}.weave-${process.pid}.tmp`;
+      await fs.writeFile(tmp, next, "utf8");
+      await fs.rename(tmp, path);
+    }
     touched.push(slug);
     links += changed;
   }
@@ -537,24 +570,30 @@ export interface LinkRepairResult {
  * never invents a note.
  */
 export async function repairVaultLinks(root: string, options: { apply?: boolean } = {}): Promise<LinkRepairResult> {
-  const snapshot = await readVault(root);
-  const audit = auditLinks(snapshot);
-  if (options.apply !== true || audit.fixable.length === 0) {
-    return { audit, applied: [], notes: [] };
+  // A dry run needs no lock: it writes nothing, and a report of a vault that
+  // changed a millisecond later is no less true than one taken under a lock.
+  if (options.apply !== true) {
+    return { audit: auditLinks(await readVault(root)), applied: [], notes: [] };
   }
-  // Keyed by note, because a target may resolve differently in principle and
-  // certainly reads clearer than a global map: the audit already decided
-  // per-note, so the rewrite obeys the audit rather than re-deriving it.
-  const byNote = new Map<string, Map<string, string>>();
-  for (const fix of audit.fixable) {
-    const map = byNote.get(fix.slug) ?? new Map<string, string>();
-    map.set(fix.from, fix.to);
-    byNote.set(fix.slug, map);
-  }
-  const { notes } = await withVaultLock(root, () =>
-    rewriteVaultLinks(root, (target, noteSlug) => byNote.get(noteSlug)?.get(target) ?? null),
-  );
-  return { audit, applied: audit.fixable, notes };
+  // Applying does, and the audit has to happen *inside* it. Auditing first
+  // and locking second leaves a window in which a concurrent rename or edit
+  // invalidates a decision — a target that was unique when audited may be
+  // ambiguous by the time it is written — and the stale fix would be applied
+  // anyway, then reported as if it had been checked.
+  return withVaultLock(root, async () => {
+    const audit = auditLinks(await readVault(root));
+    if (audit.fixable.length === 0) return { audit, applied: [], notes: [] };
+    // Keyed by note, because the audit already decided per-note; the rewrite
+    // obeys that decision rather than re-deriving it.
+    const byNote = new Map<string, Map<string, string>>();
+    for (const fix of audit.fixable) {
+      const map = byNote.get(fix.slug) ?? new Map<string, string>();
+      map.set(fix.from, fix.to);
+      byNote.set(fix.slug, map);
+    }
+    const { notes } = await rewriteVaultLinks(root, (target, noteSlug) => byNote.get(noteSlug)?.get(target) ?? null);
+    return { audit, applied: audit.fixable, notes };
+  });
 }
 
 /** Rename a note in place and keep its front-matter title in sync. */
