@@ -563,7 +563,7 @@ body{font-size:var(--weave-px-base)}
   border-top:1px solid var(--weave-line);
 }
 
-/* the hidden force tuner (?forces=1, docs/weave-workspace.md 15.7) --------- */
+/* the hidden force tuner (?sliders=1, docs/weave-workspace.md 15.7) --------- */
 /* Absolutely positioned over the canvas rather than given a grid row: the
    panel is a debug overlay and must not change the layout the graph is being
    judged in — moving the canvas while tuning it would falsify the very thing

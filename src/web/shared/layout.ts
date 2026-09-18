@@ -41,7 +41,7 @@ const ALPHA_MIN = 0.001;
  * Mutable because picking these numbers is an act of taste, not of
  * derivation: the difference between "one hairball" and "legible groups" is a
  * ratio between containment cohesion, charge and centre gravity that is far
- * easier to *see* than to reason about. The hidden tuner (`?forces=1`, see
+ * easier to *see* than to reason about. The hidden tuner (`?sliders=1`, see
  * `client/graph/tuner.model.ts` and docs/weave-workspace.md §15.7) writes here
  * and re-lays out live, so a human can find the values by eye and they then
  * get frozen back into {@link FORCE_DEFAULTS}.
@@ -80,7 +80,7 @@ export interface ForceConstants {
 /**
  * The live constants. See {@link ForceConstants} for why this is mutable.
  *
- * These values were **found by eye** through the `?forces=1` tuner and then
+ * These values were **found by eye** through the `?sliders=1` tuner and then
  * frozen here, which is the loop §15.7 describes working as intended. They are
  * not derived and should not be "corrected" toward rounder numbers: the
  * previous set (`containsStrength: 0.02`, `charge: -50`, `center: 0.09`) was

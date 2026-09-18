@@ -65,7 +65,7 @@ export interface ColumnsProps {
   bootFailed: boolean;
   /** Slot the graph column fills with its `fit`, for the global `g` key. */
   fit: { current: (() => void) | null };
-  /** `?forces=1` — the hidden force tuner (docs/weave-workspace.md §15.7). */
+  /** `?sliders=1` — the hidden force tuner (docs/weave-workspace.md §15.7). */
   tuner: boolean;
 }
 

@@ -1388,12 +1388,12 @@ or any invalidation landing mid-build all force a real rebuild.
 status bar labelled "data as of" showing `a3f9c2…` would be a regression. And the ETag is now strong, which it has earned: the digest is
 taken over the exact bytes written to the socket.
 
-### 15.7 The graph force tuner — `?forces=1` — **open**
+### 15.7 The graph force tuner — `[sliders]` / `?sliders=1` — **open**
 
-There is a hidden slider panel over the graph column. Open the workspace with `?forces=1` on the URL:
+There is a slider panel over the graph column. Open it with the `[sliders]` chip, or arrive with it open via the URL:
 
 ```text
-http://127.0.0.1:PORT/?forces=1
+http://127.0.0.1:PORT/?sliders=1
 ```
 
 **Why it exists.** The graph's arrangement is decided by seven numbers in `src/web/shared/layout.ts`, and the difference between "one
@@ -1422,10 +1422,9 @@ The **before** button loads `HAIRBALL` from `tuner.model.ts` — the pre-tuner c
 can see what it is for without reading a changelog. **copy values** puts the current record on the clipboard as the literal that belongs in
 `layout.ts`, because transcribing seven floats by eye is where a digit gets dropped.
 
-**How it opens.** The `[sliders]` chip in the control strip, beside `[fit]`. `?forces=1` still works and now seeds the chip's initial state
-— it was the only way in while the panel was a half-built instrument, which was the right gate then and the wrong one for a finished
-control. A build-time `define` was rejected: it breaks the byte-reproducible `build:web:check` contract for a panel that costs a few hundred
-bytes.
+**How it opens.** The `[sliders]` chip in the control strip, beside `[fit]`. `?sliders=1` seeds the chip's initial state — it was the only
+way in while the panel was a half-built instrument, which was the right gate then and the wrong one for a finished control. A build-time
+`define` was rejected: it breaks the byte-reproducible `build:web:check` contract for a panel that costs a few hundred bytes.
 
 ### 15.8 Group colour and the selection's three tiers — ✅ **built**
 

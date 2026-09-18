@@ -11,10 +11,10 @@
 import { afterEach, describe, expect, it } from "vitest";
 import {
   FORCE_SLIDERS,
-  FORCES_FLAG,
+  SLIDERS_FLAG,
   HAIRBALL,
   GROUP_COLORS_STORAGE_KEY,
-  forcesFlag,
+  slidersFlag,
   forcesSnippet,
   loadGroupColors,
   saveGroupColors,
@@ -36,17 +36,17 @@ const spec = (key: SliderSpec["key"]): SliderSpec => FORCE_SLIDERS.find((s) => s
 
 describe("the tuner's gate", () => {
   it("opens only on an affirmative flag", () => {
-    for (const search of ["?forces", "?forces=1", "?forces=true", "?q=x&forces=1", "forces=1"]) {
-      expect(forcesFlag(search)).toBe(true);
+    for (const search of ["?sliders", "?sliders=1", "?sliders=true", "?q=x&sliders=1", "sliders=1"]) {
+      expect(slidersFlag(search)).toBe(true);
     }
-    for (const search of ["", "?", "?forces=0", "?forces=false", "?forced=1", "?q=forces", "?x=1"]) {
-      expect(forcesFlag(search)).toBe(false);
+    for (const search of ["", "?", "?sliders=0", "?sliders=false", "?slider=1", "?q=sliders", "?x=1", "?forces=1"]) {
+      expect(slidersFlag(search)).toBe(false);
     }
   });
 
   it("names the parameter it documents", () => {
-    expect(FORCES_FLAG).toBe("forces");
-    expect(forcesFlag(`?${FORCES_FLAG}=1`)).toBe(true);
+    expect(SLIDERS_FLAG).toBe("sliders");
+    expect(slidersFlag(`?${SLIDERS_FLAG}=1`)).toBe(true);
   });
 });
 

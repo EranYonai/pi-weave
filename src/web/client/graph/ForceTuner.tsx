@@ -7,7 +7,7 @@
  * obvious reason: the platform has had this element since 2011.
  *
  * Rendered only when `Graph.tsx` was handed `tuner` — that is, only when
- * `?forces=1` was on the URL. See `forcesFlag`.
+ * `?sliders=1` was on the URL. See `slidersFlag`.
  */
 
 import { useState } from "preact/hooks";
@@ -50,7 +50,7 @@ export function ForceTuner(props: ForceTunerProps) {
 
   return (
     <div class="weave-tuner">
-      <p class="weave-tuner-title">graph forces · ?forces=1</p>
+      <p class="weave-tuner-title">graph forces · ?sliders=1</p>
       <label class="weave-tuner-toggle" title="hue per containment group, shade per kind">
         <input type="checkbox" checked={props.groupColors} onChange={(event) => props.onGroupColors((event.currentTarget as HTMLInputElement).checked)} />
         <span>colour by group</span>

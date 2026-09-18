@@ -90,10 +90,10 @@ export interface GraphProps {
    */
   fit: { current: (() => void) | null };
   /**
-   * Show the hidden force tuner (`?forces=1`, docs/weave-workspace.md §15.7).
+   * Show the hidden force tuner (`?sliders=1`, docs/weave-workspace.md §15.7).
    *
    * A prop rather than a `location.search` read here, for the same reason
-   * `cwd` and `platform` are props: the decision is `forcesFlag`'s, and it is
+   * `cwd` and `platform` are props: the decision is `slidersFlag`'s, and it is
    * testable where a `location` read is not.
    */
   tuner?: boolean;
@@ -146,7 +146,7 @@ export function Graph(props: GraphProps) {
   /**
    * Whether the tuner panel is open.
    *
-   * Seeded from the `?forces=1` flag, then owned by the `[forces]` chip — so
+   * Seeded from the `?sliders=1` flag, then owned by the `[sliders]` chip — so
    * the URL is still the way to arrive with it open, and the button is the way
    * to get at it once you are here. The chip is always present: the panel was
    * unreachable without knowing a query string, which is the right gate for a

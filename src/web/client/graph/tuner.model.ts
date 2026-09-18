@@ -32,24 +32,24 @@ import { FORCE_DEFAULTS } from "../../shared/layout";
 // --- the gate ----------------------------------------------------------------------
 
 /** The query parameter that opens the panel. Documented in §15.7. */
-export const FORCES_FLAG = "forces";
+export const SLIDERS_FLAG = "sliders";
 
 /**
  * Whether `location.search` asks for the tuner.
  *
- * `?forces`, `?forces=1` and `?forces=true` all open it; `?forces=0` and
- * `?forces=false` do not, so a bookmarked URL can carry the parameter in the
+ * `?sliders`, `?sliders=1` and `?sliders=true` all open it; `?sliders=0` and
+ * `?sliders=false` do not, so a bookmarked URL can carry the parameter in the
  * off position. Anything unparseable is off — a typo must not silently put a
  * debug panel over a user's graph.
  *
  * Hand-parsed rather than via `URLSearchParams`, which is a DOM/Node global
  * this tier's `tsconfig` does not provide.
  */
-export function forcesFlag(search: string): boolean {
+export function slidersFlag(search: string): boolean {
   for (const pair of search.replace(/^\?/, "").split("&")) {
     const eq = pair.indexOf("=");
     const name = eq === -1 ? pair : pair.slice(0, eq);
-    if (name !== FORCES_FLAG) continue;
+    if (name !== SLIDERS_FLAG) continue;
     const value = eq === -1 ? "" : pair.slice(eq + 1).toLowerCase();
     return value !== "0" && value !== "false";
   }

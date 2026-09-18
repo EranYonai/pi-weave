@@ -61,8 +61,8 @@ export interface ShellProps {
   /** `navigator.platform`, for the `⌘K` vs `Ctrl K` hint. */
   platform: string;
   /**
-   * `location.search` carried `?forces=1` — open the hidden force tuner over
-   * the graph column (docs/weave-workspace.md §15.7). Resolved by `forcesFlag`
+   * `location.search` carried `?sliders=1` — open the hidden force tuner over
+   * the graph column (docs/weave-workspace.md §15.7). Resolved by `slidersFlag`
    * in `main.tsx`; optional so every existing caller and test keeps its shape.
    */
   tuner?: boolean;
