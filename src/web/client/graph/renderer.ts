@@ -90,6 +90,8 @@ export function sigmaRenderer(
   let sigma: SigmaLike | null = null;
   let graph: ProjectedGraph = project({ nodes: [], edges: [] });
   let highlight: ReadonlySet<string> | null = null;
+  /** The selection inside that neighbourhood — see `nodeReducer`. */
+  let selected: string | null = null;
   let select: (id: string | null) => void = () => {};
   let dragStart: (id: string) => void = () => {};
   let dragMove: (id: string, at: Point) => void = () => {};
@@ -119,8 +121,8 @@ export function sigmaRenderer(
    * until the next unrelated frame.
    */
   const applyReducers = (instance: SigmaLike): void => {
-    const nodes = nodeReducer(highlight);
-    const edges = edgeReducer(highlight);
+    const nodes = nodeReducer(highlight, selected);
+    const edges = edgeReducer(highlight, selected);
     instance.setSetting("nodeReducer", (id, data) => ({ ...data, ...nodes(id, data, scheme) }));
     instance.setSetting("edgeReducer", (key, data) => ({ ...data, ...edges(key, data, scheme) }));
   };
@@ -177,8 +179,9 @@ export function sigmaRenderer(
       sigma?.refresh();
     },
 
-    setHighlight(next: ReadonlySet<string> | null) {
+    setHighlight(next: ReadonlySet<string> | null, selectedId: string | null = null) {
       highlight = next;
+      selected = selectedId;
       if (sigma !== null) applyReducers(sigma);
     },
 

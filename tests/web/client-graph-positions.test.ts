@@ -230,7 +230,7 @@ describe("position serialization", () => {
   });
 
   it("carries the shape key, which is what makes invalidation one comparison", () => {
-    expect(JSON.parse(serializePositions("shape-1", positions))).toMatchObject({ v: 3, key: "shape-1" });
+    expect(JSON.parse(serializePositions("shape-1", positions))).toMatchObject({ v: 4, key: "shape-1" });
   });
 });
 
@@ -249,9 +249,9 @@ describe("deserializePositions rejects everything it should", () => {
   });
 
   it("returns null for a future schema version", () => {
-    // A v3 reader will meet a v4 entry written by a newer build the user ran
+    // A v4 reader will meet a v5 entry written by a newer build the user ran
     // yesterday. There is no repair path worth having.
-    expect(deserializePositions(JSON.stringify({ v: 4, key: "k", at: { a: [1, 2] } }), "k")).toBeNull();
+    expect(deserializePositions(JSON.stringify({ v: 5, key: "k", at: { a: [1, 2] } }), "k")).toBeNull();
   });
 
   it("returns null for a v1 entry — the tangled single-centre recipe", () => {
@@ -261,12 +261,14 @@ describe("deserializePositions rejects everything it should", () => {
     expect(deserializePositions(JSON.stringify({ v: 1, key: "k", at: { a: [1, 2] } }), "k")).toBeNull();
   });
 
-  it("returns null for a v2 entry — the pre-P6.2 gravity recipe", () => {
-    // `v: 3` is the Tier 6 change (centre gravity, shorter relation springs,
-    // degree-sized collision discs). A v2 entry is a valid layout of the old
-    // physics, and the shape key cannot tell the recipes apart — so the older
-    // generation is a miss for the same reason v1 is.
-    expect(deserializePositions(JSON.stringify({ v: 2, key: "k", at: { a: [1, 2] } }), "k")).toBeNull();
+  it("returns null for every superseded physics generation", () => {
+    // `v: 4` is the frozen force constants (§15.7). Each earlier version is a
+    // valid layout of an older recipe, and the shape key cannot tell them
+    // apart — same nodes, same edges, different physics — so the version is
+    // the only thing that can, exactly as it was for v1 and v2.
+    for (const v of [2, 3]) {
+      expect(deserializePositions(JSON.stringify({ v, key: "k", at: { a: [1, 2] } }), "k")).toBeNull();
+    }
   });
 
   it("returns null for structural nonsense", () => {
@@ -307,7 +309,7 @@ describe("position storage", () => {
     const storage = memoryStorage();
     expect(savePositions(storage, "k", new Map([["a", { x: 1, y: 2 }]]))).toBe(true);
     expect(storage.calls).toEqual([`set:${POSITIONS_STORAGE_KEY}`]);
-    expect(POSITIONS_STORAGE_KEY).toBe("pi-weave.graph.positions.v3");
+    expect(POSITIONS_STORAGE_KEY).toBe("pi-weave.graph.positions.v4");
   });
 
   it("round-trips through the port", () => {

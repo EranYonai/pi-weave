@@ -60,6 +60,12 @@ export interface ShellProps {
   initialWidth: number;
   /** `navigator.platform`, for the `⌘K` vs `Ctrl K` hint. */
   platform: string;
+  /**
+   * `location.search` carried `?sliders=1` — open the hidden force tuner over
+   * the graph column (docs/weave-workspace.md §15.7). Resolved by `slidersFlag`
+   * in `main.tsx`; optional so every existing caller and test keeps its shape.
+   */
+  tuner?: boolean;
 }
 
 export function Shell(props: ShellProps) {
@@ -206,6 +212,7 @@ export function Shell(props: ShellProps) {
         storage={localStorage}
         host={window}
         fit={fit}
+        tuner={props.tuner === true}
       />
       {/*
         `model.generatedAt`, not `stamp`. The two used to be the same string;

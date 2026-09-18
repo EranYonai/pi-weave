@@ -23,11 +23,16 @@ import {
   FILTER_PLACEHOLDER,
   PROVENANCE_CYCLE,
   TREE_LABEL,
+  DRAFT_FOLDER_ID,
   collapse,
   cycleProvenance,
   deletesSelection,
+  deleteItemLabel,
   deleteNeedsConfirmation,
   depthVar,
+  newFolderParent,
+  newFolderPath,
+  withDraftRow,
   dropFolder,
   expand,
   idAt,
@@ -274,6 +279,22 @@ describe("tree mutations", () => {
     expect(deleteNeedsConfirmation({ type: "note" })).toBe(false);
     expect(deleteNeedsConfirmation({ type: "folder" })).toBe(true);
     expect(deleteNeedsConfirmation({ type: "vault" })).toBe(false);
+  });
+
+  it("confirms a folder delete in the menu item's own label", () => {
+    // No `window.confirm` anywhere in the workspace any more. A folder still
+    // takes two clicks, because `deleteFolder` is `fs.rm(recursive)` with no
+    // undo over a subtree whose size the row does not show — and the second
+    // label names the folder, which is the chance to spot a wrong right-click.
+    const folder = { type: "folder" as const };
+    expect(deleteItemLabel(folder, "archive", false)).toBe("Delete…");
+    expect(deleteItemLabel(folder, "archive", true)).toContain("archive");
+    expect(deleteItemLabel(folder, "archive", true)).toContain("everything in it");
+    // A note is one file whose name the user just read: one click, always,
+    // and the label never changes under them.
+    const note = { type: "note" as const };
+    expect(deleteItemLabel(note, "Alpha", false)).toBe("Delete");
+    expect(deleteItemLabel(note, "Alpha", true)).toBe("Delete");
   });
 });
 
@@ -828,5 +849,106 @@ describe("rowCountLabel", () => {
   it("says `1 row` for one", () => {
     const one = payloadOf([node("vault", "vault", "Vault")], []);
     expect(rowCountLabel(rowsFor(one, initialTreeView()))).toBe("1 row");
+  });
+});
+
+// --- the draft folder row -------------------------------------------------------------
+
+describe("creating a folder inline, not through a prompt", () => {
+  const folderModel = payloadOf([
+    node("vault", "vault", "Vault"),
+    node("vfolder:docs", "module", "docs"),
+    node("note:docs/one", "note", "One", "human"),
+    node("vfolder:docs/deep", "module", "deep"),
+    node("note:docs/deep/two", "note", "Two", "human"),
+    node("note:loose", "note", "Loose", "human"),
+  ], [
+    { source: "vault", target: "vfolder:docs", kind: "contains" },
+    { source: "vfolder:docs", target: "note:docs/one", kind: "contains" },
+    { source: "vfolder:docs", target: "vfolder:docs/deep", kind: "contains" },
+    { source: "vfolder:docs/deep", target: "note:docs/deep/two", kind: "contains" },
+    { source: "vault", target: "note:loose", kind: "contains" },
+  ]);
+  const open = { ...initialTreeView(), expanded: new Set(["vault", "vfolder:docs", "vfolder:docs/deep"]) };
+  const rows = rowsFor(folderModel, open);
+
+  it("puts a new folder where the gesture pointed", () => {
+    // Right-clicking a *note* means "next to this", not "inside this" — a
+    // note cannot contain a folder, and the alternative (silently using the
+    // vault root) would put the folder somewhere the user was not looking.
+    expect(newFolderParent({ type: "vault", path: "" })).toBe("");
+    expect(newFolderParent({ type: "folder", path: "docs/deep" })).toBe("docs/deep");
+    expect(newFolderParent({ type: "note", path: "docs/one" })).toBe("docs");
+    expect(newFolderParent({ type: "note", path: "loose" })).toBe("");
+  });
+
+  it("builds the path to create, and refuses an empty name", () => {
+    expect(newFolderPath("", "ideas")).toBe("ideas");
+    expect(newFolderPath("docs", "ideas")).toBe("docs/ideas");
+    // Escape and a whitespace-only name are the same answer: create nothing.
+    expect(newFolderPath("docs", "   ")).toBeNull();
+    expect(newFolderPath("", "")).toBeNull();
+    // The name is trimmed, so a stray space cannot create " ideas".
+    expect(newFolderPath("docs", "  ideas  ")).toBe("docs/ideas");
+  });
+
+  it("splices the draft in at the depth its parent implies", () => {
+    const top = withDraftRow(rows, "");
+    const draftTop = top.find((row) => row.id === DRAFT_FOLDER_ID)!;
+    expect(draftTop.depth).toBe(1);
+    // A root-level draft goes last, after the whole tree.
+    expect(top[top.length - 1]!.id).toBe(DRAFT_FOLDER_ID);
+
+    const nested = withDraftRow(rows, "docs/deep");
+    const draftNested = nested.find((row) => row.id === DRAFT_FOLDER_ID)!;
+    expect(draftNested.depth).toBe(3);
+  });
+
+  it("puts a folder's draft after that folder's whole subtree, not after its first child", () => {
+    // `docs` contains a note *and* a nested folder with its own note. The
+    // draft belongs after all of it — dropping it after the first child would
+    // render it as a sibling of `note:docs/one` at the wrong place in the list.
+    const spliced = withDraftRow(rows, "docs");
+    const at = spliced.findIndex((row) => row.id === DRAFT_FOLDER_ID);
+    const ids = spliced.map((row) => row.id);
+    expect(ids.slice(0, at)).toContain("note:docs/deep/two");
+    // Still inside the vault's subtree, and before the loose note's group only
+    // if that is where `docs` ended — what matters is every `docs` descendant
+    // precedes it.
+    expect(spliced[at]!.depth).toBe(2);
+  });
+
+  it("adds nothing when there is no draft", () => {
+    const same = withDraftRow(rows, null);
+    expect(same.map((row) => row.id)).toEqual(rows.map((row) => row.id));
+    // A copy, not the same array: the component holds the original in state.
+    expect(same).not.toBe(rows);
+  });
+
+  it("falls back to the end when the parent is not on screen", () => {
+    // A filter can hide the parent between the right-click and the render.
+    // Appending is wrong-looking but harmless; dropping the row would leave
+    // the user typing into nothing.
+    const spliced = withDraftRow(rows, "no/such/folder");
+    expect(spliced[spliced.length - 1]!.id).toBe(DRAFT_FOLDER_ID);
+  });
+
+  it("gives the draft an id no real folder can take", () => {
+    // The row renders through the ordinary `TreeRow` path, so its id shares a
+    // namespace with real folders. `slugify` strips the NUL, so no vault
+    // folder can ever be called this.
+    expect(DRAFT_FOLDER_ID.startsWith("vfolder:")).toBe(true);
+    expect(rows.some((row) => row.id === DRAFT_FOLDER_ID)).toBe(false);
+  });
+
+  it("renders as an ordinary row, with no label and no meta", () => {
+    const draft = withDraftRow(rows, "docs").find((row) => row.id === DRAFT_FOLDER_ID)!;
+    const view = rowView(draft, null, Date.parse("2026-01-01T00:00:00Z"));
+    expect(view.label).toBe("");
+    expect(view.meta).toBe("");
+    expect(view.hasKids).toBe(false);
+    // Never the selected row: the selection drives the note column, and a
+    // folder that does not exist yet has nothing to show there.
+    expect(view.selected).toBe(false);
   });
 });
