@@ -11,24 +11,56 @@
   <a href="./LICENSE"><img alt="license: MIT" src="https://img.shields.io/npm/l/pi-weave?color=green"></a>
 </p>
 
-**A local knowledge workspace you can talk to.**
+**Your notes. Your agent's notes. One searchable knowledge workspace.**
 
-pi-weave is an extension for [pi](https://github.com/earendil-works/pi). Ask Pi to take notes while you think out loud, keep your exact words alongside a useful summary, and explore everything in `/weave-view`.
+I've been chasing the right note-taking workflow for years. Notion, OneNote, Obsidian, and plenty of others.
 
-It also understands the repository you are working in. Personal notes live in a Markdown vault; repository knowledge lives in a disposable `.okf` index. Both are plain files that humans and agents can read.
+With pi-weave, I've made one that finally answers the way I want to work today — especially now that AI agents are part of that work.
 
-## Core capabilities
+The idea is simple:
 
-- **Conversational note-taking.** Create and update notes through natural-language requests such as “start a note”, “add this”, or “remember that”.
-- **Verbatim narration with structured summaries.** During dictation, Pi preserves each spoken passage in an append-only `## Raw` section while maintaining an organized summary above it.
-- **Knowledge retrieval.** Pi searches existing notes when answering questions about previous decisions, people, projects, or meetings.
-- **Unified visual workspace.** `/weave-view` presents notes, links, repository structure, and provenance in a live browser interface.
-- **Optional session memory.** `/weave-scan sessions` turns changed pi transcripts into searchable notes with reusable technical takeaways.
-- **Repository exploration.** A lightweight, git-aware index gives Pi a structural overview of the current codebase before it reads files.
+**You and your agent should share the same knowledge.**
 
-Nothing is captured silently. pi-weave creates or extends a personal note only when you ask it to.
+Talk naturally and let your thoughts become structured notes. Write notes yourself. Let your agent capture decisions, discoveries, and
+useful context. Bring important knowledge forward from previous sessions.
 
-## Install
+Then find it again — by searching the workspace yourself, or simply asking your agent.
+
+Everything is local. Everything is readable. Your notes are ordinary files, not knowledge trapped inside another chat.
+
+## Think out loud
+
+Dictation is one of my favorite ways to use AI.
+
+Instead of stopping to organize every thought while I'm having it, I can just talk:
+
+> Start a note about pi-weave positioning. I'm going to think out loud.
+
+pi-weave keeps what I actually said while Pi continuously turns it into a useful, structured note.
+
+The raw thought stays yours. The organization is handled for you.
+
+And it doesn't end with human notes.
+
+## Your knowledge + your agent's knowledge
+
+pi-weave gives humans and agents one workspace.
+
+A note you dictate, something you write manually, a useful discovery made by an agent, or knowledge recovered from an earlier session can
+all live together.
+
+pi-weave keeps track of where knowledge came from, while making the whole workspace searchable by both you and your agent.
+
+**The conversation can end. The knowledge doesn't have to.**
+
+## Built on Pi
+
+pi-weave is built as an extension for [Pi](https://github.com/earendil-works/pi).
+
+I've grown to love Pi precisely because it is such a lightweight agent harness. It gives the model tools and context without trying to
+become the product itself, and its extensibility makes projects like pi-weave possible.
+
+Install pi-weave:
 
 ```bash
 pi install npm:pi-weave
@@ -42,6 +74,8 @@ pi install /path/to/pi-weave
 ```
 
 Requires Node **20.13 or newer**.
+
+Then just talk to Pi.
 
 ## Start taking notes
 
@@ -71,7 +105,8 @@ For each chunk, Pi:
 2. refreshes the structured summary above it;
 3. leaves the raw record untouched.
 
-This makes the note readable during the conversation without replacing your words with an AI reconstruction. Notes based on your dictation remain marked `source: human`; notes drafted by Pi are marked `source: agent`.
+This makes the note readable during the conversation without replacing your words with an AI reconstruction. Notes based on your dictation
+remain marked `source: human`; notes drafted by Pi are marked `source: agent`.
 
 Useful requests include:
 
@@ -86,9 +121,9 @@ Useful requests include:
 
 ## Keeping the vault connected
 
-A wiki-link resolves to nothing when it is written as a bare title — `[[Quarterly Roadmap]]` when the note lives at
-`planning/roadmap-2026` — or when it points at a note that was never written. Pi repairs those in one deterministic pass instead of
-rereading the vault and guessing.
+A wiki-link resolves to nothing when it is written as a bare title — `[[Quarterly Roadmap]]` when the note lives at `planning/roadmap-2026`
+— or when it points at a note that was never written. Pi repairs those in one deterministic pass instead of rereading the vault and
+guessing.
 
 ```text
 You: Check the links in my notes.
@@ -112,11 +147,13 @@ Renaming or moving a note rewrites its inbound links automatically, so its backl
 The browser workspace has four connected views:
 
 - **Tree** — notes, folders, and repository structure, with text and provenance filters.
-- **Note** — rendered Markdown with clickable `[[wikilinks]]`, link previews, tags, authorship, and an action to open the source in `$EDITOR`.
+- **Note** — rendered Markdown with clickable `[[wikilinks]]`, link previews, tags, authorship, and an action to open the source in
+  `$EDITOR`.
 - **Graph** — a navigable map of notes, links, mentions, modules, and repository relationships. Selecting something updates every view.
 - **Context** — links, backlinks, tags, and code mentions for the current selection.
 
-Search with `⌘K` / `Ctrl K`. Press `?` for all shortcuts. The workspace updates as notes change on disk, so a note written by Pi appears without a reload. It follows the system theme by default and can be switched between light and dark.
+Search with `⌘K` / `Ctrl K`. Press `?` for all shortcuts. The workspace updates as notes change on disk, so a note written by Pi appears
+without a reload. It follows the system theme by default and can be switched between light and dark.
 
 The browser is read-only. Edit with `$EDITOR`, Obsidian, or the `weave_note` tool; unknown front-matter fields remain preserved.
 
@@ -129,7 +166,10 @@ The browser is read-only. Edit with `$EDITOR`, Obsidian, or the `weave_note` too
 /weave-scan sessions /path/to/history   # explicit history root
 ```
 
-This opt-in scan treats a supplied file—or every bounded text file under a supplied directory—as opaque session material for the active model to interpret, then writes generated notes under `~/.okf/notes/sessions/`. That makes it usable with Claude Code, opencode, Codex, or exported history trees without requiring their schema or file extension. It skips unchanged files, captures outcomes plus reusable technical takeaways, works outside Git repositories, and can be stopped with `/weave-scan-cancel`.
+This opt-in scan treats a supplied file—or every bounded text file under a supplied directory—as opaque session material for the active
+model to interpret, then writes generated notes under `~/.okf/notes/sessions/`. That makes it usable with Claude Code, opencode, Codex, or
+exported history trees without requiring their schema or file extension. It skips unchanged files, captures outcomes plus reusable technical
+takeaways, works outside Git repositories, and can be stopped with `/weave-scan-cancel`.
 
 ## Repository knowledge
 
@@ -140,9 +180,11 @@ Inside a Git repository, pi-weave detects whether `<repo>/.okf/` is missing, fre
 /weave-scan deep    # also summarize changed files with the active model
 ```
 
-The light index covers languages, packages, modules, entry points, and Git state. A deep scan adds short per-file summaries and only revisits files whose content changed.
+The light index covers languages, packages, modules, entry points, and Git state. A deep scan adds short per-file summaries and only
+revisits files whose content changed.
 
-The repository index is a cache, not a source of truth. Delete `.okf`, scan again, and nothing important is lost. pi-weave excludes it locally from Git by default.
+The repository index is a cache, not a source of truth. Delete `.okf`, scan again, and nothing important is lost. pi-weave excludes it
+locally from Git by default.
 
 ## Commands and tools
 
@@ -199,7 +241,9 @@ We probably want OIDC next quarter…
 
 Set `PI_WEAVE_VAULT` to use a different vault location.
 
-Reading, writing, searching, and viewing notes are local operations. Deep repository scans and session summaries send bounded input to whichever model you configured in pi. The browser workspace binds only to loopback, uses a per-session token, and shuts down with the pi session.
+Reading, writing, searching, and viewing notes are local operations. Deep repository scans and session summaries send bounded input to
+whichever model you configured in pi. The browser workspace binds only to loopback, uses a per-session token, and shuts down with the pi
+session.
 
 The vault format, repository index, and skills are intentionally harness-agnostic. `src/core` contains no pi-specific imports.
 
@@ -219,7 +263,8 @@ npm run coverage
 npm run build:web
 ```
 
-Coverage must remain at or above **95%** for lines, branches, functions, and statements. If browser source changes, rebuild and commit `src/web/client/dist/app.js`.
+Coverage must remain at or above **95%** for lines, branches, functions, and statements. If browser source changes, rebuild and commit
+`src/web/client/dist/app.js`.
 
 Read [AGENTS.md](AGENTS.md) before contributing. Work on a feature branch; do not commit directly to `main`.
 

@@ -41,8 +41,23 @@ jobs:
       - name: Bump patch version
         run: |
           LATEST=$(npm view pi-weave version 2>/dev/null || echo "0.1.0")
-          npm version "$LATEST" --no-git-tag-version --allow-same-version
-          VERSION=$(npm version patch --no-git-tag-version)
+          PKG_VERSION=$(node -p "require('./package.json').version")
+          IS_GT=$(node -e "
+            const pa = '$PKG_VERSION'.split('.').map(Number);
+            const pb = '$LATEST'.split('.').map(Number);
+            let gt = false;
+            for (let i = 0; i < 3; i++) {
+              if ((pa[i]||0) > (pb[i]||0)) { gt = true; break; }
+              if ((pa[i]||0) < (pb[i]||0)) break;
+            }
+            console.log(gt);
+          ")
+          if [ "$IS_GT" = "true" ]; then
+            VERSION="v$PKG_VERSION"
+          else
+            npm version "$LATEST" --no-git-tag-version --allow-same-version
+            VERSION=$(npm version patch --no-git-tag-version)
+          fi
           echo "VERSION=$VERSION" >> "$GITHUB_ENV"
           git tag "$VERSION" -f
 
