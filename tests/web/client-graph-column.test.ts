@@ -20,8 +20,6 @@ import { clusterAggregate, focusNeighborhood } from "../../src/web/shared/view";
 import type { GraphPayload, WireGraphEdge, WireGraphNode } from "../../src/web/shared/wire";
 import {
   BOOT_FAILED_MESSAGE,
-  MAX_CANVAS_NOTES,
-  canvasModel,
   EMPTY_COLUMN,
   FIT_HINT,
   FIT_LABEL,
@@ -107,48 +105,35 @@ const ALL_SHUT: GraphViewState = { expanded: new Set() };
 
 // --- the view state ---------------------------------------------------------------------
 
-describe("canvasModel", () => {
-  it("caps only canvas notes while retaining structural nodes and valid edges", () => {
-    const nodes = [node("vault", "vault"), node("repository", "repository")];
-    const edges: WireGraphEdge[] = [];
-    for (let i = 0; i <= MAX_CANVAS_NOTES; i++) {
-      nodes.push(node(`note:${i}`, "note"));
-      edges.push(edge("vault", `note:${i}`));
+describe("large vaults on the canvas", () => {
+  // A former `MAX_CANVAS_NOTES = 500` prefix cap lived here. It cut across the
+  // containment tree, so whole folders whose notes ranked past the cap drew
+  // empty — the "populated directory looks empty" bug #45 removed from the
+  // tree, reappearing on the canvas. Clustering is the real bound.
+  const bigVault = (count: number) => {
+    const nodes = [node("vault", "vault"), node("vfolder:deep", "module")];
+    const edges: WireGraphEdge[] = [edge("vault", "vfolder:deep", "contains")];
+    for (let i = 0; i < count; i++) {
+      nodes.push(node(`note:deep/n${i}`, "note"));
+      edges.push(edge("vfolder:deep", `note:deep/n${i}`, "contains"));
     }
-    edges.push(edge("repository", `note:${MAX_CANVAS_NOTES}`));
-    const full = viewModel(payloadOf(nodes, edges));
-    const canvas = canvasModel(full);
+    return viewModel(payloadOf(nodes, edges));
+  };
 
-    expect(full.nodes.filter((n) => n.kind === "note")).toHaveLength(MAX_CANVAS_NOTES + 1);
-    expect(canvas.nodes.filter((n) => n.kind === "note")).toHaveLength(MAX_CANVAS_NOTES);
-    expect(canvas.nodes.some((n) => n.id === "repository")).toBe(true);
-    expect(canvas.edges.some((e) => e.target === `note:${MAX_CANVAS_NOTES}`)).toBe(false);
+  it("draws every note of an expanded folder, however large the vault", () => {
+    const model = bigVault(600);
+    const open = clusterAggregate(model, new Set(["vault", "vfolder:deep"]));
+    expect(open.nodes.filter((n) => n.kind === "note")).toHaveLength(600);
+    expect(open.nodes.some((n) => n.id === "note:deep/n599")).toBe(true);
   });
 
-  it("always keeps the selected note, however deep past the cap it ranks", () => {
-    // Selecting a note from the tree or search and finding an empty canvas
-    // reads as a missing note — the confusion the note cap was lifted to end.
-    const nodes = [node("vault", "vault")];
-    const edges: WireGraphEdge[] = [];
-    for (let i = 0; i <= MAX_CANVAS_NOTES; i++) {
-      nodes.push(node(`note:${i}`, "note"));
-      edges.push(edge("vault", `note:${i}`));
-    }
-    const full = viewModel(payloadOf(nodes, edges));
-    const selected = `note:${MAX_CANVAS_NOTES}`;
-
-    expect(canvasModel(full).nodes.some((n) => n.id === selected)).toBe(false);
-
-    const canvas = canvasModel(full, selected);
-    expect(canvas.nodes.some((n) => n.id === selected)).toBe(true);
-    expect(canvas.edges.some((e) => e.target === selected)).toBe(true);
-    expect(canvas.nodes.filter((n) => n.kind === "note")).toHaveLength(MAX_CANVAS_NOTES + 1);
-  });
-
-  it("ignores a selection that is not a note under the cap", () => {
-    const nodes = [node("vault", "vault"), node("note:0", "note")];
-    const canvas = canvasModel(viewModel(payloadOf(nodes, [edge("vault", "note:0")])), "repository");
-    expect(canvas.nodes.map((n) => n.id).sort()).toEqual(["note:0", "vault"]);
+  it("keeps the collapsed frame small without dropping anything", () => {
+    const model = bigVault(600);
+    const shut = clusterAggregate(model, new Set(["vault"]));
+    // The folder stands in for its 600 notes rather than 500 of them silently
+    // vanishing: bounded by what the user opened, not by payload rank.
+    expect(shut.nodes.map((n) => n.id).sort()).toEqual(["vault", "vfolder:deep"]);
+    expect(shut.clusters.get("vfolder:deep")?.members).toHaveLength(600);
   });
 });
 

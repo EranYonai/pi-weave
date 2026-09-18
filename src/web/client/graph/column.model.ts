@@ -52,27 +52,40 @@ import { resolveLayout } from "./positions";
 
 // --- the view state ------------------------------------------------------------------
 
-/** Keep the force simulation bounded without hiding notes from the tree or search. */
-export const MAX_CANVAS_NOTES = 500;
-
 /**
- * The canvas-only view of the workspace. Navigation consumes the complete
- * payload; only force layout drops notes beyond this bound.
+ * ## Why there is no note cap here
  *
- * `selectedId` is always kept, whatever its rank. Selecting a note from the
- * tree or search and finding nothing on the canvas reads as a missing note —
- * the exact confusion the note cap was lifted to end. The cap exists to bound
- * the force simulation, and one extra node does not threaten that.
+ * There was one: `MAX_CANVAS_NOTES = 500`, applied to `model.nodes` before
+ * clustering, to keep the force simulation bounded. It was the wrong
+ * mechanism, in a way worth recording so it is not reintroduced.
+ *
+ * A flat slice of the first N notes cuts across the containment tree, so it
+ * decided visibility by a note's *rank in the payload* rather than by what
+ * the user had opened. On an 830-note vault that produced two bugs:
+ *
+ * 1. **Whole folders drew empty.** Expanding a folder whose notes all ranked
+ *    past 500 (every `manager-digest/commitments/...` folder, ranks 534-589)
+ *    showed the folder node with no children — the same "populated directory
+ *    looks empty" symptom #45 removed from the tree, reappearing on the
+ *    canvas.
+ * 2. **Selections appeared to overwrite each other.** Exempting the selected
+ *    node (the first attempt at a fix) changed the node set on every
+ *    selection, which changes `graphShapeKey`, which invalidates the position
+ *    cache and re-runs the layout — so moving between notes rearranged the
+ *    picture each time.
+ *
+ * Clustering is the bound, and a much better one: it is what the user
+ * actually asked to see. On the same 830-note vault, collapsed folders draw
+ * 13 nodes, one expanded folder path draws 47, and fully expanding
+ * *everything* draws 871 — an upper bound the simulation handles, reached
+ * only by deliberate effort. `initialGraphView` opens the roots, not the
+ * whole tree, so the default frame is small regardless of vault size.
+ *
+ * If a pathological vault ever does overwhelm the layout, the bound belongs
+ * on the *expansion* (cap how much one expand reveals) or on the simulation
+ * itself — never on a flat prefix of the payload, which is invisible to the
+ * user and unrelated to what they are looking at.
  */
-export function canvasModel(model: ViewGraphModel, selectedId: string | null = null): ViewGraphModel {
-  const keptNotes = new Set(
-    model.nodes.filter((node) => node.kind === "note").slice(0, MAX_CANVAS_NOTES).map((node) => node.id),
-  );
-  if (selectedId !== null) keptNotes.add(selectedId);
-  const nodes = model.nodes.filter((node) => node.kind !== "note" || keptNotes.has(node.id));
-  const ids = new Set(nodes.map((node) => node.id));
-  return { ...model, nodes, edges: model.edges.filter((edge) => ids.has(edge.source) && ids.has(edge.target)) };
-}
 
 /** The graph column's state. Owned by the column; never on the context bus. */
 export interface GraphViewState {
@@ -336,7 +349,7 @@ export function graphColumnModel(
     return bootFailed ? { ...EMPTY_COLUMN, empty: BOOT_FAILED_MESSAGE } : EMPTY_COLUMN;
 
   const model = viewModel(payload);
-  const reduced: ClusterAggregate = clusterAggregate(canvasModel(model, selectedId), state.expanded);
+  const reduced: ClusterAggregate = clusterAggregate(model, state.expanded);
   const vaultOpen = state.expanded.has("vault");
   const edges = vaultOpen ? reduced.edges.filter((edge) => edge.source !== "vault" && edge.target !== "vault") : reduced.edges;
   const layout = resolveLayout(storage, reduced.nodes, edges);
