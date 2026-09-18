@@ -846,6 +846,11 @@ describe("GET /api/note/:slug", () => {
 describe("vault tree mutations", () => {
   it("renames, moves, and deletes notes and folders", async () => {
     const { server, vaultRoot } = await bootFresh();
+    const createRes = await post(server, "/api/folder/new-folder", {});
+    expect(createRes.status).toBe(200);
+    expect(await createRes.json()).toEqual({ ok: true, id: "vfolder:new-folder" });
+    expect((await post(server, "/api/folder/new-folder", {})).status).toBe(409);
+
     await fs.mkdir(join(vaultRoot, "notes", "archive"));
 
     let res = await post(server, "/api/note/alpha-note/rename", { name: "Renamed" });

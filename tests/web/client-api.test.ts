@@ -18,6 +18,7 @@
 import { describe, expect, it } from "vitest";
 import {
   classifyStatus,
+  createFolder,
   deleteFolder,
   deleteNote,
   fetchGraph,
@@ -106,12 +107,14 @@ describe("vault mutations", () => {
     await renameNote(fetch, "folder/a", "B");
     await moveNote(fetch, "folder/a", null);
     await deleteNote(fetch, "folder/a");
+    await createFolder(fetch, "old/nested");
     await renameFolder(fetch, "old/nested", "new");
     await deleteFolder(fetch, "old/nested");
     expect(fetch.calls.map((call) => [call.url, call.init?.method])).toEqual([
       ["/api/note/folder%2Fa/rename", "POST"],
       ["/api/note/folder%2Fa/move", "POST"],
       ["/api/note/folder%2Fa", "DELETE"],
+      ["/api/folder/old/nested", "POST"],
       ["/api/folder/old/nested/rename", "POST"],
       ["/api/folder/old/nested", "DELETE"],
     ]);

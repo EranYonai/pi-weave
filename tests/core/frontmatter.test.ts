@@ -86,4 +86,29 @@ describe("parseNoteFile", () => {
     const { meta } = parseNoteFile("---\ntitle:   spaced title  \n---\nb");
     expect(meta.title).toBe("spaced title");
   });
+
+  it("falls back to date for created and updated when absent", () => {
+    const text = "---\ntitle: Plan\ndate: 2026-09-17\n---\nbody\n";
+    const { meta, frontMatter } = parseNoteFile(text);
+    expect(meta.created).toBe("2026-09-17");
+    expect(meta.updated).toBe("2026-09-17");
+    // Does not fabricate created or updated on serialize
+    const reserialized = serializeNote(meta, "body\n", frontMatter);
+    expect(reserialized).not.toContain("created:");
+    expect(reserialized).not.toContain("updated:");
+    expect(reserialized).toContain("date: 2026-09-17");
+  });
+
+  it("falls back to created for updated when updated is absent", () => {
+    const text = "---\ntitle: Note\ncreated: 2026-09-17\n---\nbody\n";
+    const { meta, frontMatter } = parseNoteFile(text);
+    expect(meta.created).toBe("2026-09-17");
+    expect(meta.updated).toBe("2026-09-17");
+    // Does not synthesize updated when unchanged
+    const reserialized = serializeNote(meta, "body\n", frontMatter);
+    expect(reserialized).not.toContain("updated:");
+    // Synthesizes updated when bumped
+    const bumped = serializeNote({ ...meta, updated: "2026-09-18" }, "body\n", frontMatter);
+    expect(bumped).toContain("updated: 2026-09-18");
+  });
 });

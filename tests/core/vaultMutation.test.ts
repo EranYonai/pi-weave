@@ -1,7 +1,7 @@
 import { promises as fs } from "node:fs";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
-import { addNote, appendToNote, deleteFolder, deleteNote, getNote, moveNote, renameFolder, renameNote } from "../../src/core/vault";
+import { addNote, appendToNote, createFolder, deleteFolder, deleteNote, getNote, moveNote, renameFolder, renameNote } from "../../src/core/vault";
 import { makeTempDir } from "../helpers";
 
 describe("vault mutations", () => {
@@ -76,5 +76,16 @@ describe("vault mutations", () => {
       deleteFolder(root, "done"),
     ]);
     expect(await getNote(root, "done/note")).toBeNull();
+  });
+
+  it("creates new folders and rejects invalid paths or collisions", async () => {
+    const root = await makeTempDir();
+    await addNote(root, { title: "Seed", body: "" });
+
+    expect(await createFolder(root, "New Folder")).toEqual({ ok: true, path: "new-folder" });
+    expect(await createFolder(root, "new-folder")).toEqual({ ok: false, reason: "collision" });
+    expect(await createFolder(root, "new-folder/sub")).toEqual({ ok: true, path: "new-folder/sub" });
+    expect(await createFolder(root, "   ")).toEqual({ ok: false, reason: "invalid" });
+    expect(await createFolder(root, "../escape")).toEqual({ ok: false, reason: "invalid" });
   });
 });

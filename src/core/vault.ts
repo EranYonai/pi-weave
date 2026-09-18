@@ -129,6 +129,14 @@ export async function getNote(root: string, slug: string): Promise<Note | null> 
   }
   try {
     const { meta, body, frontMatter } = parseNoteFile(text);
+    if (!meta.updated || !meta.created) {
+      const st = await fs.stat(path).catch(() => null);
+      if (st) {
+        const mtime = st.mtime.toISOString();
+        if (!meta.updated) meta.updated = mtime;
+        if (!meta.created) meta.created = mtime;
+      }
+    }
     return { slug, ...meta, body, frontMatter };
   } catch {
     return null;
@@ -435,6 +443,24 @@ export async function deleteFolder(root: string, folder: string): Promise<VaultM
     if (!(await isDirectory(path))) return { ok: false, reason: "missing" };
     await fs.rm(path, { recursive: true });
     return { ok: true };
+  });
+}
+
+/** Create a new vault folder. */
+export async function createFolder(root: string, folder: string): Promise<VaultMutationResult> {
+  const trimmed = folder.trim();
+  if (trimmed === "") return { ok: false, reason: "invalid" };
+  const rawParts = trimmed.split("/").map((p) => p.trim()).filter((p) => p.length > 0);
+  if (rawParts.length === 0 || rawParts.some((p) => p === "." || p === "..")) return { ok: false, reason: "invalid" };
+  const parts = rawParts.map(slugify).filter((p) => p.length > 0);
+  if (parts.length === 0) return { ok: false, reason: "invalid" };
+  const target = parts.join("/");
+  const to = resolveFolderPath(root, target);
+  if (to === null) return { ok: false, reason: "invalid" };
+  return withVaultLock(root, async () => {
+    if (await exists(to)) return { ok: false, reason: "collision" };
+    await fs.mkdir(to, { recursive: true });
+    return { ok: true, path: target };
   });
 }
 

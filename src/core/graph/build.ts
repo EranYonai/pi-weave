@@ -160,15 +160,22 @@ function buildVaultSide(
     .filter((d) => d.length > 0)
     .sort();
   const notesIn = (dir: string): number => kept.filter((n) => n.slug.startsWith(`${dir}/`)).length;
+  const totalNotesIn = (dir: string): number => input.notes.filter((n) => n.slug.startsWith(`${dir}/`)).length;
   for (const dir of noteDirs) {
     const id = `vfolder:${dir}`;
     folderIds.set(dir, id);
+    const keptCount = notesIn(dir);
+    const totalCount = totalNotesIn(dir);
+    const folderDetail: Record<string, string> = { path: dir, notes: String(keptCount) };
+    if (totalCount > keptCount) {
+      folderDetail.warning = `${totalCount - keptCount} older note(s) in this folder omitted by note limit`;
+    }
     nodes.push({
       id,
       kind: "module",
       label: dir.split("/").pop() ?? dir,
       provenance: null,
-      detail: { path: dir, notes: String(notesIn(dir)) },
+      detail: folderDetail,
     });
     const parentDir = dir.split("/").slice(0, -1).join("/");
     const parent = folderIds.get(parentDir) ?? "vault";
