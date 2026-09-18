@@ -1,6 +1,6 @@
 ---
 name: weave-notepad
-description: "Take and retrieve durable notes in the pi-weave vault. Use when the user asks to remember something or to start/add to a note (aliases: notes, ai note, note-taking, note-taker), or when answering questions about past decisions, people, or projects. Also handles interview note-taking where raw dictations are appended AND expanded."
+description: "Take and retrieve durable notes in the pi-weave vault. Use when the user asks to remember something or to start/add to a note (aliases: notes, ai note, note-taking, note-taker), or when answering questions about past decisions, people, or projects. Also handles interview note-taking where raw dictations are appended AND expanded, and deterministic repair of stale [[wiki-links]] between notes."
 ---
 
 # Weave Notepad
@@ -14,7 +14,7 @@ In pi, use the `weave_note` tool. In other harnesses (or when the tool is not av
 
 - **Notes** live at `~/.okf/notes/<slug>.md` (vault root overridable via `PI_WEAVE_VAULT`).
 - Each note has YAML front matter: `title`, `created`, `updated` (ISO-8601), `tags: [..]`, and `source: human | agent | generated`.
-- `weave_note` actions: `list`, `get`, `add`, `append`, `finalize`, `search`. `finalize` restructures the body *above* the `## Raw` tail and
+- `weave_note` actions: `list`, `get`, `add`, `append`, `finalize`, `search`, `links`. `finalize` restructures the body *above* the `## Raw` tail and
   preserves the tail verbatim — a body with no tail yet is preserved **in full** as a newly created tail, so finalization never destroys
   dictation.
 - **Dictation appends**: use `append` with `raw: true` — the tool appends the text verbatim into the `## Raw` tail as a dated fenced block,
@@ -109,3 +109,19 @@ The scan is opt-in and never runs on its own. Suggest it when the user asks why 
 
 Use `weave_note` action=search with the user's key terms, then `get` the best hits. When a note and the repository index disagree, trust the
 repository for facts about code and flag the discrepancy — the note may be stale intent.
+
+## Repairing stale links
+
+Links break when notes are renamed, moved, or written as bare titles — `[[Mathieu]]` when the note is `1-1s/mathieu`. **Never reconnect a
+vault by reading every note and guessing which ones relate.** Run the deterministic pass instead:
+
+```jsonc
+weave_note { "action": "links" }              // report: fixable / ambiguous / unresolvable
+weave_note { "action": "links", "fix": true } // apply only the unambiguous repairs
+```
+
+It resolves by exact slug, then unique basename, then unique title — each requiring exactly one candidate. Ambiguous links are reported
+with their candidates and never guessed; unresolvable ones point at notes that were never written. Aliases are preserved, the `## Raw`
+tail and code fences are never touched, and `updated` is not bumped. Report first, apply after the user sees it.
+
+See [references/link-repair.md](references/link-repair.md) for the full rules, guarantees, and when to run it.

@@ -120,6 +120,10 @@ export function healthModel(model: GraphModel): HealthModel {
     if (dangling.length > HEALTH_LIST_CAP) {
       linkRows.push({ id: "health:link:dangling:more", text: `  … and ${dangling.length - HEALTH_LIST_CAP} more` });
     }
+    // How many are *repairable* is not knowable from the graph: resolution
+    // needs note bodies and titles, which the model flattens away. Point at
+    // the tool that does know rather than re-deriving a worse answer here.
+    linkRows.push({ id: "health:link:dangling:repair", text: "  repair: weave_note action=links (fix: true to apply)" });
   }
   if (hubs.length > 0) {
     linkRows.push({ id: "health:link:hubs-h", text: `top hubs (by degree):` });

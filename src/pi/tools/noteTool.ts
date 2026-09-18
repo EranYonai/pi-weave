@@ -12,11 +12,60 @@ import {
   getNote,
   listNotes,
   NOTES_DIR,
+  repairVaultLinks,
   resolveNotePath,
   withMutationQueue,
   resolveVaultRoot,
   searchNotes,
+  type LinkRepairResult,
 } from "../../core";
+
+/** Cap on how many rows of each link-audit category get printed. */
+const LINK_REPORT_CAP = 20;
+
+function capped<T>(items: readonly T[], render: (item: T) => string): string[] {
+  const lines = items.slice(0, LINK_REPORT_CAP).map(render);
+  if (items.length > LINK_REPORT_CAP) lines.push(`  … and ${items.length - LINK_REPORT_CAP} more`);
+  return lines;
+}
+
+/** Render a link audit (and any repair) as the text the model reads. */
+function formatLinkReport(result: LinkRepairResult, applied: boolean): string {
+  const { audit } = result;
+  const stale = audit.total - audit.resolved;
+  const lines = [
+    `${audit.total} wiki-link(s): ${audit.resolved} resolved, ${stale} stale.`,
+  ];
+  if (applied) {
+    lines.push(
+      result.applied.length === 0
+        ? "Nothing to repair."
+        : `Repaired ${result.applied.length} link(s) across ${result.notes.length} note(s):`,
+      ...capped(result.applied, (f) => `  ${f.slug}: [[${f.from}]] → [[${f.to}]] (${f.rule})`),
+    );
+  } else if (audit.fixable.length > 0) {
+    lines.push(
+      `${audit.fixable.length} auto-fixable (re-run with fix: true):`,
+      ...capped(audit.fixable, (f) => `  ${f.slug}: [[${f.from}]] → [[${f.to}]] (${f.rule})`),
+    );
+  }
+  if (audit.ambiguous.length > 0) {
+    lines.push(
+      `${audit.ambiguous.length} ambiguous (several candidates — pick one and edit the note):`,
+      ...capped(audit.ambiguous, (a) => `  ${a.slug}: [[${a.target}]] → ${a.candidates.join(" | ")}`),
+    );
+  }
+  if (audit.unresolvable.length > 0) {
+    lines.push(
+      `${audit.unresolvable.length} unresolvable (no such note — write it or drop the link):`,
+      ...capped(audit.unresolvable, (u) => `  [[${u.target}]] ← ${u.notes.join(", ")}`),
+    );
+  }
+  if (audit.fixable.length === 0 && audit.ambiguous.length === 0 && audit.unresolvable.length === 0) {
+    lines.push("Every link resolves.");
+  }
+  return lines.join("\n");
+}
 
 /**
  * `weave_note` — the smart-notepad tool (design §1: vault knowledge).
@@ -32,15 +81,17 @@ export function registerNoteTool(pi: ExtensionAPI): void {
       "Read and write notes in the pi-weave vault — a persistent, human-readable knowledge base " +
       "of Markdown notes. Actions: list (all notes), get (one note by slug), add (new note), " +
       "append (extend a note; raw=true appends verbatim dictation into the ## Raw tail), " +
-      "finalize (restructure a note above its raw tail), search (title/tags/body). " +
+      "finalize (restructure a note above its raw tail), search (title/tags/body), " +
+      "links (audit stale [[wiki-links]]; fix=true repairs the unambiguous ones). " +
       "Use it to remember decisions, facts, and user preferences across sessions.",
     promptSnippet: "Remember and retrieve durable knowledge in the pi-weave vault",
     promptGuidelines: [
       "Use weave_note to store durable knowledge (decisions, preferences, key facts) that should survive the session, marking source as agent-written knowledge.",
       "Use weave_note with action=search before answering questions about past decisions, people, or projects; generated notes under sessions/ carry takeaways from earlier sessions.",
+      "Use weave_note with action=links to find and repair stale [[wiki-links]] deterministically instead of rereading the vault to reconnect notes by hand; add fix=true to apply the unambiguous repairs.",
     ],
     parameters: Type.Object({
-      action: StringEnum(["list", "get", "add", "append", "finalize", "search"] as const),
+      action: StringEnum(["list", "get", "add", "append", "finalize", "search", "links"] as const),
       title: Type.Optional(Type.String({ description: "Note title (add)" })),
       text: Type.Optional(Type.String({ description: "Markdown body (add), addition (append), or restructured body above the raw tail (finalize)" })),
       tags: Type.Optional(Type.Array(Type.String(), { description: "Tags (add)" })),
@@ -48,6 +99,7 @@ export function registerNoteTool(pi: ExtensionAPI): void {
       raw: Type.Optional(Type.Boolean({ description: "append: add text as verbatim dictation to the ## Raw tail (timestamped fenced block; tail created if missing). Use for dictation/scribbles; omit for structured Markdown additions" })),
       source: Type.Optional(StringEnum(["human", "agent"] as const, { description: "Provenance (add): human for user-scribbled notes, agent for Pi-drafted (default agent)" })),
       query: Type.Optional(Type.String({ description: "Search query (search)" })),
+      fix: Type.Optional(Type.Boolean({ description: "links: apply the unambiguous repairs. Omit for a read-only report" })),
     }),
     async execute(toolCallId, params, signal, onUpdate, ctx) {
       const vault = resolveVaultRoot();
@@ -180,6 +232,25 @@ export function registerNoteTool(pi: ExtensionAPI): void {
           return {
             content: [{ type: "text", text: `${hits.length} hit(s) for '${params.query}':\n${lines.join("\n")}` }],
             details: { action: "search", hits },
+          };
+        }
+
+        case "links": {
+          const apply = params.fix === true;
+          const result = await repairVaultLinks(vault, apply ? { apply: true } : {});
+          return {
+            content: [{ type: "text", text: formatLinkReport(result, apply) }],
+            details: {
+              action: "links",
+              fixed: apply,
+              total: result.audit.total,
+              resolved: result.audit.resolved,
+              fixable: result.audit.fixable,
+              ambiguous: result.audit.ambiguous,
+              unresolvable: result.audit.unresolvable,
+              applied: result.applied,
+              notes: result.notes,
+            },
           };
         }
       }

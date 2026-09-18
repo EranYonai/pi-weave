@@ -635,6 +635,70 @@ describe("weave_repo tool", () => {
   });
 });
 
+describe("weave_note links action", () => {
+  it("reports stale links, then repairs the unambiguous ones", async () => {
+    const mock = buildExtension();
+    const vault = await makeTempDir();
+    const ctx = createMockCtx(await makeTempDir());
+    await withVaultEnv(vault, async () => {
+      await mock.runTool("weave_note", { action: "add", title: "Mathieu", text: "lead" }, ctx);
+      await fs.mkdir(join(vault, "notes", "1-1s"), { recursive: true });
+      await fs.rename(join(vault, "notes", "mathieu.md"), join(vault, "notes", "1-1s", "mathieu.md"));
+      await mock.runTool(
+        "weave_note",
+        { action: "add", title: "Hub", text: "see [[Mathieu]] and [[ghost]]" },
+        ctx,
+      );
+
+      const dry = await mock.runTool("weave_note", { action: "links" }, ctx);
+      expect(dry.content[0]?.text).toContain("1 auto-fixable");
+      expect(dry.content[0]?.text).toContain("[[mathieu]] → [[1-1s/mathieu]] (basename)");
+      expect(dry.content[0]?.text).toContain("1 unresolvable");
+      expect(dry.details).toMatchObject({ action: "links", fixed: false, total: 2, resolved: 0 });
+
+      const fixed = await mock.runTool("weave_note", { action: "links", fix: true }, ctx);
+      expect(fixed.content[0]?.text).toContain("Repaired 1 link(s) across 1 note(s)");
+      const got = await mock.runTool("weave_note", { action: "get", slug: "hub" }, ctx);
+      expect(got.content[0]?.text).toContain("[[1-1s/mathieu|Mathieu]]");
+    });
+  });
+
+  it("reports a clean vault and a no-op repair", async () => {
+    const mock = buildExtension();
+    const ctx = createMockCtx(await makeTempDir());
+    await withVaultEnv(await makeTempDir(), async () => {
+      const clean = await mock.runTool("weave_note", { action: "links" }, ctx);
+      expect(clean.content[0]?.text).toContain("Every link resolves.");
+      const noop = await mock.runTool("weave_note", { action: "links", fix: true }, ctx);
+      expect(noop.content[0]?.text).toContain("Nothing to repair.");
+    });
+  });
+
+  it("reports ambiguous targets instead of guessing, and caps long lists", async () => {
+    const mock = buildExtension();
+    const vault = await makeTempDir();
+    const ctx = createMockCtx(await makeTempDir());
+    await withVaultEnv(vault, async () => {
+      await fs.mkdir(join(vault, "notes", "a"), { recursive: true });
+      await fs.mkdir(join(vault, "notes", "b"), { recursive: true });
+      for (const dir of ["a", "b"]) {
+        await fs.writeFile(
+          join(vault, "notes", dir, "plan.md"),
+          `---\ntitle: ${dir} plan\ncreated: 2026-01-01T00:00:00.000Z\nupdated: 2026-01-01T00:00:00.000Z\ntags: []\nsource: agent\n---\n\nx\n`,
+          "utf8",
+        );
+      }
+      const ghosts = Array.from({ length: 25 }, (_, i) => `[[ghost-${String(i).padStart(2, "0")}]]`).join(" ");
+      await mock.runTool("weave_note", { action: "add", title: "Hub", text: `[[plan]] ${ghosts}` }, ctx);
+
+      const res = await mock.runTool("weave_note", { action: "links" }, ctx);
+      expect(res.content[0]?.text).toContain("[[plan]] → a/plan | b/plan");
+      expect(res.content[0]?.text).toContain("… and 5 more");
+      expect(res.details).toMatchObject({ fixable: [] });
+    });
+  });
+});
+
 describe("weave_note slug hardening", () => {
   it("append refuses traversal slugs with a friendly message", async () => {
     const mock = buildExtension();

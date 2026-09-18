@@ -82,6 +82,23 @@ Useful requests include:
 | “Clean up” or “finalize this note” | Reorganizes the readable body and preserves the raw tail |
 | “What did we decide about…?” | Searches the vault, then reads the relevant notes |
 | “Remember that…” | Stores durable knowledge for a future session |
+| “Fix the broken links” | Audits and repairs stale `[[wiki-links]]` deterministically |
+
+## Keeping the vault connected
+
+Wiki-links go stale: a note is renamed, or written as a bare title — `[[Mathieu]]` when the note lives at `1-1s/mathieu`. Pi repairs them
+in one deterministic pass instead of rereading the vault and guessing.
+
+```text
+You: Check the links in my notes.
+You: Fix the ones you're sure about.
+```
+
+A target resolves by exact slug, then unique basename, then unique title — each rule requiring **exactly one** candidate. Ambiguous links
+are reported with their candidates and never guessed; links to notes that were never written are listed, never invented. Repairs preserve
+the alias, so the visible text does not change, and never touch the `## Raw` tail or code fences.
+
+Renaming or moving a note rewrites its inbound links automatically, so the vault stops breaking itself.
 
 ## `/weave-view`
 
@@ -209,6 +226,7 @@ Read [AGENTS.md](AGENTS.md) before contributing. Work on a feature branch; do no
 
 - [Design](docs/design.md) — product and architecture
 - [Notepad skill](skills/weave-notepad/SKILL.md) — capture, narration, and provenance behavior
+- [Link repair reference](skills/weave-notepad/references/link-repair.md) — how stale links resolve, and what repair will not do
 - [Historical browser workspace notes](docs/weave-workspace.md) — superseded implementation record
 - [Repository exploration skill](skills/weave-explore/SKILL.md) — how Pi uses the index
 

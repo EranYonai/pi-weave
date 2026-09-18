@@ -10,6 +10,7 @@ import {
   unquoteField,
   upsertFrontMatterFields,
 } from "./frontmatter";
+import { auditLinks, rewriteLinks, RAW_NOTES_HEADING, type LinkAudit, type LinkFix } from "./links/repair";
 import { withMutationQueue } from "./mutex";
 import { NOTES_DIR, OKF_MANIFEST } from "./paths";
 import { slugify, uniqueSlug } from "./slug";
@@ -281,8 +282,13 @@ export function formatRawAppend(rawText: string, date: Date = new Date()): strin
   return `<!-- appended ${timestamp} -->\n${fence}\n${rawText.trim()}\n${fence}`;
 }
 
-/** The append-only tail where verbatim user scribbles live. */
-export const RAW_NOTES_HEADING = "## Raw";
+/**
+ * The append-only tail where verbatim user scribbles live.
+ *
+ * Defined in `./links/repair` — the module that must never write past it —
+ * and re-exported here, where every caller already looks for it.
+ */
+export { RAW_NOTES_HEADING };
 
 /** The never-edit notice comment at the top of a raw tail (skill format). */
 export const RAW_TAIL_NOTICE =
@@ -462,6 +468,95 @@ async function isDirectory(path: string): Promise<boolean> {
   }
 }
 
+/**
+ * Rewrite every wiki-link in the vault through `resolve`, which maps a stale
+ * target to its replacement slug (or null to leave it alone).
+ *
+ * Two properties matter and are easy to get wrong:
+ *
+ * - **`updated` is not bumped.** A link repair is bookkeeping, not an edit to
+ *   what the note says. Bumping it would reorder the entire vault by recency
+ *   on the first repair pass and make "what changed lately" useless.
+ * - **Lock-free.** Every caller already holds the vault lock (the queue is
+ *   non-reentrant — see {@link LOCK_NS} — so taking it again here would wait
+ *   on itself forever).
+ *
+ * Returns the note slugs that changed and the total number of links rewritten.
+ */
+async function rewriteVaultLinks(
+  root: string,
+  resolve: (target: string, noteSlug: string) => string | null,
+): Promise<{ notes: string[]; links: number }> {
+  const files = (await listNoteFiles(root)).filter(isMarkdown);
+  const touched: string[] = [];
+  let links = 0;
+  for (const file of files) {
+    const slug = file.slice(0, -".md".length);
+    const note = await getNote(root, slug);
+    if (note === null) continue;
+    const { body, changed } = rewriteLinks(note.body, (target) => resolve(target, slug));
+    if (changed === 0) continue;
+    const path = resolveNotePath(root, slug);
+    if (path === null) continue;
+    await writeNote(path, slug, note, body, note.frontMatter);
+    touched.push(slug);
+    links += changed;
+  }
+  return { notes: touched, links };
+}
+
+/**
+ * Point inbound links at a note's new home after a rename or move.
+ *
+ * This is the root cause of stale links: before this existed, every rename
+ * silently broke every backlink pointing at the old slug, and the only repair
+ * was an agent rereading the vault. One helper, called by all three movers.
+ */
+async function repointBacklinks(root: string, moves: ReadonlyMap<string, string>): Promise<void> {
+  if (moves.size === 0) return;
+  await rewriteVaultLinks(root, (target) => moves.get(target) ?? null);
+}
+
+/** The outcome of a vault-wide link repair. */
+export interface LinkRepairResult {
+  /** The audit the repair acted on (or would have, for a dry run). */
+  audit: LinkAudit;
+  /** Fixes actually written. Empty for a dry run. */
+  applied: LinkFix[];
+  /** Note slugs rewritten. */
+  notes: string[];
+}
+
+/**
+ * Audit the vault's wiki-links and, when `apply` is set, repair every
+ * unambiguous one.
+ *
+ * Idempotent: a second run finds nothing, because the first turned each
+ * stale target into a real slug. Ambiguous and unresolvable links are
+ * reported and left exactly as they are — this function never guesses and
+ * never invents a note.
+ */
+export async function repairVaultLinks(root: string, options: { apply?: boolean } = {}): Promise<LinkRepairResult> {
+  const snapshot = await readVault(root);
+  const audit = auditLinks(snapshot);
+  if (options.apply !== true || audit.fixable.length === 0) {
+    return { audit, applied: [], notes: [] };
+  }
+  // Keyed by note, because a target may resolve differently in principle and
+  // certainly reads clearer than a global map: the audit already decided
+  // per-note, so the rewrite obeys the audit rather than re-deriving it.
+  const byNote = new Map<string, Map<string, string>>();
+  for (const fix of audit.fixable) {
+    const map = byNote.get(fix.slug) ?? new Map<string, string>();
+    map.set(fix.from, fix.to);
+    byNote.set(fix.slug, map);
+  }
+  const { notes } = await withVaultLock(root, () =>
+    rewriteVaultLinks(root, (target, noteSlug) => byNote.get(noteSlug)?.get(target) ?? null),
+  );
+  return { audit, applied: audit.fixable, notes };
+}
+
 /** Rename a note in place and keep its front-matter title in sync. */
 export async function renameNote(root: string, slug: string, name: string, now = new Date()): Promise<VaultMutationResult> {
   const from = resolveNotePath(root, slug);
@@ -477,6 +572,7 @@ export async function renameNote(root: string, slug: string, name: string, now =
     if (from !== to && await exists(to)) return { ok: false, reason: "collision" };
     if (from !== to) await fs.rename(from, to);
     await writeNote(to, target, { ...note, title, updated: now.toISOString() }, note.body, note.frontMatter);
+    if (from !== to) await repointBacklinks(root, new Map([[slug, target]]));
     return { ok: true, slug: target };
   });
 }
@@ -495,6 +591,7 @@ export async function moveNote(root: string, slug: string, folder: string | null
     if (from === to) return { ok: true, slug };
     if (await exists(to)) return { ok: false, reason: "collision" };
     await fs.rename(from, to);
+    await repointBacklinks(root, new Map([[slug, target]]));
     return { ok: true, slug: target };
   });
 }
@@ -522,7 +619,15 @@ export async function renameFolder(root: string, folder: string, name: string): 
   return withVaultLock(root, async () => {
     if (!(await isDirectory(from))) return { ok: false, reason: "missing" };
     if (from !== to && await exists(to)) return { ok: false, reason: "collision" };
-    if (from !== to) await fs.rename(from, to);
+    if (from === to) return { ok: true, path: target };
+    // Every note under the folder changes slug, so the whole subtree's
+    // backlinks move with it — collected before the rename, while the old
+    // paths still exist.
+    const moved = (await listNoteFiles(root))
+      .filter((f) => isMarkdown(f) && f.startsWith(`${folder}/`))
+      .map((f) => f.slice(0, -".md".length));
+    await fs.rename(from, to);
+    await repointBacklinks(root, new Map(moved.map((s) => [s, `${target}/${s.slice(folder.length + 1)}`])));
     return { ok: true, path: target };
   });
 }
