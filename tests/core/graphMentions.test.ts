@@ -247,11 +247,10 @@ describe("buildGraph emits mentions edges (§15.5: no longer declared-but-dead)"
     expect(mentionsOf(model, "big")).toEqual(["module:src/core"]);
   });
 
-  it("respects the note cap — an elided note emits no mentions", () => {
-    const notes = [note("keep", "src/core"), note("elided", "src/web")];
-    const model = buildGraph(input(notes), { maxNotes: 1 });
-    expect(mentionsOf(model, "keep")).toEqual(["module:src/core"]);
-    expect(mentionsOf(model, "elided")).toEqual([]);
+  it("emits mentions for notes past the former 500-note cap", () => {
+    const notes = Array.from({ length: 501 }, (_, i) => note(`note-${i}`, i === 500 ? "src/web" : "x"));
+    const model = buildGraph(input(notes));
+    expect(mentionsOf(model, "note-500")).toEqual(["module:src/web"]);
   });
 
   it("stays byte-deterministic for identical input", () => {

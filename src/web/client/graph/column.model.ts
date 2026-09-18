@@ -52,6 +52,22 @@ import { resolveLayout } from "./positions";
 
 // --- the view state ------------------------------------------------------------------
 
+/** Keep the force simulation bounded without hiding notes from the tree or search. */
+export const MAX_CANVAS_NOTES = 500;
+
+/**
+ * The canvas-only view of the workspace. Navigation consumes the complete
+ * payload; only force layout drops notes beyond this bound.
+ */
+export function canvasModel(model: ViewGraphModel): ViewGraphModel {
+  const keptNotes = new Set(
+    model.nodes.filter((node) => node.kind === "note").slice(0, MAX_CANVAS_NOTES).map((node) => node.id),
+  );
+  const nodes = model.nodes.filter((node) => node.kind !== "note" || keptNotes.has(node.id));
+  const ids = new Set(nodes.map((node) => node.id));
+  return { ...model, nodes, edges: model.edges.filter((edge) => ids.has(edge.source) && ids.has(edge.target)) };
+}
+
 /** The graph column's state. Owned by the column; never on the context bus. */
 export interface GraphViewState {
   /**
@@ -314,7 +330,7 @@ export function graphColumnModel(
     return bootFailed ? { ...EMPTY_COLUMN, empty: BOOT_FAILED_MESSAGE } : EMPTY_COLUMN;
 
   const model = viewModel(payload);
-  const reduced: ClusterAggregate = clusterAggregate(model, state.expanded);
+  const reduced: ClusterAggregate = clusterAggregate(canvasModel(model), state.expanded);
   const vaultOpen = state.expanded.has("vault");
   const edges = vaultOpen ? reduced.edges.filter((edge) => edge.source !== "vault" && edge.target !== "vault") : reduced.edges;
   const layout = resolveLayout(storage, reduced.nodes, edges);

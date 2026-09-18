@@ -456,8 +456,8 @@ it. Ties break by **codepoint**, not `localeCompare`: this output is hashed into
 locale and the runtime's ICU build.
 
 Because the index must agree with the graph about which notes exist, `WorkspaceCache.snapshot()` returns the model and the notes it was
-built from — already truncated to `DEFAULT_MAX_NOTES` — from a single build. Pairing `graph()` with a separate vault read would let the cap
-fall between them and produce a tag naming a slug with no node.
+built from in a single build. Pairing `graph()` with a separate vault read could race a vault change and produce a tag naming a slug with no
+node.
 
 ### 4.4 `mentions` edges — ✅ **built**
 
@@ -1378,9 +1378,9 @@ affordance are unblocked.
 
 One design note worth keeping. `deriveTagIndex` takes **notes**, not a `GraphModel`, because the graph flattens tags to a comma-joined
 display string and recovering an array from it would mean re-parsing `detail` into structure — the thing §4.2/§4.3 exist to prevent. To make
-that safe, `WorkspaceCache` gained `snapshot()`, which returns the graph *and* the (already cap-truncated) notes it was built from, so a tag
-can never name a slug the graph has no node for. `graph()` is now a memoized projection of it and keeps its promise-identity coalescing
-contract.
+that safe, `WorkspaceCache` gained `snapshot()`, which returns the graph *and* the notes it was built from, so a tag can never name a slug
+the graph has no node for. The force-directed canvas applies its own note cap without truncating the shared model used by the tree and
+search. `graph()` is a memoized projection of the snapshot and keeps its promise-identity coalescing contract.
 
 ### 15.5 `mentions` edges are declared but never emitted — ✅ **resolved**
 

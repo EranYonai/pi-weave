@@ -15,9 +15,6 @@ import type { EdgeKind, GraphEdge, GraphModel, GraphNode } from "./model";
 import { buildPathIndex, resolveMentions, type PathIndex } from "./mentions";
 import { extractWikilinks } from "./wikilinks";
 
-/** Hard cap on note nodes so a large vault cannot overwhelm the viewer. */
-export const DEFAULT_MAX_NOTES = 500;
-
 export interface BuildGraphInput {
   vault: VaultStatus;
   /** Full notes including bodies (for wiki-link extraction). */
@@ -118,15 +115,11 @@ function parseRemote(raw: string): { label: string; url: string } {
 
 function buildVaultSide(
   input: BuildGraphInput,
-  maxNotes: number,
   nodes: GraphNode[],
   edges: GraphEdge[],
   danglingLinks: Record<string, string[]>,
   paths: PathIndex,
-): string[] {
-  const truncated = input.notes.length > maxNotes;
-  const kept = input.notes.slice(0, maxNotes);
-
+): void {
   const vaultDetail: Record<string, string> = {
     root: input.vault.root,
     notes: String(input.vault.noteCount),
@@ -135,12 +128,9 @@ function buildVaultSide(
   if ((input.vault.artifactCount ?? artifacts.length) > 0) {
     vaultDetail.artifacts = String(input.vault.artifactCount ?? artifacts.length);
   }
-  if (truncated) {
-    vaultDetail.warning = `Graph shows the ${maxNotes} most recent notes — the vault holds ${input.vault.noteCount}. Wiki-links to older notes are omitted.`;
-  }
   nodes.push({ id: "vault", kind: "vault", label: "Vault", provenance: null, detail: vaultDetail });
 
-  const keptSlugs = new Set(kept.map((n) => n.slug));
+  const allSlugs = new Set(input.notes.map((n) => n.slug));
   const artifactSlugs = new Set(artifacts.map((a) => a.slug));
   const artifactLinks = new Map<string, number>();
 
@@ -153,23 +143,17 @@ function buildVaultSide(
   const noteDirs = [
     ...new Set([
       ...(input.vault.folders ?? []),
-      ...kept.map((n) => n.slug.split("/").slice(0, -1).join("/")),
+      ...input.notes.map((n) => n.slug.split("/").slice(0, -1).join("/")),
       ...artifacts.map((a) => a.slug.split("/").slice(0, -1).join("/")),
     ]),
   ]
     .filter((d) => d.length > 0)
     .sort();
-  const notesIn = (dir: string): number => kept.filter((n) => n.slug.startsWith(`${dir}/`)).length;
-  const totalNotesIn = (dir: string): number => input.notes.filter((n) => n.slug.startsWith(`${dir}/`)).length;
+  const notesIn = (dir: string): number => input.notes.filter((n) => n.slug.startsWith(`${dir}/`)).length;
   for (const dir of noteDirs) {
     const id = `vfolder:${dir}`;
     folderIds.set(dir, id);
-    const keptCount = notesIn(dir);
-    const totalCount = totalNotesIn(dir);
-    const folderDetail: Record<string, string> = { path: dir, notes: String(keptCount) };
-    if (totalCount > keptCount) {
-      folderDetail.warning = `${totalCount - keptCount} older note(s) in this folder omitted by note limit`;
-    }
+    const folderDetail: Record<string, string> = { path: dir, notes: String(notesIn(dir)) };
     nodes.push({
       id,
       kind: "module",
@@ -186,9 +170,9 @@ function buildVaultSide(
     return (dir.length > 0 && folderIds.get(dir)) || "vault";
   };
 
-  for (const note of kept) {
+  for (const note of input.notes) {
     const links = extractWikilinks(note.body);
-    const resolved = links.filter((slug) => keptSlugs.has(slug));
+    const resolved = links.filter((slug) => allSlugs.has(slug));
     const detail: Record<string, string> = {
       slug: note.slug,
       source: note.source,
@@ -198,7 +182,7 @@ function buildVaultSide(
     // The names, not just the count (§4.2). `detail` keeps carrying the count
     // because it is what the TUI's side panel prints; the structured targets
     // go on the model, where a UI can turn them into ghost nodes.
-    const dangling = links.filter((slug) => !keptSlugs.has(slug) && !artifactSlugs.has(slug));
+    const dangling = links.filter((slug) => !allSlugs.has(slug) && !artifactSlugs.has(slug));
     if (dangling.length > 0) {
       detail["dangling links"] = String(dangling.length);
       danglingLinks[note.slug] = dangling;
@@ -238,7 +222,6 @@ function buildVaultSide(
     nodes.push({ id: `artifact:${artifact.slug}`, kind: "file", label: artifact.title, provenance: null, detail });
     edges.push({ source: parent, target: `artifact:${artifact.slug}`, kind: "contains" });
   }
-  return [...keptSlugs];
 }
 
 function buildRepositorySide(
@@ -355,12 +338,8 @@ function buildRepositorySide(
   }
 }
 
-/**
- * Build the graph model for the viewer. Notes are capped at `maxNotes`
- * (docs/design.md §11); the vault node carries a warning when truncated.
- */
-export function buildGraph(input: BuildGraphInput, options: { maxNotes?: number } = {}): GraphModel {
-  const maxNotes = options.maxNotes ?? DEFAULT_MAX_NOTES;
+/** Build the complete graph model for the viewer. */
+export function buildGraph(input: BuildGraphInput): GraphModel {
   const nodes: GraphNode[] = [];
   const edges: GraphEdge[] = [];
   const danglingLinks: Record<string, string[]> = {};
@@ -372,7 +351,7 @@ export function buildGraph(input: BuildGraphInput, options: { maxNotes?: number 
   const paths = input.repository === null
     ? (new Map<string, string>() as PathIndex)
     : buildPathIndex(input.repository.index.structure);
-  buildVaultSide(input, maxNotes, nodes, edges, danglingLinks, paths);
+  buildVaultSide(input, nodes, edges, danglingLinks, paths);
   if (input.repository !== null) {
     buildRepositorySide(input.repository, input.summaries, nodes, edges);
   }
@@ -382,9 +361,8 @@ export function buildGraph(input: BuildGraphInput, options: { maxNotes?: number 
     nodes,
     edges,
     danglingLinks,
-    // The same slice the vault side kept, so the digest describes exactly
-    // the notes that have nodes. Slug-ordered inside, hence order-stable.
-    contentDigest: noteContentDigest(input.notes.slice(0, maxNotes)),
+    // Slug-ordered inside, hence order-stable.
+    contentDigest: noteContentDigest(input.notes),
   };
 }
 
