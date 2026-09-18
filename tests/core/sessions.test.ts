@@ -898,6 +898,51 @@ describe("runSessionScan", () => {
 
   });
 
+  it("skips unchanged opaque files too, then re-summarizes just the one that grew", async () => {
+
+    // The synthetic `file-<hash of path>` identity has to be stable across
+    // runs for a non-pi history file to be recognised as already summarized.
+    // If it drifts, every rescan re-pays for the whole history directory and
+    // forks a `-2` note each time — the incremental promise silently inverted.
+
+    const { sessions, vault, deps } = await makeScenario();
+
+    try {
+
+      await writeFixture(sessions, "claude/history.log", "original history");
+
+      await writeFixture(sessions, "claude/other.log", "untouched history");
+
+      expect(await scan(deps)).toMatchObject({ created: 2, skippedFresh: 0 });
+
+      expect(deps.calls).toHaveLength(2);
+
+      expect(await scan(deps)).toMatchObject({ written: 0, created: 0, skippedFresh: 2 });
+
+      expect(deps.calls).toHaveLength(2); // no further model calls
+
+      // A grown transcript re-summarizes in place; its neighbour stays cached.
+
+      await writeFixture(sessions, "claude/history.log", "original history + more turns");
+
+      expect(await scan(deps)).toMatchObject({ written: 1, updated: 1, created: 0, skippedFresh: 1 });
+
+      expect(deps.calls).toHaveLength(3);
+
+      expect(deps.calls[2]?.path).toContain("history.log");
+
+      expect((await fs.readdir(join(vault, "notes", "sessions"))).sort()).toEqual(["history-log.md", "other-log.md"]);
+
+    } finally {
+
+      await fs.rm(sessions, { recursive: true, force: true });
+
+      await fs.rm(vault, { recursive: true, force: true });
+
+    }
+
+  });
+
   it("skips unchanged sessions on re-scan without calling the model", async () => {
 
     const { sessions, vault, deps } = await makeScenario();
