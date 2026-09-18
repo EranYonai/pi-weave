@@ -17,6 +17,7 @@ export { runDeepScan, type DeepScanOptions, type DeepScanResult, type SummarizeF
 export {
   addNote,
   appendToNote,
+  createFolder,
   deleteFolder,
   deleteNote,
   extractRawTail,

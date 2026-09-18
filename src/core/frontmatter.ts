@@ -242,12 +242,19 @@ function canonicalBlock(meta: NoteMeta): string[] {
 function replayBlock(meta: NoteMeta, frontMatter: NoteFrontMatter): string[] {
   /** Top-level keys the file declares, in any syntax — including frozen ones. */
   const declared = new Set<string>();
+  /** Values of declared scalar keys, unquoted, to detect defaulted fallbacks. */
+  const declaredValues = new Map<string, string>();
   /** Owned keys already re-rendered, so a duplicate key collapses to one line. */
   const rendered = new Set<string>();
   const out: string[] = [];
 
   for (const line of scanFrontMatter(frontMatter)) {
-    if (line.key !== null) declared.add(line.key);
+    if (line.key !== null) {
+      declared.add(line.key);
+      if (line.scalar) {
+        declaredValues.set(line.key, unquoteField(line.text.slice(line.text.indexOf(":") + 1).trim()));
+      }
+    }
     if (line.key === null || !line.scalar || !MANAGED.has(line.key)) {
       out.push(line.text); // carried verbatim — never interpreted, never reformatted
       continue;
@@ -260,8 +267,13 @@ function replayBlock(meta: NoteMeta, frontMatter: NoteFrontMatter): string[] {
     out.push(renderManaged(line.key as ManagedFrontMatterKey, meta));
   }
 
+  const dateVal = declaredValues.get("date");
+  const createdVal = declaredValues.get("created");
   for (const key of MANAGED_FRONT_MATTER_KEYS) {
     if (declared.has(key) || isDefaulted(key, meta)) continue;
+    if (key === "created" && (!declared.has("created") && !declared.has("date"))) continue;
+    if (key === "created" && dateVal !== undefined && meta.created === dateVal) continue;
+    if (key === "updated" && ((dateVal !== undefined && meta.updated === dateVal) || (createdVal !== undefined && meta.updated === createdVal))) continue;
     out.push(renderManaged(key, meta));
   }
   return out;
@@ -302,10 +314,14 @@ export function parseNoteFile(text: string): ParsedNoteFile {
   if (!title) {
     throw new Error("Front matter is missing required field: title");
   }
+  const createdRaw = parsed.fields.get("created") ?? parsed.fields.get("date");
+  const created = createdRaw ? unquoteField(createdRaw) : "";
+  const updatedRaw = parsed.fields.get("updated") ?? parsed.fields.get("date") ?? created;
+  const updated = updatedRaw ? unquoteField(updatedRaw) : "";
   const meta: NoteMeta = {
     title: unquoteField(title),
-    created: parsed.fields.get("created") ?? "",
-    updated: parsed.fields.get("updated") ?? "",
+    created,
+    updated,
     tags: parseTags(parsed.fields.get("tags") ?? "[]"),
     source: parseSource(parsed.fields.get("source") ?? "human"),
   };
