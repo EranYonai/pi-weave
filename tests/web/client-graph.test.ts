@@ -31,23 +31,30 @@ import {
   EDGE_SIZE,
   EDGE_SLOT,
   EMPTY_RENDER_GRAPH,
+  FADE_EPSILON,
   GRAPH_PALETTE,
+  HIGHLIGHT_FADE_TAU,
   HIGHLIGHT_Z_LIFT,
   HOVER_LABEL_GAP,
   HOVER_LABEL_SHADOW,
   KIND_SLOT,
   LABEL_BUDGET,
   LABEL_DENSITY,
+  LABEL_DROP_AT,
   LABEL_GRID_CELL_SIZE,
   LABEL_SIZE_THRESHOLD,
   MAX_NODE_SIZE,
   MIN_NODE_SIZE,
+  NEIGHBOUR_GROWTH,
+  RECESS_STRENGTH,
+  SELECTED_GROWTH,
   blendHex,
   degrees,
   edgeColor,
   edgeDrawColor,
   edgeKey,
   edgeReducer,
+  fadeStep,
   frameBox,
   graphSettings,
   hoverLabelPainter,
@@ -72,8 +79,8 @@ import type {
   ViewBox,
 } from "../../src/web/client/graph/graph.model";
 import { emptyProjection, positionsOf, project, syncPositions } from "../../src/web/client/graph/project";
-import { sigmaRenderer } from "../../src/web/client/graph/renderer";
-import type { RenderContainer, SigmaLike } from "../../src/web/client/graph/renderer";
+import { rafClock, sigmaRenderer } from "../../src/web/client/graph/renderer";
+import type { FrameClock, RenderContainer, SigmaLike } from "../../src/web/client/graph/renderer";
 import { THEME_CSS } from "../../src/web/client/shell/theme";
 import { repoLikeGraph } from "../fixtures/graphShapes";
 
@@ -641,6 +648,118 @@ describe("the highlight reducers (§7.4)", () => {
     expect(kept.zIndex).toBe(1);
     expect(kept.size).toBe(edgeOf("a", "b").size * EDGE_PRESENCE);
     expect(kept.size).toBeGreaterThan(edgeOf("a", "b").size);
+  });
+});
+
+// --- the highlight fade (§7.4) ---------------------------------------------------------------
+
+describe("fadeStep — the highlight's ramp", () => {
+  it("approaches its target, covering 63% of the gap per time constant", () => {
+    // Exponential rather than linear, which is what makes it ease-out with no
+    // easing curve to pick and frame-rate independent for free.
+    const once = fadeStep(0, 1, HIGHLIGHT_FADE_TAU);
+    expect(once).toBeGreaterThan(0.6);
+    expect(once).toBeLessThan(0.65);
+  });
+
+  it("reaches the same place whatever the frame rate", () => {
+    // The property a linear ramp does not have: a 120 Hz machine and a
+    // stuttering one must show the same picture at the same *moment*.
+    let fast = 0;
+    for (let i = 0; i < 16; i++) fast = fadeStep(fast, 1, 5);
+    let slow = 0;
+    for (let i = 0; i < 4; i++) slow = fadeStep(slow, 1, 20);
+    expect(fast).toBeCloseTo(slow, 6);
+  });
+
+  it("snaps once the remainder is invisible, so the clock can stop", () => {
+    // An exponential never actually lands; without the snap the fade would
+    // repaint forever over changes below a rounding error.
+    expect(fadeStep(1 - FADE_EPSILON / 2, 1, 1)).toBe(1);
+    expect(fadeStep(FADE_EPSILON / 2, 0, 1)).toBe(0);
+  });
+
+  it("fades out as readily as in", () => {
+    expect(fadeStep(1, 0, HIGHLIGHT_FADE_TAU)).toBeLessThan(0.4);
+  });
+
+  it("arrives rather than overshoots after a backgrounded tab", () => {
+    // `requestAnimationFrame` hands back a multi-second delta when a tab comes
+    // back to the foreground.
+    expect(fadeStep(0, 1, 60_000)).toBe(1);
+  });
+
+  it("stands still on a zero, negative or non-finite delta", () => {
+    // Two frames in the same millisecond, and a clock that went backwards.
+    expect(fadeStep(0.5, 1, 0)).toBe(0.5);
+    expect(fadeStep(0.5, 1, -20)).toBe(0.5);
+    expect(fadeStep(0.5, 1, Number.NaN)).toBe(0.5);
+  });
+});
+
+describe("the reducers at partial progress (§7.4)", () => {
+  const model = renderGraph(
+    [node("a", "vault"), node("b", "note", "B", "human"), node("c", "file")],
+    [edge("a", "b"), edge("b", "c")],
+    at([
+      ["a", 0, 0],
+      ["b", 10, 0],
+      ["c", 0, 10],
+    ]),
+    "dark",
+  );
+  const nodeOf = (id: string) => model.nodes.find((n) => n.id === id)!;
+  const edgeOf = (s: string, t: string) => model.edges.find((e) => e.source === s && e.target === t)!;
+  const highlight = new Set(["a", "b"]);
+
+  it("is exactly the unhighlighted graph at zero", () => {
+    // What lets the fade *end* by returning to the plain graph rather than by
+    // approaching it — and the assertion that the flash is gone at the tail.
+    expect(nodeReducer(highlight, "a", 0)("c", nodeOf("c"), "dark")).toEqual({});
+    expect(edgeReducer(highlight, "a", 0)(edgeOf("b", "c").key, edgeOf("b", "c"), "dark")).toEqual({});
+  });
+
+  it("recesses the cloud proportionally on the way", () => {
+    const half = nodeReducer(highlight, "a", 0.5)("c", nodeOf("c"), "dark");
+    expect(half.color).toBe(recessColor(nodeOf("c").color, "dark", RECESS_STRENGTH * 0.5));
+    // Strictly between the two ends, which is the whole claim.
+    expect(half.color).not.toBe(nodeOf("c").color);
+    expect(half.color).not.toBe(recessColor(nodeOf("c").color, "dark"));
+  });
+
+  it("grows the selection and its neighbours from their own size, not toward it", () => {
+    // A node at progress 0 must be its *own* size — starting the interpolation
+    // anywhere else would make the highlight arrive with a jump.
+    expect(nodeReducer(highlight, "a", 0.5)("a", nodeOf("a"), "dark").size).toBeCloseTo(
+      nodeOf("a").size * (1 + (SELECTED_GROWTH - 1) * 0.5),
+      6,
+    );
+    expect(nodeReducer(highlight, "a", 1)("b", nodeOf("b"), "dark").size).toBeCloseTo(nodeOf("b").size * NEIGHBOUR_GROWTH, 6);
+  });
+
+  it("blends an incident edge into the accent rather than switching to it", () => {
+    // Switching would flick the link to violet a frame before the rest of the
+    // fade caught up.
+    const half = edgeReducer(highlight, "a", 0.5)(edgeOf("a", "b").key, edgeOf("a", "b"), "dark");
+    expect(half.color).toBe(blendHex(edgeOf("a", "b").color, GRAPH_PALETTE.dark.accent, 0.5));
+    const done = edgeReducer(highlight, "a", 1)(edgeOf("a", "b").key, edgeOf("a", "b"), "dark");
+    expect(done.color).toBe(GRAPH_PALETTE.dark.accent);
+  });
+
+  it("drops the cloud's labels at the midpoint, because text cannot fade", () => {
+    // Sigma draws labels opaque and offers no per-label alpha, so the drop is
+    // a step; the middle of the fade is the least visible place to put it.
+    expect(nodeReducer(highlight, "a", LABEL_DROP_AT - 0.01)("c", nodeOf("c"), "dark").label).toBe(nodeOf("c").label);
+    expect(nodeReducer(highlight, "a", LABEL_DROP_AT)("c", nodeOf("c"), "dark").label).toBeNull();
+  });
+
+  it("is unchanged from before the fade existed when progress is omitted", () => {
+    // The default is the finished picture, so every non-animating caller —
+    // and every assertion written before the fade — still describes it.
+    expect(nodeReducer(highlight, "a")("c", nodeOf("c"), "dark")).toEqual(nodeReducer(highlight, "a", 1)("c", nodeOf("c"), "dark"));
+    expect(edgeReducer(highlight, "a")(edgeOf("a", "b").key, edgeOf("a", "b"), "dark")).toEqual(
+      edgeReducer(highlight, "a", 1)(edgeOf("a", "b").key, edgeOf("a", "b"), "dark"),
+    );
   });
 });
 
@@ -1389,6 +1508,205 @@ describe("sigmaRenderer over the injected constructor (§7.5)", () => {
       renderer.setHighlight(null);
       renderer.fit();
     }).not.toThrow();
+  });
+});
+
+/**
+ * A hand-driven {@link FrameClock}.
+ *
+ * Time is advanced explicitly, so the fade's frames are ordinary covered code
+ * with no wall-clock flake — the same reason the vault's core takes a `now`.
+ */
+function fakeClock() {
+  let t = 0;
+  let pending: (() => void) | null = null;
+  let handle = 0;
+  const cancelled: number[] = [];
+  const clock: FrameClock = {
+    now: () => t,
+    request(step) {
+      pending = step;
+      return ++handle;
+    },
+    cancel(h) {
+      cancelled.push(h);
+      pending = null;
+    },
+  };
+  return {
+    clock,
+    cancelled,
+    pendingFrames: () => (pending === null ? 0 : 1),
+    /** Advance `ms` and run the frame that was waiting, if any. */
+    tick(ms: number) {
+      t += ms;
+      const step = pending;
+      pending = null;
+      step?.();
+    },
+    /** Run frames until the fade settles, or give up. */
+    settle(ms = 20, limit = 400) {
+      for (let i = 0; i < limit && pending !== null; i++) this.tick(ms);
+    },
+  };
+}
+
+describe("the highlight fade, through the clock port (§7.4)", () => {
+  const model = renderGraph(
+    [node("a", "vault"), node("b", "note", "B", "human"), node("c", "file")],
+    [edge("a", "b"), edge("b", "c")],
+    at([
+      ["a", 0, 0],
+      ["b", 10, 0],
+      ["c", 0, 10],
+    ]),
+    "dark",
+  );
+  const container: RenderContainer = { clientWidth: 400, clientHeight: 300 };
+  const cloud = () => model.nodes.find((n) => n.id === "c")!;
+
+  function mounted() {
+    const fake = fakeSigma();
+    const clock = fakeClock();
+    const renderer = sigmaRenderer(fake.factory, "dark", clock.clock);
+    renderer.setGraph(model);
+    renderer.mount(container);
+    return { fake, clock, renderer };
+  }
+
+  it("ramps in over frames rather than landing in one", () => {
+    const { fake, clock, renderer } = mounted();
+    renderer.setHighlight(new Set(["a", "b"]), "a");
+    // The first paint is already partway — the highlight answers the pointer
+    // immediately, it just does not *arrive* immediately.
+    clock.tick(20);
+    const midway = fake.nodeReducer()!("c", cloud()).color;
+    expect(midway).not.toBe(cloud().color);
+    expect(midway).not.toBe(recessColor(cloud().color, "dark"));
+    clock.settle();
+    expect(fake.nodeReducer()!("c", cloud()).color).toBe(recessColor(cloud().color, "dark"));
+  });
+
+  it("holds the outgoing neighbourhood while it fades — this is the anti-flash", () => {
+    // The bug this exists for: clearing the set on `leaveNode` snapped 85% of
+    // the canvas back to full contrast in one frame, which reads as the whole
+    // graph flashing. Mid-fade the cloud must still be *partly* recessed.
+    const { fake, clock, renderer } = mounted();
+    renderer.setHighlight(new Set(["a", "b"]), "a");
+    clock.settle();
+    renderer.setHighlight(null);
+    clock.tick(20);
+    const leaving = fake.nodeReducer()!("c", cloud()).color;
+    expect(leaving).not.toBe(cloud().color);
+    expect(leaving).not.toBe(recessColor(cloud().color, "dark"));
+  });
+
+  it("ends on exactly the unhighlighted graph, and stops", () => {
+    const { fake, clock, renderer } = mounted();
+    renderer.setHighlight(new Set(["a", "b"]), "a");
+    clock.settle();
+    renderer.setHighlight(null);
+    clock.settle();
+    // The installed reducer spreads `{...data, ...override}`, so an untouched
+    // node *is* its own data — which is the assertion that the fade lands back
+    // on the plain graph rather than near it.
+    expect(fake.nodeReducer()!("c", cloud())).toEqual({ ...cloud() });
+    // A settled graph costs zero frames; the clock is not left spinning.
+    expect(clock.pendingFrames()).toBe(0);
+  });
+
+  it("schedules nothing when clearing a highlight that was never shown", () => {
+    // Every pointer move across empty background calls this; it must not arm
+    // a frame to animate nothing.
+    const { clock, renderer } = mounted();
+    renderer.setHighlight(null);
+    expect(clock.pendingFrames()).toBe(0);
+  });
+
+  it("swaps neighbourhoods instantly once the highlight is already up", () => {
+    // Hover moving from one node to the next: a cross-fade between two
+    // neighbourhoods is a picture of neither, so only *presence* animates.
+    const { fake, clock, renderer } = mounted();
+    renderer.setHighlight(new Set(["a", "b"]), "a");
+    clock.settle();
+    renderer.setHighlight(new Set(["b", "c"]), "b");
+    // No frame needed: already at full presence, only the set changed.
+    expect(fake.nodeReducer()!("c", cloud()).size).toBeDefined();
+    expect(clock.pendingFrames()).toBe(0);
+  });
+
+  it("reverses mid-fade instead of restarting", () => {
+    // Pointer flicking on and off a node. The ramp is stateful in one number,
+    // so coming back part-way through continues from where it is.
+    const { fake, clock, renderer } = mounted();
+    renderer.setHighlight(new Set(["a", "b"]), "a");
+    clock.tick(15);
+    renderer.setHighlight(null);
+    clock.tick(15);
+    renderer.setHighlight(new Set(["a", "b"]), "a");
+    clock.settle();
+    expect(fake.nodeReducer()!("c", cloud()).color).toBe(recessColor(cloud().color, "dark"));
+  });
+
+  it("cancels a running fade on destroy", () => {
+    // A frame outliving the WebGL context it repaints is the leak the column's
+    // own clock cleanup exists for.
+    const { clock, renderer } = mounted();
+    renderer.setHighlight(new Set(["a", "b"]), "a");
+    expect(clock.pendingFrames()).toBe(1);
+    renderer.destroy();
+    expect(clock.cancelled).toHaveLength(1);
+    expect(clock.pendingFrames()).toBe(0);
+  });
+
+  it("lands immediately when no clock is injected", () => {
+    // The pre-fade behaviour, kept reachable: a caller that does not animate
+    // gets the finished picture on the next paint.
+    const fake = fakeSigma();
+    const renderer = sigmaRenderer(fake.factory, "dark");
+    renderer.setGraph(model);
+    renderer.mount(container);
+    renderer.setHighlight(new Set(["a", "b"]), "a");
+    expect(fake.nodeReducer()!("c", cloud()).color).toBe(recessColor(cloud().color, "dark"));
+    renderer.setHighlight(null);
+    expect(fake.nodeReducer()!("c", cloud())).toEqual({ ...cloud() });
+  });
+
+  it("fades before it is mounted without throwing", () => {
+    // The column sets a highlight from `live` on remount, which can precede
+    // the canvas.
+    const clock = fakeClock();
+    const renderer = sigmaRenderer(fakeSigma().factory, "dark", clock.clock);
+    expect(() => {
+      renderer.setHighlight(new Set(["a"]), "a");
+      clock.settle();
+    }).not.toThrow();
+  });
+});
+
+describe("rafClock", () => {
+  it("wires the two browser globals and nothing else", () => {
+    // The one place `requestAnimationFrame` and `performance.now` are named;
+    // `renderer.ts` must stay compilable with no `DOM` lib.
+    const run: Array<(t: number) => void> = [];
+    const cancelled: number[] = [];
+    const clock = rafClock({
+      requestAnimationFrame: (cb) => {
+        run.push(cb);
+        return 7;
+      },
+      cancelAnimationFrame: (h) => cancelled.push(h),
+      performance: { now: () => 1234 },
+    });
+    expect(clock.now()).toBe(1234);
+    let ran = false;
+    expect(clock.request(() => {
+      ran = true;
+    })).toBe(7);
+    run[0]!(0);
+    expect(ran).toBe(true);
+    clock.cancel(7);
+    expect(cancelled).toEqual([7]);
   });
 });
 

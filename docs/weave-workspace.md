@@ -790,6 +790,28 @@ highlight path; a divergence between what the pointer means and what a click mea
 The column pushes this straight into the renderer rather than through `useState`, because hover state in a `useState` enters the model memo
 and re-derives the layout, the group colours and the whole `RenderGraph` on every pointer move.
 
+**The highlight fades rather than switches.** Two frames of the un-animated version were wrong in opposite directions, and both are the same
+defect: the *leaving* frame snapped 85 % of the canvas from recessed back to full contrast in one step, which reads as the entire graph
+flashing — louder than the dimming it undoes — and the arriving frame was a hard step in the other direction. So the reducers take a
+`progress` (0 → 1) and the renderer ramps it on a `FrameClock`. Four decisions worth stating:
+
+- **What animates is the highlight's *presence*, never the membership of the set.** Moving the pointer from one node to the next swaps the
+  neighbourhood instantly and stays at full presence; a cross-fade between two neighbourhoods is a picture of neither.
+- **The clear is deferred, not immediate.** `setHighlight(null)` sets the target to 0 and *keeps the outgoing set on screen* until the ramp
+  arrives — clearing it up front would leave nothing to fade out of, which is the flash itself. The renderer drops the set on arrival, so a
+  later unrelated repaint cannot dim the graph with a stale neighbourhood.
+- **`fadeStep` is an exponential approach, not a linear ramp.** Ease-out by construction with no curve to choose, frame-rate independent for
+  free (a 120 Hz machine and a stuttering one show the same picture at the same moment), and correct when a backgrounded tab hands back a
+  multi-second delta — `exp(-big)` is arrival. It snaps at `FADE_EPSILON` because an exponential never actually lands and the clock has to
+  be able to stop.
+- **Labels step at the midpoint.** Text is the one thing here that cannot fade: sigma draws labels opaque and offers no per-label alpha. The
+  least visible place for an unavoidable step is the middle of the fade, where the cloud is already half receded.
+
+`progress` defaults to 1, so every non-animating caller gets the finished picture and nothing else had to learn about the clock. The clock
+itself is a port for the reason `RenderContainer` is one — `requestAnimationFrame` and `performance.now` are DOM globals, and `renderer.ts`
+must stay compilable without a `DOM` lib — so the entire ramp is driven by a hand-advanced fake in tests rather than being frames nobody can
+step.
+
 **The hover label is ours.** Sigma's `drawDiscNodeHover` paints a hardcoded `#FFF` rounded box with the text to the node's *right* — wrong
 colour in both schemes and wrong place once the highlight has grown the node it is naming. `graph.model.ts`'s `hoverLabelPainter` replaces
 it: the name centred underneath, in the scheme's `text`, over a ground-coloured shadow instead of a box. It is stated over a structural

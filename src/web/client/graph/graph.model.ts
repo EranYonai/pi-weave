@@ -739,14 +739,23 @@ export function nodeReducer(
    * only a neighbourhood keeps the previous two-tier behaviour.
    */
   selectedId?: string | null,
+  /**
+   * How far the highlight has faded in, 0 → 1. Defaults to 1, so a caller
+   * that does not animate gets the finished picture and nothing has to know
+   * about the clock.
+   */
+  progress: number = 1,
 ): (id: string, data: RenderNode, scheme: ColorScheme) => NodeDisplayOverride {
   return (id, data, scheme) => {
-    if (highlight === null) return {};
+    // `progress` at zero is indistinguishable from no highlight, and saying so
+    // here is what lets the fade end by *returning* to the unhighlighted graph
+    // rather than by approaching it.
+    if (highlight === null || progress <= 0) return {};
     if (id === selectedId && highlight.has(id)) {
       // The subject of the gesture: lifted clear of its own neighbourhood and
       // grown by a ratio rather than to a fixed radius, so a hub still reads
       // as bigger than the leaf beside it while both read as "this one".
-      return { zIndex: data.zIndex + HIGHLIGHT_Z_LIFT * 2, size: data.size * SELECTED_GROWTH };
+      return { zIndex: data.zIndex + HIGHLIGHT_Z_LIFT * 2, size: data.size * growth(SELECTED_GROWTH, progress) };
     }
     // A connected node: its own group colour at full strength, lifted above
     // the cloud, and grown a little. The step between "connected" and
@@ -755,10 +764,80 @@ export function nodeReducer(
     // being named — the difference matters most on a big canvas, where the
     // receded cloud is far off-screen and the only thing visible is a
     // neighbourhood that looks exactly like it did before the click.
-    if (highlight.has(id)) return { zIndex: data.zIndex + HIGHLIGHT_Z_LIFT, size: data.size * NEIGHBOUR_GROWTH };
-    return { color: recessColor(data.color, scheme), label: null, zIndex: 0 };
+    if (highlight.has(id)) return { zIndex: data.zIndex + HIGHLIGHT_Z_LIFT, size: data.size * growth(NEIGHBOUR_GROWTH, progress) };
+    return {
+      color: recessColor(data.color, scheme, RECESS_STRENGTH * progress),
+      label: progress >= LABEL_DROP_AT ? null : data.label,
+      zIndex: 0,
+    };
   };
 }
+
+// --- the highlight fade (§7.4) -----------------------------------------------------
+
+/**
+ * The time constant of the highlight fade, in milliseconds.
+ *
+ * The highlight used to arrive and leave in **one frame**, and the frame that
+ * hurt was the *leaving* one: 85 % of the canvas snapping from recessed back
+ * to full contrast reads as the whole graph flashing, which is louder than
+ * the dimming it is undoing. Sliding the recession in and out is what turns
+ * two states into one gesture.
+ *
+ * A time *constant* rather than a duration because {@link fadeStep} is an
+ * exponential approach, not a linear ramp — progress covers 63 % of the
+ * remaining distance every `TAU` ms, so the motion is ease-out by
+ * construction with no easing curve to pick, and it is frame-rate independent
+ * for free. 60 ms puts the visible settle at roughly 200 ms, which is the
+ * range a hover can afford: slower and pointing at a node feels unanswered.
+ */
+export const HIGHLIGHT_FADE_TAU = 60;
+
+/**
+ * How close to the target counts as arrived.
+ *
+ * An exponential approach never actually lands, so without a snap the clock
+ * would run forever repainting changes below a rounding error. At 0.004 the
+ * remaining recession is under half a colour step on an 8-bit channel —
+ * invisible, and about five time constants in.
+ */
+export const FADE_EPSILON = 0.004;
+
+/**
+ * Advance a fade toward its target. Pure; the clock is the caller's.
+ *
+ * `progress` is how *present* the highlight is: 0 renders exactly as no
+ * highlight at all, 1 is the full treatment. The target is therefore always
+ * one of those two — what fades is the presence of the effect, never the
+ * membership of the set. A neighbourhood that changes while the highlight is
+ * already up (hover moves from one node to the next) swaps instantly and
+ * stays at 1, because a cross-fade between two neighbourhoods is a picture of
+ * neither.
+ *
+ * A backgrounded tab hands back a multi-second `elapsedMs`, and the
+ * exponential handles it correctly by arriving: `exp(-big)` is 0.
+ */
+export function fadeStep(progress: number, target: number, elapsedMs: number): number {
+  const elapsed = Number.isFinite(elapsedMs) && elapsedMs > 0 ? elapsedMs : 0;
+  const next = target + (progress - target) * Math.exp(-elapsed / HIGHLIGHT_FADE_TAU);
+  return Math.abs(target - next) < FADE_EPSILON ? target : next;
+}
+
+/** Interpolate a size multiplier by the fade's progress. 0 → untouched, 1 → `to`. */
+function growth(to: number, progress: number): number {
+  return 1 + (to - 1) * progress;
+}
+
+/**
+ * The fade point at which the cloud's labels are dropped.
+ *
+ * Text is the one thing on this canvas that cannot fade — sigma draws labels
+ * opaque, and there is no per-label alpha to ramp. So the drop is a step, and
+ * the least visible place to put a step is the middle of the fade, where the
+ * cloud is already half receded and the eye is following the neighbourhood
+ * rather than the text it is losing.
+ */
+export const LABEL_DROP_AT = 0.5;
 
 /**
  * How much the selected node grows, as a size multiplier.
@@ -805,11 +884,13 @@ export function edgeReducer(
   highlight: ReadonlySet<string> | null,
   /** The selection, so an edge *touching* it outranks one merely near it. */
   selectedId?: string | null,
+  /** The fade's progress — see {@link nodeReducer}'s. */
+  progress: number = 1,
 ): (key: string, data: RenderEdge, scheme: ColorScheme) => EdgeDisplayOverride {
   return (_key, data, scheme) => {
-    if (highlight === null) return {};
+    if (highlight === null || progress <= 0) return {};
     if (!highlight.has(data.source) || !highlight.has(data.target)) {
-      return { color: recessColor(data.color, scheme) };
+      return { color: recessColor(data.color, scheme, RECESS_STRENGTH * progress) };
     }
     // Incident on the selection itself — these are the node's actual links,
     // and they are what "connected" means drawn. Painted in the accent so a
@@ -817,11 +898,17 @@ export function edgeReducer(
     // for as long as the selection stands, and thickened a step beyond the
     // neighbourhood's own edges.
     if (selectedId != null && (data.source === selectedId || data.target === selectedId)) {
-      return { zIndex: 2, size: data.size * EDGE_PRESENCE * 1.35, color: GRAPH_PALETTE[scheme].accent };
+      return {
+        zIndex: 2,
+        size: data.size * growth(EDGE_PRESENCE * 1.35, progress),
+        // Blended rather than switched, so the link arrives *as* the accent
+        // instead of flicking to it a frame before the rest of the fade.
+        color: blendHex(data.color, GRAPH_PALETTE[scheme].accent, progress),
+      };
     }
     // Between two neighbours, but not touching the selection: real context,
     // one step quieter.
-    return { zIndex: 1, size: data.size * EDGE_PRESENCE };
+    return { zIndex: 1, size: data.size * growth(EDGE_PRESENCE, progress) };
   };
 }
 

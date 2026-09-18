@@ -1,6 +1,6 @@
 import type { Point } from "../../shared/layout";
 import type { ColorScheme, EdgeDisplayOverride, GraphSettings, NodeDisplayOverride, RenderEdge, RenderGraph, RenderNode, ViewBox } from "./graph.model";
-import { edgeReducer, frameBox, graphSettings, nodeReducer } from "./graph.model";
+import { edgeReducer, fadeStep, frameBox, graphSettings, nodeReducer } from "./graph.model";
 import type { ProjectedGraph } from "./project";
 import { positionsOf, project, syncPositions } from "./project";
 
@@ -85,15 +85,61 @@ export interface SigmaLike {
  * every node colour and re-projecting — a second code path for a case nobody
  * hits.
  */
+/**
+ * The animation clock, as a port.
+ *
+ * `requestAnimationFrame` and `performance.now` are browser globals, and this
+ * module is compiled by the root `tsconfig.json` (no `DOM` lib) whenever a
+ * test imports it — the same constraint `RenderContainer` exists for. Injected
+ * rather than imported, so the fade's *timing* is driven by a fake in a test
+ * and by the browser in the browser, and the whole ramp is ordinary covered
+ * code instead of frames nobody can step.
+ */
+export interface FrameClock {
+  now(): number;
+  request(step: () => void): number;
+  cancel(handle: number): void;
+}
+
+/** The browser's clock. The one place the two globals are named. */
+export const rafClock = (host: {
+  requestAnimationFrame(cb: (t: number) => void): number;
+  cancelAnimationFrame(h: number): void;
+  performance: { now(): number };
+}): FrameClock => ({
+  now: () => host.performance.now(),
+  request: (step) => host.requestAnimationFrame(() => step()),
+  cancel: (handle) => host.cancelAnimationFrame(handle),
+});
+
 export function sigmaRenderer(
   create: (graph: ProjectedGraph, container: RenderContainer, settings: GraphSettings) => SigmaLike,
   scheme: ColorScheme,
+  /**
+   * The fade clock, or omitted for no animation at all — in which case every
+   * highlight change lands at full strength on the next frame, which is the
+   * behaviour before the fade existed.
+   */
+  clock?: FrameClock,
 ) {
   let sigma: SigmaLike | null = null;
   let graph: ProjectedGraph = project({ nodes: [], edges: [] });
   let highlight: ReadonlySet<string> | null = null;
   /** The selection inside that neighbourhood — see `nodeReducer`. */
   let selected: string | null = null;
+  /**
+   * How present the highlight currently *looks*, and where it is heading.
+   *
+   * Two numbers rather than one because the fade has to survive its own end:
+   * clearing `highlight` the instant the pointer leaves would leave nothing
+   * to fade *out of*, which is exactly the flash the fade exists to remove.
+   * So a clear sets `fadeTo = 0` and keeps the outgoing set on screen until
+   * the ramp reaches it — see `setHighlight`.
+   */
+  let fade = 0;
+  let fadeTo = 0;
+  let frame: number | null = null;
+  let lastAt = 0;
   let select: (id: string | null) => void = () => {};
   let hover: (id: string | null) => void = () => {};
   let dragStart: (id: string) => void = () => {};
@@ -124,10 +170,36 @@ export function sigmaRenderer(
    * until the next unrelated frame.
    */
   const applyReducers = (instance: SigmaLike): void => {
-    const nodes = nodeReducer(highlight, selected);
-    const edges = edgeReducer(highlight, selected);
+    const nodes = nodeReducer(highlight, selected, fade);
+    const edges = edgeReducer(highlight, selected, fade);
     instance.setSetting("nodeReducer", (id, data) => ({ ...data, ...nodes(id, data, scheme) }));
     instance.setSetting("edgeReducer", (key, data) => ({ ...data, ...edges(key, data, scheme) }));
+  };
+
+  /**
+   * Run the fade toward `fadeTo`, one frame at a time. Idempotent — the same
+   * self-terminating-clock shape `Graph.tsx` uses for the simulation, and for
+   * the same reason: a graph that has finished moving must cost zero frames.
+   */
+  const armFade = (): void => {
+    if (clock === undefined || frame !== null) return;
+    lastAt = clock.now();
+    const step = (): void => {
+      frame = null;
+      const at = clock.now();
+      fade = fadeStep(fade, fadeTo, at - lastAt);
+      lastAt = at;
+      if (sigma !== null) applyReducers(sigma);
+      // Arrived at zero: the set was only being held so it had something to
+      // fade out of (see `fade`/`fadeTo`), and keeping it would make a later
+      // unrelated repaint dim the graph with a stale neighbourhood.
+      if (fade === fadeTo) {
+        if (fade === 0) highlight = null;
+        return;
+      }
+      frame = clock.request(step);
+    };
+    frame = clock.request(step);
   };
 
   return {
@@ -189,9 +261,30 @@ export function sigmaRenderer(
     },
 
     setHighlight(next: ReadonlySet<string> | null, selectedId: string | null = null) {
-      highlight = next;
-      selected = selectedId;
+      if (clock === undefined) {
+        highlight = next;
+        selected = selectedId;
+        fade = next === null ? 0 : 1;
+        fadeTo = fade;
+        if (sigma !== null) applyReducers(sigma);
+        return;
+      }
+      if (next === null) {
+        // Fade *out of* the set that is on screen rather than dropping it: the
+        // drop is the flash. `highlight` is cleared by the ramp on arrival.
+        fadeTo = 0;
+        // Nothing was showing, so there is nothing to fade and no frame to run.
+        if (highlight === null) return;
+      } else {
+        // A new neighbourhood replaces the old one immediately — a cross-fade
+        // between two of them is a picture of neither — and only the *presence*
+        // of the highlight is animated.
+        highlight = next;
+        selected = selectedId;
+        fadeTo = 1;
+      }
       if (sigma !== null) applyReducers(sigma);
+      if (fade !== fadeTo) armFade();
     },
 
     onSelect(handler: (id: string | null) => void) {
@@ -228,6 +321,10 @@ export function sigmaRenderer(
       return positionsOf(graph);
     },
     destroy() {
+      if (frame !== null) {
+        clock?.cancel(frame);
+        frame = null;
+      }
       sigma?.kill();
       sigma = null;
     },
