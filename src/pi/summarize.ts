@@ -62,7 +62,7 @@ export function createModelSummarizer(
   deps: SummarizerDeps = {},
 ): LlmSummarizer | null {
   const model = ctx.model;
-  if (!model) return null;
+  if (!model || !isUsableModel(model)) return null;
   const complete: CompleteFn =
     deps.complete ?? ((m, c, o) => ctx.modelRegistry.complete(m, c, o));
   const label = `${model.provider}/${model.id}`;
@@ -86,6 +86,21 @@ export function createModelSummarizer(
     return text;
   };
   return { summarize, label };
+}
+
+/**
+ * True when `ctx.model` is a real model rather than pi's placeholder.
+ *
+ * A session with no resolved model does not hand back `undefined` — it hands
+ * back pi's `DEFAULT_MODEL`, whose provider and id are the literal string
+ * `"unknown"`. That object is truthy, so a `!model` guard passes it straight
+ * through to `modelRegistry.complete`, which throws `Unknown provider:
+ * unknown` once per file. Treating it as "no model" makes the caller report
+ * the actionable "needs an active session model" instead, before spending a
+ * single call.
+ */
+function isUsableModel(model: { provider?: string; id?: string }): boolean {
+  return model.provider !== undefined && model.provider !== "unknown";
 }
 
 /**

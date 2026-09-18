@@ -69,6 +69,18 @@ describe("createLlmSummarizer", () => {
     await expect(llm!.summarize({ path: "a.ts", content: "x" })).rejects.toThrow("empty summary");
   });
 
+  it("treats pi's unresolved-model placeholder as no model at all", () => {
+    // A session with no resolved model hands back pi's DEFAULT_MODEL, whose
+    // provider is the literal string "unknown" — a truthy object that sails
+    // past a `!model` guard and then fails inside the registry with
+    // "Unknown provider: unknown", once per file. Refuse up front instead.
+    const ctx = createMockCtx("/x", true, {
+      model: { provider: "unknown", id: "unknown" },
+      complete: async () => { throw new Error("must not reach the registry"); },
+    });
+    expect(createLlmSummarizer(asExtensionCtx(ctx))).toBeNull();
+  });
+
   it("names the cause of an empty completion instead of repeating one opaque string", () => {
     // A whole scan failing "85 failed: model returned an empty summary" is an
     // outage with the evidence thrown away. Auth failure, a reasoning model
