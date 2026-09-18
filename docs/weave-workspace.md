@@ -780,6 +780,22 @@ layout nobody renders.
 | Neighborhood highlight | `setSetting("nodeReducer", …)` — return dimmed styles for nodes outside `focusNeighborhood(selectedId)` |
 | Hide edges while moving | `hideEdgesOnMove: true` |
 | Node colour by kind, ring by provenance | node attributes + a custom node program (only if the default is insufficient) |
+| Hover label | `defaultDrawNodeHover` — replaced; see below |
+
+**Hover drives the selection's own reducers.** Obsidian's graph is the reference: pointing at a node lights everything one hop away, without
+committing to it. That is the identical question a click asks, so it is answered by the identical function — `renderer.ts` reports
+`enterNode`/`leaveNode` outward as `onHover(id | null)`, `column.model.ts`'s `hoverHighlight` returns `focusNeighborhood(hovered)` or falls
+back to the selection's highlight, and the existing `nodeReducer`/`edgeReducer` do the rest. There is no hover palette and no second
+highlight path; a divergence between what the pointer means and what a click means is structurally impossible rather than merely avoided.
+The column pushes this straight into the renderer rather than through `useState`, because hover state in a `useState` enters the model memo
+and re-derives the layout, the group colours and the whole `RenderGraph` on every pointer move.
+
+**The hover label is ours.** Sigma's `drawDiscNodeHover` paints a hardcoded `#FFF` rounded box with the text to the node's *right* — wrong
+colour in both schemes and wrong place once the highlight has grown the node it is naming. `graph.model.ts`'s `hoverLabelPainter` replaces
+it: the name centred underneath, in the scheme's `text`, over a ground-coloured shadow instead of a box. It is stated over a structural
+`HoverLabelContext` rather than `CanvasRenderingContext2D`, so it names no DOM type, compiles under the root `tsconfig.json`, and is
+unit-tested against a recording fake instead of sitting behind §10's canvas wall. Being the hover painter also means sigma draws it
+regardless of `labelRenderedSizeThreshold`, so a leaf too small for a standing label still answers the pointer with its name.
 
 Cluster collapse/expand is ours, but it is *graph reduction*, not rendering: `clusterAggregate` lives in `src/core/view/cluster.ts`,
 unit-tested at 100%, shared with the TUI. **Built in P0**, and deliberately *not* a faithful port — the retired implementation was wrong in

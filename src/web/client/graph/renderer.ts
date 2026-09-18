@@ -46,6 +46,8 @@ export interface SigmaLike {
   on(event: "clickNode", handler: (payload: { node: string }) => void): unknown;
   on(event: "clickStage", handler: () => void): unknown;
   on(event: "downNode", handler: (payload: { node: string }) => void): unknown;
+  on(event: "enterNode", handler: (payload: { node: string }) => void): unknown;
+  on(event: "leaveNode", handler: () => void): unknown;
   on(event: "moveBody", handler: (payload: { event: { x: number; y: number }; preventSigmaDefault(): void }) => void): unknown;
   on(event: "upNode" | "upStage", handler: () => void): unknown;
   viewportToGraph(position: { x: number; y: number }): Point;
@@ -93,6 +95,7 @@ export function sigmaRenderer(
   /** The selection inside that neighbourhood — see `nodeReducer`. */
   let selected: string | null = null;
   let select: (id: string | null) => void = () => {};
+  let hover: (id: string | null) => void = () => {};
   let dragStart: (id: string) => void = () => {};
   let dragMove: (id: string, at: Point) => void = () => {};
   let dragEnd: (id: string) => void = () => {};
@@ -153,6 +156,12 @@ export function sigmaRenderer(
           dragMove(dragging, instance.viewportToGraph({ x: payload.event.x, y: payload.event.y }));
         }
       });
+      // Hover is reported outward, not interpreted here: which nodes light up
+      // is `column.model.ts`'s `hoverHighlight`, the same way a click's meaning
+      // is `graphClick`'s. Sigma emits `leaveNode` on its own when the pointer
+      // crosses straight from one node to another, so there is no state to keep.
+      instance.on("enterNode", ({ node }) => hover(node));
+      instance.on("leaveNode", () => hover(null));
       instance.on("upNode", () => endDrag(dragging));
       instance.on("upStage", () => endDrag(null));
       applyReducers(instance);
@@ -187,6 +196,10 @@ export function sigmaRenderer(
 
     onSelect(handler: (id: string | null) => void) {
       select = handler;
+    },
+
+    onHover(handler: (id: string | null) => void) {
+      hover = handler;
     },
 
     onDragStart(handler: (id: string) => void) {

@@ -33,6 +33,8 @@ import {
   EMPTY_RENDER_GRAPH,
   GRAPH_PALETTE,
   HIGHLIGHT_Z_LIFT,
+  HOVER_LABEL_GAP,
+  HOVER_LABEL_SHADOW,
   KIND_SLOT,
   LABEL_BUDGET,
   LABEL_DENSITY,
@@ -48,6 +50,7 @@ import {
   edgeReducer,
   frameBox,
   graphSettings,
+  hoverLabelPainter,
   kindColor,
   nodeLabel,
   nodeReducer,
@@ -60,6 +63,8 @@ import type {
   ColorScheme,
   EdgeDisplayOverride,
   GraphSettings,
+  HoverLabelContext,
+  HoverLabelNode,
   NodeDisplayOverride,
   RenderEdge,
   RenderGraph,
@@ -715,6 +720,84 @@ describe("sigma settings (§7.4)", () => {
   });
 });
 
+// --- the hover label (§7.4) ------------------------------------------------------------------
+
+/** A recording 2D context. The port is a plain shape, so this is the whole fake. */
+function fakeContext() {
+  const drawn: Array<{ text: string; x: number; y: number }> = [];
+  const calls: string[] = [];
+  const context: HoverLabelContext = {
+    font: "",
+    fillStyle: "",
+    textAlign: "",
+    shadowColor: "",
+    shadowBlur: 0,
+    save() {
+      calls.push("save");
+    },
+    restore() {
+      calls.push("restore");
+    },
+    fillText(text, x, y) {
+      calls.push("fillText");
+      drawn.push({ text, x, y });
+    },
+  };
+  return { context, drawn, calls };
+}
+
+describe("the hover label (§7.4)", () => {
+  const settings = { labelSize: 11, labelFont: "inherit" };
+  const hovered: HoverLabelNode = { x: 40, y: 60, size: 9, label: "◆ a note" };
+
+  it("floats the name centred under the node", () => {
+    // Obsidian's placement, and the reason sigma's own hover painter is
+    // replaced: it puts a white box to the node's *right*.
+    const fake = fakeContext();
+    hoverLabelPainter("dark")(fake.context, hovered, settings);
+    expect(fake.drawn).toEqual([{ text: "◆ a note", x: 40, y: 60 + 9 + 11 + HOVER_LABEL_GAP }]);
+    expect(fake.context.textAlign).toBe("center");
+  });
+
+  it("paints in the scheme's own text colour over a ground-coloured shadow", () => {
+    // The shadow is legibility, not decoration: the label lands on whatever
+    // edges and receded nodes happen to be under it.
+    for (const scheme of ["dark", "light"] as const) {
+      const fake = fakeContext();
+      hoverLabelPainter(scheme)(fake.context, hovered, settings);
+      expect(fake.context.fillStyle).toBe(GRAPH_PALETTE[scheme].text);
+      expect(fake.context.shadowColor).toBe(GRAPH_PALETTE[scheme].ground);
+      expect(fake.context.shadowBlur).toBe(HOVER_LABEL_SHADOW);
+      expect(fake.context.font).toBe("11px inherit");
+    }
+  });
+
+  it("brackets every draw in save/restore", () => {
+    // `textAlign`, the shadow and the fill are shared canvas state, and sigma
+    // reuses one context for every other label in the frame.
+    const fake = fakeContext();
+    hoverLabelPainter("dark")(fake.context, hovered, settings);
+    expect(fake.calls[0]).toBe("save");
+    expect(fake.calls[fake.calls.length - 1]).toBe("restore");
+  });
+
+  it("draws nothing for a node with no name", () => {
+    // `nodeReducer` blanks the label of everything outside the highlight, so
+    // `null` reaches here in the ordinary course of a hover.
+    for (const label of [null, ""]) {
+      const fake = fakeContext();
+      hoverLabelPainter("dark")(fake.context, { ...hovered, label }, settings);
+      expect(fake.calls).toEqual([]);
+    }
+  });
+
+  it("is what the settings hand sigma, per scheme", () => {
+    const fake = fakeContext();
+    graphSettings("light").defaultDrawNodeHover(fake.context, hovered, settings);
+    expect(fake.context.fillStyle).toBe(GRAPH_PALETTE.light.text);
+  });
+});
+
 // --- the projection (§7.1) -------------------------------------------------------------------
 
 describe("the graphology projection (§7.1)", () => {
@@ -872,6 +955,8 @@ function fakeSigma() {
     node?: (payload: { node: string }) => void;
     stage?: () => void;
     downNode?: (payload: { node: string }) => void;
+    enterNode?: (payload: { node: string }) => void;
+    leaveNode?: () => void;
     moveBody?: (payload: { event: { x: number; y: number }; preventSigmaDefault(): void }) => void;
     upNode?: () => void;
     upStage?: () => void;
@@ -889,6 +974,8 @@ function fakeSigma() {
       if (event === "clickNode") handlers.node = handler as (payload: { node: string }) => void;
       if (event === "clickStage") handlers.stage = handler as () => void;
       if (event === "downNode") handlers.downNode = handler as (payload: { node: string }) => void;
+      if (event === "enterNode") handlers.enterNode = handler as (payload: { node: string }) => void;
+      if (event === "leaveNode") handlers.leaveNode = handler as () => void;
       if (event === "moveBody") handlers.moveBody = handler as (payload: { event: { x: number; y: number }; preventSigmaDefault(): void }) => void;
       if (event === "upNode") handlers.upNode = handler as () => void;
       if (event === "upStage") handlers.upStage = handler as () => void;
@@ -952,6 +1039,8 @@ function fakeSigma() {
     clickNode: (id: string) => handlers.node?.({ node: id }),
     clickStage: () => handlers.stage?.(),
     downNode: (id: string) => handlers.downNode?.({ node: id }),
+    enterNode: (id: string) => handlers.enterNode?.({ node: id }),
+    leaveNode: () => handlers.leaveNode?.(),
     // The renderer derives the dragged id from its own `downNode` state, so
     // the id argument here is ignored; only the coordinates reach `moveBody`.
     // The payload carries a live `preventSigmaDefault` so a test can observe
@@ -1085,13 +1174,32 @@ describe("sigmaRenderer over the injected constructor (§7.5)", () => {
     expect(seen).toEqual(["b", null]);
   });
 
-  it("survives a click before any handler is registered", () => {
+  it("survives a click or a hover before any handler is registered", () => {
     // The default handler is a no-op rather than `null`, so the mount path has
-    // no ordering requirement against `onSelect`.
+    // no ordering requirement against `onSelect` or `onHover`.
     const fake = fakeSigma();
     sigmaRenderer(fake.factory, "dark").mount(container);
     expect(() => fake.clickNode("a")).not.toThrow();
     expect(() => fake.clickStage()).not.toThrow();
+    expect(() => fake.enterNode("a")).not.toThrow();
+    expect(() => fake.leaveNode()).not.toThrow();
+  });
+
+  it("reports entering and leaving a node, without interpreting either", () => {
+    // §7.4's hover gesture. `null` on leave is what lets the column restore
+    // the selection's highlight; the renderer holds no hover state of its own,
+    // because sigma already emits `leaveNode` when the pointer crosses from
+    // one node straight to another.
+    const fake = fakeSigma();
+    const renderer = sigmaRenderer(fake.factory, "dark");
+    const seen: Array<string | null> = [];
+    renderer.onHover((id) => seen.push(id));
+    renderer.setGraph(model);
+    renderer.mount(container);
+    fake.enterNode("b");
+    fake.enterNode("c");
+    fake.leaveNode();
+    expect(seen).toEqual(["b", "c", null]);
   });
 
   it("routes drag events through the renderer's own callbacks", () => {

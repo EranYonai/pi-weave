@@ -373,6 +373,113 @@ export function nodeLabel(node: WireGraphNode): string {
   return truncateLabel(badge === "" ? label : `${badge} ${label}`);
 }
 
+// --- the hover label (§7.4) ---------------------------------------------------------
+
+/**
+ * The 2D canvas slice {@link hoverLabelPainter} writes to.
+ *
+ * Structural for the same reason `RenderContainer` is (see `renderer.ts`): a
+ * test importing this module drags it into the root `tsconfig.json` project,
+ * which has no `DOM` lib, so naming `CanvasRenderingContext2D` here would
+ * break the typecheck for every core test. Every member is used below, so the
+ * port cannot grow something nothing calls — and because it is a plain
+ * object shape, the painter is covered by an ordinary unit test against a
+ * recording fake rather than sitting behind §10's canvas wall.
+ */
+export interface HoverLabelContext {
+  font: string;
+  /**
+   * `unknown` rather than `string`, and only because the real thing is
+   * `string | CanvasGradient | CanvasPattern` — naming either of those DOM
+   * types here is what this port exists to avoid, and narrowing to `string`
+   * makes `CanvasRenderingContext2D` fail to satisfy the port. Written to, never
+   * read, so nothing downstream has to widen.
+   */
+  fillStyle: unknown;
+  textAlign: string;
+  shadowColor: string;
+  shadowBlur: number;
+  save(): void;
+  restore(): void;
+  fillText(text: string, x: number, y: number): void;
+}
+
+/** The node attributes sigma hands a hover painter, narrowed to what is read. */
+export interface HoverLabelNode {
+  readonly x: number;
+  readonly y: number;
+  readonly size: number;
+  readonly label: string | null;
+}
+
+/** The settings a hover painter reads. Both `GraphSettings` and sigma's satisfy it. */
+export interface HoverLabelSettings {
+  readonly labelSize: number;
+  readonly labelFont: string;
+}
+
+/**
+ * The gap between the bottom of the node and the cap height of its name, in
+ * screen pixels.
+ *
+ * Far enough that the text is not touching the disc at the sizes the ramp
+ * produces (leaf 6 → hub 18 layout units), close enough that the name still
+ * reads as belonging to *that* node rather than floating between two of them.
+ */
+export const HOVER_LABEL_GAP = 6;
+
+/**
+ * How far the hover label's shadow spreads, in pixels.
+ *
+ * Not decoration — legibility. The label is drawn over whatever the graph
+ * happens to have under the node (edges, a receded cloud, another label), and
+ * a ground-coloured blur is what separates the glyphs from that without
+ * putting an opaque box on the canvas. Sigma's own `drawDiscNodeHover` draws
+ * the box instead, hardcoded `#FFF`, which is why it is replaced rather than
+ * configured.
+ */
+export const HOVER_LABEL_SHADOW = 6;
+
+/**
+ * Sigma's `defaultDrawNodeHover`, as a scheme-bound pure function (§7.4).
+ *
+ * Obsidian's gesture, which is the reference: the hovered node's name floats
+ * **centred underneath it**, in the theme's own text colour, with no
+ * container. The alternative shipped by sigma is a white rounded box with the
+ * text to the node's *right* — wrong colour in both schemes, and wrong place
+ * when the neighbourhood highlight has just grown the node the label is
+ * naming.
+ *
+ * Being the hover painter also fixes a second thing for free: sigma draws this
+ * regardless of `labelRenderedSizeThreshold`, so a leaf too small to carry a
+ * standing label still answers the pointer with its name.
+ *
+ * `save`/`restore` around the whole thing because `textAlign`, the shadow and
+ * the fill are shared canvas state — sigma reuses the same context for every
+ * other label in the frame, and a leaked `textAlign: "center"` would silently
+ * re-align them all.
+ */
+export function hoverLabelPainter(
+  scheme: ColorScheme,
+): (context: HoverLabelContext, data: HoverLabelNode, settings: HoverLabelSettings) => void {
+  return (context, data, settings) => {
+    // `nodeReducer` blanks the label of everything outside the highlight, and
+    // a node with no name has nothing to float.
+    if (data.label === null || data.label === "") return;
+    const palette = GRAPH_PALETTE[scheme];
+    context.save();
+    context.font = `${settings.labelSize}px ${settings.labelFont}`;
+    context.textAlign = "center";
+    context.shadowColor = palette.ground;
+    context.shadowBlur = HOVER_LABEL_SHADOW;
+    context.fillStyle = palette.text;
+    // `data.size` is already the *scaled* radius sigma is about to draw, so the
+    // baseline clears the disc at every zoom rather than at one of them.
+    context.fillText(data.label, data.x, data.y + data.size + settings.labelSize + HOVER_LABEL_GAP);
+    context.restore();
+  };
+}
+
 // --- the render model -------------------------------------------------------------
 
 /** A node, resolved to everything the projection needs. No decisions left. */
@@ -747,6 +854,8 @@ export interface GraphSettings {
   readonly zoomToSizeRatioFunction: (ratio: number) => number;
   readonly stagePadding: number;
   readonly allowInvalidContainer: boolean;
+  /** Ours, not sigma's white box — see {@link hoverLabelPainter}. */
+  readonly defaultDrawNodeHover: (context: HoverLabelContext, data: HoverLabelNode, settings: HoverLabelSettings) => void;
 }
 
 /**
@@ -809,6 +918,7 @@ export function graphSettings(scheme: ColorScheme): GraphSettings {
     itemSizesReference: "positions",
     zoomToSizeRatioFunction: (ratio) => ratio,
     stagePadding: COLLIDE_RADIUS,
+    defaultDrawNodeHover: hoverLabelPainter(scheme),
     // The container is a real element by construction (the renderer is mounted
     // from a `ref`), but sigma also validates that it has a non-zero size —
     // and a column that is behind a `medium` breakpoint toggle legitimately

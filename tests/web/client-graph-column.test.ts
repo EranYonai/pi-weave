@@ -26,15 +26,14 @@ import {
   FORCES_HINT,
   FORCES_LABEL,
   LEGEND,
-  clusterBadge,
   effectiveView,
   graphClick,
   graphColumnModel,
   graphCountLabel,
   graphEmptyMessage,
   highlightFor,
+  hoverHighlight,
   initialGraphView,
-  nodeTooltip,
   toggleCluster,
 } from "../../src/web/client/graph/column.model";
 import type { GraphViewState } from "../../src/web/client/graph/column.model";
@@ -335,38 +334,33 @@ describe("graphClick (§7.4)", () => {
   });
 });
 
-// --- tooltips ------------------------------------------------------------------------------------
+// --- the hover highlight (§7.4) -------------------------------------------------------------------
 
-describe("tooltips", () => {
-  it("badges a cluster with what it is standing in for", () => {
-    const reduced = clusterAggregate(SMALL_MODEL, new Set(["repository"]));
-    // `module:src` is visible and collapsed, so it represents its own subtree.
-    expect(clusterBadge(reduced.clusters.get("module:src"))).toBe("1 hidden");
+describe("hoverHighlight (§7.4)", () => {
+  const edges = SMALL.model.edges;
+
+  it("is exactly the selection's highlight, for the hovered node", () => {
+    // The claim that keeps the two gestures from drifting: hover and click ask
+    // one question and get one answer, from one function.
+    expect(hoverHighlight(edges, "note:a", null)).toEqual(highlightFor(edges, "note:a"));
   });
 
-  it("counts members, not descendants, so nothing is counted twice", () => {
-    // `descendants` overlaps freely between a cluster and its ancestors and
-    // would report the same file under both `src/core` and `repository`.
-    // `members` partitions the hidden set across the visible clusters.
-    const reduced = clusterAggregate(SMALL_MODEL, new Set());
-    const repository = reduced.clusters.get("repository")!;
-    expect(repository.descendants).toHaveLength(2);
-    expect(clusterBadge(repository)).toBe("2 hidden");
-    // `module:src` is itself hidden, so it stands in for nothing.
-    expect(clusterBadge(reduced.clusters.get("module:src"))).toBeNull();
+  it("outranks the selection while the pointer is on a node", () => {
+    const selected = highlightFor(edges, "vault");
+    expect(hoverHighlight(edges, "file:src/x.ts", selected)).toEqual(new Set(["file:src/x.ts", "module:src"]));
   });
 
-  it("has no badge for a leaf or an expanded cluster", () => {
-    expect(clusterBadge(undefined)).toBeNull();
-    expect(clusterBadge(clusterAggregate(SMALL_MODEL, ALL_OPEN.expanded).clusters.get("vault"))).toBeNull();
+  it("falls back to the selection's highlight when the pointer leaves", () => {
+    // Leaving a node restores the picture the click left, rather than clearing
+    // the canvas and making the selection look lost.
+    const selected = highlightFor(edges, "vault");
+    expect(hoverHighlight(edges, null, selected)).toBe(selected);
   });
 
-  it("reads label, degree and hidden count", () => {
-    const reduced = clusterAggregate(SMALL_MODEL, new Set());
-    const repository = SMALL.model.nodes.find((n) => n.id === "repository")!;
-    expect(nodeTooltip(repository, reduced.edges, reduced.clusters.get("repository"))).toBe("repository · 1 link · 2 hidden");
-    const vault = SMALL.model.nodes.find((n) => n.id === "vault")!;
-    expect(nodeTooltip(vault, SMALL.model.edges, undefined)).toBe("vault · 2 links");
+  it("is null with nothing hovered and nothing selected", () => {
+    // Which the reducers read as "render everything normally" — not as an
+    // empty neighbourhood, which would dim the whole graph.
+    expect(hoverHighlight(edges, null, null)).toBeNull();
   });
 });
 
