@@ -1,7 +1,7 @@
 # Link repair — keeping the vault connected
 
-Wiki-links go stale. A note gets renamed or moved, or someone writes `[[Mathieu]]` by hand while the note actually lives at
-`1-1s/mathieu`. The graph then shows an isolated note that is in fact well connected.
+Wiki-links go stale. A note gets renamed or moved, or someone writes `[[John Doe]]` by hand while the note actually lives at
+`1-1s/john-doe`. The graph then shows an isolated note that is in fact well connected.
 
 **Never reconnect a vault by reading it.** Do not search the vault note by note, infer which notes "feel related", and hand-write links.
 That is slow, costs tokens, and is not reproducible — two runs give two different answers. There is a deterministic pass that does it in
@@ -24,8 +24,8 @@ Three rules, tried in order. A rule fires only when it yields **exactly one** ca
 
 | # | Rule | Example |
 |---|------|---------|
-| 1 | exact slug | `[[1-1s/mathieu]]` — already correct, left alone |
-| 2 | unique basename | `[[mathieu]]` → `1-1s/mathieu` |
+| 1 | exact slug | `[[1-1s/john-doe]]` — already correct, left alone |
+| 2 | unique basename | `[[john-doe]]` → `1-1s/john-doe` |
 | 3 | unique slugified title | `[[Infra Roadmap]]` → `infra/roadmap-fy27` |
 
 Anything else is reported, never guessed:
@@ -37,7 +37,7 @@ Anything else is reported, never guessed:
 
 ## What a repair does and does not do
 
-- Rewrites `[[Mathieu]]` → `[[1-1s/mathieu|Mathieu]]`. The **alias preserves the visible text**, so the rendered prose is unchanged —
+- Rewrites `[[John Doe]]` → `[[1-1s/john-doe|John Doe]]`. The **alias preserves the visible text**, so the rendered prose is unchanged —
   only the target moves.
 - **Does not touch the `## Raw` tail.** A link inside dictation is the user's words, quoted. Off limits, always.
 - **Does not touch fenced code blocks.** `[[…]]` in a code sample is a string literal.

@@ -47,17 +47,17 @@ describe("scanLinks", () => {
 
 describe("normalizeTarget", () => {
   it("slugifies each path segment and keeps html identities", () => {
-    expect(normalizeTarget("1-1s/Naor Direct Report")).toBe("1-1s/naor-direct-report");
+    expect(normalizeTarget("1-1s/John Doe Report")).toBe("1-1s/john-doe-report");
     expect(normalizeTarget("./Report.HTML")).toBe("Report.HTML");
   });
 });
 
 describe("rewriteLinks", () => {
   it("preserves the visible text when repointing", () => {
-    const { body, changed } = rewriteLinks("a [[Mathieu]] b [[Mathieu|Mat]]", (t) =>
-      t === "mathieu" ? "1-1s/mathieu" : null,
+    const { body, changed } = rewriteLinks("a [[John Doe]] b [[John Doe|JD]]", (t) =>
+      t === "john-doe" ? "1-1s/john-doe" : null,
     );
-    expect(body).toBe("a [[1-1s/mathieu|Mathieu]] b [[1-1s/mathieu|Mat]]");
+    expect(body).toBe("a [[1-1s/john-doe|John Doe]] b [[1-1s/john-doe|JD]]");
     expect(changed).toBe(2);
   });
 
@@ -75,8 +75,8 @@ describe("auditLinks", () => {
   it("resolves by unique basename and by unique title", () => {
     const audit = auditLinks({
       notes: [
-        note("hub", "Hub", "[[mathieu]] and [[Infra Roadmap]] and [[1-1s/mathieu]]"),
-        note("1-1s/mathieu", "Mathieu — devNG"),
+        note("hub", "Hub", "[[john-doe]] and [[Infra Roadmap]] and [[1-1s/john-doe]]"),
+        note("1-1s/john-doe", "John Doe"),
         note("infra/roadmap-fy27", "Infra Roadmap"),
       ],
     });
@@ -84,7 +84,7 @@ describe("auditLinks", () => {
     expect(audit.resolved).toBe(1);
     expect(audit.fixable).toEqual([
       { slug: "hub", from: "infra-roadmap", to: "infra/roadmap-fy27", rule: "title", count: 1 },
-      { slug: "hub", from: "mathieu", to: "1-1s/mathieu", rule: "basename", count: 1 },
+      { slug: "hub", from: "john-doe", to: "1-1s/john-doe", rule: "basename", count: 1 },
     ]);
     expect(audit.ambiguous).toEqual([]);
     expect(audit.unresolvable).toEqual([]);
@@ -159,10 +159,10 @@ describe("auditLinks", () => {
 
   it("counts repeated occurrences of one stale target in one note", () => {
     const audit = auditLinks({
-      notes: [note("hub", "Hub", "[[mathieu]] x [[Mathieu|again]]"), note("1-1s/mathieu", "M")],
+      notes: [note("hub", "Hub", "[[john-doe]] x [[John Doe|again]]"), note("1-1s/john-doe", "John Doe")],
     });
     expect(audit.fixable).toEqual([
-      { slug: "hub", from: "mathieu", to: "1-1s/mathieu", rule: "basename", count: 2 },
+      { slug: "hub", from: "john-doe", to: "1-1s/john-doe", rule: "basename", count: 2 },
     ]);
   });
 
@@ -185,22 +185,22 @@ describe("auditLinks", () => {
 describe("repairVaultLinks", () => {
   it("reports without writing by default, then repairs on request", async () => {
     const root = await makeTempDir();
-    await addNote(root, { title: "Mathieu", body: "lead" });
-    await moveNote(root, "mathieu", null); // no-op move; folder created below
+    await addNote(root, { title: "John Doe", body: "lead" });
+    await moveNote(root, "john-doe", null); // no-op move; folder created below
     await fs.mkdir(join(root, "notes", "1-1s"), { recursive: true });
-    await moveNote(root, "mathieu", "1-1s");
-    const hub = await addNote(root, { title: "Hub", body: "see [[Mathieu]] and [[ghost]]" });
+    await moveNote(root, "john-doe", "1-1s");
+    const hub = await addNote(root, { title: "Hub", body: "see [[John Doe]] and [[ghost]]" });
 
     const dry = await repairVaultLinks(root);
     expect(dry.applied).toEqual([]);
     expect(dry.audit.fixable).toHaveLength(1);
-    expect((await getNote(root, hub.slug))?.body).toContain("[[Mathieu]]");
+    expect((await getNote(root, hub.slug))?.body).toContain("[[John Doe]]");
 
     const run = await repairVaultLinks(root, { apply: true });
     expect(run.applied).toHaveLength(1);
     expect(run.notes).toEqual(["hub"]);
     const repaired = await getNote(root, hub.slug);
-    expect(repaired?.body).toContain("[[1-1s/mathieu|Mathieu]]");
+    expect(repaired?.body).toContain("[[1-1s/john-doe|John Doe]]");
     expect(repaired?.body).toContain("[[ghost]]");
 
     // Idempotent: the second pass has nothing left to do.
@@ -212,12 +212,12 @@ describe("repairVaultLinks", () => {
   it("does not bump `updated` — a link repair is not a content edit", async () => {
     const root = await makeTempDir();
     await fs.mkdir(join(root, "notes", "1-1s"), { recursive: true });
-    await addNote(root, { title: "Mathieu", body: "lead" });
-    await moveNote(root, "mathieu", "1-1s");
+    await addNote(root, { title: "John Doe", body: "lead" });
+    await moveNote(root, "john-doe", "1-1s");
     await upsertNote(root, {
       slug: "hub",
       title: "Hub",
-      body: "see [[Mathieu]]",
+      body: "see [[John Doe]]",
       now: new Date("2020-01-01T00:00:00.000Z"),
     });
     const before = (await getNote(root, "hub"))?.updated;
@@ -228,16 +228,16 @@ describe("repairVaultLinks", () => {
   it("never rewrites inside the raw tail", async () => {
     const root = await makeTempDir();
     await fs.mkdir(join(root, "notes", "1-1s"), { recursive: true });
-    await addNote(root, { title: "Mathieu", body: "lead" });
-    await moveNote(root, "mathieu", "1-1s");
+    await addNote(root, { title: "John Doe", body: "lead" });
+    await moveNote(root, "john-doe", "1-1s");
     await addNote(root, {
       title: "Dictated",
-      body: "body [[Mathieu]]\n\n---\n\n## Raw\n\n```\nhe said [[Mathieu]]\n```\n",
+      body: "body [[John Doe]]\n\n---\n\n## Raw\n\n```\nhe said [[John Doe]]\n```\n",
     });
     await repairVaultLinks(root, { apply: true });
     const body = (await getNote(root, "dictated"))?.body ?? "";
-    expect(body).toContain("body [[1-1s/mathieu|Mathieu]]");
-    expect(body).toContain("he said [[Mathieu]]");
+    expect(body).toContain("body [[1-1s/john-doe|John Doe]]");
+    expect(body).toContain("he said [[John Doe]]");
   });
 
   it("reports an empty vault as clean", async () => {

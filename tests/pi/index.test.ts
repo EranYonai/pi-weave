@@ -641,25 +641,25 @@ describe("weave_note links action", () => {
     const vault = await makeTempDir();
     const ctx = createMockCtx(await makeTempDir());
     await withVaultEnv(vault, async () => {
-      await mock.runTool("weave_note", { action: "add", title: "Mathieu", text: "lead" }, ctx);
+      await mock.runTool("weave_note", { action: "add", title: "John Doe", text: "lead" }, ctx);
       await fs.mkdir(join(vault, "notes", "1-1s"), { recursive: true });
-      await fs.rename(join(vault, "notes", "mathieu.md"), join(vault, "notes", "1-1s", "mathieu.md"));
+      await fs.rename(join(vault, "notes", "john-doe.md"), join(vault, "notes", "1-1s", "john-doe.md"));
       await mock.runTool(
         "weave_note",
-        { action: "add", title: "Hub", text: "see [[Mathieu]] and [[ghost]]" },
+        { action: "add", title: "Hub", text: "see [[John Doe]] and [[ghost]]" },
         ctx,
       );
 
       const dry = await mock.runTool("weave_note", { action: "links" }, ctx);
       expect(dry.content[0]?.text).toContain("1 auto-fixable");
-      expect(dry.content[0]?.text).toContain("[[mathieu]] → [[1-1s/mathieu]] (basename)");
+      expect(dry.content[0]?.text).toContain("[[john-doe]] → [[1-1s/john-doe]] (basename)");
       expect(dry.content[0]?.text).toContain("1 unresolvable");
       expect(dry.details).toMatchObject({ action: "links", fixed: false, total: 2, resolved: 0 });
 
       const fixed = await mock.runTool("weave_note", { action: "links", fix: true }, ctx);
       expect(fixed.content[0]?.text).toContain("Repaired 1 link(s) across 1 note(s)");
       const got = await mock.runTool("weave_note", { action: "get", slug: "hub" }, ctx);
-      expect(got.content[0]?.text).toContain("[[1-1s/mathieu|Mathieu]]");
+      expect(got.content[0]?.text).toContain("[[1-1s/john-doe|John Doe]]");
     });
   });
 

@@ -112,7 +112,7 @@ repository for facts about code and flag the discrepancy — the note may be sta
 
 ## Repairing stale links
 
-Links break when notes are renamed, moved, or written as bare titles — `[[Mathieu]]` when the note is `1-1s/mathieu`. **Never reconnect a
+Links break when notes are renamed, moved, or written as bare titles — `[[John Doe]]` when the note is `1-1s/john-doe`. **Never reconnect a
 vault by reading every note and guessing which ones relate.** Run the deterministic pass instead:
 
 ```jsonc

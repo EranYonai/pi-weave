@@ -86,7 +86,7 @@ Useful requests include:
 
 ## Keeping the vault connected
 
-Wiki-links go stale: a note is renamed, or written as a bare title — `[[Mathieu]]` when the note lives at `1-1s/mathieu`. Pi repairs them
+Wiki-links go stale: a note is renamed, or written as a bare title — `[[John Doe]]` when the note lives at `1-1s/john-doe`. Pi repairs them
 in one deterministic pass instead of rereading the vault and guessing.
 
 ```text

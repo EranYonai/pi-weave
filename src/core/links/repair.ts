@@ -3,7 +3,7 @@
  *
  * A wiki-link goes stale for two reasons: the note it pointed at was renamed
  * or moved (and nothing rewrote the inbound links), or it was written by hand
- * as a bare title — `[[Mathieu]]` — while the note lives at `1-1s/mathieu`.
+ * as a bare title — `[[John Doe]]` — while the note lives at `1-1s/john-doe`.
  * Graph building already notices both (`GraphModel.danglingLinks`) but only
  * ever reports a count. This module resolves and repairs them.
  *
@@ -13,7 +13,7 @@
  * **exactly one** candidate to fire:
  *
  *   1. exact slug        — the target already names a note; nothing to do
- *   2. unique basename   — `mathieu` → `1-1s/mathieu`
+ *   2. unique basename   — `john-doe` → `1-1s/john-doe`
  *   3. unique slug-title — front-matter `title` slugified
  *
  * Two candidates is *ambiguous* and is reported, never guessed. Zero is
@@ -146,8 +146,8 @@ export function scanLinks(body: string): LinkOccurrence[] {
  * Rewrite link targets in a body. `resolve` returns the new slug for a
  * target, or null to leave the link alone.
  *
- * The alias is preserved — `[[Mathieu]]` becomes `[[1-1s/mathieu|Mathieu]]`
- * and `[[Mathieu|Mat]]` becomes `[[1-1s/mathieu|Mat]]` — so the rendered
+ * The alias is preserved — `[[John Doe]]` becomes `[[1-1s/john-doe|John Doe]]`
+ * and `[[John Doe|JD]]` becomes `[[1-1s/john-doe|JD]]` — so the rendered
  * prose is byte-identical before and after a repair. A human rereading the
  * note sees no diff; only the graph changes.
  */

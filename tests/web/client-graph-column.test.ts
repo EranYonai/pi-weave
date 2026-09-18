@@ -124,6 +124,32 @@ describe("canvasModel", () => {
     expect(canvas.nodes.some((n) => n.id === "repository")).toBe(true);
     expect(canvas.edges.some((e) => e.target === `note:${MAX_CANVAS_NOTES}`)).toBe(false);
   });
+
+  it("always keeps the selected note, however deep past the cap it ranks", () => {
+    // Selecting a note from the tree or search and finding an empty canvas
+    // reads as a missing note — the confusion the note cap was lifted to end.
+    const nodes = [node("vault", "vault")];
+    const edges: WireGraphEdge[] = [];
+    for (let i = 0; i <= MAX_CANVAS_NOTES; i++) {
+      nodes.push(node(`note:${i}`, "note"));
+      edges.push(edge("vault", `note:${i}`));
+    }
+    const full = viewModel(payloadOf(nodes, edges));
+    const selected = `note:${MAX_CANVAS_NOTES}`;
+
+    expect(canvasModel(full).nodes.some((n) => n.id === selected)).toBe(false);
+
+    const canvas = canvasModel(full, selected);
+    expect(canvas.nodes.some((n) => n.id === selected)).toBe(true);
+    expect(canvas.edges.some((e) => e.target === selected)).toBe(true);
+    expect(canvas.nodes.filter((n) => n.kind === "note")).toHaveLength(MAX_CANVAS_NOTES + 1);
+  });
+
+  it("ignores a selection that is not a note under the cap", () => {
+    const nodes = [node("vault", "vault"), node("note:0", "note")];
+    const canvas = canvasModel(viewModel(payloadOf(nodes, [edge("vault", "note:0")])), "repository");
+    expect(canvas.nodes.map((n) => n.id).sort()).toEqual(["note:0", "vault"]);
+  });
 });
 
 describe("initialGraphView", () => {
