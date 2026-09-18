@@ -1,9 +1,10 @@
 # weave-workspace — historical browser workspace notes
 
-> Historical record, superseded by [docs/design.md](design.md), [README.md](../README.md), and [`AGENTS.md`](../AGENTS.md). Use those documents and the current code for present behavior.
+> Historical record, superseded by [docs/design.md](design.md), [README.md](../README.md), and [`AGENTS.md`](../AGENTS.md). Use those
+> documents and the current code for present behavior.
 
-> Historical status at time of writing: **P0, P1, P2 and P3 were built and green; P4–P5 were still design.** This was the plan of record for `/weave-view`. §16 is the
-> two-minute summary of where things stand.
+> Historical status at time of writing: **P0, P1, P2 and P3 were built and green; P4–P5 were still design.** This was the plan of record for
+> `/weave-view`. §16 is the two-minute summary of where things stand.
 >
 > Scope: a local web workspace over the same `GraphModel` the TUI already uses. Notes are the product; the graph is one column of it.
 >
@@ -711,18 +712,18 @@ I checked the alternative: `graphology-layout-forceatlas2/iterate.js` contains *
 reproduce our bug. Rejected.
 
 **Big sibling branches get a second pass.** Single-centre gravity has a failure d3's example never faces: two blobs that share a root —
-measured on this repository, a 195-node `module:.okf` and a 40-node `vfolder:sessions`, connected by almost nothing — interleave at the
-same centre into one hairball (bounding-box gap **0** between their subtrees). When a model has depth-1 branches of ≥ 8 nodes
-(`BIG_BRANCH_MIN`), the layout runs twice: pass 1 is the recipe unchanged (so the ring can measure each blob's *actual* spread), then every
-branch is teleported onto its slot on a ring sized from those measurements — transport is arithmetic, not physics, because gravity alone
-moved the smallest blob only 40 % of the way in 150 anchored ticks and the tick budget is a smoothness parameter, not a quality one — and
-pass 2 relaxes the arrangement into place with each branch's gravity re-targeted onto its slot. The root group (roots, single notes, small
-twigs) keeps the origin, preserving the no-component-escapes guarantee and the five-root separation the §8 gate asserts. Measured on the
-real graph: gap **0 → 980** layout units between the summaries and sessions blobs; the gate lives in `layout.dynamics.test.ts`'s
-sibling-blobs block over `tests/fixtures/graphShapes.ts`'s `siblingBlobsGraph()`. Graphs without big branches take the exact single-pass
-path the §8 gate was written against. The live driver (`dynamics.ts`) seeds the same ring, so a released graph holds the separated
-equilibrium instead of gliding back to one centre. The positions cache is versioned (`v2`) — the shape key cannot see a recipe change under
-the same node and edge set, so the version is what discards the tangled `v1` arrangements.
+measured on this repository, a 195-node `module:.okf` and a 40-node `vfolder:sessions`, connected by almost nothing — interleave at the same
+centre into one hairball (bounding-box gap **0** between their subtrees). When a model has depth-1 branches of ≥ 8 nodes (`BIG_BRANCH_MIN`),
+the layout runs twice: pass 1 is the recipe unchanged (so the ring can measure each blob's *actual* spread), then every branch is teleported
+onto its slot on a ring sized from those measurements — transport is arithmetic, not physics, because gravity alone moved the smallest blob
+only 40 % of the way in 150 anchored ticks and the tick budget is a smoothness parameter, not a quality one — and pass 2 relaxes the
+arrangement into place with each branch's gravity re-targeted onto its slot. The root group (roots, single notes, small twigs) keeps the
+origin, preserving the no-component-escapes guarantee and the five-root separation the §8 gate asserts. Measured on the real graph: gap **0
+→ 980** layout units between the summaries and sessions blobs; the gate lives in `layout.dynamics.test.ts`'s sibling-blobs block over
+`tests/fixtures/graphShapes.ts`'s `siblingBlobsGraph()`. Graphs without big branches take the exact single-pass path the §8 gate was written
+against. The live driver (`dynamics.ts`) seeds the same ring, so a released graph holds the separated equilibrium instead of gliding back to
+one centre. The positions cache is versioned (`v2`) — the shape key cannot see a recipe change under the same node and edge set, so the
+version is what discards the tangled `v1` arrangements.
 
 ### 7.3 Where layout runs
 
@@ -970,8 +971,8 @@ strategy is: **push logic into pure modules, keep DOM shells trivial and exclude
 | Client DOM | `src/web/client/**/*.tsx` | **Outside the coverage set.** Kept to 30–50 lines each: props in, JSX out, no branching beyond rendering. |
 | End-to-end | `tests/web/smoke.test.ts` | Boot the server, `fetch /`, assert shell + CSP + bundle integrity. **No browser, no screenshots.** |
 
-Coverage excludes are listed explicitly in `vitest.config.ts` and justified in the test suite — a blanket `src/web/client/**` exclude is
-not acceptable.
+Coverage excludes are listed explicitly in `vitest.config.ts` and justified in the test suite — a blanket `src/web/client/**` exclude is not
+acceptable.
 
 **As built, this turned out cheaper than planned.** `vitest.config.ts` declares exactly **one** exclusion, `src/core/view/types.ts`, by
 exact path and with its justification inline. No `.tsx` file is excluded, because none needs to be: the coverage set is `include:
@@ -983,8 +984,8 @@ logic-free. The moment a `.tsx` file wants a branch, the branch belongs in a sib
 **The hard constraint stands: no screenshots, ever.** Any live-browser verification is JS-eval/DOM-measurement only, via the `/browse`
 skill, and stays manual — it is not part of the CI gate.
 
-**Manual checklist** (recorded here as UC11–UC16): open in a repo with no `.okf`; open with an empty vault; edit a note in
-`$EDITOR` and watch it update live; run `/weave-scan` while open; kill the pi session and confirm the port closes; open two browser tabs.
+**Manual checklist** (recorded here as UC11–UC16): open in a repo with no `.okf`; open with an empty vault; edit a note in `$EDITOR` and
+watch it update live; run `/weave-scan` while open; kill the pi session and confirm the port closes; open two browser tabs.
 
 ---
 
@@ -1064,8 +1065,8 @@ still an empty state when P2 landed, and tree + note + rail were already a worki
 
 ### P3 — Graph — ✅ **done**
 
-1. ✅ **The renderer behind a seam** — `GraphRenderer`, `sigmaRenderer` unit-tested against a recording fake, and
-   the real `new Sigma` isolated in `renderer.dom.ts`. §7.5 has the full account and the reason the literal plan was not buildable.
+1. ✅ **The renderer behind a seam** — `GraphRenderer`, `sigmaRenderer` unit-tested against a recording fake, and the real `new Sigma`
+   isolated in `renderer.dom.ts`. §7.5 has the full account and the reason the literal plan was not buildable.
 2. ✅ **graphology projection** (`project.ts`) — `multi: true`, `type: "directed"`, no re-validation, `syncPositions` as the cheap re-run
    path. §7.1 records why `multi` is load-bearing.
 3. ✅ **d3-force positions client-side** (`positions.ts`) — `GraphPayload.positions` stays `null` (§5.3), the client runs the identical
@@ -1171,8 +1172,8 @@ product decision, and none is needed to prove this one.
 
 These land **with** the phases that require them, not afterwards.
 
-> **Historical status.** The testing ledger was complete at the time. **`AGENTS.md` had not been updated** — it still described only
-> the TUI surface and still carries the stale runtime-dependency line — and `docs/design.md` §19 has not been reconciled either. Both are
+> **Historical status.** The testing ledger was complete at the time. **`AGENTS.md` had not been updated** — it still described only the TUI
+> surface and still carries the stale runtime-dependency line — and `docs/design.md` §19 has not been reconciled either. Both are
 > outstanding. **`README.md` is now overdue**: it was scheduled for P2, P2 and P3 have both landed, and it still says the browser viewer
 > "has been retired and is being rebuilt on pixi.js" and that `/weave-view` opens the terminal explorer — which is wrong on both counts
 > (§0.2 rejected pixi; §13 flipped the default to `web` in P1). The `.github/workflows/ci.yml` matrix is still `["20", "22"]` and needs the
@@ -1386,6 +1387,98 @@ or any invalidation landing mid-build all force a real rebuild.
 **Two notes for future readers.** `generatedAt` stays on the model and keeps the data-as-of job; `Shell.tsx` was repointed at it, because a
 status bar labelled "data as of" showing `a3f9c2…` would be a regression. And the ETag is now strong, which it has earned: the digest is
 taken over the exact bytes written to the socket.
+
+### 15.7 The graph force tuner — `[sliders]` / `?sliders=1` — **open**
+
+There is a slider panel over the graph column. Open it with the `[sliders]` chip, or arrive with it open via the URL:
+
+```text
+http://127.0.0.1:PORT/?sliders=1
+```
+
+**Why it exists.** The graph's arrangement is decided by seven numbers in `src/web/shared/layout.ts`, and the difference between "one
+hairball" and "legible groups" is a *ratio* between them that is far easier to see than to derive. Issue #40 is the case in point: the
+shipped constants (`containsStrength: 0.02`, `charge: -50`, `center: 0.09`) left `forceCollide` as the only force with real authority, so
+every graph settled into an evenly-packed disc with no visible cluster structure. Measured on `siblingBlobsGraph` at 300 ticks, the worst
+gap between the three big branches' bounding boxes was **−312** — the branches interleave completely.
+
+**How it works.** The constants live in one exported mutable record, `FORCES`, with the shipped values kept alongside in `FORCE_DEFAULTS`.
+`createForceSimulation` reads `FORCES` at construction, and a simulation is built fresh per layout run and per live mount, so a write lands
+on the next run. The panel writes, drops the cached layout (which is keyed by graph *shape* — a force change does not touch it, so a hit
+would make the sliders appear dead), and re-runs. Determinism is untouched: nothing else ever writes the record, so `computeLayout(model, {
+seed })` stays byte-identical for every caller and test.
+
+| Constant | What moving it does |
+| --- | --- |
+| `containsStrength` | How hard a parent holds its children. This is what makes a group *be* a group. |
+| `containsRest` | How far children sit from their parent — a rosette's radius. |
+| `relationStrength` | Pull of `links-to` / `mentions` springs across groups. Weak, or groups merge. |
+| `relationDistance` | How long those cross-group springs are. |
+| `charge` | Node-to-node repulsion (`forceManyBody`). More negative pushes harder. |
+| `chargeMax` | Distance past which repulsion stops. A cap is what keeps a strong charge from inflating the picture uniformly. |
+| `center` | `forceX`/`forceY` pull toward the origin — the no-escape guarantee. Too much and everything is one blob. |
+
+The **before** button loads `HAIRBALL` from `tuner.model.ts` — the pre-tuner constants, one click away, so the next person to open the panel
+can see what it is for without reading a changelog. **copy values** puts the current record on the clipboard as the literal that belongs in
+`layout.ts`, because transcribing seven floats by eye is where a digit gets dropped.
+
+**How it opens.** The `[sliders]` chip in the control strip, beside `[fit]`. `?sliders=1` seeds the chip's initial state — it was the only
+way in while the panel was a half-built instrument, which was the right gate then and the wrong one for a finished control. A build-time
+`define` was rejected: it breaks the byte-reproducible `build:web:check` contract for a panel that costs a few hundred bytes.
+
+### 15.8 Group colour and the selection's three tiers — ✅ **built**
+
+Once the forces separated the graph into blobs, the blobs all looked the same. Two changes, both in the colour channel.
+
+**Hue carries the group, shade carries the kind.** A group is exactly what the forces pull apart — a **depth-1 containment branch** — so
+`groups.ts` walks each node to its root and keys it by the last step before it. A node with no branch of its own (a root, a loose note, an
+island) is its own group. The branch's anchor draws at full hue, its contents step back by kind (`KIND_SHADE`), so group identity reads at a
+glance and internal structure on a second look. Provenance is deliberately untouched: it was never a hue, and AGENTS.md rule 4 wants a glyph
+that survives greyscale and colour-blindness.
+
+Hues are assigned **biggest group first**, so the largest blob gets the shell's own accent and the canvas reads as part of the app. Ties
+break on the key, so the assignment is a pure function of the graph rather than of core's output order. More groups than hues wraps the
+ring, which is honest — past eleven simultaneous groups the colour channel is saturated and position is doing the work.
+
+Unlike every other colour in the graph, these hexes are **not** mirrored from `THEME_CSS`, because nothing in the sheet paints a graph group
+and a mirror test would be theatre. The guarantee asserted instead is contrast: every hue, at every kind's shade, clears the 3:1 WCAG
+non-text minimum on its ground. That test earns its keep — it caught stock Latte mauve at 2.98 under the `external` shade, and the whole
+light row is deepened as a result (stock Latte accents sit at 2.3–3.0 on `#eff1f5`, invisible as a 6-pixel disc).
+
+Toggle it with **colour by group** in the tuner panel; the choice persists under its own storage key, deliberately separate from the
+position cache so tuning the physics cannot reset the palette.
+
+**The selection now has three tiers, not two.** `focusNeighborhood` returns the selection *plus* its neighbours, and painting those
+identically lost the one fact the click was about. Now: the selected node grows 1.45× and lifts clear of everything; a connected node grows
+1.15× and lifts above the cloud; edges *incident on the selection* take the accent and outrank edges merely joining two neighbours. Growth
+is a ratio, not a fixed radius, so the degree ramp survives — selecting a leaf must not make it the biggest thing on the stage. Everything
+outside still recedes rather than hiding, for the reason it always did.
+
+### 15.9 A long press is not a drag — ✅ **fixed**
+
+Pressing and holding a node made every *other* node swim, and at the stronger post-tuner forces, orbit. `alphaTarget` is a **floor, not a
+decay**: held above the alpha floor it feeds the simulation energy indefinitely, and `pin()` set it unconditionally. d3's own drag example
+gets away with that because its `drag` subject only fires on real movement; sigma's `downNode` + `moveBody` pair also fires on a stationary
+press, so the distinction has to be made in `dynamics.ts`.
+
+Now `pin()` compares against the previous pin and only heats when the pointer has actually travelled more than `PIN_STILL` (half a layout
+unit — well under a screen pixel at any usable zoom, so it cannot swallow a real drag). Holding still releases the target to 0 and lets the
+graph cool *under* the held node, which is what a press should do. Measured on `repoLikeGraph`: 93 of 94 nodes displaced by a mean of 70
+units and never settling, against a max of under 3 units and asleep. The first pin of a gesture still counts as movement, or the opening
+frames of a real drag would be dead.
+
+**The constants are frozen (§15.7 closed).** Found through the sliders and written into `FORCES`: `containsStrength 0.12`, `containsRest
+55`, `relationStrength 0.07`, `relationDistance 50`, `charge -200`, `chargeMax 800`, `center 0.05`. Worst branch gap on `siblingBlobsGraph`
+**−312 → +39**, on `repoLikeGraph` **−274 → +133**. `POSITIONS_STORAGE_KEY` went to `v4`, because a stored layout describes the old physics
+and the shape key digests nodes and edges, neither of which a force change touches. The tuner stays, behind the `[sliders]` chip; its
+**before** button loads the pre-tuner constants (`HAIRBALL`) for comparison.
+
+### 15.10 The `[collapse]` control is gone — ✅ **removed**
+
+The graph opens fully expanded (`initialGraphView`), so the toggle's two halves were a no-op on arrival and, once pressed, a control that
+threw the whole picture away to show two root nodes. Clicking a collapsed cluster still expands it (`graphClick`) and per-level walking is
+what the tree column is for, so nothing is unreachable. `expandAll`, `collapseAll`, `allExpanded`, `toggleExpandAll`, `expandLabel` and
+`expandHint` were deleted with it rather than left exported-but-unused, along with their tests. `[sliders]` took the slot.
 
 ---
 

@@ -10,6 +10,7 @@
  * | POST   | `/api/note/:slug/rename` | rename a vault note                          |
  * | POST   | `/api/note/:slug/move`   | move a vault note                            |
  * | DELETE | `/api/note/:slug`        | delete a vault note                          |
+ * | POST   | `/api/folder/:path`        | create a vault folder                      |
  * | POST   | `/api/folder/:path/rename` | rename a vault folder                      |
  * | DELETE | `/api/folder/:path`      | delete a vault folder                        |
  * | GET    | `/api/okf/:rel`          | {@link OkfFilePayload}                       |
@@ -51,7 +52,7 @@ import type { GraphModel as CoreGraphModel } from "../../core/graph/model";
 import { openNoteInEditor } from "../../core/openInEditor";
 import type { Note } from "../../core/types";
 import type { VaultMutationResult } from "../../core/vault";
-import { deleteFolder, deleteNote, getNote, moveNote, renameFolder, renameNote, resolveHtmlPath, searchNotes } from "../../core/vault";
+import { createFolder, deleteFolder, deleteNote, getNote, moveNote, renameFolder, renameNote, resolveHtmlPath, searchNotes } from "../../core/vault";
 import { deriveTagIndex, type TaggedNote } from "../../core/view/links";
 import type {
   GraphPayload,
@@ -586,6 +587,10 @@ async function routeFolder(deps: RouteDeps, method: string, target: string, req:
     const name = typeof body === "object" && body !== null ? (body as { name?: unknown }).name : undefined;
     if (typeof name !== "string") sendJson(res, 400, { error: "expected { name: string }" });
     else sendMutation(res, await renameFolder(deps.vaultRoot, path, name));
+    return true;
+  }
+  if (method === "POST" && !isRename) {
+    sendMutation(res, await createFolder(deps.vaultRoot, path));
     return true;
   }
   return false;

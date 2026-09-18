@@ -23,14 +23,11 @@ import {
   EMPTY_COLUMN,
   FIT_HINT,
   FIT_LABEL,
+  FORCES_HINT,
+  FORCES_LABEL,
   LEGEND,
-  allExpanded,
   clusterBadge,
-  collapseAll,
   effectiveView,
-  expandAll,
-  expandHint,
-  expandLabel,
   graphClick,
   graphColumnModel,
   graphCountLabel,
@@ -39,7 +36,6 @@ import {
   initialGraphView,
   nodeTooltip,
   toggleCluster,
-  toggleExpandAll,
 } from "../../src/web/client/graph/column.model";
 import type { GraphViewState } from "../../src/web/client/graph/column.model";
 import type { PositionStorage } from "../../src/web/client/graph/positions";
@@ -188,20 +184,6 @@ describe("expansion reducers", () => {
     expect(next).not.toBe(ALL_SHUT);
   });
 
-  it("expands every cluster at once, not one level", () => {
-    // `clusters` holds every node with a containment child whether visible or
-    // not, so one press opens the whole tree. A control that needed six
-    // presses would be a worse version of the tree column.
-    const opened = expandAll(ALL_SHUT, clusters);
-    for (const id of clusters.keys()) expect(opened.expanded.has(id), id).toBe(true);
-    expect(clusterAggregate(SMALL_MODEL, opened.expanded).nodes).toHaveLength(SMALL_MODEL.nodes.length);
-  });
-
-  it("collapses back to the roots", () => {
-    expect(collapseAll(ALL_OPEN).expanded.size).toBe(0);
-    expect(clusterAggregate(SMALL_MODEL, collapseAll(ALL_OPEN).expanded).nodes.map((n) => n.id)).toEqual(["vault", "repository"]);
-  });
-
 });
 
 // --- the highlight (§1.3, §7.4) ---------------------------------------------------------
@@ -276,33 +258,12 @@ describe("the §1.3 context bus reaches the graph", () => {
 // --- the control strip (§1.2) ----------------------------------------------------------------
 
 describe("the control strip (§1.2)", () => {
-  const clusters = clusterAggregate(SMALL_MODEL, new Set()).clusters;
-
-  it("labels the expand control by what pressing it will do", () => {
-    expect(expandLabel(false)).toBe("expand");
-    expect(expandLabel(true)).toBe("collapse");
-    expect(expandHint(false)).toContain("expand");
-    expect(expandHint(true)).toContain("collapse");
-  });
-
-  it("knows when everything is open", () => {
-    expect(allExpanded(ALL_OPEN, clusters)).toBe(true);
-    expect(allExpanded(ALL_SHUT, clusters)).toBe(false);
-    expect(allExpanded(toggleCluster(ALL_OPEN, "vault"), clusters)).toBe(false);
-  });
-
-  it("reports a graph with no clusters as not-all-expanded", () => {
-    // Otherwise a flat graph would render a `collapse` button that does
-    // nothing, which reads as broken.
-    expect(allExpanded(ALL_SHUT, new Map())).toBe(false);
-  });
-
-  it("pairs the toggle's effect with its label, in one place", () => {
-    // The label and the action read the same predicate, so they cannot
-    // disagree — a `collapse` button that expands is the classic version of
-    // this bug.
-    expect(allExpanded(toggleExpandAll(ALL_SHUT, clusters), clusters)).toBe(true);
-    expect(toggleExpandAll(ALL_OPEN, clusters).expanded.size).toBe(0);
+  it("names both chips", () => {
+    // `[expand]`/`[collapse]` is gone (§15.10): the graph arrives fully
+    // expanded, so one half was a no-op and the other threw the picture away
+    // to show two roots. `[forces]` took its slot.
+    expect(FORCES_LABEL).toBe("sliders");
+    expect(FORCES_HINT).toContain("tune");
   });
 
   it("names the fit control and the legend", () => {

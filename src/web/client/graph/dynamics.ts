@@ -40,6 +40,16 @@ const DRAG_ALPHA_TARGET = 0.2;
 const ALPHA_MIN = 0.001;
 
 /**
+ * How far the pin must travel, in layout units, to count as a drag rather
+ * than a held press.
+ *
+ * Half a layout unit is well under one screen pixel at any zoom a person
+ * uses, so this cannot swallow a real drag — but it does swallow the
+ * identical-coordinate repeats a stationary press produces. See `pin`.
+ */
+const PIN_STILL = 0.5;
+
+/**
  * Build a live simulation over a {@link RenderGraph}.
  *
  * `initial`, when given, is the warm start: existing ids keep their current
@@ -111,9 +121,20 @@ export function createGraphSimulation(graph: RenderGraph, initial?: ReadonlyMap<
       // make room, then cool on release. A pinned node is immune to every
       // force — the drag must not fight the sim, or the node would shudder
       // under its own neighbours.
+      const still = node.fx != null && node.fy != null && Math.abs(node.fx - at.x) < PIN_STILL && Math.abs(node.fy - at.y) < PIN_STILL;
       node.fx = at.x;
       node.fy = at.y;
-      sim.alphaTarget(DRAG_ALPHA_TARGET);
+      // Heat only while the pointer is actually *travelling*. `alphaTarget` is
+      // a floor, not a decay: held above the alpha floor it feeds the system
+      // energy forever, so a long press with a still cursor kept every other
+      // node swimming (measured: 93 of 94 nodes moving, mean 70 units, never
+      // settling) and — once the forces got strong enough to separate groups
+      // — orbiting each other. d3's example gets away with the unconditional
+      // hold because its `drag` subject only fires on real movement; sigma's
+      // `downNode` + `moveBody` pair does not, so the distinction is made
+      // here. Releasing the target to 0 while the node stays pinned lets the
+      // graph cool *under* the held node, which is what a press should do.
+      sim.alphaTarget(still ? 0 : DRAG_ALPHA_TARGET);
     },
 
     release(id) {

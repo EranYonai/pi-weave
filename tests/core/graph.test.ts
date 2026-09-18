@@ -576,4 +576,20 @@ describe("buildGraph — nested vault notes", () => {
     const contains = model.edges.filter((e) => e.kind === "contains");
     expect(contains).toContainEqual({ source: "vault", target: "vfolder:empty-folder", kind: "contains" });
   });
+
+  it("warns on folders whose notes are omitted by maxNotes truncation", async () => {
+    const { buildGraph } = await import("../../src/core/graph/build");
+    const note = (slug: string): import("../../src/core/graph/build").BuildGraphInput["notes"][number] => ({
+      slug, title: slug, body: "", created: "", updated: "2026-01-01", tags: [], source: "generated",
+    });
+    const model = buildGraph({
+      vault: { root: "/v", exists: true, noteCount: 2, folders: ["plans"] },
+      notes: [note("plans/a"), note("plans/b")],
+      repository: null,
+    }, { maxNotes: 1 });
+    const folder = model.nodes.find((n) => n.id === "vfolder:plans");
+    expect(folder).toBeDefined();
+    expect(folder?.detail.notes).toBe("1");
+    expect(folder?.detail.warning).toContain("1 older note(s) in this folder omitted by note limit");
+  });
 });

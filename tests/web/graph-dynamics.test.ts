@@ -260,3 +260,51 @@ describe("graph dynamics", () => {
     expect(displacement(warm, sim.positions())).toBeLessThan(6 * 2 * COLLIDE_RADIUS);
   });
 });
+
+describe("a long press is not a drag", () => {
+  it("lets the graph cool while a node is held still", () => {
+    // The reported bug: press and hold a note, move nothing, and every other
+    // node swims — and never stops. `alphaTarget` is a floor, not a decay, so
+    // holding it up feeds the system energy forever; d3's own example gets
+    // away with it because its `drag` subject only fires on real movement,
+    // while sigma's `downNode` + `moveBody` pair also fires on a still press.
+    // Measured before the fix on `repoLikeGraph`: 93 of 94 nodes displaced,
+    // mean 70 units, still awake. After: max under 3 units, and asleep.
+    const sim = createGraphSimulation(graph([{ id: "a", x: 0, y: 0 }, { id: "b", x: 60, y: 0 }, { id: "c", x: 0, y: 60 }]))!;
+    settle(sim);
+    const before = sim.positions();
+    const held = before.get("a")!;
+    for (let i = 0; i < 400; i++) {
+      sim.pin("a", held);
+      sim.tick();
+    }
+    expect(displacement(before, sim.positions())).toBeLessThan(2);
+    expect(sim.awake()).toBe(false);
+  });
+
+  it("still heats the simulation the moment the pointer actually moves", () => {
+    const sim = createGraphSimulation(graph([{ id: "a", x: 0, y: 0 }, { id: "b", x: 60, y: 0 }]))!;
+    settle(sim);
+    const held = sim.positions().get("a")!;
+    // Hold still until the graph has cooled back to sleep under the press.
+    for (let i = 0; i < 400; i++) {
+      sim.pin("a", held);
+      sim.tick();
+    }
+    expect(sim.awake()).toBe(false);
+    // One real move past the stillness threshold, and the drag is live again.
+    sim.pin("a", { x: held.x + 40, y: held.y + 40 });
+    expect(sim.awake()).toBe(true);
+  });
+
+  it("treats the first pin of a gesture as movement", () => {
+    // `downNode` pins at the cursor before any `moveBody`; with no previous
+    // pin there is nothing to compare against, so it must heat rather than be
+    // mistaken for a still hold and leave the first drag frames dead.
+    const sim = createGraphSimulation(graph([{ id: "a", x: 0, y: 0 }, { id: "b", x: 60, y: 0 }]))!;
+    settle(sim);
+    expect(sim.awake()).toBe(false);
+    sim.pin("a", { x: 5, y: 5 });
+    expect(sim.awake()).toBe(true);
+  });
+});

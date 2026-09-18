@@ -40,6 +40,7 @@ export {
 export {
   addNote,
   appendToNote,
+  createFolder,
   deleteFolder,
   deleteNote,
   extractRawTail,

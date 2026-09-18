@@ -326,5 +326,6 @@ const folderUrl = (path: string, suffix = ""): string => `/api/folder/${path.spl
 export const renameNote = (fetchImpl: FetchLike, slug: string, name: string) => mutation(fetchImpl, noteUrl(slug, "/rename"), "POST", { name });
 export const moveNote = (fetchImpl: FetchLike, slug: string, folder: string | null) => mutation(fetchImpl, noteUrl(slug, "/move"), "POST", { folder });
 export const deleteNote = (fetchImpl: FetchLike, slug: string) => mutation(fetchImpl, noteUrl(slug), "DELETE");
+export const createFolder = (fetchImpl: FetchLike, path: string) => mutation(fetchImpl, folderUrl(path), "POST");
 export const renameFolder = (fetchImpl: FetchLike, path: string, name: string) => mutation(fetchImpl, folderUrl(path, "/rename"), "POST", { name });
 export const deleteFolder = (fetchImpl: FetchLike, path: string) => mutation(fetchImpl, folderUrl(path), "DELETE");

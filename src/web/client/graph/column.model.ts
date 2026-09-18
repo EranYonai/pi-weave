@@ -46,6 +46,7 @@ import type { GraphPayload, WireGraphEdge, WireGraphNode } from "../../shared/wi
 import { viewModel } from "../tree/tree.model";
 import type { ColorScheme, RenderGraph } from "./graph.model";
 import { EMPTY_RENDER_GRAPH, renderGraph } from "./graph.model";
+import { groupNodeColors } from "./groups";
 import type { PositionStorage } from "./positions";
 import { resolveLayout } from "./positions";
 
@@ -108,29 +109,19 @@ export function effectiveView(payload: GraphPayload | null, state: GraphViewStat
   return initialGraphView(viewModel(payload));
 }
 
-/** Open or close one cluster. Returns a new state; see {@link expandAll}. */
+/**
+ * Open or close one cluster. Returns a new state.
+ *
+ * The `[expand]` / `[collapse]` control that used to pair with this is gone
+ * (§15.10): the graph opens fully expanded, so "expand" was a no-op on arrival
+ * and "collapse" threw the whole picture away to show two root nodes. Clicking
+ * a collapsed cluster still opens it — that is `graphClick` — and per-level
+ * walking is what the tree column is for.
+ */
 export function toggleCluster(state: GraphViewState, id: string): GraphViewState {
   const expanded = new Set(state.expanded);
   if (!expanded.delete(id)) expanded.add(id);
   return { ...state, expanded };
-}
-
-/**
- * Open every cluster. The `[expand]` control from the §1.2 mock.
- *
- * `clusters` is `ClusterAggregate.clusters`, which holds **every** node with a
- * containment child whether or not it is currently visible — so one press
- * opens the whole tree rather than one level of it. That is deliberate: the
- * per-level walk is what the tree column is for, and a graph control that
- * needed six presses to show the graph would be a worse version of it.
- */
-export function expandAll(state: GraphViewState, clusters: ReadonlyMap<string, ClusterInfo>): GraphViewState {
-  return { ...state, expanded: new Set(clusters.keys()) };
-}
-
-/** Close every cluster, back to the roots. The other half of `[expand]`. */
-export function collapseAll(state: GraphViewState): GraphViewState {
-  return { ...state, expanded: new Set() };
 }
 
 // --- the highlight (§1.3, §7.4) ---------------------------------------------------------
@@ -162,39 +153,20 @@ export function highlightFor(edges: readonly WireGraphEdge[], selectedId: string
 
 // --- the control strip (§1.2) ---------------------------------------------------------------
 
-/** The `[expand]` control's label, which is really a toggle. */
-export function expandLabel(allExpanded: boolean): string {
-  return allExpanded ? "collapse" : "expand";
-}
-
-/** Its tooltip. */
-export function expandHint(allExpanded: boolean): string {
-  return allExpanded ? "collapse every cluster back to the roots" : "expand every cluster";
-}
-
-/** Whether every cluster in the graph is currently open. */
-export function allExpanded(state: GraphViewState, clusters: ReadonlyMap<string, ClusterInfo>): boolean {
-  if (clusters.size === 0) return false;
-  for (const id of clusters.keys()) if (!state.expanded.has(id)) return false;
-  return true;
-}
-
-/**
- * What the `[expand]` control does when pressed.
- *
- * One function rather than a ternary in the component, for §10's reason: the
- * choice between expanding and collapsing is a branch, and a branch in a
- * `.tsx` is a branch no test can reach. It is also the *only* place the
- * toggle's two halves are paired, so its label and its effect cannot disagree
- * — {@link expandLabel} reads the same predicate.
- */
-export function toggleExpandAll(state: GraphViewState, clusters: ReadonlyMap<string, ClusterInfo>): GraphViewState {
-  return allExpanded(state, clusters) ? collapseAll(state) : expandAll(state, clusters);
-}
-
 /** The `[fit]` control. Constant, but named here so the component holds no copy. */
 export const FIT_LABEL = "fit";
 export const FIT_HINT = "frame the whole graph";
+
+/**
+ * The `[sliders]` control, which shows and hides the tuner panel (§15.7).
+ *
+ * Labelled for what the button *opens* rather than for what the panel edits:
+ * "forces" names the physics, which is the one thing a reader who has not read
+ * `layout.ts` has no word for. The constants keep the `FORCES_` prefix because
+ * the module they drive is still the force layout.
+ */
+export const FORCES_LABEL = "sliders";
+export const FORCES_HINT = "tune the layout physics and colours";
 
 /**
  * The legend under the canvas, from the §1.2 mock:
@@ -300,6 +272,16 @@ export function graphColumnModel(
   // Optional so every existing caller and test keeps its shape; only the
   // shell's boot-failure signal has a reason to pass it.
   bootFailed = false,
+  /**
+   * Colour nodes by their group's hue rather than by kind (§15.8).
+   *
+   * A parameter rather than a constant because it is a taste decision the
+   * user owns — the kind palette is three greys and an accent, which is calm
+   * but says nothing about which blob is which. Defaults to `true`: the
+   * grouping is what the forces went to the trouble of separating, so leaving
+   * it uncoloured by default would waste the layout.
+   */
+  groupColors = true,
 ): GraphColumnModel {
   if (payload === null)
     // Identity preserved on the ordinary path (`EMPTY_COLUMN` is compared by
@@ -311,9 +293,13 @@ export function graphColumnModel(
   const vaultOpen = state.expanded.has("vault");
   const edges = vaultOpen ? reduced.edges.filter((edge) => edge.source !== "vault" && edge.target !== "vault") : reduced.edges;
   const layout = resolveLayout(storage, reduced.nodes, edges);
+  // Over the *reduced* nodes and the same edges the layout used, so a
+  // collapsed cluster is coloured by the group it stands in for rather than
+  // by a branch that is not on screen.
+  const fills = groupColors ? groupNodeColors(reduced.nodes, edges, scheme) : undefined;
 
   return {
-    graph: renderGraph(reduced.nodes, edges, layout.positions, scheme),
+    graph: renderGraph(reduced.nodes, edges, layout.positions, scheme, fills),
     highlight: highlightFor(edges, selectedId),
     key: layout.key,
     cached: layout.cached,

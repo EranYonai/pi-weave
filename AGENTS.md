@@ -67,11 +67,15 @@ pi --mode rpc -e ./src/pi/index.ts                        # machine-driven smoke
 Smoke expectation: on session start pi's status line shows `🕸️ vault:N · repo:unindexed|ok|stale` and, in an unindexed repo, an info
 notification suggests exploring.
 
+**The graph has a force tuner**, behind the `[sliders]` chip in the graph column (or `?sliders=1` on the URL). Sliders over the seven
+constants in `src/web/shared/layout.ts`, applied live, plus the group-colour toggle. The constants are chosen by eye, not derived — see
+docs/weave-workspace.md §15.7–§15.8 for what each one does, the frozen values, and how to re-freeze after retuning.
+
 ## Style
 
 - TypeScript strict (`noUncheckedIndexedAccess`, `exactOptionalPropertyTypes`).
 - ESM. Extensionless relative imports (jiti and vitest both resolve them).
 - Dependencies: keep near-zero. Runtime deps today: `typebox`, `@earendil-works/pi-ai`. Anything new needs a justification in the PR.
-- The custom TUI surface is `/weave-view tui`: a keyboard-driven explorer over the same GraphModel the
-  browser viewer uses. Its pure view-model lives in `src/pi/viewer/tui/model.ts` (harness-free); `WeaveWorkspace` is the thin input/render
-  shell. Tool output outside the explorer is still plain text.
+- The custom TUI surface is `/weave-view tui`: a keyboard-driven explorer over the same GraphModel the browser viewer uses. Its pure
+  view-model lives in `src/pi/viewer/tui/model.ts` (harness-free); `WeaveWorkspace` is the thin input/render shell. Tool output outside the
+  explorer is still plain text.
