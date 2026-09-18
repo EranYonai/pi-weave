@@ -10,8 +10,10 @@ import { readSummaryMap } from "../../src/core/summaries";
 import {
   createLlmSummarizer,
   deepScanRepository,
+  emptySummaryReason,
   formatDeepScanResult,
 } from "../../src/pi/summarize";
+import type { AssistantMessage } from "@earendil-works/pi-ai";
 import { commitAll, createMockCtx, gitInit, makeTempDir, writeFixture } from "../helpers";
 import * as fs from "node:fs/promises";
 
@@ -65,6 +67,33 @@ describe("createLlmSummarizer", () => {
     const ctx = ctxWithModel("/x", async () => fauxAssistantMessage("   \n  "));
     const llm = createLlmSummarizer(asExtensionCtx(ctx));
     await expect(llm!.summarize({ path: "a.ts", content: "x" })).rejects.toThrow("empty summary");
+  });
+
+  it("names the cause of an empty completion instead of repeating one opaque string", () => {
+    // A whole scan failing "85 failed: model returned an empty summary" is an
+    // outage with the evidence thrown away. Auth failure, a reasoning model
+    // exhausting its budget, and a plain empty reply all reach this path, and
+    // the response distinguishes them — so the message must too.
+    const reply = (over: Partial<AssistantMessage>): AssistantMessage =>
+      ({ ...fauxAssistantMessage(""), ...over }) as AssistantMessage;
+
+    expect(emptySummaryReason(reply({ stopReason: "error", errorMessage: "401 unauthorized" }), 3000))
+      .toBe("model call failed: 401 unauthorized");
+    expect(emptySummaryReason(reply({ stopReason: "error" }), 3000))
+      .toBe("model call failed with no error detail");
+
+    // Reasoning tokens are billed against the same budget as the answer.
+    const burned = emptySummaryReason(
+      reply({ stopReason: "length", usage: { ...fauxAssistantMessage("").usage, reasoning: 3000 } }),
+      3000,
+    );
+    expect(burned).toContain("3000 tokens");
+    expect(burned).toContain("lower the thinking level");
+
+    expect(emptySummaryReason(reply({ stopReason: "length" }), 3000))
+      .toBe("model hit the 3000-token cap before producing a summary");
+    expect(emptySummaryReason(reply({ stopReason: "stop" }), 3000))
+      .toContain("stopReason: stop");
   });
 
   it("honors an injected deps.complete over the registry (unit-test seam)", async () => {

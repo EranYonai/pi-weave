@@ -82,12 +82,40 @@ export function createModelSummarizer(
       { maxTokens: maxOutputTokens, signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS) },
     );
     const text = contentText(message.content).trim();
-    if (text.length === 0) {
-      throw new Error("model returned an empty summary");
-    }
+    if (text.length === 0) throw new Error(emptySummaryReason(message, maxOutputTokens));
     return text;
   };
   return { summarize, label };
+}
+
+/**
+ * Explain an empty completion using what the response actually carries.
+ *
+ * "model returned an empty summary" is true of every failure mode here and
+ * diagnostic of none: an auth error, a reasoning model that spent its whole
+ * budget thinking, and a refusal all produce zero text blocks. Reporting that
+ * bare string once is unhelpful; reporting it 85 times, once per session, is
+ * an outage with no evidence attached. The provider already distinguishes
+ * these through `stopReason`, `errorMessage` and the reasoning-token count,
+ * so the message says which one happened and what to do about it.
+ */
+export function emptySummaryReason(message: AssistantMessage, maxOutputTokens: number): string {
+  const detail = message.errorMessage?.trim();
+  if (message.stopReason === "error") {
+    return `model call failed${detail ? `: ${detail}` : " with no error detail"}`;
+  }
+  // Reasoning tokens are billed against the same budget as output, so a model
+  // thinking at a high effort level can exhaust it before emitting any text.
+  const reasoning = message.usage?.reasoning ?? 0;
+  if (message.stopReason === "length") {
+    return reasoning > 0
+      ? `model spent its entire ${maxOutputTokens}-token budget on reasoning (${reasoning} tokens) and produced no summary — lower the thinking level or raise the cap`
+      : `model hit the ${maxOutputTokens}-token cap before producing a summary`;
+  }
+  if (reasoning > 0) {
+    return `model returned only reasoning (${reasoning} tokens), no summary text`;
+  }
+  return `model returned an empty summary (stopReason: ${message.stopReason})${detail ? `: ${detail}` : ""}`;
 }
 
 /** Create the file summarizer for deep scans, or null when no model is active. */
