@@ -104,6 +104,80 @@ export function rowsFor(payload: GraphPayload | null, state: TreeViewState): Tre
   return treeRows(viewModel(payload), state);
 }
 
+// --- the draft folder row ------------------------------------------------------------
+
+/**
+ * The id of the placeholder row a pending "New folder" occupies.
+ *
+ * A real id from the same namespace as the rest of the tree, so the row is an
+ * ordinary `TreeRow` that renders, indents and takes the rename input with no
+ * special-casing anywhere below {@link withDraftRow}. It cannot collide with a
+ * folder the vault holds, because `slugify` strips the leading `\u0000`.
+ */
+export const DRAFT_FOLDER_ID = "vfolder:\u0000draft";
+
+/**
+ * Where a new folder created from `target` would go.
+ *
+ * A right-click on the vault makes a top-level folder; on a folder, a child of
+ * it; on a *note*, a sibling of that note — which is what "new folder here"
+ * means when "here" is a file. Returns the parent path, `""` for the root.
+ */
+export function newFolderParent(target: { type: "note" | "folder" | "vault"; path: string }): string {
+  if (target.type === "vault") return "";
+  if (target.type === "folder") return target.path;
+  return target.path.split("/").slice(0, -1).join("/");
+}
+
+/** The path `createFolder` should be asked for, given a parent and a typed name. */
+export function newFolderPath(parent: string, name: string): string | null {
+  const trimmed = name.trim();
+  if (trimmed === "") return null;
+  return parent === "" ? trimmed : `${parent}/${trimmed}`;
+}
+
+/**
+ * Splice a draft folder row into the list, under its parent.
+ *
+ * This is what replaces the `window.prompt`. Renaming is already inline (click
+ * a row, type, Enter) and a modal for the adjacent gesture was the odd one
+ * out — it also blocks the thread, cannot be styled, and on a folder deep in
+ * the tree gives no clue *where* the folder will land. A draft row shows the
+ * answer: it sits at the position the real folder will occupy, indented under
+ * the right parent, with the cursor in it.
+ *
+ * Created only after the name is committed, so an abandoned draft leaves
+ * nothing behind — the alternative (create "untitled", then rename) litters
+ * the vault on Escape and fires two requests for one gesture.
+ *
+ * The draft goes **last among its parent's subtree** rather than in sort
+ * position, because it has no name yet to sort by and a row that jumps as you
+ * type is worse than one that appears at a predictable place.
+ */
+export function withDraftRow(rows: readonly TreeRow[], parent: string | null): TreeRow[] {
+  if (parent === null) return [...rows];
+  const draft: TreeRow = {
+    id: DRAFT_FOLDER_ID,
+    depth: parent === "" ? 1 : parent.split("/").length + 1,
+    hasKids: false,
+    expanded: false,
+    label: "",
+    kind: "module",
+    provenance: null,
+    meta: null,
+  };
+  // The root's draft goes after the whole tree; a folder's goes after the last
+  // row that is still inside that folder. `treeRows` emits a subtree
+  // contiguously, so "the last row at greater depth after the parent" is the
+  // end of it.
+  if (parent === "") return [...rows, draft];
+  const at = rows.findIndex((row) => row.id === `vfolder:${parent}`);
+  if (at === -1) return [...rows, draft];
+  let end = at + 1;
+  while (end < rows.length && (rows[end] as TreeRow).depth > (rows[at] as TreeRow).depth) end++;
+  return [...rows.slice(0, end), draft, ...rows.slice(end)];
+}
+
 // --- reducers -----------------------------------------------------------------------
 
 /**

@@ -8,6 +8,7 @@ import { ICON_BOX, ICON_STROKE, ICONS } from "../shell/icons.model";
 import type { IconName } from "../shell/icons.model";
 import type { GraphPayload } from "../../shared/wire";
 import {
+  DRAFT_FOLDER_ID,
   FILTER_HINT,
   FILTER_LABEL,
   FILTER_PLACEHOLDER,
@@ -20,6 +21,9 @@ import {
   dropFolder,
   expand,
   initialTreeView,
+  newFolderParent,
+  newFolderPath,
+  withDraftRow,
   internalsHint,
   internalsLabel,
   mutableTreeRow,
@@ -80,6 +84,7 @@ function Row({ view, recentIds, edit, onEdit, onRename, onSelect, onToggle, onMe
       style={depthVar(view.depth)}
       onClick={onSelect}
       draggable={view.id.startsWith("note:")}
+      aria-label={view.id === DRAFT_FOLDER_ID ? "New folder" : undefined}
       onDragStart={(event) => event.dataTransfer?.setData("text/plain", view.id)}
       onDragOver={folder === undefined ? undefined : (event) => event.preventDefault()}
       onDrop={folder === undefined ? undefined : (event) => { event.preventDefault(); onDrop(event.dataTransfer?.getData("text/plain") ?? ""); }}
@@ -90,7 +95,7 @@ function Row({ view, recentIds, edit, onEdit, onRename, onSelect, onToggle, onMe
       </span>
       <span class="weave-kind" aria-hidden="true"><Icon name={view.kindIcon} class="weave-icon" /></span>
       <span class={`weave-prov weave-prov-${view.provenance ?? "none"}`} title={view.provenanceTitle}>{view.provenanceGlyph}</span>
-      {edit === null ? <span class="weave-label">{view.label}</span> : <input class="weave-tree-rename" value={edit} autoFocus onClick={(event) => event.stopPropagation()} onInput={(event) => onEdit(event.currentTarget.value)} onBlur={(event) => onRename(event.currentTarget.value)} onKeyDown={(event) => { event.stopPropagation(); if (event.key === "Enter") event.currentTarget.blur(); else if (event.key === "Escape") onRename(null); }} />}
+      {edit === null ? <span class="weave-label">{view.label}</span> : <input class="weave-tree-rename" value={edit} autoFocus placeholder={view.id === DRAFT_FOLDER_ID ? "New folder name…" : undefined} onClick={(event) => event.stopPropagation()} onInput={(event) => onEdit(event.currentTarget.value)} onBlur={(event) => onRename(event.currentTarget.value)} onKeyDown={(event) => { event.stopPropagation(); if (event.key === "Enter") event.currentTarget.blur(); else if (event.key === "Escape") onRename(null); }} />}
       <span class="weave-meta">{view.meta}</span>
     </li>
   );
@@ -100,7 +105,14 @@ export function Tree(props: TreeProps) {
   const [state, setState] = useState(initialTreeView);
   const [menu, setMenu] = useState<{ id: string; label: string; x: number; y: number } | null>(null);
   const [editing, setEditing] = useState<{ id: string; label: string; value: string } | null>(null);
-  const rows = rowsFor(props.graph, state);
+  /**
+   * The parent path a pending "New folder" will be created under, or `null`.
+   *
+   * The folder is not created until the name is committed — see
+   * {@link withDraftRow}. Escaping leaves nothing behind.
+   */
+  const [draft, setDraft] = useState<string | null>(null);
+  const rows = withDraftRow(rowsFor(props.graph, state), draft);
   const empty = treeEmptyMessage(props.graph, rows, state);
   const run = async (pending: ReturnType<typeof deleteNote>, select?: string): Promise<void> => {
     const result = await pending;
@@ -117,18 +129,48 @@ export function Tree(props: TreeProps) {
     setMenu(null);
     if (target === null) return;
     if (action === "newFolder") {
-      const name = window.prompt("Folder name:")?.trim();
-      if (!name) return;
-      const parent = target.type === "vault" ? "" : target.type === "folder" ? target.path : target.path.split("/").slice(0, -1).join("/");
-      const targetPath = parent ? `${parent}/${name}` : name;
-      if (parent) setState((current) => expand(current, `vfolder:${parent}`));
-      await run(createFolder(fetchJson, targetPath));
+      // A draft row with the cursor in it, not a modal: the same inline
+      // gesture `rename` already uses, and it shows *where* the folder will
+      // land, which a prompt cannot.
+      const parent = newFolderParent(target);
+      if (parent !== "") setState((current) => expand(current, `vfolder:${parent}`));
+      setDraft(parent);
+      setEditing({ id: DRAFT_FOLDER_ID, label: "", value: "" });
     } else if (action === "rename") {
       setEditing({ id: menu.id, label: menu.label, value: menu.label });
     } else if (target.type !== "vault" && (!deleteNeedsConfirmation(target) || window.confirm(`Permanently delete folder “${menu.label}” and everything inside it?`))) {
       await run(target.type === "note" ? deleteNote(fetchJson, target.path) : deleteFolder(fetchJson, target.path), deletesSelection(props.selectedId, target) ? "vault" : undefined);
     }
   };
+  /**
+   * The inline editor was committed (Enter or blur) or abandoned (Escape).
+   *
+   * Two gestures share one input, so this is where they part: the draft row
+   * creates a folder, every other row renames. Both clear the editor first,
+   * so an abandoned edit and a failed request leave the same clean state.
+   */
+  const commitEdit = (value: string | null): void => {
+    const current = editing;
+    const parent = draft;
+    setEditing(null);
+    setDraft(null);
+    if (current === null) return;
+    const name = value?.trim();
+    if (current.id === DRAFT_FOLDER_ID) {
+      // Escape, or an empty name: the draft simply disappears. Nothing was
+      // created, so there is nothing to undo.
+      const path = parent === null || !name ? null : newFolderPath(parent, name);
+      if (path !== null) void run(createFolder(fetchJson, path));
+      return;
+    }
+    const target = mutableTreeRow(current.id);
+    // A rename may break wiki-links, so it keeps its confirmation; a create
+    // cannot break anything and gets none.
+    if (target !== null && name && name !== current.label && window.confirm(`Rename “${current.label}”? Existing links to it may break.`)) {
+      void run(target.type === "note" ? renameNote(fetchJson, target.path, name) : renameFolder(fetchJson, target.path, name));
+    }
+  };
+
   return (
     <div class="weave-tree" onKeyDown={(event) => {
       const target = event.target as KeyTarget;
@@ -155,7 +197,7 @@ export function Tree(props: TreeProps) {
             setMenu({ id: "vault", label: "Vault", x: event.clientX, y: event.clientY });
           }}
         >
-          {rowViews(rows, props.selectedId, props.now).map((view) => <Row key={view.id} view={view} recentIds={props.recentIds} edit={editing?.id === view.id ? editing.value : null} onEdit={(value) => setEditing((current) => current === null ? null : { ...current, value })} onRename={(value) => { const current = editing; setEditing(null); const target = current === null ? null : mutableTreeRow(current.id); const name = value?.trim(); const label = current?.label; if (target !== null && name && label !== undefined && name !== label && window.confirm(`Rename “${label}”? Existing links to it may break.`)) void run(target.type === "note" ? renameNote(fetchJson, target.path, name) : renameFolder(fetchJson, target.path, name)); }} onSelect={() => { props.onSelect(view.id); if (view.hasKids) setState((current) => toggleExpanded(current, view.id)); }} onToggle={() => setState(toggleExpanded(state, view.id))} onMenu={(x, y) => setMenu({ id: view.id, label: view.label, x, y })} onDrop={(dragged) => { const folder = dropFolder(view.id); if (dragged.startsWith("note:") && folder !== undefined) void run(moveNote(fetchJson, dragged.slice("note:".length), folder)); }} />)}
+          {rowViews(rows, props.selectedId, props.now).map((view) => <Row key={view.id} view={view} recentIds={props.recentIds} edit={editing?.id === view.id ? editing.value : null} onEdit={(value) => setEditing((current) => current === null ? null : { ...current, value })} onRename={commitEdit} onSelect={() => { props.onSelect(view.id); if (view.hasKids) setState((current) => toggleExpanded(current, view.id)); }} onToggle={() => setState(toggleExpanded(state, view.id))} onMenu={(x, y) => setMenu({ id: view.id, label: view.label, x, y })} onDrop={(dragged) => { const folder = dropFolder(view.id); if (dragged.startsWith("note:") && folder !== undefined) void run(moveNote(fetchJson, dragged.slice("note:".length), folder)); }} />)}
         </ul>
       ) : <p class="weave-tree-empty">{empty}</p>}
       <p class="weave-tree-count">{rowCountLabel(rows)}</p>
