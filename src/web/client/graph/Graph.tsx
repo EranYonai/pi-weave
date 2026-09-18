@@ -35,15 +35,13 @@ import type { GraphViewState } from "./column.model";
 import {
   FIT_HINT,
   FIT_LABEL,
+  FORCES_HINT,
+  FORCES_LABEL,
   LEGEND,
-  allExpanded,
   effectiveView,
-  expandHint,
-  expandLabel,
   graphClick,
   graphColumnModel,
   graphCountLabel,
-  toggleExpandAll,
 } from "./column.model";
 import type { PositionStorage } from "./positions";
 import type { GraphRenderer, RendererFactory } from "./renderer";
@@ -145,6 +143,16 @@ export function Graph(props: GraphProps) {
    * names no browser global.
    */
   const [groupColors, setGroupColors] = useState(() => loadGroupColors(props.storage));
+  /**
+   * Whether the tuner panel is open.
+   *
+   * Seeded from the `?forces=1` flag, then owned by the `[forces]` chip — so
+   * the URL is still the way to arrive with it open, and the button is the way
+   * to get at it once you are here. The chip is always present: the panel was
+   * unreachable without knowing a query string, which is the right gate for a
+   * half-built instrument and the wrong one for a finished control.
+   */
+  const [tunerOpen, setTunerOpen] = useState(props.tuner === true);
 
   // The shell's decision wins; `schemeOf` stays for a host-driven default.
   const scheme = props.scheme ?? schemeOf(props.host);
@@ -161,7 +169,6 @@ export function Graph(props: GraphProps) {
     () => graphColumnModel(props.graph, props.selectedId, view, props.storage, scheme, props.bootFailed, groupColors),
     [props.graph, props.selectedId, view, props.storage, scheme, props.bootFailed, forceRev, groupColors],
   );
-  const everything = allExpanded(view, model.clusters);
 
   // Read by the mount-time `onSelect`, which outlives this render.
   const live = useRef({ view, model, onSelect: props.onSelect, selectedId: props.selectedId });
@@ -254,7 +261,7 @@ export function Graph(props: GraphProps) {
       {/* `tabIndex={-1}` is the `⌘3` focus target — see `Note.tsx`'s matching
           comment. The tree's target is the rows `<ul>`, which has its own. */}
       <div class="weave-graph-canvas" ref={canvas} role="img" aria-label="Knowledge graph" tabIndex={-1} />
-      {props.tuner === true ? (
+      {tunerOpen ? (
         <ForceTuner
           groupColors={groupColors}
           onGroupColors={(next) => {
@@ -281,8 +288,14 @@ export function Graph(props: GraphProps) {
         <button type="button" class="weave-chip" title={FIT_HINT} onClick={() => renderer.current?.fit()}>
           {FIT_LABEL}
         </button>
-        <button type="button" class="weave-chip" title={expandHint(everything)} onClick={() => setState(toggleExpandAll(view, model.clusters))}>
-          {expandLabel(everything)}
+        <button
+          type="button"
+          class={tunerOpen ? "weave-chip weave-chip-on" : "weave-chip"}
+          title={FORCES_HINT}
+          aria-pressed={tunerOpen}
+          onClick={() => setTunerOpen(!tunerOpen)}
+        >
+          {FORCES_LABEL}
         </button>
         <span class="weave-graph-legend">
           <span class="weave-legend-on">◉ {LEGEND.selected}</span>

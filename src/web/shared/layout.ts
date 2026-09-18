@@ -77,15 +77,23 @@ export interface ForceConstants {
   center: number;
 }
 
-/** The live constants. See {@link ForceConstants} for why this is mutable. */
+/**
+ * The live constants. See {@link ForceConstants} for why this is mutable.
+ *
+ * These values were **found by eye** through the `?forces=1` tuner and then
+ * frozen here, which is the loop §15.7 describes working as intended. They are
+ * not derived and should not be "corrected" toward rounder numbers: the
+ * previous set (`containsStrength: 0.02`, `charge: -50`, `center: 0.09`) was
+ * defensible on paper and produced a single hairball on screen.
+ */
 export const FORCES: ForceConstants = {
-  containsRest: 90,
-  containsStrength: 0.02,
-  relationDistance: 170,
-  relationStrength: 0.05,
-  charge: -50,
-  chargeMax: Infinity,
-  center: 0.09,
+  containsRest: 55,
+  containsStrength: 0.12,
+  relationDistance: 50,
+  relationStrength: 0.07,
+  charge: -200,
+  chargeMax: 800,
+  center: 0.05,
 };
 
 /** The shipped values, for the tuner's reset and for a test to restore from. */

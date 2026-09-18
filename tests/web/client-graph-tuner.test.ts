@@ -12,7 +12,7 @@ import { afterEach, describe, expect, it } from "vitest";
 import {
   FORCE_SLIDERS,
   FORCES_FLAG,
-  SUGGESTED,
+  HAIRBALL,
   GROUP_COLORS_STORAGE_KEY,
   forcesFlag,
   forcesSnippet,
@@ -65,7 +65,11 @@ describe("the sliders", () => {
   });
 
   it("reads an infinite constant as the top of the range, and clamps the rest", () => {
-    expect(sliderValue(FORCES, spec("chargeMax"))).toBe(spec("chargeMax").max);
+    // `chargeMax` is finite now that the constants are frozen, but `Infinity`
+    // is still a legal value (it is what "no cap" means, and the pre-tuner
+    // recipe used it), so the range input must still have somewhere to put it.
+    expect(sliderValue({ ...FORCES, chargeMax: Infinity }, spec("chargeMax"))).toBe(spec("chargeMax").max);
+    expect(sliderValue(FORCES, spec("chargeMax"))).toBe(FORCE_DEFAULTS.chargeMax);
     expect(sliderValue({ ...FORCES, center: 99 }, spec("center"))).toBe(spec("center").max);
     expect(sliderValue({ ...FORCES, center: -99 }, spec("center"))).toBe(spec("center").min);
     expect(sliderValue(FORCES, spec("center"))).toBe(FORCE_DEFAULTS.center);
@@ -93,7 +97,10 @@ describe("handing the numbers back", () => {
   it("emits a snippet that names every constant, Infinity included", () => {
     const snippet = forcesSnippet(FORCES);
     for (const s of FORCE_SLIDERS) expect(snippet).toContain(`${s.key}:`);
-    expect(snippet).toContain("chargeMax: Infinity,");
+    expect(snippet).toContain(`charge: ${FORCE_DEFAULTS.charge},`);
+    // An infinite constant has to survive transcription as the word, not as
+    // `null` — which is what `JSON.stringify` would have made of it.
+    expect(forcesSnippet({ ...FORCES, chargeMax: Infinity })).toContain("chargeMax: Infinity,");
     expect(snippet.startsWith("export const FORCES: ForceConstants = {")).toBe(true);
     expect(snippet.trimEnd().endsWith("};")).toBe(true);
   });
@@ -119,18 +126,17 @@ describe("the constants actually drive the layout", () => {
     // against weak centre gravity must spread the graph well past the packed
     // disc the shipped constants settle to. This is the assertion that fails
     // if `createForceSimulation` ever goes back to reading module consts.
-    setForces(SUGGESTED);
-    expect(extent()).toBeGreaterThan(shipped);
+    setForces(HAIRBALL);
+    expect(extent()).toBeLessThan(shipped);
     setForces(FORCE_DEFAULTS);
     expect(extent()).toBe(shipped);
   });
 
-  it("ships a suggestion that actually separates the sibling blobs", () => {
-    // The claim in `SUGGESTED`'s doc comment, asserted rather than asserted-in-
-    // prose: the shipped constants interleave the three big branches (a
-    // negative gap between their bounding boxes) and the suggestion opens a
-    // corridor. This is also the shape of the test that will pin the *frozen*
-    // constants once a human has picked them.
+  it("separates the sibling blobs, where the pre-tuner constants interleaved them", () => {
+    // The gate on the frozen constants (§15.7). The three big branches must
+    // end up with a real corridor between their bounding boxes; the recipe
+    // this replaced left them overlapping by 312 units. If someone retunes
+    // \`FORCES\` back into a hairball, this is what says so.
     const worstGap = (): number => {
       const model = siblingBlobsGraph();
       const at = computeLayout(model, { ticks: 300, seed: 1 });
@@ -159,9 +165,11 @@ describe("the constants actually drive the layout", () => {
       return worst;
     };
 
-    expect(worstGap()).toBeLessThan(0);
-    setForces(SUGGESTED);
+    // Shipped: a real corridor.
     expect(worstGap()).toBeGreaterThan(0);
+    // The arrangement it replaced: the branches overlap.
+    setForces(HAIRBALL);
+    expect(worstGap()).toBeLessThan(0);
   });
 
   it("stays deterministic under any constants", () => {

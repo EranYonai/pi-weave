@@ -297,6 +297,9 @@ body{font-size:var(--weave-px-base)}
   border:1px solid var(--weave-line-strong);border-radius:var(--weave-radius);
 }
 .weave-chip:hover{color:var(--weave-fg);border-color:var(--weave-accent)}
+/* A chip that is a toggle, while it is on: the accent states it without a
+   second control or an icon. */
+.weave-chip-on{color:var(--weave-accent);border-color:var(--weave-accent)}
 .weave-rows{
   flex:1;min-height:0;overflow:auto;margin:0;padding:3px 0;list-style:none;
 }

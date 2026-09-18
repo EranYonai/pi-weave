@@ -92,23 +92,26 @@ export const FORCE_SLIDERS: readonly SliderSpec[] = [
 ];
 
 /**
- * A starting point that is already *in the right region*, so the search does
- * not begin from the arrangement being complained about.
+ * The arrangement this whole exercise replaced, kept as a **comparison**.
  *
- * Measured on `siblingBlobsGraph` at 300 ticks, worst-case gap between the
- * three big branches' bounding boxes: the shipped constants give **−312**
- * (the branches interleave — the hairball), these give **+221** (a visible
- * corridor). On `repoLikeGraph`, −274 → +315. Not proposed as the answer;
- * proposed as somewhere worth looking from.
+ * Not a suggestion any more — `FORCE_DEFAULTS` is now the chosen answer, found
+ * through these sliders and frozen in `shared/layout.ts`. This is the *before*
+ * picture, one button press away, so the next person to open the panel can see
+ * in one click what the constants are for rather than reading a changelog.
+ *
+ * Measured at 300 ticks, worst-case gap between the big branches' bounding
+ * boxes (negative = the branches interleave, which is the hairball):
+ * `siblingBlobsGraph` **−312** here against **+39** shipped, `repoLikeGraph`
+ * **−274** against **+133**.
  */
-export const SUGGESTED: Readonly<ForceConstants> = {
-  containsRest: 55,
-  containsStrength: 0.8,
+export const HAIRBALL: Readonly<ForceConstants> = {
+  containsRest: 90,
+  containsStrength: 0.02,
   relationDistance: 170,
   relationStrength: 0.05,
-  charge: -250,
-  chargeMax: 700,
-  center: 0.02,
+  charge: -50,
+  chargeMax: Infinity,
+  center: 0.09,
 };
 
 /**

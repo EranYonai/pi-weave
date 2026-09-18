@@ -13,7 +13,7 @@
 import { useState } from "preact/hooks";
 import { FORCES, FORCE_DEFAULTS, setForces } from "../../shared/layout";
 import type { SliderSpec } from "./tuner.model";
-import { FORCE_SLIDERS, SUGGESTED, forcesSnippet, formatValue, isDefault, parseSlider, sliderValue } from "./tuner.model";
+import { FORCE_SLIDERS, HAIRBALL, forcesSnippet, formatValue, isDefault, parseSlider, sliderValue } from "./tuner.model";
 
 export interface ForceTunerProps {
   /**
@@ -75,8 +75,8 @@ export function ForceTuner(props: ForceTunerProps) {
         <button type="button" class="weave-chip" disabled={isDefault(FORCES)} onClick={() => applyAll(FORCE_DEFAULTS)}>
           reset
         </button>
-        <button type="button" class="weave-chip" title="a measured starting point — see SUGGESTED" onClick={() => applyAll(SUGGESTED)}>
-          suggested
+        <button type="button" class="weave-chip" title="the pre-tuner constants, for comparison — see HAIRBALL" onClick={() => applyAll(HAIRBALL)}>
+          before
         </button>
         <button
           type="button"

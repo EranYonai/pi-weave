@@ -11,13 +11,17 @@
 
 import { describe, expect, it } from "vitest";
 import {
+  DEPTH_SHADE,
   GROUP_HUES,
-  KIND_SHADE,
+  HUE_STRIDE,
+  MAX_SHADE,
+  bridgeBlend,
   groupColors,
   groupKeys,
-  groupNodeColor,
   groupNodeColors,
+  groupPlaces,
   groupSizes,
+  shadeFor,
 } from "../../src/web/client/graph/groups";
 import { GRAPH_PALETTE, edgeReducer, nodeReducer, recessColor, renderGraph } from "../../src/web/client/graph/graph.model";
 import type { ColorScheme } from "../../src/web/client/graph/graph.model";
@@ -117,15 +121,17 @@ describe("which group a node is in", () => {
 });
 
 describe("the hues", () => {
-  it("is legible: every hue, at every kind's shade, clears 3:1 on its ground", () => {
+  it("is legible: every hue, at every depth of the ramp, clears 3:1", () => {
     // The WCAG non-text minimum, and the reason the light ring is deepened
     // from stock Latte (which sits at 2.3–3.0 and vanishes as a 6px disc).
+    // Asserted at every depth, not just the hue, because the ramp is what
+    // actually reaches the screen.
     for (const scheme of SCHEMES) {
       const ground = GRAPH_PALETTE[scheme].ground;
       for (const hue of GROUP_HUES[scheme]) {
-        for (const kind of WIRE_NODE_KINDS) {
-          const drawn = groupNodeColor(hue, kind, scheme);
-          expect(contrast(drawn, ground), `${scheme} ${hue} ${kind}`).toBeGreaterThanOrEqual(3);
+        for (let depth = 0; depth < 12; depth++) {
+          const drawn = shadeFor(hue, depth, scheme);
+          expect(contrast(drawn, ground), `${scheme} ${hue} d${depth}`).toBeGreaterThanOrEqual(3);
         }
       }
     }
@@ -142,15 +148,20 @@ describe("the hues", () => {
     expect(GROUP_HUES.dark).not.toEqual(GROUP_HUES.light);
   });
 
-  it("shades every kind, and never past the legibility cap", () => {
-    for (const kind of WIRE_NODE_KINDS) {
-      expect(KIND_SHADE[kind], kind).toBeGreaterThanOrEqual(0);
-      expect(KIND_SHADE[kind], kind).toBeLessThanOrEqual(0.35);
+  it("ramps by depth, monotonically, and stops at the cap", () => {
+    for (const scheme of SCHEMES) {
+      const hue = GROUP_HUES[scheme][0]!;
+      // Depth 0 is the group's own colour, untouched.
+      expect(shadeFor(hue, 0, scheme)).toBe(hue);
+      // Each level is a further step toward the ground...
+      expect(shadeFor(hue, 1, scheme)).not.toBe(shadeFor(hue, 2, scheme));
+      // ...until the cap, past which nothing gets dimmer (or illegible).
+      const capped = shadeFor(hue, Math.ceil(MAX_SHADE / DEPTH_SHADE) + 1, scheme);
+      expect(shadeFor(hue, 99, scheme)).toBe(capped);
+      // A nonsense depth is depth 0, never a NaN blend.
+      expect(shadeFor(hue, -3, scheme)).toBe(hue);
+      expect(shadeFor(hue, Number.NaN, scheme)).toBe(hue);
     }
-    // The ordering that carries the meaning: anchors full, notes near-full,
-    // derived artefacts stepped back.
-    expect(KIND_SHADE.module).toBeLessThan(KIND_SHADE.note);
-    expect(KIND_SHADE.note).toBeLessThan(KIND_SHADE.file);
   });
 });
 
@@ -160,7 +171,8 @@ describe("assigning hues to groups", () => {
     for (const scheme of SCHEMES) {
       const colors = groupColors(keys, scheme);
       expect(colors.get("big")).toBe(GROUP_HUES[scheme][0]);
-      expect(colors.get("small")).toBe(GROUP_HUES[scheme][1]);
+      // The second group takes a *stride* along the wheel, not the next slot.
+      expect(colors.get("small")).toBe(GROUP_HUES[scheme][HUE_STRIDE]);
     }
   });
 
@@ -182,15 +194,82 @@ describe("assigning hues to groups", () => {
     for (const value of colors.values()) expect(GROUP_HUES.dark).toContain(value);
   });
 
-  it("colours a whole graph: same group same hue, different groups different", () => {
+  it("colours a whole graph: one hue per group, a ramp inside it", () => {
     const nodes = [node("vault", "vault"), node("f:a", "module"), node("f:b", "module"), node("n1"), node("n2")];
     const edges = [edge("vault", "f:a"), edge("vault", "f:b"), edge("f:a", "n1"), edge("f:b", "n2")];
     const fills = groupNodeColors(nodes, edges, "dark");
     expect(fills.size).toBe(5);
-    // `n1` is `f:a`'s hue at the note shade — same hue family, not same hex.
-    expect(fills.get("n1")).toBe(groupNodeColor(groupColors(groupKeys(nodes, edges), "dark").get("f:a")!, "note", "dark"));
+    const hue = groupColors(groupKeys(nodes, edges), "dark").get("f:a")!;
+    // The anchor is the group's own hue; its child is one step down the ramp.
+    expect(fills.get("f:a")).toBe(hue);
+    expect(fills.get("n1")).toBe(shadeFor(hue, 1, "dark"));
     // Two different folders are two different hues.
     expect(fills.get("f:a")).not.toBe(fills.get("f:b"));
+  });
+
+  it("walks the wheel in strides, so the two biggest groups are far apart", () => {
+    // The fix for "the colours look random": an arbitrary ring order put
+    // neighbouring hues next to each other. A stride coprime with the ring
+    // length visits every slot while keeping consecutive groups distant.
+    for (const scheme of SCHEMES) {
+      const ring = GROUP_HUES[scheme];
+      const keys = new Map<string, string>();
+      ring.forEach((_, i) => {
+        // Descending sizes, so group `g00` is biggest and takes ring[0].
+        for (let n = 0; n <= ring.length - i; n++) keys.set(`n${i}-${n}`, `g${String(i).padStart(2, "0")}`);
+      });
+      const colors = groupColors(keys, scheme);
+      expect(colors.get("g00")).toBe(ring[0]);
+      expect(colors.get("g01")).toBe(ring[HUE_STRIDE % ring.length]);
+      // Coprime stride: every hue is used exactly once before any repeats.
+      expect(new Set(colors.values()).size).toBe(ring.length);
+    }
+  });
+});
+
+// --- bridges between groups -----------------------------------------------------------
+
+describe("a node that links into another group", () => {
+  it("takes on a share of the foreign group's colour", () => {
+    const nodes = [node("vault", "vault"), node("f:a", "module"), node("f:b", "module"), node("n1"), node("n2"), node("plain")];
+    const edges = [
+      edge("vault", "f:a"),
+      edge("vault", "f:b"),
+      edge("f:a", "n1"),
+      edge("f:a", "plain"),
+      edge("f:b", "n2"),
+      edge("n1", "n2", "links-to"),
+    ];
+    const fills = groupNodeColors(nodes, edges, "dark");
+    // `n1` and `plain` are siblings at the same depth in the same group, so
+    // without the bridge they would be identical. The wikilink is the only
+    // difference, and it must show.
+    expect(fills.get("plain")).toBe(shadeFor(groupColors(groupKeys(nodes, edges), "dark").get("f:a")!, 1, "dark"));
+    expect(fills.get("n1")).not.toBe(fills.get("plain"));
+    // Both ends of the link tint — the relationship is symmetric.
+    expect(fills.get("n2")).not.toBe(shadeFor(groupColors(groupKeys(nodes, edges), "dark").get("f:b")!, 1, "dark"));
+  });
+
+  it("does not tint on containment — that is what made it a member", () => {
+    const nodes = [node("vault", "vault"), node("f:a", "module"), node("n1")];
+    const edges = [edge("vault", "f:a"), edge("f:a", "n1")];
+    const fills = groupNodeColors(nodes, edges, "dark");
+    const hue = groupColors(groupKeys(nodes, edges), "dark").get("f:a")!;
+    expect(fills.get("n1")).toBe(shadeFor(hue, 1, "dark"));
+  });
+
+  it("blends deterministically, and caps a promiscuous hub", () => {
+    const own = "#c6a0f6";
+    // Order-independent by construction: the caller sorts, and the same list
+    // must always give the same hex or a node's colour would flicker.
+    expect(bridgeBlend(own, ["#a6da95", "#8aadf4"], "dark")).toBe(bridgeBlend(own, ["#a6da95", "#8aadf4"], "dark"));
+    // No foreign groups is the node's own colour, untouched.
+    expect(bridgeBlend(own, [], "dark")).toBe(own);
+    // A node reaching ten groups is still recognisably its own colour rather
+    // than a mud of everyone else's.
+    const many = bridgeBlend(own, Array.from({ length: 10 }, () => "#a6da95"), "dark");
+    const three = bridgeBlend(own, Array.from({ length: 3 }, () => "#a6da95"), "dark");
+    expect(many).toBe(three);
   });
 });
 

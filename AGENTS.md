@@ -67,9 +67,9 @@ pi --mode rpc -e ./src/pi/index.ts                        # machine-driven smoke
 Smoke expectation: on session start pi's status line shows `🕸️ vault:N · repo:unindexed|ok|stale` and, in an unindexed repo, an info
 notification suggests exploring.
 
-**The graph has a hidden force tuner.** Open the web workspace with `?forces=1` on the URL to get sliders over the seven constants in
-`src/web/shared/layout.ts`, applied live. It exists because those numbers are chosen by eye, not derived — see docs/weave-workspace.md §15.7
-for what each one does and for the freeze procedure once values are picked.
+**The graph has a force tuner**, behind the `[forces]` chip in the graph column (or `?forces=1` on the URL). Sliders over the seven
+constants in `src/web/shared/layout.ts`, applied live, plus the group-colour toggle. The constants are chosen by eye, not derived — see
+docs/weave-workspace.md §15.7–§15.8 for what each one does, the frozen values, and how to re-freeze after retuning.
 
 ## Style
 

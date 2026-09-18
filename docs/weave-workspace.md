@@ -1418,13 +1418,13 @@ seed })` stays byte-identical for every caller and test.
 | `chargeMax` | Distance past which repulsion stops. A cap is what keeps a strong charge from inflating the picture uniformly. |
 | `center` | `forceX`/`forceY` pull toward the origin — the no-escape guarantee. Too much and everything is one blob. |
 
-The **suggested** button loads `SUGGESTED` from `tuner.model.ts`: a measured starting point (worst branch gap −312 → **+221** on the blobs
-fixture, −274 → +315 on `repoLikeGraph`), not a proposed answer. **copy values** puts the current record on the clipboard as the literal
-that belongs in `layout.ts`, because transcribing seven floats by eye is where a digit gets dropped.
+The **before** button loads `HAIRBALL` from `tuner.model.ts` — the pre-tuner constants, one click away, so the next person to open the panel
+can see what it is for without reading a changelog. **copy values** puts the current record on the clipboard as the literal that belongs in
+`layout.ts`, because transcribing seven floats by eye is where a digit gets dropped.
 
-**Why a query flag.** It is a developer affordance with a human in the loop, and it must not read as a feature: no menu entry, no keyboard
-chord to collide with the §11 P4 keymap, no persisted state leaking into a normal session. A build-time `define` would be more hidden still
-and was rejected — it breaks the byte-reproducible `build:web:check` contract for a panel that is already unreachable without the flag.
+**How it opens.** The `[forces]` chip in the control strip, beside `[fit]`. `?forces=1` still works and now seeds the chip's initial state —
+it was the only way in while the panel was a half-built instrument, which was the right gate then and the wrong one for a finished control.
+A build-time `define` was rejected: it breaks the byte-reproducible `build:web:check` contract for a panel that costs a few hundred bytes.
 
 ### 15.8 Group colour and the selection's three tiers — ✅ **built**
 
@@ -1467,10 +1467,18 @@ graph cool *under* the held node, which is what a press should do. Measured on `
 units and never settling, against a max of under 3 units and asleep. The first pin of a gesture still counts as movement, or the opening
 frames of a real drag would be dead.
 
-**What remains open (§15.7).** The force constants have not been frozen yet. When they are: write them into `FORCES`, bump
-`POSITIONS_STORAGE_KEY` (stored layouts describe the old physics and the shape key cannot detect that), and turn the `SUGGESTED` separation
-assertion in `tests/web/client-graph-tuner.test.ts` into a gate on the shipped values. The panel stays behind the flag for the next time the
-physics needs a nudge.
+**The constants are frozen (§15.7 closed).** Found through the sliders and written into `FORCES`: `containsStrength 0.12`, `containsRest
+55`, `relationStrength 0.07`, `relationDistance 50`, `charge -200`, `chargeMax 800`, `center 0.05`. Worst branch gap on `siblingBlobsGraph`
+**−312 → +39**, on `repoLikeGraph` **−274 → +133**. `POSITIONS_STORAGE_KEY` went to `v4`, because a stored layout describes the old physics
+and the shape key digests nodes and edges, neither of which a force change touches. The tuner stays, behind the `[forces]` chip; its
+**before** button loads the pre-tuner constants (`HAIRBALL`) for comparison.
+
+### 15.10 The `[collapse]` control is gone — ✅ **removed**
+
+The graph opens fully expanded (`initialGraphView`), so the toggle's two halves were a no-op on arrival and, once pressed, a control that
+threw the whole picture away to show two root nodes. Clicking a collapsed cluster still expands it (`graphClick`) and per-level walking is
+what the tree column is for, so nothing is unreachable. `expandAll`, `collapseAll`, `allExpanded`, `toggleExpandAll`, `expandLabel` and
+`expandHint` were deleted with it rather than left exported-but-unused, along with their tests. `[forces]` took the slot.
 
 ---
 
