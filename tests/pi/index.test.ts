@@ -324,16 +324,26 @@ describe("/weave-scan-cancel", () => {
     await writeFixture(repo, "src/c.ts", "export const c = 3;\n");
     commitAll(repo, "add files");
     await withVaultEnv(await makeTempDir(), async () => {
+      // The scan must still be in flight when the cancel lands. A sleep races
+      // the cancel command under load (it lost about one run in four once this
+      // suite grew); this latch holds the first summarize open until the test
+      // releases it, so the ordering is a fact rather than a timing bet.
+      let releaseSummarize: () => void;
+      const held = new Promise<void>((resolve) => { releaseSummarize = resolve; });
+      let scanStarted: () => void;
+      const started = new Promise<void>((resolve) => { scanStarted = resolve; });
       const ctx = createMockCtx(repo, true, {
         model: { provider: "p", id: "m" },
         complete: async () => {
-          // Let the scan start, then cancel it from the cancel command.
-          await new Promise((r) => setTimeout(r, 5));
+          scanStarted();
+          await held;
           return fauxAssistantMessage("s");
         },
       });
       await mock.commands.get("weave-scan")!.handler("deep", ctx);
+      await started;
       await mock.commands.get("weave-scan-cancel")!.handler("", ctx);
+      releaseSummarize!();
       await deepScanDone(repo);
       expect(ctx.ui.notifications.some((n) => n.message.includes("cancellation requested"))).toBe(true);
       expect(ctx.ui.notifications.some((n) => n.message.includes("deep scan cancelled"))).toBe(true);

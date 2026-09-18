@@ -399,7 +399,7 @@ function startDeepScan(
 }
 
 /**
- * Kick off a session scan (docs/session-scan.md) in the background — same
+ * Kick off a session scan in the background — same
  * lifecycle as deep scans; keyed globally, not per repo.
  */
 function startSessionScan(

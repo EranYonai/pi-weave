@@ -1,6 +1,6 @@
 /**
 
- * L2 — session scan core (docs/session-scan.md): discovery, JSONL parsing,
+ * L2 — session scan core: discovery, JSONL parsing,
 
  * digest rendering, and the incremental hash-while-reading scan into vault
 

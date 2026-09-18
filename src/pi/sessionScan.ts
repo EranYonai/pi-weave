@@ -1,5 +1,5 @@
 /**
- * pi adapter for the session scan (docs/session-scan.md): summarize pi
+ * pi adapter for the session scan: summarize agent
  * session transcripts into the vault as incremental memory notes.
  *
  * Model wiring is shared with the deep scan (`createModelSummarizer` — the

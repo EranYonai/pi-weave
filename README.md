@@ -210,7 +210,6 @@ Read [AGENTS.md](AGENTS.md) before contributing. Work on a feature branch; do no
 - [Design](docs/design.md) — product and architecture
 - [Notepad skill](skills/weave-notepad/SKILL.md) — capture, narration, and provenance behavior
 - [Historical browser workspace notes](docs/weave-workspace.md) — superseded implementation record
-- [Session scanning](docs/session-scan.md) — incremental session memory
 - [Repository exploration skill](skills/weave-explore/SKILL.md) — how Pi uses the index
 
 ## License

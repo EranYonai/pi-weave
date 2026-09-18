@@ -1,5 +1,5 @@
 /**
- * Session scan (docs/session-scan.md): summarize pi session transcripts into
+ * Session scan: summarize agent session transcripts into
  * the vault — one generated note per session, incrementally maintained by
  * hashing each transcript **while reading it** so unchanged sessions never
  * cost an LLM call on re-scans.
@@ -638,7 +638,7 @@ function nonEmpty(value: string): string | null {
   return value.length > 0 ? value : null;
 }
 
-/** The `notes/sessions/` directory inside the vault (docs/session-scan.md). */
+/** The `notes/sessions/` directory inside the vault. */
 export function sessionNotesDir(vaultRoot: string): string {
   return join(vaultRoot, NOTES_DIR, SESSIONS_DIR);
 }
@@ -658,7 +658,7 @@ const LEGACY_SLUG_PREFIX = "pi-session-";
 
 /**
  * Move session notes from the first layout (`notes/*.md`, prefixed titles)
- * into the dedicated `sessions/` collection (docs/session-scan.md §storage).
+ * into the dedicated `sessions/` collection.
  *
  * Per legacy note, best-effort, idempotent:
  *  1. strip the `Pi session: ` title prefix (a systematic change, not a
@@ -811,7 +811,7 @@ export interface SessionScanResult {
 }
 
 /**
- * Run the session scan, in three phases (docs/session-scan.md):
+ * Run the session scan, in three phases:
  *
  * 1. **Read** every candidate transcript exactly once — hash the bytes while
  *    reading, peek the header line for identity/project/start. Sessions whose
@@ -879,7 +879,7 @@ export async function runSessionScan(options: SessionScanOptions): Promise<Sessi
       continue;
     }
     // Hash from the same single read that feeds the parse — the file is
-    // never read twice (docs/session-scan.md, "hash while reading").
+    // never read twice — hash while reading.
     const hash = hashContent(buf);
     const text = buf.toString("utf8");
     const parsed = parseSessionDigest(text);
