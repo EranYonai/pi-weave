@@ -34,6 +34,8 @@ directly.
 and incremental**: it never runs implicitly, and it only re-summarizes files whose content hash changed since their last summary. If
 summaries are missing or stale, offer `/weave-scan deep` to create or refresh them before diving into full files.
 
+Its sibling `/weave-scan sessions` is a different scope: it summarizes past *session transcripts* into the vault (`notes/sessions/`), not the repository. See the `weave-notepad` skill — nothing it writes lands in `.okf/`.
+
 ## On-disk layout
 
 ```text

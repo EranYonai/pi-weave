@@ -14,6 +14,7 @@ import { join } from "node:path";
 export const OKF_DIR = ".okf";
 export const OKF_MANIFEST = "okf.json";
 export const NOTES_DIR = "notes";
+export const SESSIONS_DIR = "sessions";
 export const REPOSITORY_DIR = "repository";
 export const VAULT_ENV_VAR = "PI_WEAVE_VAULT";
 

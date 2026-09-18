@@ -45,7 +45,7 @@ const MAX_OUTPUT_TOKENS = 220;
 const REQUEST_TIMEOUT_MS = 30_000;
 
 /**
- * The shared model wiring behind the deep scan: resolve the session's
+ * Shared model wiring for deep and session scans: resolve the session's
  * already-configured model — no
  * extra keys or providers (docs/scan-modes.md) — drive completion through
  * `ctx.modelRegistry`, which owns auth, and reject empty outputs so a
@@ -62,7 +62,7 @@ export function createModelSummarizer(
   deps: SummarizerDeps = {},
 ): LlmSummarizer | null {
   const model = ctx.model;
-  if (!model) return null;
+  if (!model || !isUsableModel(model)) return null;
   const complete: CompleteFn =
     deps.complete ?? ((m, c, o) => ctx.modelRegistry.complete(m, c, o));
   const label = `${model.provider}/${model.id}`;
@@ -82,12 +82,55 @@ export function createModelSummarizer(
       { maxTokens: maxOutputTokens, signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS) },
     );
     const text = contentText(message.content).trim();
-    if (text.length === 0) {
-      throw new Error("model returned an empty summary");
-    }
+    if (text.length === 0) throw new Error(emptySummaryReason(message, maxOutputTokens));
     return text;
   };
   return { summarize, label };
+}
+
+/**
+ * True when `ctx.model` is a real model rather than pi's placeholder.
+ *
+ * A session with no resolved model does not hand back `undefined` — it hands
+ * back pi's `DEFAULT_MODEL`, whose provider and id are the literal string
+ * `"unknown"`. That object is truthy, so a `!model` guard passes it straight
+ * through to `modelRegistry.complete`, which throws `Unknown provider:
+ * unknown` once per file. Treating it as "no model" makes the caller report
+ * the actionable "needs an active session model" instead, before spending a
+ * single call.
+ */
+function isUsableModel(model: { provider?: string; id?: string }): boolean {
+  return model.provider !== undefined && model.provider !== "unknown";
+}
+
+/**
+ * Explain an empty completion using what the response actually carries.
+ *
+ * "model returned an empty summary" is true of every failure mode here and
+ * diagnostic of none: an auth error, a reasoning model that spent its whole
+ * budget thinking, and a refusal all produce zero text blocks. Reporting that
+ * bare string once is unhelpful; reporting it 85 times, once per session, is
+ * an outage with no evidence attached. The provider already distinguishes
+ * these through `stopReason`, `errorMessage` and the reasoning-token count,
+ * so the message says which one happened and what to do about it.
+ */
+export function emptySummaryReason(message: AssistantMessage, maxOutputTokens: number): string {
+  const detail = message.errorMessage?.trim();
+  if (message.stopReason === "error") {
+    return `model call failed${detail ? `: ${detail}` : " with no error detail"}`;
+  }
+  // Reasoning tokens are billed against the same budget as output, so a model
+  // thinking at a high effort level can exhaust it before emitting any text.
+  const reasoning = message.usage?.reasoning ?? 0;
+  if (message.stopReason === "length") {
+    return reasoning > 0
+      ? `model spent its entire ${maxOutputTokens}-token budget on reasoning (${reasoning} tokens) and produced no summary — lower the thinking level or raise the cap`
+      : `model hit the ${maxOutputTokens}-token cap before producing a summary`;
+  }
+  if (reasoning > 0) {
+    return `model returned only reasoning (${reasoning} tokens), no summary text`;
+  }
+  return `model returned an empty summary (stopReason: ${message.stopReason})${detail ? `: ${detail}` : ""}`;
 }
 
 /** Create the file summarizer for deep scans, or null when no model is active. */

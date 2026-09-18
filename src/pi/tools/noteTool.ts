@@ -37,7 +37,7 @@ export function registerNoteTool(pi: ExtensionAPI): void {
     promptSnippet: "Remember and retrieve durable knowledge in the pi-weave vault",
     promptGuidelines: [
       "Use weave_note to store durable knowledge (decisions, preferences, key facts) that should survive the session, marking source as agent-written knowledge.",
-      "Use weave_note with action=search before answering questions about past decisions, people, or projects.",
+      "Use weave_note with action=search before answering questions about past decisions, people, or projects; generated notes under sessions/ carry takeaways from earlier sessions.",
     ],
     parameters: Type.Object({
       action: StringEnum(["list", "get", "add", "append", "finalize", "search"] as const),

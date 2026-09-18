@@ -301,6 +301,36 @@ export function parseFrontMatter(text: string): ParsedFrontMatter | null {
   return { fields, body, lines };
 }
 
+/** Upsert generated scalar fields while preserving unrelated front matter. */
+export function upsertFrontMatterFields(
+  lines: NoteFrontMatter,
+  fields: Record<string, string>,
+): NoteFrontMatter {
+  const wanted = new Set(Object.keys(fields));
+  const written = new Set<string>();
+  const out: string[] = [];
+  let droppingBlock = false;
+  for (const line of scanFrontMatter(lines)) {
+    if (droppingBlock) {
+      if (/^\s/.test(line.text)) continue;
+      droppingBlock = false;
+    }
+    if (line.key !== null && wanted.has(line.key)) {
+      if (!written.has(line.key)) {
+        out.push(`${line.key}: ${quoteField(fields[line.key] ?? "")}`);
+        written.add(line.key);
+        droppingBlock = !line.scalar;
+      }
+      continue;
+    }
+    out.push(line.text);
+  }
+  for (const [key, value] of Object.entries(fields)) {
+    if (!written.has(key)) out.push(`${key}: ${quoteField(value)}`);
+  }
+  return out;
+}
+
 /**
  * Parse a note file. Throws on missing/invalid front matter so callers can
  * treat the file as malformed rather than guessing.

@@ -1,11 +1,14 @@
-import { existsSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
 import { promises as fs } from "node:fs";
 import { basename, dirname, isAbsolute, join, relative } from "node:path";
 import {
+  MANAGED_FRONT_MATTER_KEYS,
   parseFrontMatter,
   parseNoteFile,
+  quoteField,
   serializeNote,
   unquoteField,
+  upsertFrontMatterFields,
 } from "./frontmatter";
 import { withMutationQueue } from "./mutex";
 import { NOTES_DIR, OKF_MANIFEST } from "./paths";
@@ -347,6 +350,95 @@ export async function finalizeNote(
     const meta: NoteMeta = { ...note, updated: (input.now ?? new Date()).toISOString() };
     return writeNote(path, slug, meta, body, note.frontMatter);
   });
+}
+
+export interface UpsertNoteInput {
+  slug: string;
+  title: string;
+  body: string;
+  tags?: string[];
+  source?: NoteSource;
+  fields?: Record<string, string>;
+  identity?: { field: string; value: string };
+  now?: Date;
+}
+
+/** Create or refresh generated knowledge without overwriting a different identity. */
+export async function upsertNote(root: string, input: UpsertNoteInput): Promise<Note> {
+  await ensureVault(root);
+  return withVaultLock(root, async () => {
+    const now = (input.now ?? new Date()).toISOString();
+    const identity = input.identity;
+    let existing = await getNote(root, input.slug);
+    if (existing !== null && identity && frontMatterField(existing.frontMatter, identity.field) !== identity.value) {
+      existing = null;
+    }
+    if (existing === null) {
+      const slug = uniqueSlug(input.slug, (candidate) => {
+        if (!existsSync(notePath(root, candidate))) return false;
+        return !identity || fileFrontMatterField(notePath(root, candidate), identity.field) !== identity.value;
+      });
+      const meta: NoteMeta = {
+        title: input.title,
+        created: now,
+        updated: now,
+        tags: input.tags ?? [],
+        source: input.source ?? "generated",
+      };
+      const fields = safeGeneratedFields(input.fields);
+      const frontMatter = [
+        `title: ${quoteField(meta.title)}`,
+        `created: ${meta.created}`,
+        `updated: ${meta.updated}`,
+        `tags: [${meta.tags.map(quoteField).join(", ")}]`,
+        `source: ${meta.source}`,
+        ...upsertFrontMatterFields([], fields),
+      ];
+      return writeNote(notePath(root, slug), slug, meta, input.body, frontMatter);
+    }
+    const fields = safeGeneratedFields(input.fields);
+    const frontMatter = upsertFrontMatterFields(existing.frontMatter ?? [], fields);
+    // The existing tail is re-attached whenever there is one. `input.body` is
+    // generated content (a model summary), so probing it for a `## Raw` marker
+    // would let a summary that merely mentions the heading delete the human's
+    // verbatim tail.
+    const tail = extractRawTail(existing.body);
+    const body = tail === "" ? input.body.trim() : `${input.body.trim()}\n\n${tail}`;
+    return writeNote(
+      notePath(root, input.slug),
+      input.slug,
+      { ...existing, updated: now },
+      body,
+      frontMatter,
+    );
+  });
+}
+
+/**
+ * Identity values are compared **unquoted**, matching how the session note
+ * index reads them: `quoteField` wraps any value containing `:` (an ISO
+ * timestamp used as an id, say), and comparing a quoted value against a raw
+ * one never matches — which would fork a new `-2`, `-3`… note on every scan.
+ */
+function frontMatterField(lines: NoteFrontMatter | undefined, field: string): string | null {
+  if (!lines) return null;
+  const value = parseFrontMatter(["---", ...lines, "---", ""].join("\n"))?.fields.get(field);
+  return value === undefined ? null : unquoteField(value);
+}
+
+function fileFrontMatterField(path: string, field: string): string | null {
+  try {
+    const value = parseFrontMatter(readFileSync(path, "utf8"))?.fields.get(field);
+    return value === undefined ? null : unquoteField(value);
+  } catch {
+    return null;
+  }
+}
+
+function safeGeneratedFields(fields: Record<string, string> | undefined): Record<string, string> {
+  if (!fields) return {};
+  const managed = new Set<string>(MANAGED_FRONT_MATTER_KEYS);
+  return Object.fromEntries(Object.entries(fields).filter(([key]) => !managed.has(key) && /^[A-Za-z][A-Za-z0-9_-]*$/.test(key)));
 }
 
 export type VaultMutationResult =

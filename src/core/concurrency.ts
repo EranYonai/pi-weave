@@ -1,5 +1,5 @@
 /**
- * Bounded-concurrency task runner shared by repository scans.
+ * Bounded-concurrency task runner shared by repository and session scans.
  *
  * Keeping the scheduler here gives every scan the same cancellation behavior.
  */

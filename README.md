@@ -13,20 +13,17 @@
 
 **A local knowledge workspace you can talk to.**
 
-pi-weave is an extension for [pi](https://github.com/earendil-works/pi). Ask Pi to take notes while you think out loud, keep your exact
-words alongside a useful summary, and explore everything in `/weave-view`.
+pi-weave is an extension for [pi](https://github.com/earendil-works/pi). Ask Pi to take notes while you think out loud, keep your exact words alongside a useful summary, and explore everything in `/weave-view`.
 
-It also understands the repository you are working in. Personal notes live in a Markdown vault; repository knowledge lives in a disposable
-`.okf` index. Both are plain files that humans and agents can read.
+It also understands the repository you are working in. Personal notes live in a Markdown vault; repository knowledge lives in a disposable `.okf` index. Both are plain files that humans and agents can read.
 
 ## Core capabilities
 
-- **Conversational note-taking.** Create and update notes through natural-language requests such as “start a note”, “add this”, or “remember
-  that”.
-- **Verbatim narration with structured summaries.** During dictation, Pi preserves each spoken passage in an append-only `## Raw` section
-  while maintaining an organized summary above it.
+- **Conversational note-taking.** Create and update notes through natural-language requests such as “start a note”, “add this”, or “remember that”.
+- **Verbatim narration with structured summaries.** During dictation, Pi preserves each spoken passage in an append-only `## Raw` section while maintaining an organized summary above it.
 - **Knowledge retrieval.** Pi searches existing notes when answering questions about previous decisions, people, projects, or meetings.
 - **Unified visual workspace.** `/weave-view` presents notes, links, repository structure, and provenance in a live browser interface.
+- **Optional session memory.** `/weave-scan sessions` turns changed pi transcripts into searchable notes with reusable technical takeaways.
 - **Repository exploration.** A lightweight, git-aware index gives Pi a structural overview of the current codebase before it reads files.
 
 Nothing is captured silently. pi-weave creates or extends a personal note only when you ask it to.
@@ -74,8 +71,7 @@ For each chunk, Pi:
 2. refreshes the structured summary above it;
 3. leaves the raw record untouched.
 
-This makes the note readable during the conversation without replacing your words with an AI reconstruction. Notes based on your dictation
-remain marked `source: human`; notes drafted by Pi are marked `source: agent`.
+This makes the note readable during the conversation without replacing your words with an AI reconstruction. Notes based on your dictation remain marked `source: human`; notes drafted by Pi are marked `source: agent`.
 
 Useful requests include:
 
@@ -102,12 +98,20 @@ The browser workspace has four connected views:
 - **Graph** — a navigable map of notes, links, mentions, modules, and repository relationships. Selecting something updates every view.
 - **Context** — links, backlinks, tags, and code mentions for the current selection.
 
-Search with `⌘K` / `Ctrl K`. Press `?` for all shortcuts. The workspace updates as notes change on disk, so a note written by Pi appears
-without a reload. It follows the system theme by default and can be switched between light and dark.
+Search with `⌘K` / `Ctrl K`. Press `?` for all shortcuts. The workspace updates as notes change on disk, so a note written by Pi appears without a reload. It follows the system theme by default and can be switched between light and dark.
 
 The browser is read-only. Edit with `$EDITOR`, Obsidian, or the `weave_note` tool; unknown front-matter fields remain preserved.
 
 `/weave-view tui` is the smaller, read-only terminal explorer: tree, focused neighborhood, details, and link health over the same graph.
+
+## Remember past pi sessions
+
+```bash
+/weave-scan sessions                    # pi history (default)
+/weave-scan sessions /path/to/history   # explicit history root
+```
+
+This opt-in scan treats a supplied file—or every bounded text file under a supplied directory—as opaque session material for the active model to interpret, then writes generated notes under `~/.okf/notes/sessions/`. That makes it usable with Claude Code, opencode, Codex, or exported history trees without requiring their schema or file extension. It skips unchanged files, captures outcomes plus reusable technical takeaways, works outside Git repositories, and can be stopped with `/weave-scan-cancel`.
 
 ## Repository knowledge
 
@@ -118,11 +122,9 @@ Inside a Git repository, pi-weave detects whether `<repo>/.okf/` is missing, fre
 /weave-scan deep    # also summarize changed files with the active model
 ```
 
-The light index covers languages, packages, modules, entry points, and Git state. A deep scan adds short per-file summaries and only
-revisits files whose content changed.
+The light index covers languages, packages, modules, entry points, and Git state. A deep scan adds short per-file summaries and only revisits files whose content changed.
 
-The repository index is a cache, not a source of truth. Delete `.okf`, scan again, and nothing important is lost. pi-weave excludes it
-locally from Git by default.
+The repository index is a cache, not a source of truth. Delete `.okf`, scan again, and nothing important is lost. pi-weave excludes it locally from Git by default.
 
 ## Commands and tools
 
@@ -134,7 +136,8 @@ Most people only need natural language and `/weave-view`.
 | Command | `/weave` | Show vault and repository status |
 | Command | `/weave-scan` | Build or refresh the repository index |
 | Command | `/weave-scan deep` | Add incremental model-written file summaries |
-| Command | `/weave-scan-cancel` | Stop a deep scan |
+| Command | `/weave-scan sessions [path]` | Turn changed session-history files into durable memory notes |
+| Command | `/weave-scan-cancel` | Stop a deep or session scan |
 | Tool | `weave_note` | List, read, add, append, finalize, and search notes |
 | Tool | `weave_repo` | Check, scan, and summarize the repository index |
 
@@ -178,8 +181,7 @@ We probably want OIDC next quarter…
 
 Set `PI_WEAVE_VAULT` to use a different vault location.
 
-Reading, writing, searching, and viewing notes are local operations. Deep repository scans send bounded input to whichever model you
-configured in pi. The browser workspace binds only to loopback, uses a per-session token, and shuts down with the pi session.
+Reading, writing, searching, and viewing notes are local operations. Deep repository scans and session summaries send bounded input to whichever model you configured in pi. The browser workspace binds only to loopback, uses a per-session token, and shuts down with the pi session.
 
 The vault format, repository index, and skills are intentionally harness-agnostic. `src/core` contains no pi-specific imports.
 
@@ -199,8 +201,7 @@ npm run coverage
 npm run build:web
 ```
 
-Coverage must remain at or above **95%** for lines, branches, functions, and statements. If browser source changes, rebuild and commit
-`src/web/client/dist/app.js`.
+Coverage must remain at or above **95%** for lines, branches, functions, and statements. If browser source changes, rebuild and commit `src/web/client/dist/app.js`.
 
 Read [AGENTS.md](AGENTS.md) before contributing. Work on a feature branch; do not commit directly to `main`.
 
