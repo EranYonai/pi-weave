@@ -4,7 +4,6 @@
  */
 
 import { describe, expect, it } from "vitest";
-import { DEFAULT_MAX_NOTES } from "../../../src/core/graph/build";
 import type { GraphNode } from "../../../src/core/graph/model";
 import { countProvenance, healthModel } from "../../../src/core/view";
 import { graph, node } from "./fixtures";
@@ -62,7 +61,7 @@ describe("healthModel", () => {
 
   it("surfaces the truncation warning from vault detail", () => {
     const model = graph(
-      [node("vault", "vault", "Vault", null, { notes: String(DEFAULT_MAX_NOTES + 5), warning: "Graph truncated" })],
+      [node("vault", "vault", "Vault", null, { notes: "505", warning: "Graph truncated" })],
       [],
     );
     const vault = healthModel(model).sections.find((s) => s.heading === "Vault")!;

@@ -635,6 +635,124 @@ describe("weave_repo tool", () => {
   });
 });
 
+describe("weave_note links action", () => {
+  it("reports stale links, then repairs the unambiguous ones", async () => {
+    const mock = buildExtension();
+    const vault = await makeTempDir();
+    const ctx = createMockCtx(await makeTempDir());
+    await withVaultEnv(vault, async () => {
+      await mock.runTool("weave_note", { action: "add", title: "John Doe", text: "lead" }, ctx);
+      await fs.mkdir(join(vault, "notes", "1-1s"), { recursive: true });
+      await fs.rename(join(vault, "notes", "john-doe.md"), join(vault, "notes", "1-1s", "john-doe.md"));
+      await mock.runTool(
+        "weave_note",
+        { action: "add", title: "Hub", text: "see [[John Doe]] and [[ghost]]" },
+        ctx,
+      );
+
+      const dry = await mock.runTool("weave_note", { action: "links" }, ctx);
+      expect(dry.content[0]?.text).toContain("1 auto-fixable");
+      expect(dry.content[0]?.text).toContain("[[john-doe]] → [[1-1s/john-doe]] (basename)");
+      expect(dry.content[0]?.text).toContain("1 unresolvable");
+      expect(dry.details).toMatchObject({ action: "links", fixed: false, total: 2, resolved: 0 });
+
+      const fixed = await mock.runTool("weave_note", { action: "links", fix: true }, ctx);
+      expect(fixed.content[0]?.text).toContain("Repaired 1 link(s) across 1 note(s)");
+      const got = await mock.runTool("weave_note", { action: "get", slug: "hub" }, ctx);
+      expect(got.content[0]?.text).toContain("[[1-1s/john-doe|John Doe]]");
+    });
+  });
+
+  it("reports a clean vault and a no-op repair", async () => {
+    const mock = buildExtension();
+    const ctx = createMockCtx(await makeTempDir());
+    await withVaultEnv(await makeTempDir(), async () => {
+      const clean = await mock.runTool("weave_note", { action: "links" }, ctx);
+      expect(clean.content[0]?.text).toContain("Every link resolves.");
+      const noop = await mock.runTool("weave_note", { action: "links", fix: true }, ctx);
+      expect(noop.content[0]?.text).toContain("Nothing to repair automatically.");
+    });
+  });
+
+  it("reports ambiguous targets instead of guessing, and caps long lists", async () => {
+    const mock = buildExtension();
+    const vault = await makeTempDir();
+    const ctx = createMockCtx(await makeTempDir());
+    await withVaultEnv(vault, async () => {
+      await fs.mkdir(join(vault, "notes", "a"), { recursive: true });
+      await fs.mkdir(join(vault, "notes", "b"), { recursive: true });
+      for (const dir of ["a", "b"]) {
+        await fs.writeFile(
+          join(vault, "notes", dir, "plan.md"),
+          `---\ntitle: ${dir} plan\ncreated: 2026-01-01T00:00:00.000Z\nupdated: 2026-01-01T00:00:00.000Z\ntags: []\nsource: agent\n---\n\nx\n`,
+          "utf8",
+        );
+      }
+      const ghosts = Array.from({ length: 25 }, (_, i) => `[[ghost-${String(i).padStart(2, "0")}]]`).join(" ");
+      await mock.runTool("weave_note", { action: "add", title: "Hub", text: `[[plan]] ${ghosts}` }, ctx);
+
+      const res = await mock.runTool("weave_note", { action: "links" }, ctx);
+      expect(res.content[0]?.text).toContain("[[plan]] → a/plan | b/plan");
+      expect(res.content[0]?.text).toContain("… and 5 more");
+      expect(res.details).toMatchObject({ fixable: [] });
+    });
+  });
+});
+
+describe("weave_note suggest action", () => {
+  const seed = async (mock: ReturnType<typeof buildExtension>, ctx: ReturnType<typeof createMockCtx>) => {
+    for (let i = 0; i < 30; i++) {
+      await mock.runTool("weave_note", { action: "add", title: `Filler ${i}`, text: "routine standup notes" }, ctx);
+    }
+  };
+
+  it("reports related notes with their evidence, and writes nothing", async () => {
+    const mock = buildExtension();
+    const ctx = createMockCtx(await makeTempDir());
+    await withVaultEnv(await makeTempDir(), async () => {
+      await seed(mock, ctx);
+      await mock.runTool("weave_note", { action: "add", title: "Alpha", text: "zephyrine quorum handoff" }, ctx);
+      await mock.runTool("weave_note", { action: "add", title: "Beta", text: "zephyrine quorum handoff" }, ctx);
+
+      const res = await mock.runTool("weave_note", { action: "suggest" }, ctx);
+      expect(res.content[0]?.text).toContain("alpha ↔ beta");
+      expect(res.content[0]?.text).toContain("zephyrine");
+      expect(res.content[0]?.text).toContain("nothing was written");
+      expect(res.details).toMatchObject({ action: "suggest" });
+
+      // The suggestion must not have become a link.
+      const alpha = await mock.runTool("weave_note", { action: "get", slug: "alpha" }, ctx);
+      expect(alpha.content[0]?.text).not.toContain("[[");
+    });
+  });
+
+  it("scopes to one note and honours a limit", async () => {
+    const mock = buildExtension();
+    const ctx = createMockCtx(await makeTempDir());
+    await withVaultEnv(await makeTempDir(), async () => {
+      await seed(mock, ctx);
+      await mock.runTool("weave_note", { action: "add", title: "Alpha", text: "zephyrine quorum" }, ctx);
+      await mock.runTool("weave_note", { action: "add", title: "Beta", text: "zephyrine quorum" }, ctx);
+      await mock.runTool("weave_note", { action: "add", title: "Gamma", text: "zephyrine quorum" }, ctx);
+
+      const res = await mock.runTool("weave_note", { action: "suggest", slug: "alpha", limit: 1 }, ctx);
+      expect(res.content[0]?.text).toContain("look related to 'alpha'");
+      expect((res.details as { suggestions: unknown[] }).suggestions).toHaveLength(1);
+    });
+  });
+
+  it("says so plainly when there is nothing to suggest", async () => {
+    const mock = buildExtension();
+    const ctx = createMockCtx(await makeTempDir());
+    await withVaultEnv(await makeTempDir(), async () => {
+      const empty = await mock.runTool("weave_note", { action: "suggest" }, ctx);
+      expect(empty.content[0]?.text).toContain("No unlinked notes");
+      const missing = await mock.runTool("weave_note", { action: "suggest", slug: "ghost" }, ctx);
+      expect(missing.content[0]?.text).toContain("Nothing unlinked looks related to 'ghost'");
+    });
+  });
+});
+
 describe("weave_note slug hardening", () => {
   it("append refuses traversal slugs with a friendly message", async () => {
     const mock = buildExtension();
@@ -647,6 +765,24 @@ describe("weave_note slug hardening", () => {
       );
       expect(res.content[0]?.text).toContain("Invalid note slug");
       expect(res.details).toMatchObject({ found: false });
+    });
+  });
+});
+
+describe("weave_note list stays bounded", () => {
+  it("truncates a large vault and points at search", async () => {
+    const mock = buildExtension();
+    const ctx = createMockCtx(await makeTempDir());
+    await withVaultEnv(await makeTempDir(), async () => {
+      for (let i = 0; i < 55; i++) {
+        await mock.runTool("weave_note", { action: "add", title: `Note ${i}`, text: "x" }, ctx);
+      }
+      const res = await mock.runTool("weave_note", { action: "list" }, ctx);
+      expect(res.content[0]?.text).toContain("55 note(s)");
+      expect(res.content[0]?.text).toContain("… and 5 more (newest 50 shown)");
+      expect(res.content[0]?.text).toContain("action=search");
+      // The full list still reaches a programmatic caller.
+      expect((res.details as { notes: unknown[] }).notes).toHaveLength(55);
     });
   });
 });

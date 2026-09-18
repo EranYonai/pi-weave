@@ -1,6 +1,6 @@
 ---
 name: weave-notepad
-description: "Take and retrieve durable notes in the pi-weave vault. Use when the user asks to remember something or to start/add to a note (aliases: notes, ai note, note-taking, note-taker), or when answering questions about past decisions, people, or projects. Also handles interview note-taking where raw dictations are appended AND expanded."
+description: "Take and retrieve durable notes in the pi-weave vault. Use when the user asks to remember something or to start/add to a note (aliases: notes, ai note, note-taking, note-taker), or when answering questions about past decisions, people, or projects. Also handles interview note-taking where raw dictations are appended AND expanded, and deterministic repair of stale [[wiki-links]] between notes."
 ---
 
 # Weave Notepad
@@ -14,7 +14,7 @@ In pi, use the `weave_note` tool. In other harnesses (or when the tool is not av
 
 - **Notes** live at `~/.okf/notes/<slug>.md` (vault root overridable via `PI_WEAVE_VAULT`).
 - Each note has YAML front matter: `title`, `created`, `updated` (ISO-8601), `tags: [..]`, and `source: human | agent | generated`.
-- `weave_note` actions: `list`, `get`, `add`, `append`, `finalize`, `search`. `finalize` restructures the body *above* the `## Raw` tail and
+- `weave_note` actions: `list`, `get`, `add`, `append`, `finalize`, `search`, `links`, `suggest`. `finalize` restructures the body *above* the `## Raw` tail and
   preserves the tail verbatim — a body with no tail yet is preserved **in full** as a newly created tail, so finalization never destroys
   dictation.
 - **Dictation appends**: use `append` with `raw: true` — the tool appends the text verbatim into the `## Raw` tail as a dated fenced block,
@@ -79,19 +79,26 @@ down". Never promote conversation into a note on your own initiative — capture
 
 ## How to write a good note
 
-1. **Search first** (`weave_note` action=search): if a note exists, `append` to it rather than creating a duplicate.
+0. **Go straight to the tool.** A note is one `weave_note` call. Do not `list` the vault, inspect the repository, or run `git` — none of that
+   informs what to write, and on a large vault `list` alone floods the context. When the user gives you the content ("note that says X"),
+   `add` it and report the slug.
+1. **Search first when adding to existing knowledge** (`weave_note` action=search, with the note's key terms): if a note on the subject
+   exists, `append` to it rather than creating a duplicate. Skip this when the user is clearly starting something new — one targeted search,
+   never a vault listing.
 2. Title: short noun phrase ("Auth boundary decision", not "Notes").
-3. **Scribble in, verbatim.** When the user is dictating, append their words to the note as rough, verbatim scribbles — no silent rewording.
+3. **Ask only when the content is genuinely missing.** A vague request ("write a note weave") needs one short question, not exploration —
+   searching the vault or the repo will not reveal what the user meant.
+4. **Scribble in, verbatim.** When the user is dictating, append their words to the note as rough, verbatim scribbles — no silent rewording.
    Append with `raw: true` so they land under the `## Raw` tail at the end of the note (the tail is created automatically if missing).
-4. **Compile continuously during dictation.** After *every* interactive append in dictation mode, immediately finalize the body *above* the
+5. **Compile continuously during dictation.** After *every* interactive append in dictation mode, immediately finalize the body *above* the
    raw tail so the compiled doc stays current (see [Dictation mode](#dictation-mode-continuous-compile)). Outside dictation mode,
    compilation stays on request.
-5. **Finalize on request.** When the user says "finalize this" / "clean this up", restructure the body *above* the raw tail: front-loaded
+6. **Finalize on request.** When the user says "finalize this" / "clean this up", restructure the body *above* the raw tail: front-loaded
    summary, sections, entities, links. Use `weave_note` action=finalize (or edit the file directly in other harnesses). Move nothing out of
    `## Raw` — it is append-only and never rewritten. A note with no `## Raw` tail yet gets its entire pre-finalize body preserved as a new
    raw tail: finalization is editorial, never destructive.
-6. Tags: 1–4 lowercase tags; reuse existing tags when possible.
-7. Provenance: notes the user scribbled stay `source: human` (finalization is editorial, not authorship) — pass `source: "human"` to `add`
+7. Tags: 1–4 lowercase tags; reuse existing tags when possible.
+8. Provenance: notes the user scribbled stay `source: human` (finalization is editorial, not authorship) — pass `source: "human"` to `add`
    for user-scribbled notes. Notes you draft from scratch are `source: agent` (the default). Never overwrite a `source: human` note's
    meaning; append with a dated "Agent addendum" section instead.
 
@@ -109,3 +116,30 @@ The scan is opt-in and never runs on its own. Suggest it when the user asks why 
 
 Use `weave_note` action=search with the user's key terms, then `get` the best hits. When a note and the repository index disagree, trust the
 repository for facts about code and flag the discrepancy — the note may be stale intent.
+
+## Repairing stale links
+
+A link written as a bare title or basename — `[[Quarterly Roadmap]]` when the note is `planning/roadmap-2026` — resolves to nothing.
+**Never reconnect a vault by reading every note and guessing which ones relate.** Run the deterministic pass instead:
+
+```jsonc
+weave_note { "action": "links" }              // report: fixable / ambiguous / unresolvable
+weave_note { "action": "links", "fix": true } // apply only the unambiguous repairs
+```
+
+It resolves by exact slug, then unique basename, then unique title — each requiring exactly one candidate. Ambiguous links are reported
+with their candidates and never guessed; unresolvable ones point at notes that were never written. Aliases are preserved, the `## Raw`
+tail and code fences are never touched, and `updated` is not bumped. Report first, apply after the user sees it.
+
+To find connections that were **never written** — two notes that belong together but have never referenced each other — use `suggest`:
+
+```jsonc
+weave_note { "action": "suggest" }                      // strongest unlinked pairs
+weave_note { "action": "suggest", "slug": "some/note" } // what relates to one note
+```
+
+It ranks pairs by how much *rare* vocabulary they share, and cites the shared terms as evidence. **`suggest` never writes** — there is no `fix`.
+A similarity score is a soft signal and a `[[link]]` is a hard claim, so propose the worthwhile pairs to the user and add links only to those they
+confirm.
+
+See [references/link-repair.md](references/link-repair.md) for the full rules, guarantees, and when to run each.

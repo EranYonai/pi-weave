@@ -53,12 +53,30 @@ export {
   moveNote,
   parseHtmlArtifact,
   renameFolder,
+  readVault,
   renameNote,
+  repairVaultLinks,
   resolveHtmlPath,
   resolveNotePath,
   searchNotes,
   upsertNote,
+  type LinkRepairResult,
 } from "./vault";
+export {
+  suggestLinks,
+  type LinkSuggestion,
+  type SuggestOptions,
+  type SuggestionReport,
+} from "./links/similar";
+export {
+  auditLinks,
+  rewriteLinks,
+  scanLinks,
+  type AmbiguousLink,
+  type LinkAudit,
+  type LinkFix,
+  type UnresolvableLink,
+} from "./links/repair";
 export type { HtmlArtifact } from "./types";
 export { withMutationQueue } from "./mutex";
 export { formatDashboard, formatStatusLine, getWorkspaceStatus } from "./workspace";

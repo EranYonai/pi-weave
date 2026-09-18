@@ -29,7 +29,7 @@
 import { isAbsolute, join, relative, resolve, sep } from "node:path";
 import { gitSpawnCount } from "../git";
 import { NOTES_DIR } from "../paths";
-import { buildGraph, DEFAULT_MAX_NOTES, type BuildGraphInput } from "../graph/build";
+import { buildGraph, type BuildGraphInput } from "../graph/build";
 import type { GraphModel } from "../graph/model";
 import { readRepositorySide } from "../graph/current";
 import { withMutationQueue } from "../mutex";
@@ -41,16 +41,14 @@ import type { HtmlArtifact, Note } from "../types";
  *
  * The two travel together because a caller deriving anything per-note — the
  * tag index (§4.3) is the motivating case — must use *the same* list the
- * graph used, including the `DEFAULT_MAX_NOTES` truncation. Reading the notes
- * from a second call would let the cap fall between them and produce a tag
- * pointing at a slug the graph has no node for.
+ * graph used. Reading the notes from a second call could race a vault change
+ * and produce a tag pointing at a slug the graph has no node for.
  */
 export interface WorkspaceSnapshot {
   model: GraphModel;
   /**
-   * Exactly the notes `buildGraph` saw: newest-updated first and already
-   * truncated to the cap. Frozen — this is the cache's own array and a
-   * caller mutating it would corrupt the next build.
+   * Exactly the notes `buildGraph` saw, newest-updated first. Frozen — this
+   * is the cache's own array and a caller mutating it would corrupt the next build.
    */
   notes: readonly Note[];
 }
@@ -383,10 +381,6 @@ export class WorkspaceCache {
         return this.lastSnapshot;
       }
 
-      // Truncated once, here, and then handed to *both* the builder and the
-      // snapshot — so a caller deriving per-note data cannot see a note the
-      // graph has no node for (§4.3).
-      const kept = notes.slice(0, DEFAULT_MAX_NOTES);
       const input: BuildGraphInput = {
         vault: {
           root: this.vaultRoot,
@@ -395,7 +389,7 @@ export class WorkspaceCache {
           ...(this.folders.length > 0 ? { folders: this.folders } : {}),
           ...(this.artifactCount > 0 ? { artifactCount: this.artifactCount } : {}),
         },
-        notes: kept,
+        notes,
         artifacts: refreshed.artifacts,
         repository: repo?.repository ?? null,
       };
@@ -405,7 +399,7 @@ export class WorkspaceCache {
       this.builtAt = this.now().toISOString();
       const snapshot: WorkspaceSnapshot = {
         model: buildGraph(input),
-        notes: Object.freeze(kept),
+        notes: Object.freeze(notes),
       };
       this.lastSnapshot = snapshot;
       return snapshot;

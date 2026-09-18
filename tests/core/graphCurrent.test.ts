@@ -29,6 +29,22 @@ describe("buildCurrentGraph (core)", () => {
     });
   });
 
+  it("keeps every note and populated folder past the former 500-note cutoff", async () => {
+    const vault = await makeTempDir();
+    const notesDir = join(vault, "notes");
+    await mkdir(join(notesDir, "older"), { recursive: true });
+    const note = (title: string, updated: string): string =>
+      `---\ntitle: ${title}\ncreated: ${updated}\nupdated: ${updated}\ntags: []\nsource: human\n---\n\nbody\n`;
+    await Promise.all([
+      ...Array.from({ length: 500 }, (_, i) => writeFile(join(notesDir, `new-${i}.md`), note(`New ${i}`, "2026-02-01T00:00:00.000Z"))),
+      writeFile(join(notesDir, "older", "only.md"), note("Only older note", "2020-01-01T00:00:00.000Z")),
+    ]);
+
+    const model = await buildCurrentGraph(await makeTempDir(), vault);
+    expect(model.nodes.filter((node) => node.kind === "note")).toHaveLength(501);
+    expect(model.edges).toContainEqual({ source: "vfolder:older", target: "note:older/only", kind: "contains" });
+  });
+
   it("includes the repository side when cwd is an indexed git repo, with staleness", async () => {
     const vault = await makeTempDir();
     await withVaultEnv(vault, async () => {

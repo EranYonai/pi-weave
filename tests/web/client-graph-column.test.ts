@@ -105,6 +105,37 @@ const ALL_SHUT: GraphViewState = { expanded: new Set() };
 
 // --- the view state ---------------------------------------------------------------------
 
+describe("large vaults on the canvas", () => {
+  // Clustering, not a payload-size cap, is what bounds the canvas: a note is
+  // drawn because the user expanded its folder, never withheld because of
+  // where it sits in the payload.
+  const bigVault = (count: number) => {
+    const nodes = [node("vault", "vault"), node("vfolder:deep", "module")];
+    const edges: WireGraphEdge[] = [edge("vault", "vfolder:deep", "contains")];
+    for (let i = 0; i < count; i++) {
+      nodes.push(node(`note:deep/n${i}`, "note"));
+      edges.push(edge("vfolder:deep", `note:deep/n${i}`, "contains"));
+    }
+    return viewModel(payloadOf(nodes, edges));
+  };
+
+  it("draws every note of an expanded folder, however large the vault", () => {
+    const model = bigVault(600);
+    const open = clusterAggregate(model, new Set(["vault", "vfolder:deep"]));
+    expect(open.nodes.filter((n) => n.kind === "note")).toHaveLength(600);
+    expect(open.nodes.some((n) => n.id === "note:deep/n599")).toBe(true);
+  });
+
+  it("keeps the collapsed frame small without dropping anything", () => {
+    const model = bigVault(600);
+    const shut = clusterAggregate(model, new Set(["vault"]));
+    // The folder stands in for its 600 notes rather than 500 of them silently
+    // vanishing: bounded by what the user opened, not by payload rank.
+    expect(shut.nodes.map((n) => n.id).sort()).toEqual(["vault", "vfolder:deep"]);
+    expect(shut.clusters.get("vfolder:deep")?.members).toHaveLength(600);
+  });
+});
+
 describe("initialGraphView", () => {
   it("opens a small graph whole", () => {
     // A collapsed nine-note vault shows two words and reads as an empty

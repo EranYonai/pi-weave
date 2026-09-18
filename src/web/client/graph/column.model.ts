@@ -52,6 +52,20 @@ import { resolveLayout } from "./positions";
 
 // --- the view state ------------------------------------------------------------------
 
+/**
+ * The canvas draws whatever the user has expanded — there is no note cap.
+ *
+ * Clustering is the bound: a collapsed folder is one node standing in for its
+ * whole subtree, and `initialGraphView` opens the roots rather than the tree,
+ * so the default frame stays small at any vault size. A bound on the payload
+ * instead would decide visibility by a note's position in the list, which is
+ * unrelated to what the user is looking at and hides notes inside folders
+ * they explicitly opened.
+ *
+ * If a vault ever does overwhelm the layout, bound the *expansion* (how much
+ * one expand reveals) or the simulation itself.
+ */
+
 /** The graph column's state. Owned by the column; never on the context bus. */
 export interface GraphViewState {
   /**
