@@ -1,6 +1,6 @@
 /** The vault and repository tree column. */
 
-import { useState } from "preact/hooks";
+import { useLayoutEffect, useRef, useState } from "preact/hooks";
 import { createFolder, deleteFolder, deleteNote, moveNote, renameFolder, renameNote } from "../api";
 import { fetchJson } from "../api.dom";
 import { isTextEntry, type KeyTarget } from "../shell/keys.model";
@@ -9,6 +9,7 @@ import type { IconName } from "../shell/icons.model";
 import type { GraphPayload } from "../../shared/wire";
 import {
   DRAFT_FOLDER_ID,
+  deleteItemLabel,
   FILTER_HINT,
   FILTER_LABEL,
   FILTER_PLACEHOLDER,
@@ -95,15 +96,66 @@ function Row({ view, recentIds, edit, onEdit, onRename, onSelect, onToggle, onMe
       </span>
       <span class="weave-kind" aria-hidden="true"><Icon name={view.kindIcon} class="weave-icon" /></span>
       <span class={`weave-prov weave-prov-${view.provenance ?? "none"}`} title={view.provenanceTitle}>{view.provenanceGlyph}</span>
-      {edit === null ? <span class="weave-label">{view.label}</span> : <input class="weave-tree-rename" value={edit} autoFocus placeholder={view.id === DRAFT_FOLDER_ID ? "New folder name…" : undefined} onClick={(event) => event.stopPropagation()} onInput={(event) => onEdit(event.currentTarget.value)} onBlur={(event) => onRename(event.currentTarget.value)} onKeyDown={(event) => { event.stopPropagation(); if (event.key === "Enter") event.currentTarget.blur(); else if (event.key === "Escape") onRename(null); }} />}
+      {edit === null ? <span class="weave-label">{view.label}</span> : <RenameInput value={edit} draft={view.id === DRAFT_FOLDER_ID} onEdit={onEdit} onCommit={onRename} />}
       <span class="weave-meta">{view.meta}</span>
     </li>
   );
 }
 
+/**
+ * The inline editor, as its own component so it **mounts** when an edit
+ * starts.
+ *
+ * That is the whole reason it is not an `<input>` inline in {@link Row}: the
+ * existing name has to be selected once, when the editor opens, and neither
+ * obvious spelling does that. An inline `ref={(el) => el?.select()}` re-runs
+ * on every render — preact's children diff fires a ref whenever its
+ * *identity* changes (`oldVNode.ref != childVNode.ref` in
+ * `diff/children.js`), and an arrow literal is a new identity each time — so
+ * every keystroke would re-select the text being typed. `onFocus` re-selects
+ * whenever the tab regains focus mid-edit. A mount effect fires exactly once,
+ * which is the actual requirement.
+ *
+ * `useLayoutEffect`, not `useEffect`, so the selection is in place before
+ * paint — otherwise the fix itself flashes unselected text for a frame.
+ */
+function RenameInput({ value, draft, onEdit, onCommit }: { value: string; draft: boolean; onEdit: (value: string) => void; onCommit: (value: string | null) => void }) {
+  const input = useRef<HTMLInputElement | null>(null);
+  useLayoutEffect(() => {
+    const element = input.current;
+    if (element === null) return;
+    element.focus();
+    // A draft folder has no name yet, and `select()` on an empty input is a
+    // no-op — so this needs no branch.
+    element.select();
+  }, []);
+  return (
+    <input
+      ref={input}
+      class="weave-tree-rename"
+      value={value}
+      placeholder={draft ? "New folder name…" : undefined}
+      onClick={(event) => event.stopPropagation()}
+      onInput={(event) => onEdit(event.currentTarget.value)}
+      onBlur={(event) => onCommit(event.currentTarget.value)}
+      onKeyDown={(event) => {
+        event.stopPropagation();
+        if (event.key === "Enter") event.currentTarget.blur();
+        else if (event.key === "Escape") onCommit(null);
+      }}
+    />
+  );
+}
+
 export function Tree(props: TreeProps) {
   const [state, setState] = useState(initialTreeView);
-  const [menu, setMenu] = useState<{ id: string; label: string; x: number; y: number } | null>(null);
+  /**
+   * The open context menu. `armed` is the folder-delete confirmation: the
+   * first click on `Delete…` sets it, and only then does the item delete —
+   * see `deleteItemLabel`. Held on the menu so closing it disarms, which is
+   * what makes a mis-click cheap.
+   */
+  const [menu, setMenu] = useState<{ id: string; label: string; x: number; y: number; armed?: boolean } | null>(null);
   const [editing, setEditing] = useState<{ id: string; label: string; value: string } | null>(null);
   /**
    * The parent path a pending "New folder" will be created under, or `null`.
@@ -138,9 +190,26 @@ export function Tree(props: TreeProps) {
       setEditing({ id: DRAFT_FOLDER_ID, label: "", value: "" });
     } else if (action === "rename") {
       setEditing({ id: menu.id, label: menu.label, value: menu.label });
-    } else if (target.type !== "vault" && (!deleteNeedsConfirmation(target) || window.confirm(`Permanently delete folder “${menu.label}” and everything inside it?`))) {
+    } else if (target.type !== "vault") {
       await run(target.type === "note" ? deleteNote(fetchJson, target.path) : deleteFolder(fetchJson, target.path), deletesSelection(props.selectedId, target) ? "vault" : undefined);
     }
+  };
+
+  /**
+   * The delete item was clicked. Arms first for a folder, deletes second.
+   *
+   * A note deletes on the first click (§#37): it is one file whose name the
+   * user just read off the row. A folder is `fs.rm(recursive)` over a subtree
+   * the row shows no count for, so it takes two — and the second click's label
+   * names the folder, which is the chance to notice the wrong row was hit.
+   */
+  const clickDelete = (target: { type: "note" | "folder" | "vault" }): void => {
+    if (menu === null) return;
+    if (deleteNeedsConfirmation(target) && menu.armed !== true) {
+      setMenu({ ...menu, armed: true });
+      return;
+    }
+    void act("delete");
   };
   /**
    * The inline editor was committed (Enter or blur) or abandoned (Escape).
@@ -164,9 +233,11 @@ export function Tree(props: TreeProps) {
       return;
     }
     const target = mutableTreeRow(current.id);
-    // A rename may break wiki-links, so it keeps its confirmation; a create
-    // cannot break anything and gets none.
-    if (target !== null && name && name !== current.label && window.confirm(`Rename “${current.label}”? Existing links to it may break.`)) {
+    // No confirmation. A rename can break wiki-links, but the warning was
+    // unactionable — it named no link and offered no way to see them — and it
+    // fired on the *commit* of an edit the user had already typed out, which
+    // is the least useful moment to ask. Renaming back is one more rename.
+    if (target !== null && name && name !== current.label) {
       void run(target.type === "note" ? renameNote(fetchJson, target.path, name) : renameFolder(fetchJson, target.path, name));
     }
   };
@@ -211,7 +282,7 @@ export function Tree(props: TreeProps) {
               {target.type !== "vault" ? (
                 <>
                   <button type="button" role="menuitem" onClick={() => void act("rename")}>Rename…</button>
-                  <button type="button" role="menuitem" class="weave-menu-danger" onClick={() => void act("delete")}>Delete</button>
+                  <button type="button" role="menuitem" class="weave-menu-danger" onClick={() => clickDelete(target)}>{deleteItemLabel(target, menu.label, menu.armed === true)}</button>
                 </>
               ) : null}
             </div>

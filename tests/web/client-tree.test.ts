@@ -27,6 +27,7 @@ import {
   collapse,
   cycleProvenance,
   deletesSelection,
+  deleteItemLabel,
   deleteNeedsConfirmation,
   depthVar,
   newFolderParent,
@@ -278,6 +279,22 @@ describe("tree mutations", () => {
     expect(deleteNeedsConfirmation({ type: "note" })).toBe(false);
     expect(deleteNeedsConfirmation({ type: "folder" })).toBe(true);
     expect(deleteNeedsConfirmation({ type: "vault" })).toBe(false);
+  });
+
+  it("confirms a folder delete in the menu item's own label", () => {
+    // No `window.confirm` anywhere in the workspace any more. A folder still
+    // takes two clicks, because `deleteFolder` is `fs.rm(recursive)` with no
+    // undo over a subtree whose size the row does not show — and the second
+    // label names the folder, which is the chance to spot a wrong right-click.
+    const folder = { type: "folder" as const };
+    expect(deleteItemLabel(folder, "archive", false)).toBe("Delete…");
+    expect(deleteItemLabel(folder, "archive", true)).toContain("archive");
+    expect(deleteItemLabel(folder, "archive", true)).toContain("everything in it");
+    // A note is one file whose name the user just read: one click, always,
+    // and the label never changes under them.
+    const note = { type: "note" as const };
+    expect(deleteItemLabel(note, "Alpha", false)).toBe("Delete");
+    expect(deleteItemLabel(note, "Alpha", true)).toBe("Delete");
   });
 });
 

@@ -231,9 +231,36 @@ export function deletesSelection(selectedId: string | null, target: { type: "not
   return false;
 }
 
-/** Notes delete directly; folders retain confirmation because they may contain many notes. */
+/**
+ * Notes delete directly; folders ask once, **in the menu**.
+ *
+ * Not a `window.confirm` — no gesture in this workspace opens a browser
+ * dialog any more. But not nothing either: `deleteFolder` is
+ * `fs.rm(recursive: true)` on a directory that may hold hundreds of notes,
+ * there is no undo, and the tree row shows no count, so a single stray click
+ * on a 300-note folder is unrecoverable. A note is one file the user can see
+ * the name of, which is why §#37 dropped its confirmation and this keeps one.
+ *
+ * The confirmation is {@link deleteItemLabel}: the same menu item, clicked
+ * twice, with the second click's label saying exactly what it will destroy.
+ */
 export function deleteNeedsConfirmation(target: { type: "note" | "folder" | "vault" }): boolean {
   return target.type === "folder";
+}
+
+/**
+ * The delete menu item's label — what pressing it *now* will do.
+ *
+ * One function so the label and the action cannot disagree: `Tree.tsx` reads
+ * the same `armed` flag to decide whether the next click deletes, and a menu
+ * item that says "Delete" but arms instead (or the reverse) is the classic
+ * version of this bug. Naming the folder in the armed state is the whole
+ * safety mechanism — it is the user's chance to notice they right-clicked the
+ * wrong row.
+ */
+export function deleteItemLabel(target: { type: "note" | "folder" | "vault" }, label: string, armed: boolean): string {
+  if (!deleteNeedsConfirmation(target)) return "Delete";
+  return armed ? `Delete “${label}” and everything in it` : "Delete…";
 }
 
 /**
