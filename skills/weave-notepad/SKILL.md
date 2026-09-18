@@ -14,7 +14,7 @@ In pi, use the `weave_note` tool. In other harnesses (or when the tool is not av
 
 - **Notes** live at `~/.okf/notes/<slug>.md` (vault root overridable via `PI_WEAVE_VAULT`).
 - Each note has YAML front matter: `title`, `created`, `updated` (ISO-8601), `tags: [..]`, and `source: human | agent | generated`.
-- `weave_note` actions: `list`, `get`, `add`, `append`, `finalize`, `search`, `links`. `finalize` restructures the body *above* the `## Raw` tail and
+- `weave_note` actions: `list`, `get`, `add`, `append`, `finalize`, `search`, `links`, `suggest`. `finalize` restructures the body *above* the `## Raw` tail and
   preserves the tail verbatim — a body with no tail yet is preserved **in full** as a newly created tail, so finalization never destroys
   dictation.
 - **Dictation appends**: use `append` with `raw: true` — the tool appends the text verbatim into the `## Raw` tail as a dated fenced block,
@@ -124,4 +124,15 @@ It resolves by exact slug, then unique basename, then unique title — each requ
 with their candidates and never guessed; unresolvable ones point at notes that were never written. Aliases are preserved, the `## Raw`
 tail and code fences are never touched, and `updated` is not bumped. Report first, apply after the user sees it.
 
-See [references/link-repair.md](references/link-repair.md) for the full rules, guarantees, and when to run it.
+To find connections that were **never written** — two notes that belong together but have never referenced each other — use `suggest`:
+
+```jsonc
+weave_note { "action": "suggest" }                      // strongest unlinked pairs
+weave_note { "action": "suggest", "slug": "some/note" } // what relates to one note
+```
+
+It ranks pairs by how much *rare* vocabulary they share, and cites the shared terms as evidence. **`suggest` never writes** — there is no `fix`.
+A similarity score is a soft signal and a `[[link]]` is a hard claim, so propose the worthwhile pairs to the user and add links only to those they
+confirm.
+
+See [references/link-repair.md](references/link-repair.md) for the full rules, guarantees, and when to run each.

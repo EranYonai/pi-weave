@@ -49,10 +49,41 @@ Anything else is reported, never guessed:
 `renameNote`, `moveNote` and `renameFolder` rewrite inbound links automatically. Moving a note no longer breaks its backlinks, so the
 repair pass exists for links that were *written* stale, not for links the vault broke itself.
 
+## Finding connections that were never made
+
+Repair fixes links that point wrong. It cannot find links that were **never written** — two notes that belong together but have never referenced each
+other. That is `suggest`:
+
+```jsonc
+weave_note { "action": "suggest" }                              // strongest pairs vault-wide
+weave_note { "action": "suggest", "slug": "some/note" }         // what relates to this note
+weave_note { "action": "suggest", "limit": 40 }
+```
+
+It ranks unlinked pairs by IDF-weighted cosine over every term a note carries — title, tags and body in one bag — weighting each term by how rare
+it is *in this vault*. Vocabulary shared by most notes (`sprint`, `meeting`, a tag on half the vault) scores near zero and connects nothing;
+a ticket id or an unusual name on a handful of notes scores high. Nothing is domain-specific: the vault's own frequencies decide.
+
+Every suggestion cites the shared terms that earned it. **Read the evidence, not the score** — `shared: cort-2091, traps-pipelines` is checkable,
+`0.16` is not.
+
+### suggest never writes
+
+This is the rule that matters. `suggest` only reports; there is no `fix`. A similarity score is a soft signal and a `[[link]]` is a hard claim —
+once written into a body it is indistinguishable from one the user wrote deliberately. Good scores here are around 0.1–0.3, not 0.9, so treat the
+output as a shortlist for a human:
+
+1. Run `suggest`, read the shared terms.
+2. Propose the worthwhile pairs **to the user**.
+3. Add `[[wikilinks]]` only to those they confirm.
+
+Never bulk-apply suggestions, and never present one as an established connection.
+
 ## When to run it
 
-- The user asks to "connect", "link up", or "fix the links in" their notes.
-- The health panel or `/weave` reports dangling links.
-- After bulk-importing or reorganising notes outside the tool.
+- The user asks to "fix the links in" their notes — `links`.
+- The health panel or `/weave` reports dangling links — `links`.
+- After bulk-importing or reorganising notes outside the tool — `links`.
+- The user asks what a note "relates to", or to "connect" / "link up" the vault — `suggest`, then confirm before writing.
 
 Do not run `fix: true` unprompted on a vault you did not just change — show the report and let the user approve. Reporting is always safe.

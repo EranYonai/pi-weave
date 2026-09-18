@@ -17,7 +17,10 @@ import {
   withMutationQueue,
   resolveVaultRoot,
   searchNotes,
+  suggestLinks,
+  readVault,
   type LinkRepairResult,
+  type SuggestionReport,
 } from "../../core";
 
 /** Cap on how many rows of each link-audit category get printed. */
@@ -27,6 +30,34 @@ function capped<T>(items: readonly T[], render: (item: T) => string): string[] {
   const lines = items.slice(0, LINK_REPORT_CAP).map(render);
   if (items.length > LINK_REPORT_CAP) lines.push(`  … and ${items.length - LINK_REPORT_CAP} more`);
   return lines;
+}
+
+/**
+ * Render suggestions as the text the model reads.
+ *
+ * Every row carries the shared terms that earned it. A bare score is
+ * unreviewable; the evidence is what lets a human accept or reject a
+ * suggestion without opening both notes.
+ */
+function formatSuggestions(report: SuggestionReport, focus: string | undefined): string {
+  if (report.suggestions.length === 0) {
+    return focus === undefined
+      ? `No unlinked notes share enough distinctive vocabulary to suggest a connection (${report.considered} note(s) considered).`
+      : `Nothing unlinked looks related to '${focus}' (${report.considered} note(s) considered).`;
+  }
+  const head = focus === undefined
+    ? `${report.suggestions.length} suggested connection(s) across ${report.considered} note(s):`
+    : `${report.suggestions.length} note(s) look related to '${focus}':`;
+  const rows = report.suggestions.map((s) => {
+    const pair = focus === undefined ? `${s.a} ↔ ${s.b}` : s.a === focus ? s.b : s.a;
+    return `  ${s.score.toFixed(3)}  ${pair}\n         shared: ${s.shared.join(", ")}`;
+  });
+  return [
+    head,
+    ...rows,
+    "",
+    "These are suggestions, not links — nothing was written. Add a [[wikilink]] to any pair worth keeping.",
+  ].join("\n");
 }
 
 /** Render a link audit (and any repair) as the text the model reads. */
@@ -82,16 +113,18 @@ export function registerNoteTool(pi: ExtensionAPI): void {
       "of Markdown notes. Actions: list (all notes), get (one note by slug), add (new note), " +
       "append (extend a note; raw=true appends verbatim dictation into the ## Raw tail), " +
       "finalize (restructure a note above its raw tail), search (title/tags/body), " +
-      "links (audit stale [[wiki-links]]; fix=true repairs the unambiguous ones). " +
+      "links (audit stale [[wiki-links]]; fix=true repairs the unambiguous ones), " +
+      "suggest (rank unlinked notes that share distinctive vocabulary; reports only, never writes). " +
       "Use it to remember decisions, facts, and user preferences across sessions.",
     promptSnippet: "Remember and retrieve durable knowledge in the pi-weave vault",
     promptGuidelines: [
       "Use weave_note to store durable knowledge (decisions, preferences, key facts) that should survive the session, marking source as agent-written knowledge.",
       "Use weave_note with action=search before answering questions about past decisions, people, or projects; generated notes under sessions/ carry takeaways from earlier sessions.",
       "Use weave_note with action=links to find and repair stale [[wiki-links]] deterministically instead of rereading the vault to reconnect notes by hand; add fix=true to apply the unambiguous repairs.",
+      "Use weave_note with action=suggest to discover notes that belong together but are not linked (optionally scoped to one slug); it only reports — propose the links to the user rather than writing them.",
     ],
     parameters: Type.Object({
-      action: StringEnum(["list", "get", "add", "append", "finalize", "search", "links"] as const),
+      action: StringEnum(["list", "get", "add", "append", "finalize", "search", "links", "suggest"] as const),
       title: Type.Optional(Type.String({ description: "Note title (add)" })),
       text: Type.Optional(Type.String({ description: "Markdown body (add), addition (append), or restructured body above the raw tail (finalize)" })),
       tags: Type.Optional(Type.Array(Type.String(), { description: "Tags (add)" })),
@@ -100,6 +133,7 @@ export function registerNoteTool(pi: ExtensionAPI): void {
       source: Type.Optional(StringEnum(["human", "agent"] as const, { description: "Provenance (add): human for user-scribbled notes, agent for Pi-drafted (default agent)" })),
       query: Type.Optional(Type.String({ description: "Search query (search)" })),
       fix: Type.Optional(Type.Boolean({ description: "links: apply the unambiguous repairs. Omit for a read-only report" })),
+      limit: Type.Optional(Type.Number({ description: "suggest: how many suggestions to return (default 20)" })),
     }),
     async execute(toolCallId, params, signal, onUpdate, ctx) {
       const vault = resolveVaultRoot();
@@ -232,6 +266,21 @@ export function registerNoteTool(pi: ExtensionAPI): void {
           return {
             content: [{ type: "text", text: `${hits.length} hit(s) for '${params.query}':\n${lines.join("\n")}` }],
             details: { action: "search", hits },
+          };
+        }
+
+        case "suggest": {
+          const { notes } = await readVault(vault);
+          const report = suggestLinks(
+            { notes },
+            {
+              ...(params.slug ? { slug: params.slug } : {}),
+              ...(params.limit !== undefined ? { limit: params.limit } : {}),
+            },
+          );
+          return {
+            content: [{ type: "text", text: formatSuggestions(report, params.slug) }],
+            details: { action: "suggest", considered: report.considered, suggestions: report.suggestions },
           };
         }
 

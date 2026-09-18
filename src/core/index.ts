@@ -53,6 +53,7 @@ export {
   moveNote,
   parseHtmlArtifact,
   renameFolder,
+  readVault,
   renameNote,
   repairVaultLinks,
   resolveHtmlPath,
@@ -61,6 +62,12 @@ export {
   upsertNote,
   type LinkRepairResult,
 } from "./vault";
+export {
+  suggestLinks,
+  type LinkSuggestion,
+  type SuggestOptions,
+  type SuggestionReport,
+} from "./links/similar";
 export {
   auditLinks,
   rewriteLinks,

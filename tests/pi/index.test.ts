@@ -699,6 +699,60 @@ describe("weave_note links action", () => {
   });
 });
 
+describe("weave_note suggest action", () => {
+  const seed = async (mock: ReturnType<typeof buildExtension>, ctx: ReturnType<typeof createMockCtx>) => {
+    for (let i = 0; i < 30; i++) {
+      await mock.runTool("weave_note", { action: "add", title: `Filler ${i}`, text: "routine standup notes" }, ctx);
+    }
+  };
+
+  it("reports related notes with their evidence, and writes nothing", async () => {
+    const mock = buildExtension();
+    const ctx = createMockCtx(await makeTempDir());
+    await withVaultEnv(await makeTempDir(), async () => {
+      await seed(mock, ctx);
+      await mock.runTool("weave_note", { action: "add", title: "Alpha", text: "zephyrine quorum handoff" }, ctx);
+      await mock.runTool("weave_note", { action: "add", title: "Beta", text: "zephyrine quorum handoff" }, ctx);
+
+      const res = await mock.runTool("weave_note", { action: "suggest" }, ctx);
+      expect(res.content[0]?.text).toContain("alpha ↔ beta");
+      expect(res.content[0]?.text).toContain("zephyrine");
+      expect(res.content[0]?.text).toContain("nothing was written");
+      expect(res.details).toMatchObject({ action: "suggest" });
+
+      // The suggestion must not have become a link.
+      const alpha = await mock.runTool("weave_note", { action: "get", slug: "alpha" }, ctx);
+      expect(alpha.content[0]?.text).not.toContain("[[");
+    });
+  });
+
+  it("scopes to one note and honours a limit", async () => {
+    const mock = buildExtension();
+    const ctx = createMockCtx(await makeTempDir());
+    await withVaultEnv(await makeTempDir(), async () => {
+      await seed(mock, ctx);
+      await mock.runTool("weave_note", { action: "add", title: "Alpha", text: "zephyrine quorum" }, ctx);
+      await mock.runTool("weave_note", { action: "add", title: "Beta", text: "zephyrine quorum" }, ctx);
+      await mock.runTool("weave_note", { action: "add", title: "Gamma", text: "zephyrine quorum" }, ctx);
+
+      const res = await mock.runTool("weave_note", { action: "suggest", slug: "alpha", limit: 1 }, ctx);
+      expect(res.content[0]?.text).toContain("look related to 'alpha'");
+      expect((res.details as { suggestions: unknown[] }).suggestions).toHaveLength(1);
+    });
+  });
+
+  it("says so plainly when there is nothing to suggest", async () => {
+    const mock = buildExtension();
+    const ctx = createMockCtx(await makeTempDir());
+    await withVaultEnv(await makeTempDir(), async () => {
+      const empty = await mock.runTool("weave_note", { action: "suggest" }, ctx);
+      expect(empty.content[0]?.text).toContain("No unlinked notes");
+      const missing = await mock.runTool("weave_note", { action: "suggest", slug: "ghost" }, ctx);
+      expect(missing.content[0]?.text).toContain("Nothing unlinked looks related to 'ghost'");
+    });
+  });
+});
+
 describe("weave_note slug hardening", () => {
   it("append refuses traversal slugs with a friendly message", async () => {
     const mock = buildExtension();
