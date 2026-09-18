@@ -262,7 +262,7 @@ describe("the control strip (§1.2)", () => {
     // `[expand]`/`[collapse]` is gone (§15.10): the graph arrives fully
     // expanded, so one half was a no-op and the other threw the picture away
     // to show two roots. `[forces]` took its slot.
-    expect(FORCES_LABEL).toBe("forces");
+    expect(FORCES_LABEL).toBe("sliders");
     expect(FORCES_HINT).toContain("tune");
   });
 

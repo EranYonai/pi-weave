@@ -1422,9 +1422,10 @@ The **before** button loads `HAIRBALL` from `tuner.model.ts` — the pre-tuner c
 can see what it is for without reading a changelog. **copy values** puts the current record on the clipboard as the literal that belongs in
 `layout.ts`, because transcribing seven floats by eye is where a digit gets dropped.
 
-**How it opens.** The `[forces]` chip in the control strip, beside `[fit]`. `?forces=1` still works and now seeds the chip's initial state —
-it was the only way in while the panel was a half-built instrument, which was the right gate then and the wrong one for a finished control.
-A build-time `define` was rejected: it breaks the byte-reproducible `build:web:check` contract for a panel that costs a few hundred bytes.
+**How it opens.** The `[sliders]` chip in the control strip, beside `[fit]`. `?forces=1` still works and now seeds the chip's initial state
+— it was the only way in while the panel was a half-built instrument, which was the right gate then and the wrong one for a finished
+control. A build-time `define` was rejected: it breaks the byte-reproducible `build:web:check` contract for a panel that costs a few hundred
+bytes.
 
 ### 15.8 Group colour and the selection's three tiers — ✅ **built**
 
@@ -1470,7 +1471,7 @@ frames of a real drag would be dead.
 **The constants are frozen (§15.7 closed).** Found through the sliders and written into `FORCES`: `containsStrength 0.12`, `containsRest
 55`, `relationStrength 0.07`, `relationDistance 50`, `charge -200`, `chargeMax 800`, `center 0.05`. Worst branch gap on `siblingBlobsGraph`
 **−312 → +39**, on `repoLikeGraph` **−274 → +133**. `POSITIONS_STORAGE_KEY` went to `v4`, because a stored layout describes the old physics
-and the shape key digests nodes and edges, neither of which a force change touches. The tuner stays, behind the `[forces]` chip; its
+and the shape key digests nodes and edges, neither of which a force change touches. The tuner stays, behind the `[sliders]` chip; its
 **before** button loads the pre-tuner constants (`HAIRBALL`) for comparison.
 
 ### 15.10 The `[collapse]` control is gone — ✅ **removed**
@@ -1478,7 +1479,7 @@ and the shape key digests nodes and edges, neither of which a force change touch
 The graph opens fully expanded (`initialGraphView`), so the toggle's two halves were a no-op on arrival and, once pressed, a control that
 threw the whole picture away to show two root nodes. Clicking a collapsed cluster still expands it (`graphClick`) and per-level walking is
 what the tree column is for, so nothing is unreachable. `expandAll`, `collapseAll`, `allExpanded`, `toggleExpandAll`, `expandLabel` and
-`expandHint` were deleted with it rather than left exported-but-unused, along with their tests. `[forces]` took the slot.
+`expandHint` were deleted with it rather than left exported-but-unused, along with their tests. `[sliders]` took the slot.
 
 ---
 

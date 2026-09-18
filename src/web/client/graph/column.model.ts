@@ -157,8 +157,15 @@ export function highlightFor(edges: readonly WireGraphEdge[], selectedId: string
 export const FIT_LABEL = "fit";
 export const FIT_HINT = "frame the whole graph";
 
-/** The `[forces]` control, which shows and hides the tuner panel (§15.7). */
-export const FORCES_LABEL = "forces";
+/**
+ * The `[sliders]` control, which shows and hides the tuner panel (§15.7).
+ *
+ * Labelled for what the button *opens* rather than for what the panel edits:
+ * "forces" names the physics, which is the one thing a reader who has not read
+ * `layout.ts` has no word for. The constants keep the `FORCES_` prefix because
+ * the module they drive is still the force layout.
+ */
+export const FORCES_LABEL = "sliders";
 export const FORCES_HINT = "tune the layout physics and colours";
 
 /**
