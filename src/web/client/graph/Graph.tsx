@@ -42,6 +42,7 @@ import {
   graphClick,
   graphColumnModel,
   graphCountLabel,
+  hoverHighlight,
 } from "./column.model";
 import type { PositionStorage } from "./positions";
 import type { GraphRenderer, RendererFactory } from "./renderer";
@@ -180,6 +181,20 @@ export function Graph(props: GraphProps) {
       const next = graphClick(live.current.view, live.current.model.clusters, id);
       setState(next.state);
       live.current.onSelect(next.selectedId);
+    });
+    // Hover drives the *same* reducers a click does (§7.4): the pointer and
+    // the selection ask one question, and `hoverHighlight` answers it with the
+    // selection's own picture the moment the pointer leaves.
+    //
+    // Straight to the renderer, deliberately not through `useState`: hover
+    // state would enter the `model` memo below and re-derive the layout,
+    // the group colours and the whole `RenderGraph` on every pointer move.
+    instance.onHover((id) => {
+      const { model: current, selectedId } = live.current;
+      // The *drawn* edges, which are exactly the visible ones the column's own
+      // highlight was computed over — a neighbour inside a collapsed cluster
+      // has already been retargeted onto the cluster standing in for it.
+      instance.setHighlight(hoverHighlight(current.graph.edges, id, current.highlight), id ?? selectedId);
     });
     instance.onDragStart((id) => {
       const at = renderer.current?.positions().get(id);

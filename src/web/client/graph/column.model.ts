@@ -41,8 +41,8 @@
 
 import type { Point } from "../../shared/layout";
 import type { ClusterAggregate, ClusterInfo, ViewGraphModel } from "../../shared/view";
-import { clusterAggregate, degreeOf, focusNeighborhood } from "../../shared/view";
-import type { GraphPayload, WireGraphEdge, WireGraphNode } from "../../shared/wire";
+import { clusterAggregate, focusNeighborhood } from "../../shared/view";
+import type { GraphPayload, WireGraphEdge } from "../../shared/wire";
 import { viewModel } from "../tree/tree.model";
 import type { ColorScheme, RenderGraph } from "./graph.model";
 import { EMPTY_RENDER_GRAPH, renderGraph } from "./graph.model";
@@ -149,6 +149,31 @@ export function toggleCluster(state: GraphViewState, id: string): GraphViewState
 export function highlightFor(edges: readonly WireGraphEdge[], selectedId: string | null): Set<string> | null {
   if (selectedId === null) return null;
   return focusNeighborhood(selectedId, edges);
+}
+
+/**
+ * The highlight while the pointer is over a node — **hover wins, selection is
+ * what it falls back to**.
+ *
+ * Obsidian's gesture, and the reason it is the same function as
+ * {@link highlightFor} rather than a second visual language: hovering asks
+ * exactly the question clicking asks ("what is one hop from here?"), so the
+ * two must produce the same set and reach the same reducers. Anything else
+ * drifts into a graph where the pointer and the click disagree about what
+ * "related" means.
+ *
+ * `fallback` is the selection's highlight, precomputed by the column — passed
+ * rather than recomputed so leaving a node restores the selection's picture
+ * without the caller having to remember what it was. `null` hovered and
+ * `null` fallback is nothing selected and nothing hovered, which the reducers
+ * read as "render everything normally".
+ */
+export function hoverHighlight(
+  edges: readonly WireGraphEdge[],
+  hoveredId: string | null,
+  fallback: Set<string> | null,
+): Set<string> | null {
+  return hoveredId === null ? fallback : focusNeighborhood(hoveredId, edges);
 }
 
 // --- the control strip (§1.2) ---------------------------------------------------------------
@@ -340,38 +365,15 @@ export function graphClick(state: GraphViewState, clusters: ReadonlyMap<string, 
   return { state: toggleCluster(state, id), selectedId: id };
 }
 
-// --- tooltips ---------------------------------------------------------------------------------
-
-/**
- * What a node says when it stands in for a collapsed subtree.
- *
- * `ClusterInfo.members` is exactly the hidden descendants this cluster is
- * currently representing — not `descendants`, which overlaps freely between a
- * cluster and its ancestors and would report the same file under both
- * `src/core` and `repository`. `members` partitions the hidden set across the
- * visible clusters, so the counts add up to the number of nodes that are not
- * on screen.
+/*
+ * There were two tooltip builders here — `nodeTooltip` (label · N links · N
+ * hidden) and `clusterBadge`. Nothing ever rendered either one; they were the
+ * remains of a hover pass that never reached the canvas, and the hover
+ * gesture now answers the same question by *lighting the neighbourhood* and
+ * floating the node's own name (see `graph.model.ts`'s `drawHoverLabel`),
+ * which says "N links" by showing them. Deleted rather than left as covered
+ * dead code.
  */
-export function clusterBadge(cluster: ClusterInfo | undefined): string | null {
-  if (cluster === undefined || cluster.members.length === 0) return null;
-  return cluster.members.length === 1 ? "1 hidden" : `${cluster.members.length} hidden`;
-}
-
-/**
- * A node's hover text: its label, its degree, and what it is standing in for.
- *
- * `degreeOf` is core's, reached through the §2.1.1 door. The bulk `degrees`
- * pass in `graph.model.ts` is a different algorithm for a different question
- * (every node at once, O(edges)); this is one node, which is what a tooltip
- * asks.
- */
-export function nodeTooltip(node: WireGraphNode, edges: readonly WireGraphEdge[], cluster: ClusterInfo | undefined): string {
-  const degree = degreeOf(node.id, edges);
-  const parts = [node.label, degree === 1 ? "1 link" : `${degree} links`];
-  const badge = clusterBadge(cluster);
-  if (badge !== null) parts.push(badge);
-  return parts.join(" · ");
-}
 
 /** Positions keyed by id, for a caller warm-starting a re-run. */
 export type LayoutSnapshot = ReadonlyMap<string, Point>;
