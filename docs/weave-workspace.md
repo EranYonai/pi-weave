@@ -562,8 +562,13 @@ echoing the saved bytes back would be sending the note twice to save a round tri
 
 A save's request body is exactly `{ body: string }` — the narrowest thing that can express the edit. Metadata is deliberately not accepted:
 `title` has its own route (`/rename`, which also moves the file), `created` is not the caller's to set, and `updated` is the server's — a
-client that could set the last of those could make an edit look older than the state it overwrote. There is no `expectedRevision`; see §11
-P5.3 for why conflict detection is absent rather than pending.
+client that could set the last of those could make an edit look older than the state it overwrote. There is no `expectedRevision`; §11 P5.3
+has the argument, and the reachable silent overwrite it costs.
+
+**Why the save route takes the whole slug from the URL and the action from the body.** Slugs nest — session memory lives in a vault
+subdirectory — so `archive/rename` is a legitimate note, and a suffix is ambiguous where a payload is not. Classifying on the suffix made
+such a note unsaveable: the request was read as a rename missing its `name` and refused with a `400`, for a note whose only sin was its
+title. `{ body }` is therefore a save of the entire target, and only a payload carrying the action's own field is that action.
 
 The wire model is **not** `GraphModel` verbatim — the graph is lossy (§Handoff findings): tags are a joined string, note bodies are absent,
 dangling targets are discarded.
@@ -1149,8 +1154,17 @@ describes what exists now; the original design is in the git history (`90702b2^`
    not showing them.
 3. ❌ **Conflict handling — deliberately absent.** Last write wins. The revision primitive (`getNoteWithRevision`, `expectedRevision`, the
    `409` and the reducer that resolved it) was ~950 lines guarding a race between one user and themselves, in a vault that has one human in
-   it. The client refetches every 2 s, so an outside change is visible quickly and the cost of losing the race is one edit rather than the
-   file. `setNoteBody` is shaped so an optional `expectedRevision` can come back as a change in core and the route, not in the UI.
+   it. The cost of losing the race is one edit rather than the file.
+
+   **The honest limits of that trade.** The 2 s poll does *not* rescue an editing session: it refreshes `props.note`, but the textarea is
+   controlled by the draft, so a reader mid-edit never sees the incoming text and their save overwrites it silently. A tab left open on a
+   note someone then edits in `$EDITOR`, Obsidian or a second tab is a real, reachable loss.
+
+   Reinstating a guard is also **not** confined to core and the route, which an earlier draft of this section claimed. A revision has to
+   cross the `GET` wire contract, be captured **when editing begins** (the latest polled revision would bless a stale draft), and be sent by
+   `saveNote` — so it touches `wire.ts`, `routes.ts`, `api.ts` and the column. What it does *not* need is the reducer: `onSave` already
+   returns `false` on failure and keeps the draft, so a `409` can be one alert and a retained editor. That is the shape a future change
+   should take; it is deferred, not designed away.
 4. ✅ **`<textarea>` editor**, `⌘S` save, `Esc` close, toggled by an **Edit** button in the note header (§0 V10: CM6 is 118 KB gzip, more
    than the entire rest of the client). No live preview: piping the draft through `marked` + DOMPurify on every keystroke is a parse and a
    sanitise per character. Both keys are bound on the textarea rather than in `keys.model.ts` — the global listener sees every keystroke in

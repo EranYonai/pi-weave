@@ -668,10 +668,16 @@ function tailBoundary(body: string): number {
  * There is no `expectedRevision` here. This vault has one human in it, and
  * the machinery that made a save conflict-safe (a revision read with the
  * body, a `409` carrying the current note, a reducer to resolve it) was ~950
- * lines guarding a race between a user and themselves. The browser refetches
- * every couple of seconds, so a concurrent `$EDITOR` change is visible
- * quickly; the cost of losing that race is one edit, not the file. Adding an
- * optional revision later is a change here and in the route, not in the UI.
+ * lines guarding a race between a user and themselves; the cost of losing
+ * that race is one edit, not the file.
+ *
+ * The limit is worth stating plainly rather than leaving for someone to
+ * discover: the browser's poll refreshes the *rendered* note, not an open
+ * editor, so a tab left mid-edit will overwrite an outside change without
+ * ever showing it. Reinstating a guard means threading a revision through
+ * the wire contract and capturing it when editing begins — not a change
+ * confined to this file — though it would not need the reducer back. See
+ * docs/weave-workspace.md §11 P5.3.
  */
 export async function setNoteBody(root: string, slug: string, body: string, now = new Date()): Promise<VaultMutationResult> {
   const path = resolveNotePath(root, slug);
