@@ -10,7 +10,7 @@ import {
   unquoteField,
   upsertFrontMatterFields,
 } from "./frontmatter";
-import { auditLinks, rewriteLinks, RAW_NOTES_HEADING, type LinkAudit, type LinkFix } from "./links/repair";
+import { auditLinks, fenceRanges, rawTailStart, rewriteLinks, RAW_NOTES_HEADING, type LinkAudit, type LinkFix } from "./links/repair";
 import { withMutationQueue } from "./mutex";
 import { NOTES_DIR, OKF_MANIFEST } from "./paths";
 import { slugify, uniqueSlug } from "./slug";
@@ -597,21 +597,61 @@ export async function repairVaultLinks(root: string, options: { apply?: boolean 
 }
 
 /**
- * Re-attach the existing `## Raw` tail unless the replacement already has one.
+ * Keep the note's `## Raw` tail exactly as it is on disk, whatever the
+ * incoming body says about it.
  *
- * The consequence is deliberate and worth naming, because it surprises
- * people: deleting the tail in an editor that shows it does **not** delete it
- * on disk. `docs/notepad.md` §4 declares the tail append-only and verbatim,
- * so a body that omits it is read as "the editorial region above the tail",
- * exactly as `finalizeNote` reads one — not as an instruction to destroy the
- * user's own dictated words. A body that *does* carry a tail is written as
- * given, so a round trip through an editor showing the whole file is not
- * punished with a duplicate.
+ * The tail is append-only and verbatim — "NEVER edit below this line" is
+ * written into every note that has one, and `skills/weave-notepad/SKILL.md`
+ * §"Raw Tail Format" is the contract. So an incoming body is treated as the
+ * **editorial region above the tail** and nothing more, exactly as
+ * `finalizeNote` treats one. Two consequences, both deliberate:
+ *
+ *  - deleting the tail in an editor that shows it does not delete it on disk;
+ *  - *editing* the words inside it does not change them either.
+ *
+ * The second is the one a naive "re-attach only if the new body has no tail"
+ * misses: such a rule sees the tail the editor round-tripped, concludes there
+ * is nothing to restore, and writes the user's edits to their own dictation
+ * straight through — which is precisely the thing the append-only promise
+ * exists to forbid.
+ *
+ * Both regions are split with `rawTailStart`, which is fence-aware and
+ * matches a whole `## Raw` heading line. `extractRawTail`'s substring search
+ * is not good enough here, because it is used on *untrusted editor input*: a
+ * body mentioning `## Rawhide`, or documenting the convention inside a code
+ * fence, would be read as carrying a tail, and the real one would be dropped
+ * on the floor. Sharing the link repairer's implementation also means there
+ * is one definition of "where the tail begins" rather than two that can drift.
  */
 function preserveRawTail(currentBody: string, nextBody: string): string {
-  const tail = extractRawTail(currentBody);
-  if (tail === "" || extractRawTail(nextBody) !== "") return nextBody.trim();
-  return `${nextBody.trim()}\n\n${tail}`;
+  const tail = currentBody.slice(tailBoundary(currentBody)).trimEnd();
+  const head = nextBody.slice(0, tailBoundary(nextBody)).trim();
+  if (tail === "") return head;
+  // A note edited down to nothing above its tail keeps the tail alone, rather
+  // than a leading blank line before it.
+  return head === "" ? tail : `${head}\n\n${tail}`;
+}
+
+/** A `---` rule, alone on the line, with only blank space after it. */
+const TAIL_RULE_RE = /(?:^|\n)-{3,}[ \t]*\r?\n\s*$/;
+
+/**
+ * Where the raw tail's *text* begins — the `---` rule above the heading, not
+ * the heading itself.
+ *
+ * `rawTailStart` answers a different question: the link repairer only needs
+ * to know where to stop rewriting, so the heading offset is enough for it.
+ * Splitting a body there would leave the rule behind in the editorial half,
+ * and re-joining would then either lose it or double it. The tail's own
+ * format (see `rawTailOpening`) opens with the rule, so that is the seam.
+ */
+function tailBoundary(body: string): number {
+  const heading = rawTailStart(body, fenceRanges(body));
+  if (heading === body.length) return heading;
+  const rule = TAIL_RULE_RE.exec(body.slice(0, heading));
+  if (rule === null) return heading;
+  // `index` is the newline before the rule when there is one, so step over it.
+  return rule.index === 0 && !body.startsWith("\n") ? 0 : rule.index + 1;
 }
 
 /**

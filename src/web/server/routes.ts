@@ -556,30 +556,40 @@ async function routeNote(
   }
   const action = target.endsWith("/rename") ? "rename" : target.endsWith("/move") ? "move" : null;
   const slug = action === null ? target : target.slice(0, -(action.length + 1));
-  // A save carries no revision and takes no conflict check: see core's
-  // `setNoteBody` for why last-write-wins is the right trade in a vault with
-  // one human in it. The CSRF defence is not this handler's to remember —
-  // `handleRequest` runs `security.authorize` before routing, and
-  // `checkOrigin` refuses any non-GET without a same-origin `Origin`.
-  if (method === "POST" && action === null) {
-    const body = await readJsonBody(req);
-    const text = typeof body === "object" && body !== null ? (body as { body?: unknown }).body : undefined;
-    if (typeof text !== "string") sendJson(res, 400, { error: "expected { body: string }" });
-    else sendMutation(res, await setNoteBody(deps.vaultRoot, slug, text));
-    return true;
-  }
-  if (method === "POST" && action !== null) {
+  if (method === "POST") {
     const body = await readJsonBody(req);
     if (typeof body !== "object" || body === null) {
       sendJson(res, 400, { error: "expected JSON object" });
       return true;
     }
+    const fields = body as { body?: unknown; name?: unknown; folder?: unknown };
+    // **The payload decides, not the suffix.** Slugs may nest, so a note can
+    // legitimately be called `archive/rename` — and a URL suffix is then
+    // ambiguous in a way the body never is. Classifying on the suffix alone
+    // made saving such a note impossible: the save was read as a rename
+    // missing its `name` and refused with a `400`, for a note whose only sin
+    // was its title. A `{ body }` is a save of the **whole** target; only a
+    // payload that carries the action's own field is that action.
+    //
+    // A save carries no revision and takes no conflict check: see core's
+    // `setNoteBody` for why last-write-wins is the right trade in a vault with
+    // one human in it. The CSRF defence is not this handler's to remember —
+    // `handleRequest` runs `security.authorize` before routing, and
+    // `checkOrigin` refuses any non-GET without a same-origin `Origin`.
+    if (typeof fields.body === "string") {
+      sendMutation(res, await setNoteBody(deps.vaultRoot, target, fields.body));
+      return true;
+    }
+    if (action === null) {
+      sendJson(res, 400, { error: "expected { body: string }" });
+      return true;
+    }
     const result = action === "rename"
-      ? typeof (body as { name?: unknown }).name === "string"
-        ? await renameNote(deps.vaultRoot, slug, (body as { name: string }).name)
+      ? typeof fields.name === "string"
+        ? await renameNote(deps.vaultRoot, slug, fields.name)
         : null
-      : (body as { folder?: unknown }).folder === null || typeof (body as { folder?: unknown }).folder === "string"
-        ? await moveNote(deps.vaultRoot, slug, (body as { folder: string | null }).folder)
+      : fields.folder === null || typeof fields.folder === "string"
+        ? await moveNote(deps.vaultRoot, slug, fields.folder)
         : null;
     if (result === null) sendJson(res, 400, { error: action === "rename" ? "expected { name: string }" : "expected { folder: string | null }" });
     else sendMutation(res, result);

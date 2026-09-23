@@ -51,6 +51,7 @@ import {
   previewCard,
   previewPlacement,
   reducePreview,
+  saveLanded,
   renderMarkdown,
   resolveMarkdownLink,
   renderNote,
@@ -1219,5 +1220,25 @@ describe("draftDirty", () => {
     // that gets silently reverted slip past the discard prompt.
     expect(draftDirty("body\n", "body")).toBe(true);
     expect(draftDirty("body ", "body")).toBe(true);
+  });
+});
+
+/**
+ * The stale-save guard.
+ *
+ * A save is asynchronous and the user keeps moving through it. The response's
+ * job is to close the editor that issued it — closing whichever editor is open
+ * when it lands would clear a draft belonging to a different document, in
+ * answer to a request that predates it.
+ */
+describe("saveLanded", () => {
+  it("accepts a reply from the session that is still open", () => {
+    expect(saveLanded(3, 3)).toBe(true);
+  });
+
+  it("drops a reply from a session that has since closed or moved on", () => {
+    // Navigated away mid-save, or closed and reopened the same note — both
+    // bump the counter, and both mean this reply is about a dead editor.
+    expect(saveLanded(3, 4)).toBe(false);
   });
 });

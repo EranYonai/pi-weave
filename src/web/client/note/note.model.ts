@@ -775,6 +775,25 @@ export function draftDirty(draft: string, body: string): boolean {
   return draft !== body;
 }
 
+/**
+ * Whether a save's response still belongs to the editor that issued it.
+ *
+ * A save is asynchronous and the user keeps moving through it: they can
+ * confirm a navigation, land on another note and start typing before the
+ * first request resolves. The response's job is to close the editor it came
+ * from — closing whatever editor happens to be open when it lands would
+ * clear a draft belonging to a different document, in response to a request
+ * that predates it.
+ *
+ * So each edit session takes an epoch, the save carries the one it was issued
+ * under, and a reply from a previous session is dropped. A counter rather
+ * than the slug, because opening, closing and reopening the *same* note is a
+ * new session too, and a slug comparison would call that a match.
+ */
+export function saveLanded(issued: number, current: number): boolean {
+  return issued === current;
+}
+
 /** The note header: title, provenance badge, relative time, tags. */
 export interface NoteHeaderView {
   readonly title: string;

@@ -918,6 +918,29 @@ describe("vault tree mutations", () => {
     expect((await del(server, "/api/note/archive%2Frename")).status).toBe(200);
     expect((await del(server, "/api/folder/rename")).status).toBe(200);
   });
+
+  /**
+   * Slugs nest, so `archive/rename` is a legitimate note name and the URL
+   * suffix is ambiguous where the payload is not. Saving one used to be
+   * impossible: the request was read as a rename missing its `name` and
+   * refused with a `400`, for a note whose only sin was its title.
+   */
+  it("saves notes whose final path segment looks like an action", async () => {
+    const { server, vaultRoot } = await bootFresh();
+    await fs.mkdir(join(vaultRoot, "notes", "archive"));
+    for (const slug of ["rename", "move"]) {
+      await writeNoteFile(vaultRoot, `archive/${slug}`, [`title: ${slug}`, "source: human"], "original");
+      const res = await post(server, `/api/note/archive%2F${slug}`, { body: "EDITED" });
+      expect(res.status, slug).toBe(200);
+      expect(await res.json()).toEqual({ ok: true, id: `note:archive/${slug}` });
+      expect(await fs.readFile(join(vaultRoot, "notes", "archive", `${slug}.md`), "utf8")).toContain("EDITED");
+    }
+
+    // The actions themselves still work on those same slugs — the payload is
+    // what tells them apart, so both readings stay reachable.
+    expect((await post(server, "/api/note/archive%2Frename/rename", { name: "Renamed" })).status).toBe(200);
+    expect((await post(server, "/api/note/archive%2Fmove/move", { folder: null })).status).toBe(200);
+  });
 });
 
 // --- okf files -----------------------------------------------------------------------

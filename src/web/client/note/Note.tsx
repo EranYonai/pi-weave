@@ -1,5 +1,5 @@
 /**
- * The read-only note column (weave-workspace §1.2, P2.4, P6.3).
+ * The note column — reading, and editing (weave-workspace §1.2, P2.4, P5, P6.3).
  *
  * Props in, JSX out. The markdown pipeline, sanitiser config, wikilink
  * resolution and every string are in `note.model.ts`. This file wires the
@@ -8,11 +8,13 @@
  *
  * ## The editor
  *
- * A `<textarea>` that replaces the rendered body, and two component-state
- * fields (`editing`, `draft`) rather than a reducer. There was once a
- * 686-line state machine here; almost all of it existed to resolve save
- * conflicts against a revision the server no longer issues — see core's
- * `setNoteBody` for why a single-human vault takes last-write-wins instead.
+ * A `<textarea>` that replaces the rendered body, held in two pieces of
+ * component state rather than a reducer: `draft` (the text, and `null` in
+ * read mode — one field, so "there is text being edited" and "we are in edit
+ * mode" cannot disagree) and `saving`. There was once a 686-line state
+ * machine here; almost all of it existed to resolve save conflicts against a
+ * revision the server no longer issues — see core's `setNoteBody` for why a
+ * single-human vault takes last-write-wins instead.
  * What remains of that design is the part that was never about conflicts:
  * `⌘S` is handled on the textarea itself, not in the global keymap, so the
  * save fires from the element that owns the text and the workspace-wide key
@@ -70,6 +72,7 @@ import {
   WIKILINK_ATTR,
   draftDirty,
   hasTextSelection,
+  saveLanded,
   noteEmptyMessage,
   noteHeader,
   previewAnchorOf,
@@ -106,13 +109,20 @@ export interface NoteProps {
    */
   onSave: (slug: string, body: string) => Promise<boolean>;
   /**
-   * The shell's dirty slot, filled by this column and read by the navigation
-   * and unload guards. The same mutable-ref pattern the graph column uses for
-   * `fit`: a thunk rather than a value, because a guard registered once at
-   * mount would otherwise answer with the editor as it was when the tab
-   * opened — always clean, making the guard a no-op that looks installed.
+   * The shell's handle on the open editor, filled by this column.
+   *
+   * The same mutable-ref pattern the graph column uses for `fit`, and a
+   * handle of functions rather than a `dirty` boolean because the guards need
+   * two different things: the navigation and unload guards *ask*, while a
+   * tree mutation that is about to rename or delete the open note has to
+   * *close* the editor — a draft left pointing at a slug that no longer
+   * exists saves into a `404`.
+   *
+   * Functions, not values, because a guard registered once at mount would
+   * otherwise answer with the editor as it was when the tab opened — always
+   * clean, making a guard that looks installed and is a no-op.
    */
-  dirty: { current: (() => boolean) | null };
+  editor: { current: { dirty(): boolean; discard(): void } | null };
   /** Epoch ms for relative times. Injected so the render is deterministic. */
   now: number;
 }
@@ -208,27 +218,44 @@ export function Note(props: NoteProps) {
   const [draft, setDraft] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
   const dirty = note !== null && draft !== null && draftDirty(draft, note.body);
+  // Which edit session is open. Bumped on every open and every close, so a
+  // save issued under an earlier one can recognise that it is late — see
+  // `saveLanded`. A ref, not state: nothing renders from it, and a save has
+  // to read the value as it is when the response lands rather than the one
+  // captured by the render that started it.
+  const session = useRef(0);
 
   // Fill the shell's slot with a live thunk. A dependency on `dirty` alone
   // would leave the slot pointing at a stale closure after any other render,
   // so the effect runs whenever either moves; the cleanup empties the slot,
   // which is what stops an unmounted column answering for a guard.
   useEffect(() => {
-    props.dirty.current = () => dirty;
+    props.editor.current = { dirty: () => dirty, discard: () => close() };
     return () => {
-      props.dirty.current = null;
+      props.editor.current = null;
     };
-  }, [props.dirty, dirty]);
+  }, [props.editor, dirty]);
 
   const close = (): void => {
+    session.current += 1;
     setDraft(null);
     setSaving(false);
   };
 
+  const open = (body: string): void => {
+    session.current += 1;
+    setDraft(body);
+  };
+
   const save = async (): Promise<void> => {
     if (note === null || draft === null || saving) return;
+    const issued = session.current;
     setSaving(true);
     const ok = await props.onSave(note.slug, draft);
+    // The editor this reply was meant for is gone — the user navigated away,
+    // or closed and reopened it, and is now typing into a different session.
+    // Closing that one would clear a draft this response knows nothing about.
+    if (!saveLanded(issued, session.current)) return;
     // A failed save keeps the editor open with the draft intact: the text the
     // user typed is now the only copy of it, and closing over an error would
     // be the fastest way to lose work the server refused to take.
@@ -238,7 +265,7 @@ export function Note(props: NoteProps) {
 
   const toggleEdit = (): void => {
     if (note === null) return;
-    if (draft === null) setDraft(note.body);
+    if (draft === null) open(note.body);
     else if (!dirty || window.confirm(DISCARD_PROMPT)) close();
   };
   const card = preview.anchor === null ? null : previewCard(props.graph, preview.anchor);

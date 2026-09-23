@@ -42,8 +42,14 @@ export interface ColumnsProps {
   onOpen: (slug: string) => void;
   /** Save a note's body. Resolves `true` when the write landed. */
   onSave: (slug: string, body: string) => Promise<boolean>;
-  /** Slot the note column fills with "is the draft dirty?", for the shell's guards. */
-  dirty: { current: (() => boolean) | null };
+  /**
+   * Ask before a mutation that would invalidate an open draft, closing it if
+   * the user agrees. `false` means the user chose to keep editing, and the
+   * caller must not proceed.
+   */
+  onMutate: () => boolean;
+  /** Slot the note column fills with its editor handle, for the shell's guards. */
+  editor: { current: { dirty(): boolean; discard(): void } | null };
   /** Epoch ms for relative times, read once per render by the shell. */
   now: number;
   /**
@@ -79,7 +85,7 @@ function Column({ id, props }: { id: ColumnId; props: ColumnsProps }) {
   return (
     <section class={`weave-col weave-col-${id}`} aria-label={copy.title}>
       <h2 class="weave-col-title">{copy.title}</h2>
-      {id === "tree" ? <Tree graph={props.graph} selectedId={props.selectedId} recentIds={props.recentIds} onSelect={props.onSelect} onRefresh={props.onRefresh} now={props.now} /> : null}
+      {id === "tree" ? <Tree graph={props.graph} selectedId={props.selectedId} recentIds={props.recentIds} onSelect={props.onSelect} onMutate={props.onMutate} onRefresh={props.onRefresh} now={props.now} /> : null}
       {id === "note" ? (
         <Note
           note={props.note}
@@ -89,7 +95,7 @@ function Column({ id, props }: { id: ColumnId; props: ColumnsProps }) {
           now={props.now}
           onOpen={props.onOpen}
           onSave={props.onSave}
-          dirty={props.dirty}
+          editor={props.editor}
         />
       ) : null}
       {id === "graph" ? (

@@ -344,7 +344,7 @@ describe("setNoteBody", () => {
     const tail = extractRawTail(withTail!.body);
     expect(tail).not.toBe("");
 
-    // Dropped: the tail comes back, because it is append-only (notepad §4).
+    // Dropped: the tail comes back, because it is append-only.
     await setNoteBody(vault, note.slug, "rewritten summary");
     const dropped = await getNote(vault, note.slug);
     expect(dropped?.body).toContain("rewritten summary");
@@ -355,6 +355,68 @@ describe("setNoteBody", () => {
     const kept = await getNote(vault, note.slug);
     expect(kept?.body.match(/## Raw/g)?.length).toBe(1);
     expect(kept?.body).toContain("spoken words");
+  });
+
+  /**
+   * The append-only promise, against an editor that can type anything.
+   *
+   * "NEVER edit below this line" is written into every note that has a tail,
+   * so the guarantee is not "a dropped tail comes back" — it is that the
+   * bytes below the line are the ones the user dictated, whatever arrives
+   * from the browser. Each case below is a different way a body can claim to
+   * carry a tail it does not have.
+   */
+  describe("the `## Raw` tail is verbatim, not merely present", () => {
+    async function dictated(slug: string, words: string): Promise<string> {
+      const note = await addNote(vault, { title: slug, body: "summary", source: "human" });
+      await appendToNote(vault, note.slug, words, new Date("2026-08-20T10:00:00Z"), { raw: true });
+      return note.slug;
+    }
+
+    it("refuses edits to the words inside the tail", async () => {
+      const slug = await dictated("Quoted", "what the user actually said");
+      const body = (await getNote(vault, slug))!.body;
+      // The editor shows the whole file, so the user *can* type over the
+      // dictation. Round-tripping it must not persist the rewrite — this is
+      // the case a "re-attach only when the new body has no tail" rule misses,
+      // because the tail it sees is the edited one.
+      await setNoteBody(vault, slug, body.replace("what the user actually said", "A FABRICATED QUOTE"));
+      const after = (await getNote(vault, slug))!.body;
+      expect(after).toContain("what the user actually said");
+      expect(after).not.toContain("A FABRICATED QUOTE");
+    });
+
+    it("does not mistake `## Rawhide` for a tail and drop the real one", async () => {
+      const slug = await dictated("Heading", "precious words");
+      await setNoteBody(vault, slug, "new body\n\n## Rawhide\n\nabout the film");
+      const after = (await getNote(vault, slug))!.body;
+      expect(after).toContain("precious words");
+      expect(after).toContain("## Rawhide");
+    });
+
+    it("does not mistake a fenced `## Raw` example for a tail", async () => {
+      const slug = await dictated("Fenced", "real dictation");
+      // A note documenting the convention. Reading the sample as the tail
+      // would silently discard the note's actual one.
+      await setNoteBody(vault, slug, "how tails look:\n\n```md\n## Raw\nexample\n```");
+      const after = (await getNote(vault, slug))!.body;
+      expect(after).toContain("real dictation");
+      expect(after).toContain("```md");
+    });
+
+    it("keeps a tail alone when the editorial body is emptied", async () => {
+      const slug = await dictated("Emptied", "still here");
+      await setNoteBody(vault, slug, "");
+      const after = (await getNote(vault, slug))!.body;
+      expect(after).toContain("still here");
+      expect(after.startsWith("---")).toBe(true); // no leading blank line
+    });
+
+    it("leaves a note that never had a tail alone", async () => {
+      const note = await addNote(vault, { title: "Plain", body: "just prose", source: "human" });
+      await setNoteBody(vault, note.slug, "replaced entirely");
+      expect((await getNote(vault, note.slug))!.body).toBe("replaced entirely");
+    });
   });
 
   it("refuses an unknown slug and never writes outside the notes directory", async () => {

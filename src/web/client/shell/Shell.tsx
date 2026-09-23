@@ -84,13 +84,29 @@ export function Shell(props: ShellProps) {
   // Filled by the graph column at mount, cleared on unmount. The global `g`
   // key's only route to the renderer — see `Graph.tsx`'s `fit` prop.
   const fit = useRef<(() => void) | null>(null);
-  // Filled by the note column while an editor is open. The two exits that can
-  // destroy a draft — navigating away and closing the tab — are the shell's
-  // events, not the column's, so the question is asked through this slot.
-  const dirty = useRef<(() => boolean) | null>(null);
+  // Filled by the note column while an editor is open. The exits that can
+  // destroy a draft are the shell's events, not the column's, so they are
+  // asked — and answered — through this slot.
+  const editor = useRef<{ dirty(): boolean; discard(): void } | null>(null);
+  /**
+   * Confirm abandoning an open draft, and close it if the user agrees.
+   *
+   * Returns `false` when the user wants to keep editing, so every caller
+   * spells the refusal the same way. Closing here rather than leaving it to
+   * the caller is what keeps a destructive tree mutation from asking twice:
+   * the draft is gone before the request goes out, so the selection that
+   * follows the response has nothing left to guard.
+   */
+  const mayDiscard = (): boolean => {
+    const open = editor.current;
+    if (open === null || !open.dirty()) return true;
+    if (!window.confirm(DISCARD_PROMPT)) return false;
+    open.discard();
+    return true;
+  };
   /** Every selection change routes through here, so no exit skips the guard. */
   const select = (id: string | null): void => {
-    if (dirty.current?.() === true && !window.confirm(DISCARD_PROMPT)) return;
+    if (!mayDiscard()) return;
     void workspace.current?.select(id);
   };
   // The global key listener reads through this so a handler registered at
@@ -172,7 +188,7 @@ export function Shell(props: ShellProps) {
   // well as `preventDefault`, which is the only spelling all of them honour.
   useEffect(() => {
     const guard = (event: BeforeUnloadEvent): void => {
-      if (dirty.current?.() !== true) return;
+      if (editor.current?.dirty() !== true) return;
       event.preventDefault();
       event.returnValue = "";
     };
@@ -227,6 +243,7 @@ export function Shell(props: ShellProps) {
         selectedId={workspaceState.selectedId}
         recentIds={workspaceState.recentIds}
         onSelect={select}
+        onMutate={mayDiscard}
         onRefresh={() => workspace.current?.refresh()}
         onOpen={(slug) => void (async () => {
           // The result was discarded here for a while, which made a 403 or a
@@ -247,7 +264,7 @@ export function Shell(props: ShellProps) {
           workspace.current?.refresh();
           return true;
         }}
-        dirty={dirty}
+        editor={editor}
         now={now}
         // The graph column's three ports (§7.5, §10). Supplied here, at the
         // one place that is already allowed to name browser globals, so
