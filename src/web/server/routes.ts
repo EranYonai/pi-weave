@@ -7,6 +7,7 @@
  * | GET    | `/app.js`                | the committed bundle, `Cache-Control: no-store` |
  * | GET    | `/api/graph`             | {@link GraphPayload}, ETag'd on `stamp`      |
  * | GET    | `/api/note/:slug`        | {@link NotePayload}                          |
+ * | POST   | `/api/note/:slug`        | save a note's Markdown body                  |
  * | POST   | `/api/note/:slug/rename` | rename a vault note                          |
  * | POST   | `/api/note/:slug/move`   | move a vault note                            |
  * | DELETE | `/api/note/:slug`        | delete a vault note                          |
@@ -52,7 +53,7 @@ import type { GraphModel as CoreGraphModel } from "../../core/graph/model";
 import { openNoteInEditor } from "../../core/openInEditor";
 import type { Note } from "../../core/types";
 import type { VaultMutationResult } from "../../core/vault";
-import { createFolder, deleteFolder, deleteNote, getNote, moveNote, renameFolder, renameNote, resolveHtmlPath, searchNotes } from "../../core/vault";
+import { createFolder, deleteFolder, deleteNote, getNote, moveNote, renameFolder, renameNote, resolveHtmlPath, searchNotes, setNoteBody } from "../../core/vault";
 import { deriveTagIndex, type TaggedNote } from "../../core/view/links";
 import type {
   GraphPayload,
@@ -555,18 +556,29 @@ async function routeNote(
   }
   const action = target.endsWith("/rename") ? "rename" : target.endsWith("/move") ? "move" : null;
   const slug = action === null ? target : target.slice(0, -(action.length + 1));
-  if (method === "POST" && action !== null) {
+  if (method === "POST") {
     const body = await readJsonBody(req);
     if (typeof body !== "object" || body === null) {
       sendJson(res, 400, { error: "expected JSON object" });
       return true;
     }
+    const fields = body as { body?: unknown; name?: unknown; folder?: unknown };
+    // The payload decides, not the suffix: slugs nest, so `archive/rename` is
+    // a real note and only `{name}`/`{folder}` mean the action.
+    if (typeof fields.body === "string") {
+      sendMutation(res, await setNoteBody(deps.vaultRoot, target, fields.body));
+      return true;
+    }
+    if (action === null) {
+      sendJson(res, 400, { error: "expected { body: string }" });
+      return true;
+    }
     const result = action === "rename"
-      ? typeof (body as { name?: unknown }).name === "string"
-        ? await renameNote(deps.vaultRoot, slug, (body as { name: string }).name)
+      ? typeof fields.name === "string"
+        ? await renameNote(deps.vaultRoot, slug, fields.name)
         : null
-      : (body as { folder?: unknown }).folder === null || typeof (body as { folder?: unknown }).folder === "string"
-        ? await moveNote(deps.vaultRoot, slug, (body as { folder: string | null }).folder)
+      : fields.folder === null || typeof fields.folder === "string"
+        ? await moveNote(deps.vaultRoot, slug, fields.folder)
         : null;
     if (result === null) sendJson(res, 400, { error: action === "rename" ? "expected { name: string }" : "expected { folder: string | null }" });
     else sendMutation(res, result);

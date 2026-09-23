@@ -10,7 +10,7 @@ import {
   unquoteField,
   upsertFrontMatterFields,
 } from "./frontmatter";
-import { auditLinks, rewriteLinks, RAW_NOTES_HEADING, type LinkAudit, type LinkFix } from "./links/repair";
+import { auditLinks, fenceRanges, rawTailStart, rewriteLinks, RAW_NOTES_HEADING, type LinkAudit, type LinkFix } from "./links/repair";
 import { withMutationQueue } from "./mutex";
 import { NOTES_DIR, OKF_MANIFEST } from "./paths";
 import { slugify, uniqueSlug } from "./slug";
@@ -593,6 +593,51 @@ export async function repairVaultLinks(root: string, options: { apply?: boolean 
     }
     const { notes } = await rewriteVaultLinks(root, (target, noteSlug) => byNote.get(noteSlug)?.get(target) ?? null);
     return { audit, applied: audit.fixable, notes };
+  });
+}
+
+/**
+ * Keep the on-disk `## Raw` tail whatever the body says — it is append-only.
+ * `rawTailStart`, not `extractRawTail`: fence-aware, for untrusted input.
+ */
+function preserveRawTail(currentBody: string, nextBody: string): string {
+  const tail = currentBody.slice(tailBoundary(currentBody)).trimEnd();
+  const head = nextBody.slice(0, tailBoundary(nextBody)).trim();
+  if (tail === "") return head;
+  // An emptied head leaves the tail alone, not a leading blank line.
+  return head === "" ? tail : `${head}\n\n${tail}`;
+}
+
+/** A `---` rule, alone on the line, with only blank space after it. */
+const TAIL_RULE_RE = /(?:^|\n)-{3,}[ \t]*\r?\n\s*$/;
+
+/**
+ * Where the tail's text begins — the `---` rule, not the heading
+ * `rawTailStart` returns. Splitting at the heading orphans the rule.
+ */
+function tailBoundary(body: string): number {
+  const heading = rawTailStart(body, fenceRanges(body));
+  if (heading === body.length) return heading;
+  const rule = TAIL_RULE_RE.exec(body.slice(0, heading));
+  if (rule === null) return heading;
+  // `index` is the newline before the rule when there is one; step over it.
+  return rule.index === 0 && !body.startsWith("\n") ? 0 : rule.index + 1;
+}
+
+/**
+ * Replace a note's Markdown body; unknown front matter rides on
+ * `note.frontMatter` and only `updated` moves. Last write wins — no
+ * `expectedRevision`; docs/weave-workspace.md §11 P5.3 argues the trade.
+ */
+export async function setNoteBody(root: string, slug: string, body: string, now = new Date()): Promise<VaultMutationResult> {
+  const path = resolveNotePath(root, slug);
+  if (path === null) return { ok: false, reason: "invalid" };
+  return withVaultLock(root, async () => {
+    const note = await getNote(root, slug);
+    if (note === null) return { ok: false, reason: "missing" };
+    const next = preserveRawTail(note.body, body);
+    await writeNote(path, slug, { ...note, updated: now.toISOString() }, next, note.frontMatter);
+    return { ok: true, slug };
   });
 }
 

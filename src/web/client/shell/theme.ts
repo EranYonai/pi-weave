@@ -411,6 +411,25 @@ body{font-size:var(--weave-px-base)}
 }
 .weave-note-open:hover{color:var(--weave-fg);background:var(--weave-line)}
 .weave-note-open-mark{display:inline-flex;line-height:0}
+/* Save / Done, chip-shaped: the same quiet row, and a control in a reading
+   column should not outweigh the title. */
+.weave-note-edit,.weave-note-save{
+  font:inherit;font-size:var(--weave-px-caption);line-height:1;white-space:nowrap;cursor:pointer;
+  color:var(--weave-dim);background:var(--weave-panel);padding:4px 7px;
+  border:1px solid var(--weave-line-strong);border-radius:var(--weave-radius);
+}
+.weave-note-edit:hover,.weave-note-save:hover{color:var(--weave-fg);border-color:var(--weave-accent)}
+/* Save is the row's only affirmative action, so the only one with the accent. */
+.weave-note-save{color:var(--weave-accent);border-color:var(--weave-accent)}
+.weave-note-save:disabled{color:var(--weave-faint);border-color:var(--weave-line-strong);cursor:default}
+/* Mono and a tighter line than the prose: this is Markdown source, where
+   alignment carries meaning proportional text throws away. */
+.weave-note-editor{
+  display:block;width:100%;flex:1;min-height:0;resize:none;
+  padding:12px var(--weave-note-gutter) 28px;box-sizing:border-box;
+  font-family:var(--weave-mono);font-size:var(--weave-px-row);line-height:1.6;
+  color:var(--weave-fg);background:var(--weave-bg);border:0;outline:0;
+}
 .weave-note-tags{margin:6px 0 0;display:flex;gap:5px;flex-wrap:wrap}
 .weave-tag{
   font-size:var(--weave-px-caption);color:var(--weave-accent);background:var(--weave-panel);
@@ -422,6 +441,11 @@ body{font-size:var(--weave-px-base)}
    chrome's 1.6: the extra leading is what a page of running text needs that a
    status bar does not. Code stays mono deliberately. */
 .weave-note-body{padding:12px var(--weave-note-gutter) 28px;font-size:var(--weave-px-body);line-height:1.7;color:var(--weave-fg)}
+/* The prose is the edit affordance: a caret and a faint wash, not a border.
+   This column is read far more often than edited. */
+.weave-note-body{cursor:text}
+.weave-note-body:hover{background:var(--weave-panel)}
+@media (prefers-reduced-motion: no-preference){.weave-note-body{transition:background 120ms ease}}
 .weave-note-body>*:first-child{margin-top:0}
 .weave-note-body h1,.weave-note-body h2,.weave-note-body h3,
 .weave-note-body h4,.weave-note-body h5,.weave-note-body h6{

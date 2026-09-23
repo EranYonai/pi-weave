@@ -45,6 +45,11 @@ export interface TreeProps {
   selectedId: string | null;
   recentIds: ReadonlySet<string>;
   onSelect: (id: string) => void;
+  /**
+   * Ask before a mutation that would invalidate an open draft. `false` means
+   * keep editing: the mutation must not run.
+   */
+  onMutate: () => boolean;
   onRefresh: () => void;
   now: number;
 }
@@ -191,6 +196,9 @@ export function Tree(props: TreeProps) {
     } else if (action === "rename") {
       setEditing({ id: menu.id, label: menu.label, value: menu.label });
     } else if (target.type !== "vault") {
+      // Before the request: asking after a delete is asking about a file that
+      // is already gone, and "keep editing" would strand the draft on a 404.
+      if (deletesSelection(props.selectedId, target) && !props.onMutate()) return;
       await run(target.type === "note" ? deleteNote(fetchJson, target.path) : deleteFolder(fetchJson, target.path), deletesSelection(props.selectedId, target) ? "vault" : undefined);
     }
   };
@@ -237,7 +245,9 @@ export function Tree(props: TreeProps) {
     // unactionable — it named no link and offered no way to see them — and it
     // fired on the *commit* of an edit the user had already typed out, which
     // is the least useful moment to ask. Renaming back is one more rename.
+    // An open draft is a different question; `onMutate` asks that one.
     if (target !== null && name && name !== current.label) {
+      if (deletesSelection(props.selectedId, target) && !props.onMutate()) return;
       void run(target.type === "note" ? renameNote(fetchJson, target.path, name) : renameFolder(fetchJson, target.path, name));
     }
   };
@@ -268,7 +278,7 @@ export function Tree(props: TreeProps) {
             setMenu({ id: "vault", label: "Vault", x: event.clientX, y: event.clientY });
           }}
         >
-          {rowViews(rows, props.selectedId, props.now).map((view) => <Row key={view.id} view={view} recentIds={props.recentIds} edit={editing?.id === view.id ? editing.value : null} onEdit={(value) => setEditing((current) => current === null ? null : { ...current, value })} onRename={commitEdit} onSelect={() => { props.onSelect(view.id); if (view.hasKids) setState((current) => toggleExpanded(current, view.id)); }} onToggle={() => setState(toggleExpanded(state, view.id))} onMenu={(x, y) => setMenu({ id: view.id, label: view.label, x, y })} onDrop={(dragged) => { const folder = dropFolder(view.id); if (dragged.startsWith("note:") && folder !== undefined) void run(moveNote(fetchJson, dragged.slice("note:".length), folder)); }} />)}
+          {rowViews(rows, props.selectedId, props.now).map((view) => <Row key={view.id} view={view} recentIds={props.recentIds} edit={editing?.id === view.id ? editing.value : null} onEdit={(value) => setEditing((current) => current === null ? null : { ...current, value })} onRename={commitEdit} onSelect={() => { props.onSelect(view.id); if (view.hasKids) setState((current) => toggleExpanded(current, view.id)); }} onToggle={() => setState(toggleExpanded(state, view.id))} onMenu={(x, y) => setMenu({ id: view.id, label: view.label, x, y })} onDrop={(dragged) => { const folder = dropFolder(view.id); if (dragged.startsWith("note:") && folder !== undefined) { if (dragged === props.selectedId && !props.onMutate()) return; void run(moveNote(fetchJson, dragged.slice("note:".length), folder)); } }} />)}
         </ul>
       ) : <p class="weave-tree-empty">{empty}</p>}
       <p class="weave-tree-count">{rowCountLabel(rows)}</p>

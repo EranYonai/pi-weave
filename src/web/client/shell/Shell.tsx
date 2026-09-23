@@ -19,7 +19,8 @@
 
 import { useEffect, useMemo, useRef, useState } from "preact/hooks";
 import { fetchJson } from "../api.dom";
-import { openNote } from "../api";
+import { openNote, saveNote } from "../api";
+import { DISCARD_PROMPT } from "../note/note.model";
 import type { ColorScheme } from "../graph/graph.model";
 import { schemeOf, watchScheme } from "../graph/scheme";
 import { createSigmaRenderer } from "../graph/renderer.dom";
@@ -83,6 +84,26 @@ export function Shell(props: ShellProps) {
   // Filled by the graph column at mount, cleared on unmount. The global `g`
   // key's only route to the renderer — see `Graph.tsx`'s `fit` prop.
   const fit = useRef<(() => void) | null>(null);
+  // Filled by the note column while an editor is open: the exits that destroy
+  // a draft are the shell's events, not the column's.
+  const editor = useRef<{ dirty(): boolean; discard(): void } | null>(null);
+  /**
+   * Confirm abandoning an open draft, closing it if the user agrees. `false`
+   * means keep editing. Closing here is what stops a tree mutation asking
+   * twice — the draft is gone before the selection that follows it.
+   */
+  const mayDiscard = (): boolean => {
+    const open = editor.current;
+    if (open === null || !open.dirty()) return true;
+    if (!window.confirm(DISCARD_PROMPT)) return false;
+    open.discard();
+    return true;
+  };
+  /** Every selection change routes through here, so no exit skips the guard. */
+  const select = (id: string | null): void => {
+    if (!mayDiscard()) return;
+    void workspace.current?.select(id);
+  };
   // The global key listener reads through this so a handler registered at
   // mount still sees the current overlay.
   const live = useRef({ overlay, selectedId: workspaceState.selectedId, layout, width });
@@ -155,6 +176,18 @@ export function Shell(props: ShellProps) {
   // choice) keep up while the choice is "system".
   useEffect(() => watchScheme(window, setSystemScheme), []);
 
+  // The other exit. No custom message (browsers ignore it), but `returnValue`
+  // as well as `preventDefault` — the only spelling all of them honour.
+  useEffect(() => {
+    const guard = (event: BeforeUnloadEvent): void => {
+      if (editor.current?.dirty() !== true) return;
+      event.preventDefault();
+      event.returnValue = "";
+    };
+    window.addEventListener("beforeunload", guard);
+    return () => window.removeEventListener("beforeunload", guard);
+  }, []);
+
   useEffect(
     () =>
       watchKeys(document, {
@@ -164,7 +197,7 @@ export function Shell(props: ShellProps) {
             setOverlay,
             focusSelector: (selector) => focusSelector(document, selector),
             fitGraph: () => fit.current?.(),
-            clearSelection: () => { void workspace.current?.select(null); },
+            clearSelection: () => select(null),
             cycleTheme: () => setTheme((current) => cycleTheme(current)),
           }),
       }),
@@ -201,9 +234,27 @@ export function Shell(props: ShellProps) {
         note={workspaceState.note}
         selectedId={workspaceState.selectedId}
         recentIds={workspaceState.recentIds}
-        onSelect={(id) => void workspace.current?.select(id)}
+        onSelect={select}
+        onMutate={mayDiscard}
         onRefresh={() => workspace.current?.refresh()}
-        onOpen={(slug) => void openNote(fetchJson, slug)}
+        onOpen={(slug) => void (async () => {
+          // Reported, not discarded: a 403 and an editor that opened nothing
+          // used to look identical. `alert` is what the tree already uses.
+          const result = await openNote(fetchJson, slug);
+          if (!result.ok) window.alert(result.message);
+          else if (!result.data.opened) window.alert("could not open the note in an editor");
+        })()}
+        onSave={async (slug, body) => {
+          const result = await saveNote(fetchJson, slug, body);
+          if (!result.ok) {
+            window.alert(result.message);
+            return false;
+          }
+          // The poll would get there in two seconds; this agrees immediately.
+          workspace.current?.refresh();
+          return true;
+        }}
+        editor={editor}
         now={now}
         // The graph column's three ports (§7.5, §10). Supplied here, at the
         // one place that is already allowed to name browser globals, so
@@ -227,7 +278,7 @@ export function Shell(props: ShellProps) {
       {overlay === "search" ? (
         <SearchPalette
           graph={workspaceState.graph}
-          onSelect={(id) => void workspace.current?.select(id)}
+          onSelect={select}
           onClose={() => setOverlay(null)}
           ports={{ fetch: fetchJson }}
         />

@@ -745,6 +745,57 @@ export function hasTextSelection(selection: SelectionLike | null | undefined): b
 export const EDITED_WORD = "edited";
 export const CREATED_WORD = "created";
 
+// --- the editor -------------------------------------------------------------------------
+
+/**
+ * The editor's strings. No "Edit" label — clicking the prose opens it (see
+ * {@link noteClickAction}); "Done", because leaving a clean editor cancels
+ * nothing.
+ */
+export const DONE_LABEL = "Done";
+export const SAVE_LABEL = "Save";
+export const SAVING_LABEL = "Saving…";
+export const EDITOR_ARIA_LABEL = "Note body";
+export const DISCARD_PROMPT = "Discard unsaved changes to this note?";
+
+/**
+ * Whether the draft differs from the note as last loaded. Trailing whitespace
+ * counts: the save trims, so calling such a draft clean would skip the prompt
+ * on the one edit that gets silently reverted.
+ */
+export function draftDirty(draft: string, body: string): boolean {
+  return draft !== body;
+}
+
+/** What a click on the rendered body means. */
+export type NoteClickAction = "ignore" | "navigate" | "edit";
+
+/**
+ * Resolve a click on the prose. Selection wins (a drag to copy ends in a
+ * click, and 865da37 is that bug), then wikilinks, then editing.
+ */
+export function noteClickAction(hasSelection: boolean, wikilinkTarget: string | null): NoteClickAction {
+  if (hasSelection) return "ignore";
+  return wikilinkTarget === null ? "edit" : "navigate";
+}
+
+/**
+ * Whether a save's reply still belongs to the editor that issued it. A
+ * counter, not the slug: reopening the same note is a new session too.
+ */
+export function saveLanded(issued: number, current: number): boolean {
+  return issued === current;
+}
+
+/**
+ * Whether the draft moved since the bytes a save sent — keystrokes made
+ * during the request were never in it, so a success must not close over them.
+ * Unlike {@link saveLanded}, this is about the *text*, not the session.
+ */
+export function draftMoved(sent: string, current: string | null): boolean {
+  return current !== null && current !== sent;
+}
+
 /** The note header: title, provenance badge, relative time, tags. */
 export interface NoteHeaderView {
   readonly title: string;

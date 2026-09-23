@@ -59,6 +59,7 @@ export {
   resolveHtmlPath,
   resolveNotePath,
   searchNotes,
+  setNoteBody,
   upsertNote,
   type LinkRepairResult,
 } from "./vault";

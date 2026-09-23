@@ -99,7 +99,7 @@ const RAW_HEADING_RE = new RegExp(`^${RAW_NOTES_HEADING}[ \\t]*\\r?$`, "m");
  * inside a ```` block would too — and each mistake ends the protected region
  * early, exposing example links in documentation to rewriting.
  */
-function fenceRanges(body: string): [number, number][] {
+export function fenceRanges(body: string): [number, number][] {
   const ranges: [number, number][] = [];
   let open: { at: number; marker: string; length: number } | null = null;
   for (const match of body.matchAll(FENCE_RE)) {
@@ -134,7 +134,7 @@ function fenceRanges(body: string): [number, number][] {
  * refuse to repair — every link below it. Matching a whole heading line also
  * keeps `## Rawhide` from starting a tail.
  */
-function rawTailStart(body: string, fences: readonly [number, number][]): number {
+export function rawTailStart(body: string, fences: readonly [number, number][]): number {
   let from = 0;
   for (;;) {
     const rest = body.slice(from);

@@ -1,10 +1,18 @@
 /**
- * The read-only note column (weave-workspace §1.2, P2.4, P6.3).
+ * The note column — reading, and editing (weave-workspace §1.2, P2.4, P5, P6.3).
  *
  * Props in, JSX out. The markdown pipeline, sanitiser config, wikilink
  * resolution and every string are in `note.model.ts`. This file wires the
- * rendered body, selection-safe wikilink navigation, and the Open in
- * `$EDITOR` action.
+ * rendered body, selection-safe wikilink navigation, the Open in `$EDITOR`
+ * action, and the body editor.
+ *
+ * ## The editor
+ *
+ * Clicking the prose swaps it for a `<textarea>`; `draft` is `null` in read
+ * mode, so text and mode cannot disagree. No reducer — the 686-line one that
+ * stood here resolved conflicts against a revision the server no longer
+ * issues. Being component state, the draft is out of the 2 s poll's reach;
+ * the shell guards it through the `editor` slot below.
  *
  * `dangerouslySetInnerHTML` is used deliberately for sanitized note HTML. The
  * alternative is parsing marked's output into a Preact tree, which means a
@@ -31,16 +39,25 @@
  */
 
 import DOMPurify from "dompurify";
-import { useLayoutEffect, useMemo, useRef, useState } from "preact/hooks";
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "preact/hooks";
 import type { GraphPayload, NotePayload } from "../../shared/wire";
 import {
   CREATED_WORD,
   artifactKeyOfNode,
+  DISCARD_PROMPT,
+  DONE_LABEL,
   EDITED_WORD,
+  EDITOR_ARIA_LABEL,
   EMPTY_PREVIEW,
   PREVIEW_ID,
+  SAVE_LABEL,
+  SAVING_LABEL,
   WIKILINK_ATTR,
+  draftDirty,
+  draftMoved,
   hasTextSelection,
+  noteClickAction,
+  saveLanded,
   noteEmptyMessage,
   noteHeader,
   previewAnchorOf,
@@ -70,6 +87,18 @@ export interface NoteProps {
   selectedId: string | null;
   onSelect: (id: string) => void;
   onOpen: (slug: string) => void;
+  /**
+   * Save the note's body. Resolves `true` when the write landed; a `false`
+   * has already been reported to the user by the shell, which owns the one
+   * error-reporting gesture the client has.
+   */
+  onSave: (slug: string, body: string) => Promise<boolean>;
+  /**
+   * The shell's handle on the open editor — the `fit` pattern again. Guards
+   * both *ask* (navigate, unload) and *close* (a tree rename of this note).
+   * Functions, not values, or a mount-time guard answers "clean" forever.
+   */
+  editor: { current: { dirty(): boolean; discard(): void } | null };
   /** Epoch ms for relative times. Injected so the render is deterministic. */
   now: number;
 }
@@ -85,14 +114,32 @@ export interface NoteProps {
 function Header({
   view,
   open,
+  editing,
+  saving,
+  onDone,
+  onSave,
 }: {
   view: NoteHeaderView;
   open: () => void;
+  editing: boolean;
+  saving: boolean;
+  onDone: () => void;
+  onSave: () => void;
 }) {
   return (
     <header class="weave-note-head">
       <h3 class="weave-note-title">{view.title}</h3>
       <p class="weave-note-meta">
+        {/* Nothing in read mode: the prose is the way in. The way out needs a
+            control, because "click the text" cannot also mean "stop". */}
+        {editing ? (
+          <>
+            <button type="button" class="weave-note-save" disabled={saving} onClick={onSave}>
+              {saving ? SAVING_LABEL : SAVE_LABEL}
+            </button>
+            <button type="button" class="weave-note-edit" onClick={onDone}>{DONE_LABEL}</button>
+          </>
+        ) : null}
         <button type="button" class="weave-note-open" title="Open in $EDITOR" aria-label="Open in $EDITOR" onClick={open}>
           <span class="weave-note-open-mark" aria-hidden="true">↗</span>
         </button>
@@ -142,6 +189,55 @@ export function Note(props: NoteProps) {
   const dispatch = (event: PreviewEvent): void => void sendPreview((state) => reducePreview(state, event));
   const bodyRef = useRef<HTMLDivElement | null>(null);
   const cardRef = useRef<HTMLDivElement | null>(null);
+
+  const [draft, setDraft] = useState<string | null>(null);
+  const [saving, setSaving] = useState(false);
+  const dirty = note !== null && draft !== null && draftDirty(draft, note.body);
+  // Bumped on open and close, so a late reply knows it is late (`saveLanded`).
+  const session = useRef(0);
+  // The draft *now*: `save` outlives the render that captured its own copy.
+  const draftRef = useRef(draft);
+  draftRef.current = draft;
+
+  // During render, not in an effect: an effect runs after paint, leaving a
+  // window where the slot is still clean and a click slips the guard.
+  props.editor.current = { dirty: () => dirty, discard: () => close() };
+  useEffect(() => () => {
+    props.editor.current = null;
+  }, [props.editor]);
+
+  const close = (): void => {
+    session.current += 1;
+    setDraft(null);
+    setSaving(false);
+  };
+
+  const open = (body: string): void => {
+    session.current += 1;
+    setDraft(body);
+  };
+
+  const save = async (): Promise<void> => {
+    if (note === null || draft === null || saving) return;
+    const issued = session.current;
+    // The textarea stays enabled through the request, so the draft can move
+    // underneath it; the reply is only ever about these bytes.
+    const sent = draft;
+    setSaving(true);
+    const ok = await props.onSave(note.slug, sent);
+    // A reply for an editor that is gone must not close the one now open.
+    if (!saveLanded(issued, session.current)) return;
+    // Stay open on failure, and on success the user typed through: both hold
+    // text the server does not have, and closing would discard it.
+    if (!ok || draftMoved(sent, draftRef.current)) setSaving(false);
+    else close();
+  };
+
+  const toggleEdit = (): void => {
+    if (note === null) return;
+    if (draft === null) open(note.body);
+    else if (!dirty || window.confirm(DISCARD_PROMPT)) close();
+  };
   const card = preview.anchor === null ? null : previewCard(props.graph, preview.anchor);
 
   // A card whose target note left the screen is a claim about a document that
@@ -152,6 +248,10 @@ export function Note(props: NoteProps) {
   // slug changes as rarely as navigation happens.
   useLayoutEffect(() => {
     dispatch({ type: "hide" });
+    // A different note is a different document: an open editor holding the
+    // previous one's text would save it over this one. The shell's guard is
+    // what asks before a dirty draft gets here.
+    close();
   }, [note === null ? null : note.slug]);
 
   // Wired after the card mounts, because both jobs depend on the live DOM:
@@ -223,7 +323,32 @@ export function Note(props: NoteProps) {
       <Header
         view={header}
         open={() => props.onOpen(note.slug)}
+        editing={draft !== null}
+        saving={saving}
+        onDone={toggleEdit}
+        onSave={() => void save()}
       />
+      {draft !== null ? (
+        <textarea
+          class="weave-note-editor"
+          aria-label={EDITOR_ARIA_LABEL}
+          spellcheck
+          value={draft}
+          onInput={(event) => setDraft((event.target as HTMLTextAreaElement).value)}
+          onKeyDown={(event) => {
+            // Bound here, not in `keys.model.ts`: a global binding is a
+            // workspace-wide claim, and Escape must not reach the shell.
+            if (event.key === "Escape") {
+              event.stopPropagation();
+              toggleEdit();
+              return;
+            }
+            if (event.key.toLowerCase() !== "s" || !(event.metaKey || event.ctrlKey)) return;
+            event.preventDefault();
+            void save();
+          }}
+        />
+      ) : (
       <div
           ref={bodyRef}
           class="weave-note-body"
@@ -255,19 +380,16 @@ export function Note(props: NoteProps) {
           }}
           onBlur={() => dispatch({ type: "hide" })}
           onClick={(event) => {
-            // Selecting text to copy must not trigger wikilink navigation.
+            // Three gestures, one element; `noteClickAction` owns the order.
             const selection =
               typeof window !== "undefined" && typeof window.getSelection === "function"
                 ? window.getSelection()
                 : null;
-            if (hasTextSelection(selection)) return;
-
-            // A wikilink carries no href, so route it onto the context bus.
             const target = wikilinkTargetOf(event.target as unknown as Parameters<typeof wikilinkTargetOf>[0]);
-            if (target !== null) {
-              props.onSelect(target);
-              return;
-            }
+            const action = noteClickAction(hasTextSelection(selection), target);
+            // A wikilink carries no href, so route it onto the context bus.
+            if (action === "navigate" && target !== null) props.onSelect(target);
+            else if (action === "edit") open(note.body);
           }}
           onKeyDown={(event) => {
             // Escape is first so the card closes on the gesture a keyboard
@@ -282,13 +404,16 @@ export function Note(props: NoteProps) {
             }
             if (event.key !== "Enter" && event.key !== " ") return;
             const target = wikilinkTargetOf(event.target as unknown as Parameters<typeof wikilinkTargetOf>[0]);
-            if (target === null) return;
             event.preventDefault();
-            props.onSelect(target);
+            // The keyboard's half of the click: without it, editing would be
+            // mouse-only now that the Edit button is gone.
+            if (target !== null) props.onSelect(target);
+            else open(note.body);
           }}
           // Sanitised by `renderNote`'s three layers — see note.model.ts.
           dangerouslySetInnerHTML={{ __html: html }}
         />
+      )}
       {card === null ? null : (
         <div
           ref={cardRef}

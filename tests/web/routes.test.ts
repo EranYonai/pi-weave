@@ -873,6 +873,41 @@ describe("vault tree mutations", () => {
     expect((await del(server, "/api/folder/missing")).status).toBe(404);
   });
 
+  it("saves a note body, leaving the rest of the file alone", async () => {
+    const { server, vaultRoot } = await bootFresh();
+    const before = await fs.readFile(join(vaultRoot, "notes", "alpha-note.md"), "utf8");
+
+    const res = await post(server, "/api/note/alpha-note", { body: "rewritten by the browser" });
+    expect(res.status).toBe(200);
+    expect(await res.json()).toEqual({ ok: true, id: "note:alpha-note" });
+
+    const after = await fs.readFile(join(vaultRoot, "notes", "alpha-note.md"), "utf8");
+    expect(after).toContain("rewritten by the browser");
+    // The title is untouched, and the read path agrees with the disk.
+    expect(after).toContain(before.split("\n").find((line) => line.startsWith("title:")));
+    const payload = (await (await get(server, "/api/note/alpha-note")).json()) as NotePayload;
+    expect(payload.note.body).toBe("rewritten by the browser");
+  });
+
+  it("refuses a save with no string body, a missing note, or a foreign Origin", async () => {
+    const { server } = await bootFresh();
+    expect((await post(server, "/api/note/alpha-note", {})).status).toBe(400);
+    expect((await post(server, "/api/note/alpha-note", { body: 42 })).status).toBe(400);
+    expect((await post(server, "/api/note/missing", { body: "x" })).status).toBe(404);
+
+    // The write route inherits the CSRF gate rather than remembering it.
+    const res = await fetch(server.url + "/api/note/alpha-note", {
+      method: "POST",
+      headers: {
+        cookie: `${DEFAULT_COOKIE_NAME}=${TOKEN}`,
+        origin: "http://evil.com",
+        "content-type": "application/json",
+      },
+      body: JSON.stringify({ body: "injected" }),
+    });
+    expect(res.status).toBe(403);
+  });
+
   it("deletes notes and folders whose final path segment looks like an action", async () => {
     const { server, vaultRoot } = await bootFresh();
     await fs.mkdir(join(vaultRoot, "notes", "archive"));
@@ -881,6 +916,26 @@ describe("vault tree mutations", () => {
 
     expect((await del(server, "/api/note/archive%2Frename")).status).toBe(200);
     expect((await del(server, "/api/folder/rename")).status).toBe(200);
+  });
+
+  /**
+   * Slugs nest, so `archive/rename` is a real note and the suffix is
+   * ambiguous where the payload is not. Saving one used to be a `400`.
+   */
+  it("saves notes whose final path segment looks like an action", async () => {
+    const { server, vaultRoot } = await bootFresh();
+    await fs.mkdir(join(vaultRoot, "notes", "archive"));
+    for (const slug of ["rename", "move"]) {
+      await writeNoteFile(vaultRoot, `archive/${slug}`, [`title: ${slug}`, "source: human"], "original");
+      const res = await post(server, `/api/note/archive%2F${slug}`, { body: "EDITED" });
+      expect(res.status, slug).toBe(200);
+      expect(await res.json()).toEqual({ ok: true, id: `note:archive/${slug}` });
+      expect(await fs.readFile(join(vaultRoot, "notes", "archive", `${slug}.md`), "utf8")).toContain("EDITED");
+    }
+
+    // The actions still work on those slugs: the payload tells them apart.
+    expect((await post(server, "/api/note/archive%2Frename/rename", { name: "Renamed" })).status).toBe(200);
+    expect((await post(server, "/api/note/archive%2Fmove/move", { folder: null })).status).toBe(200);
   });
 });
 
