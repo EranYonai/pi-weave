@@ -8,27 +8,11 @@
  *
  * ## The editor
  *
- * A `<textarea>` that replaces the rendered body, held in two pieces of
- * component state rather than a reducer: `draft` (the text, and `null` in
- * read mode — one field, so "there is text being edited" and "we are in edit
- * mode" cannot disagree) and `saving`. There was once a 686-line state
- * machine here; almost all of it existed to resolve save conflicts against a
- * revision the server no longer issues — see core's `setNoteBody` for why a
- * single-human vault takes last-write-wins instead.
- * What remains of that design is the part that was never about conflicts:
- * `⌘S` is handled on the textarea itself, not in the global keymap, so the
- * save fires from the element that owns the text and the workspace-wide key
- * table stays unclaimed.
- *
- * The draft is component state, so the 2 s poll in `workspace.ts` cannot
- * reach it: new bytes from the server land in `props.note` and are ignored
- * until the editor closes. Losing a draft to a background refetch would be
- * the one failure mode a reader cannot see coming.
- *
- * Unsaved work is guarded at the two exits that can destroy it — navigating
- * to another note (the `dirty` slot the shell consults) and closing the tab
- * (`beforeunload`, also the shell's). Neither lives here, because neither is
- * this column's event to see.
+ * Clicking the prose swaps it for a `<textarea>`; `draft` is `null` in read
+ * mode, so text and mode cannot disagree. No reducer — the 686-line one that
+ * stood here resolved conflicts against a revision the server no longer
+ * issues. Being component state, the draft is out of the 2 s poll's reach;
+ * the shell guards it through the `editor` slot below.
  *
  * `dangerouslySetInnerHTML` is used deliberately for sanitized note HTML. The
  * alternative is parsing marked's output into a Preact tree, which means a
@@ -110,18 +94,9 @@ export interface NoteProps {
    */
   onSave: (slug: string, body: string) => Promise<boolean>;
   /**
-   * The shell's handle on the open editor, filled by this column.
-   *
-   * The same mutable-ref pattern the graph column uses for `fit`, and a
-   * handle of functions rather than a `dirty` boolean because the guards need
-   * two different things: the navigation and unload guards *ask*, while a
-   * tree mutation that is about to rename or delete the open note has to
-   * *close* the editor — a draft left pointing at a slug that no longer
-   * exists saves into a `404`.
-   *
-   * Functions, not values, because a guard registered once at mount would
-   * otherwise answer with the editor as it was when the tab opened — always
-   * clean, making a guard that looks installed and is a no-op.
+   * The shell's handle on the open editor — the `fit` pattern again. Guards
+   * both *ask* (navigate, unload) and *close* (a tree rename of this note).
+   * Functions, not values, or a mount-time guard answers "clean" forever.
    */
   editor: { current: { dirty(): boolean; discard(): void } | null };
   /** Epoch ms for relative times. Injected so the render is deterministic. */
@@ -155,12 +130,8 @@ function Header({
     <header class="weave-note-head">
       <h3 class="weave-note-title">{view.title}</h3>
       <p class="weave-note-meta">
-        {/*
-          Nothing here in read mode. The way *in* is clicking the prose, so a
-          button saying "Edit" would be a second door to the same room — and
-          the meta line is a footnote, not a toolbar. The way *out* needs a
-          control, because "click the text" cannot also mean "stop editing".
-        */}
+        {/* Nothing in read mode: the prose is the way in. The way out needs a
+            control, because "click the text" cannot also mean "stop". */}
         {editing ? (
           <>
             <button type="button" class="weave-note-save" disabled={saving} onClick={onSave}>
@@ -219,42 +190,18 @@ export function Note(props: NoteProps) {
   const bodyRef = useRef<HTMLDivElement | null>(null);
   const cardRef = useRef<HTMLDivElement | null>(null);
 
-  // The editor. `draft` is `null` in read mode — one field rather than a
-  // separate `editing` flag, so "there is text being edited" and "we are in
-  // edit mode" cannot disagree.
   const [draft, setDraft] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
   const dirty = note !== null && draft !== null && draftDirty(draft, note.body);
-  // Which edit session is open. Bumped on every open and every close, so a
-  // save issued under an earlier one can recognise that it is late — see
-  // `saveLanded`. A ref, not state: nothing renders from it, and a save has
-  // to read the value as it is when the response lands rather than the one
-  // captured by the render that started it.
+  // Bumped on open and close, so a late reply knows it is late (`saveLanded`).
   const session = useRef(0);
-  // The draft as it is *now*, for code that outlives the render it started
-  // in. `save` awaits a round trip and then has to compare against the text
-  // in the box at that moment; its captured `draft` is the one from the
-  // render that issued the request, which is precisely the value that cannot
-  // answer "did the user keep typing?".
+  // The draft *now*: `save` outlives the render that captured its own copy.
   const draftRef = useRef(draft);
   draftRef.current = draft;
 
-  // Filled **during render**, not in an effect, and that is the whole point:
-  // an effect runs *after* the browser has painted, so between the keystroke
-  // that dirties the draft and the effect that reports it there is a window
-  // where the slot still holds the previous, clean closure. A click landing
-  // in that window passes the shell's guard unchallenged, and the slug-change
-  // effect then closes the editor and takes the draft with it — no prompt, no
-  // trace. `Shell.tsx`'s own `live` ref is assigned during render for exactly
-  // this reason.
-  //
-  // Render-phase assignment to a ref is safe here because the value is
-  // derived entirely from this render's own state: a discarded render leaves
-  // a slot that the next render immediately overwrites, and nothing reads it
-  // in between.
+  // During render, not in an effect: an effect runs after paint, leaving a
+  // window where the slot is still clean and a click slips the guard.
   props.editor.current = { dirty: () => dirty, discard: () => close() };
-  // The effect is now only a cleanup: an unmounted column must not keep
-  // answering for a guard.
   useEffect(() => () => {
     props.editor.current = null;
   }, [props.editor]);
@@ -273,27 +220,16 @@ export function Note(props: NoteProps) {
   const save = async (): Promise<void> => {
     if (note === null || draft === null || saving) return;
     const issued = session.current;
-    // What actually went to the server. The textarea stays enabled through
-    // the request — a field that locks mid-sentence is its own bug — so the
-    // draft can move underneath it, and the reply is only about these bytes.
+    // The textarea stays enabled through the request, so the draft can move
+    // underneath it; the reply is only ever about these bytes.
     const sent = draft;
     setSaving(true);
     const ok = await props.onSave(note.slug, sent);
-    // The editor this reply was meant for is gone — the user navigated away,
-    // or closed and reopened it, and is now typing into a different session.
-    // Closing that one would clear a draft this response knows nothing about.
+    // A reply for an editor that is gone must not close the one now open.
     if (!saveLanded(issued, session.current)) return;
-    // A failed save keeps the editor open with the draft intact: the text the
-    // user typed is now the only copy of it, and closing over an error would
-    // be the fastest way to lose work the server refused to take.
-    //
-    // A *successful* save closes only if the draft is still the text that was
-    // sent. Keystrokes made during the round trip were never in the request,
-    // so closing over them would discard bytes the server has not seen — the
-    // same loss as a failed save, wearing a success's clothes. The editor
-    // stays open instead, holding the newer text for the next ⌘S.
-    if (!ok) setSaving(false);
-    else if (draftMoved(sent, draftRef.current)) setSaving(false);
+    // Stay open on failure, and on success the user typed through: both hold
+    // text the server does not have, and closing would discard it.
+    if (!ok || draftMoved(sent, draftRef.current)) setSaving(false);
     else close();
   };
 
@@ -400,12 +336,8 @@ export function Note(props: NoteProps) {
           value={draft}
           onInput={(event) => setDraft((event.target as HTMLTextAreaElement).value)}
           onKeyDown={(event) => {
-            // Stopped here rather than claimed in `keys.model.ts`: the global
-            // listener sees every keystroke in the workspace, so binding a
-            // combination there is a workspace-wide claim. Handling both on
-            // the element that owns the text keeps the claim local, and
-            // stopping propagation is what prevents Escape reaching the
-            // shell and clearing the selection out from under the editor.
+            // Bound here, not in `keys.model.ts`: a global binding is a
+            // workspace-wide claim, and Escape must not reach the shell.
             if (event.key === "Escape") {
               event.stopPropagation();
               toggleEdit();
@@ -448,11 +380,7 @@ export function Note(props: NoteProps) {
           }}
           onBlur={() => dispatch({ type: "hide" })}
           onClick={(event) => {
-            // Three gestures land here and `noteClickAction` owns which one
-            // this is — selection first, then wikilinks, then editing. A
-            // drag to copy ends in a click, and answering that with an
-            // editor would both destroy the selection and move the reader
-            // somewhere they did not ask to go.
+            // Three gestures, one element; `noteClickAction` owns the order.
             const selection =
               typeof window !== "undefined" && typeof window.getSelection === "function"
                 ? window.getSelection()
@@ -461,7 +389,6 @@ export function Note(props: NoteProps) {
             const action = noteClickAction(hasTextSelection(selection), target);
             // A wikilink carries no href, so route it onto the context bus.
             if (action === "navigate" && target !== null) props.onSelect(target);
-            // Prose is the affordance: click the text you want to change.
             else if (action === "edit") open(note.body);
           }}
           onKeyDown={(event) => {
@@ -478,11 +405,8 @@ export function Note(props: NoteProps) {
             if (event.key !== "Enter" && event.key !== " ") return;
             const target = wikilinkTargetOf(event.target as unknown as Parameters<typeof wikilinkTargetOf>[0]);
             event.preventDefault();
-            // Enter on a wikilink follows it; Enter on the body opens the
-            // editor. The keyboard's half of the click above — without it,
-            // removing the Edit button would have left editing reachable by
-            // mouse only, which is the kind of regression `⌘2` and the `j/k`
-            // navigation exist to prevent.
+            // The keyboard's half of the click: without it, editing would be
+            // mouse-only now that the Edit button is gone.
             if (target !== null) props.onSelect(target);
             else open(note.body);
           }}

@@ -748,13 +748,9 @@ export const CREATED_WORD = "created";
 // --- the editor -------------------------------------------------------------------------
 
 /**
- * The editor's strings, here with every other string in this file.
- *
- * There is no "Edit" label because there is no Edit button: clicking the
- * prose opens the editor (see {@link noteClickAction}). "Done" rather than
- * "Cancel" for the way out — leaving a clean editor discards nothing, and a
- * button offering to cancel work that was never done invites the reader to
- * wonder what they are losing.
+ * The editor's strings. No "Edit" label — clicking the prose opens it (see
+ * {@link noteClickAction}); "Done", because leaving a clean editor cancels
+ * nothing.
  */
 export const DONE_LABEL = "Done";
 export const SAVE_LABEL = "Save";
@@ -763,14 +759,9 @@ export const EDITOR_ARIA_LABEL = "Note body";
 export const DISCARD_PROMPT = "Discard unsaved changes to this note?";
 
 /**
- * Whether the draft differs from the note as last loaded.
- *
- * Trailing whitespace counts as a difference and is deliberately **not**
- * trimmed away here: a save does trim (core's `preserveRawTail` calls
- * `.trim()`), so trimming in the comparison too would call a draft clean
- * while the file on disk still holds the untrimmed text — a discard prompt
- * that never fires for the one edit that would be silently reverted. Erring
- * towards "dirty" costs a prompt; erring the other way costs the edit.
+ * Whether the draft differs from the note as last loaded. Trailing whitespace
+ * counts: the save trims, so calling such a draft clean would skip the prompt
+ * on the one edit that gets silently reverted.
  */
 export function draftDirty(draft: string, body: string): boolean {
   return draft !== body;
@@ -780,24 +771,8 @@ export function draftDirty(draft: string, body: string): boolean {
 export type NoteClickAction = "ignore" | "navigate" | "edit";
 
 /**
- * Resolve a click on the note's prose — the ordering, as a value.
- *
- * Three gestures land on the same element and only one of them is editing,
- * so the precedence *is* the logic:
- *
- * 1. **A text selection wins.** Selecting a sentence to copy ends in a click,
- *    and answering that with an editor both destroys the selection and puts
- *    the reader somewhere they did not ask to be. This is the older of the
- *    two guards — the same one that stopped a drag from toggling the editor
- *    back when there was a button — and it comes first for the same reason.
- * 2. **A wikilink is navigation.** Following a link is what a link is for;
- *    the editor would swallow the gesture.
- * 3. **Anything else opens the editor.** Prose is the affordance: click the
- *    text you want to change.
- *
- * Pure and taking already-resolved answers rather than an event, so the
- * precedence is testable without a DOM — `Note.tsx` supplies
- * `hasTextSelection(window.getSelection())` and `wikilinkTargetOf(target)`.
+ * Resolve a click on the prose. Selection wins (a drag to copy ends in a
+ * click, and 865da37 is that bug), then wikilinks, then editing.
  */
 export function noteClickAction(hasSelection: boolean, wikilinkTarget: string | null): NoteClickAction {
   if (hasSelection) return "ignore";
@@ -805,39 +780,17 @@ export function noteClickAction(hasSelection: boolean, wikilinkTarget: string | 
 }
 
 /**
- * Whether a save's response still belongs to the editor that issued it.
- *
- * A save is asynchronous and the user keeps moving through it: they can
- * confirm a navigation, land on another note and start typing before the
- * first request resolves. The response's job is to close the editor it came
- * from — closing whatever editor happens to be open when it lands would
- * clear a draft belonging to a different document, in response to a request
- * that predates it.
- *
- * So each edit session takes an epoch, the save carries the one it was issued
- * under, and a reply from a previous session is dropped. A counter rather
- * than the slug, because opening, closing and reopening the *same* note is a
- * new session too, and a slug comparison would call that a match.
+ * Whether a save's reply still belongs to the editor that issued it. A
+ * counter, not the slug: reopening the same note is a new session too.
  */
 export function saveLanded(issued: number, current: number): boolean {
   return issued === current;
 }
 
 /**
- * Whether the draft has moved since the bytes a save actually sent.
- *
- * The textarea stays enabled during a request — a field that locks
- * mid-sentence is its own bug — so a fast typist can add text that was never
- * in the payload. Closing the editor on the reply would then discard
- * keystrokes the server has never seen: a silent loss wearing a success's
- * clothes, and the harder one to notice because nothing failed.
- *
- * Distinct from {@link saveLanded}, which asks whether the *editor* is still
- * the one that issued the request. Both can be true at once — same session,
- * newer text — which is exactly the case this catches.
- *
- * `current` is nullable because the editor may have closed under the reply;
- * a closed editor has no unsaved keystrokes to protect.
+ * Whether the draft moved since the bytes a save sent — keystrokes made
+ * during the request were never in it, so a success must not close over them.
+ * Unlike {@link saveLanded}, this is about the *text*, not the session.
  */
 export function draftMoved(sent: string, current: string | null): boolean {
   return current !== null && current !== sent;

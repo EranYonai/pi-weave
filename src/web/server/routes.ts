@@ -563,19 +563,8 @@ async function routeNote(
       return true;
     }
     const fields = body as { body?: unknown; name?: unknown; folder?: unknown };
-    // **The payload decides, not the suffix.** Slugs may nest, so a note can
-    // legitimately be called `archive/rename` — and a URL suffix is then
-    // ambiguous in a way the body never is. Classifying on the suffix alone
-    // made saving such a note impossible: the save was read as a rename
-    // missing its `name` and refused with a `400`, for a note whose only sin
-    // was its title. A `{ body }` is a save of the **whole** target; only a
-    // payload that carries the action's own field is that action.
-    //
-    // A save carries no revision and takes no conflict check: see core's
-    // `setNoteBody` for why last-write-wins is the right trade in a vault with
-    // one human in it. The CSRF defence is not this handler's to remember —
-    // `handleRequest` runs `security.authorize` before routing, and
-    // `checkOrigin` refuses any non-GET without a same-origin `Origin`.
+    // The payload decides, not the suffix: slugs nest, so `archive/rename` is
+    // a real note and only `{name}`/`{folder}` mean the action.
     if (typeof fields.body === "string") {
       sendMutation(res, await setNoteBody(deps.vaultRoot, target, fields.body));
       return true;

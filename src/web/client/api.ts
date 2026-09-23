@@ -324,12 +324,9 @@ const noteUrl = (slug: string, suffix = ""): string => `/api/note/${encodeURICom
 const folderUrl = (path: string, suffix = ""): string => `/api/folder/${path.split("/").map(encodeURIComponent).join("/")}${suffix}`;
 
 /**
- * `POST /api/note/:slug` — save the note's Markdown body.
- *
- * Carries no revision: the save is last-write-wins by design (see core's
- * `setNoteBody`). A `MutationResult` rather than the saved note, because the
- * 2 s poll in `workspace.ts` is what puts the new text back on screen — the
- * caller needs to know the write landed, not to be handed the bytes twice.
+ * `POST /api/note/:slug` — save the note's Markdown body. No revision
+ * (last-write-wins, see core's `setNoteBody`), and a `MutationResult` rather
+ * than the note: the poll is what puts the new text back on screen.
  */
 export const saveNote = (fetchImpl: FetchLike, slug: string, body: string) => mutation(fetchImpl, noteUrl(slug), "POST", { body });
 export const renameNote = (fetchImpl: FetchLike, slug: string, name: string) => mutation(fetchImpl, noteUrl(slug, "/rename"), "POST", { name });

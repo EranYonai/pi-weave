@@ -84,18 +84,13 @@ export function Shell(props: ShellProps) {
   // Filled by the graph column at mount, cleared on unmount. The global `g`
   // key's only route to the renderer — see `Graph.tsx`'s `fit` prop.
   const fit = useRef<(() => void) | null>(null);
-  // Filled by the note column while an editor is open. The exits that can
-  // destroy a draft are the shell's events, not the column's, so they are
-  // asked — and answered — through this slot.
+  // Filled by the note column while an editor is open: the exits that destroy
+  // a draft are the shell's events, not the column's.
   const editor = useRef<{ dirty(): boolean; discard(): void } | null>(null);
   /**
-   * Confirm abandoning an open draft, and close it if the user agrees.
-   *
-   * Returns `false` when the user wants to keep editing, so every caller
-   * spells the refusal the same way. Closing here rather than leaving it to
-   * the caller is what keeps a destructive tree mutation from asking twice:
-   * the draft is gone before the request goes out, so the selection that
-   * follows the response has nothing left to guard.
+   * Confirm abandoning an open draft, closing it if the user agrees. `false`
+   * means keep editing. Closing here is what stops a tree mutation asking
+   * twice — the draft is gone before the selection that follows it.
    */
   const mayDiscard = (): boolean => {
     const open = editor.current;
@@ -181,11 +176,8 @@ export function Shell(props: ShellProps) {
   // choice) keep up while the choice is "system".
   useEffect(() => watchScheme(window, setSystemScheme), []);
 
-  // The other exit. A thunk, not a captured value, for the same reason the
-  // key listener reads through `live`: this listener is registered once and
-  // outlives every render. No custom message — every browser has ignored the
-  // string since 2017 and shows its own wording — but `returnValue` is set as
-  // well as `preventDefault`, which is the only spelling all of them honour.
+  // The other exit. No custom message (browsers ignore it), but `returnValue`
+  // as well as `preventDefault` — the only spelling all of them honour.
   useEffect(() => {
     const guard = (event: BeforeUnloadEvent): void => {
       if (editor.current?.dirty() !== true) return;
@@ -246,9 +238,8 @@ export function Shell(props: ShellProps) {
         onMutate={mayDiscard}
         onRefresh={() => workspace.current?.refresh()}
         onOpen={(slug) => void (async () => {
-          // The result was discarded here for a while, which made a 403 or a
-          // missing note look exactly like a successful hand-off to an editor
-          // that opened nothing. `alert` is what the tree already uses.
+          // Reported, not discarded: a 403 and an editor that opened nothing
+          // used to look identical. `alert` is what the tree already uses.
           const result = await openNote(fetchJson, slug);
           if (!result.ok) window.alert(result.message);
           else if (!result.data.opened) window.alert("could not open the note in an editor");
@@ -259,8 +250,7 @@ export function Shell(props: ShellProps) {
             window.alert(result.message);
             return false;
           }
-          // The poll would get there within two seconds; refreshing now means
-          // the graph and the note column agree the moment the save lands.
+          // The poll would get there in two seconds; this agrees immediately.
           workspace.current?.refresh();
           return true;
         }}

@@ -46,9 +46,8 @@ export interface TreeProps {
   recentIds: ReadonlySet<string>;
   onSelect: (id: string) => void;
   /**
-   * Ask before a mutation that would invalidate an open draft in the note
-   * column, closing that draft if the user agrees. `false` means keep
-   * editing, and the mutation must not run.
+   * Ask before a mutation that would invalidate an open draft. `false` means
+   * keep editing: the mutation must not run.
    */
   onMutate: () => boolean;
   onRefresh: () => void;
@@ -197,10 +196,8 @@ export function Tree(props: TreeProps) {
     } else if (action === "rename") {
       setEditing({ id: menu.id, label: menu.label, value: menu.label });
     } else if (target.type !== "vault") {
-      // The guard runs **before** the request, not after it. Asking on the
-      // selection that follows a successful delete would be asking about a
-      // file that is already gone — and "keep editing" would leave the draft
-      // attached to a slug whose next save is a 404.
+      // Before the request: asking after a delete is asking about a file that
+      // is already gone, and "keep editing" would strand the draft on a 404.
       if (deletesSelection(props.selectedId, target) && !props.onMutate()) return;
       await run(target.type === "note" ? deleteNote(fetchJson, target.path) : deleteFolder(fetchJson, target.path), deletesSelection(props.selectedId, target) ? "vault" : undefined);
     }
@@ -244,12 +241,11 @@ export function Tree(props: TreeProps) {
       return;
     }
     const target = mutableTreeRow(current.id);
-    // No confirmation about the *rename*. A rename can break wiki-links, but
-    // the warning was unactionable — it named no link and offered no way to
-    // see them — and it fired on the *commit* of an edit the user had already
-    // typed out, which is the least useful moment to ask. Renaming back is one
-    // more rename. An open draft on the note being renamed is a different
-    // question, and `onMutate` is the one asking it.
+    // No confirmation. A rename can break wiki-links, but the warning was
+    // unactionable — it named no link and offered no way to see them — and it
+    // fired on the *commit* of an edit the user had already typed out, which
+    // is the least useful moment to ask. Renaming back is one more rename.
+    // An open draft is a different question; `onMutate` asks that one.
     if (target !== null && name && name !== current.label) {
       if (deletesSelection(props.selectedId, target) && !props.onMutate()) return;
       void run(target.type === "note" ? renameNote(fetchJson, target.path, name) : renameFolder(fetchJson, target.path, name));

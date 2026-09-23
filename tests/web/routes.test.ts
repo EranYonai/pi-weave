@@ -883,9 +883,8 @@ describe("vault tree mutations", () => {
 
     const after = await fs.readFile(join(vaultRoot, "notes", "alpha-note.md"), "utf8");
     expect(after).toContain("rewritten by the browser");
-    // The title line is untouched: a body save is a body save.
+    // The title is untouched, and the read path agrees with the disk.
     expect(after).toContain(before.split("\n").find((line) => line.startsWith("title:")));
-    // And the route's own read path agrees with the disk.
     const payload = (await (await get(server, "/api/note/alpha-note")).json()) as NotePayload;
     expect(payload.note.body).toBe("rewritten by the browser");
   });
@@ -896,7 +895,7 @@ describe("vault tree mutations", () => {
     expect((await post(server, "/api/note/alpha-note", { body: 42 })).status).toBe(400);
     expect((await post(server, "/api/note/missing", { body: "x" })).status).toBe(404);
 
-    // The new write route inherits the CSRF gate rather than remembering it.
+    // The write route inherits the CSRF gate rather than remembering it.
     const res = await fetch(server.url + "/api/note/alpha-note", {
       method: "POST",
       headers: {
@@ -920,10 +919,8 @@ describe("vault tree mutations", () => {
   });
 
   /**
-   * Slugs nest, so `archive/rename` is a legitimate note name and the URL
-   * suffix is ambiguous where the payload is not. Saving one used to be
-   * impossible: the request was read as a rename missing its `name` and
-   * refused with a `400`, for a note whose only sin was its title.
+   * Slugs nest, so `archive/rename` is a real note and the suffix is
+   * ambiguous where the payload is not. Saving one used to be a `400`.
    */
   it("saves notes whose final path segment looks like an action", async () => {
     const { server, vaultRoot } = await bootFresh();
@@ -936,8 +933,7 @@ describe("vault tree mutations", () => {
       expect(await fs.readFile(join(vaultRoot, "notes", "archive", `${slug}.md`), "utf8")).toContain("EDITED");
     }
 
-    // The actions themselves still work on those same slugs — the payload is
-    // what tells them apart, so both readings stay reachable.
+    // The actions still work on those slugs: the payload tells them apart.
     expect((await post(server, "/api/note/archive%2Frename/rename", { name: "Renamed" })).status).toBe(200);
     expect((await post(server, "/api/note/archive%2Fmove/move", { folder: null })).status).toBe(200);
   });

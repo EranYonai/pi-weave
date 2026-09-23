@@ -44,8 +44,7 @@ export interface ColumnsProps {
   onSave: (slug: string, body: string) => Promise<boolean>;
   /**
    * Ask before a mutation that would invalidate an open draft, closing it if
-   * the user agrees. `false` means the user chose to keep editing, and the
-   * caller must not proceed.
+   * the user agrees. `false` means keep editing: do not proceed.
    */
   onMutate: () => boolean;
   /** Slot the note column fills with its editor handle, for the shell's guards. */

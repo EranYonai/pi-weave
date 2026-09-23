@@ -597,38 +597,14 @@ export async function repairVaultLinks(root: string, options: { apply?: boolean 
 }
 
 /**
- * Keep the note's `## Raw` tail exactly as it is on disk, whatever the
- * incoming body says about it.
- *
- * The tail is append-only and verbatim — "NEVER edit below this line" is
- * written into every note that has one, and `skills/weave-notepad/SKILL.md`
- * §"Raw Tail Format" is the contract. So an incoming body is treated as the
- * **editorial region above the tail** and nothing more, exactly as
- * `finalizeNote` treats one. Two consequences, both deliberate:
- *
- *  - deleting the tail in an editor that shows it does not delete it on disk;
- *  - *editing* the words inside it does not change them either.
- *
- * The second is the one a naive "re-attach only if the new body has no tail"
- * misses: such a rule sees the tail the editor round-tripped, concludes there
- * is nothing to restore, and writes the user's edits to their own dictation
- * straight through — which is precisely the thing the append-only promise
- * exists to forbid.
- *
- * Both regions are split with `rawTailStart`, which is fence-aware and
- * matches a whole `## Raw` heading line. `extractRawTail`'s substring search
- * is not good enough here, because it is used on *untrusted editor input*: a
- * body mentioning `## Rawhide`, or documenting the convention inside a code
- * fence, would be read as carrying a tail, and the real one would be dropped
- * on the floor. Sharing the link repairer's implementation also means there
- * is one definition of "where the tail begins" rather than two that can drift.
+ * Keep the on-disk `## Raw` tail whatever the body says — it is append-only.
+ * `rawTailStart`, not `extractRawTail`: fence-aware, for untrusted input.
  */
 function preserveRawTail(currentBody: string, nextBody: string): string {
   const tail = currentBody.slice(tailBoundary(currentBody)).trimEnd();
   const head = nextBody.slice(0, tailBoundary(nextBody)).trim();
   if (tail === "") return head;
-  // A note edited down to nothing above its tail keeps the tail alone, rather
-  // than a leading blank line before it.
+  // An emptied head leaves the tail alone, not a leading blank line.
   return head === "" ? tail : `${head}\n\n${tail}`;
 }
 
@@ -636,48 +612,22 @@ function preserveRawTail(currentBody: string, nextBody: string): string {
 const TAIL_RULE_RE = /(?:^|\n)-{3,}[ \t]*\r?\n\s*$/;
 
 /**
- * Where the raw tail's *text* begins — the `---` rule above the heading, not
- * the heading itself.
- *
- * `rawTailStart` answers a different question: the link repairer only needs
- * to know where to stop rewriting, so the heading offset is enough for it.
- * Splitting a body there would leave the rule behind in the editorial half,
- * and re-joining would then either lose it or double it. The tail's own
- * format (see `rawTailOpening`) opens with the rule, so that is the seam.
+ * Where the tail's text begins — the `---` rule, not the heading
+ * `rawTailStart` returns. Splitting at the heading orphans the rule.
  */
 function tailBoundary(body: string): number {
   const heading = rawTailStart(body, fenceRanges(body));
   if (heading === body.length) return heading;
   const rule = TAIL_RULE_RE.exec(body.slice(0, heading));
   if (rule === null) return heading;
-  // `index` is the newline before the rule when there is one, so step over it.
+  // `index` is the newline before the rule when there is one; step over it.
   return rule.index === 0 && !body.startsWith("\n") ? 0 : rule.index + 1;
 }
 
 /**
- * Replace a note's Markdown body, leaving everything else alone.
- *
- * The write path for the browser's editor. Unknown front-matter keys survive
- * because they ride on `note.frontMatter` through `writeNote` — the same
- * mechanism that keeps an Obsidian note byte-compatible through a rename —
- * and `title`, `created`, `tags` and `source` are copied from the note as it
- * is. Only `updated` moves, which is the one field an edit is entitled to.
- *
- * ## Last write wins, on purpose
- *
- * There is no `expectedRevision` here. This vault has one human in it, and
- * the machinery that made a save conflict-safe (a revision read with the
- * body, a `409` carrying the current note, a reducer to resolve it) was ~950
- * lines guarding a race between a user and themselves; the cost of losing
- * that race is one edit, not the file.
- *
- * The limit is worth stating plainly rather than leaving for someone to
- * discover: the browser's poll refreshes the *rendered* note, not an open
- * editor, so a tab left mid-edit will overwrite an outside change without
- * ever showing it. Reinstating a guard means threading a revision through
- * the wire contract and capturing it when editing begins — not a change
- * confined to this file — though it would not need the reducer back. See
- * docs/weave-workspace.md §11 P5.3.
+ * Replace a note's Markdown body; unknown front matter rides on
+ * `note.frontMatter` and only `updated` moves. Last write wins — no
+ * `expectedRevision`; docs/weave-workspace.md §11 P5.3 argues the trade.
  */
 export async function setNoteBody(root: string, slug: string, body: string, now = new Date()): Promise<VaultMutationResult> {
   const path = resolveNotePath(root, slug);

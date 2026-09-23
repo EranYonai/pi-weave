@@ -269,14 +269,9 @@ describe("finalizeNote", () => {
 });
 
 /**
- * The browser editor's write path.
- *
- * The interesting claim is not "the body changed" — it is that **nothing
- * else** did. A save from a `<textarea>` sees only the Markdown body, so
- * every other byte in the file is something the editor has no opinion about
- * and must therefore leave exactly where it found it. The Obsidian case
- * below is the real test: each of those lines is one the engine's own
- * front-matter subset cannot represent, so a naive rewrite destroys it.
+ * The browser editor's write path. The claim is not "the body changed" but
+ * that **nothing else** did — the Obsidian case is the real test, since every
+ * line of it is one the engine's front-matter subset cannot represent.
  */
 describe("setNoteBody", () => {
   it("replaces the body and moves only `updated`", async () => {
@@ -327,9 +322,8 @@ describe("setNoteBody", () => {
     expect(result).toEqual({ ok: true, slug: "imported" });
 
     const text = await fs.readFile(join(vault, "notes", "imported.md"), "utf8");
-    // An array equality, not a bag of `toContain`s: a block that had been
-    // silently reordered would pass those and is still a diff in the user's
-    // git history that they did not make.
+    // An array equality, not a bag of `toContain`s: a silently reordered block
+    // would pass those and is still a diff the user did not make.
     expect(text.split("\n---\n")[0]?.split("\n")).toEqual(
       frontMatter.replace("updated: 2026-08-20T10:00:00.000Z", "updated: 2026-08-21T10:00:00.000Z").split("\n").slice(0, -1),
     );
@@ -358,13 +352,9 @@ describe("setNoteBody", () => {
   });
 
   /**
-   * The append-only promise, against an editor that can type anything.
-   *
-   * "NEVER edit below this line" is written into every note that has a tail,
-   * so the guarantee is not "a dropped tail comes back" — it is that the
-   * bytes below the line are the ones the user dictated, whatever arrives
-   * from the browser. Each case below is a different way a body can claim to
-   * carry a tail it does not have.
+   * The append-only promise, against an editor that can type anything: not
+   * "a dropped tail comes back" but "the bytes below the line are the ones
+   * the user dictated". Each case claims a tail it does not have.
    */
   describe("the `## Raw` tail is verbatim, not merely present", () => {
     async function dictated(slug: string, words: string): Promise<string> {
@@ -376,10 +366,8 @@ describe("setNoteBody", () => {
     it("refuses edits to the words inside the tail", async () => {
       const slug = await dictated("Quoted", "what the user actually said");
       const body = (await getNote(vault, slug))!.body;
-      // The editor shows the whole file, so the user *can* type over the
-      // dictation. Round-tripping it must not persist the rewrite — this is
-      // the case a "re-attach only when the new body has no tail" rule misses,
-      // because the tail it sees is the edited one.
+      // The case a "re-attach only when the new body has no tail" rule misses:
+      // the tail it sees is the edited one, so it restores nothing.
       await setNoteBody(vault, slug, body.replace("what the user actually said", "A FABRICATED QUOTE"));
       const after = (await getNote(vault, slug))!.body;
       expect(after).toContain("what the user actually said");
@@ -396,8 +384,7 @@ describe("setNoteBody", () => {
 
     it("does not mistake a fenced `## Raw` example for a tail", async () => {
       const slug = await dictated("Fenced", "real dictation");
-      // A note documenting the convention. Reading the sample as the tail
-      // would silently discard the note's actual one.
+      // A note documenting the convention: the sample is not the tail.
       await setNoteBody(vault, slug, "how tails look:\n\n```md\n## Raw\nexample\n```");
       const after = (await getNote(vault, slug))!.body;
       expect(after).toContain("real dictation");

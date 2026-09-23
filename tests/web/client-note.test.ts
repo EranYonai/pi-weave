@@ -1202,11 +1202,8 @@ describe("reducePreview", () => {
 });
 
 /**
- * The editor's one decision.
- *
- * Everything else about the editor is a `<textarea>` and two state fields in
- * `Note.tsx`; this predicate is the whole of what a discard prompt and an
- * unload guard are gated on, so it is the piece worth pinning down.
+ * What the discard prompt and the unload guard are gated on — the rest of the
+ * editor is a `<textarea>` and two state fields.
  */
 describe("draftDirty", () => {
   it("is false only for an exact match", () => {
@@ -1226,12 +1223,8 @@ describe("draftDirty", () => {
 });
 
 /**
- * The stale-save guard.
- *
- * A save is asynchronous and the user keeps moving through it. The response's
- * job is to close the editor that issued it — closing whichever editor is open
- * when it lands would clear a draft belonging to a different document, in
- * answer to a request that predates it.
+ * The stale-save guard: a reply must close the editor that issued it, not
+ * whichever one happens to be open when it lands.
  */
 describe("saveLanded", () => {
   it("accepts a reply from the session that is still open", () => {
@@ -1239,27 +1232,20 @@ describe("saveLanded", () => {
   });
 
   it("drops a reply from a session that has since closed or moved on", () => {
-    // Navigated away mid-save, or closed and reopened the same note — both
-    // bump the counter, and both mean this reply is about a dead editor.
+    // Navigated away mid-save, or reopened the same note: both bump it.
     expect(saveLanded(3, 4)).toBe(false);
   });
 });
 
 /**
- * Click-to-edit, and the gesture it must not steal.
- *
- * The note column has no Edit button: clicking the prose opens the editor.
- * That puts editing on the same element as two older gestures, so the
- * precedence is the whole of the logic — and the selection case is a
- * regression guard with history. Selecting text to copy used to flip the
- * editor open (fixed in 865da37, when the toggle was a button); making the
- * body itself the affordance re-opens exactly that hazard.
+ * Click-to-edit, and the gesture it must not steal. The selection case is a
+ * regression guard with history: copying text used to flip the editor open
+ * (865da37), and making the body the affordance re-opens that hazard.
  */
 describe("noteClickAction", () => {
   it("ignores a click that ends a text selection, even over a wikilink", () => {
-    // Drag-to-copy ends in a click. Answering it with an editor would both
-    // destroy the selection and move the reader somewhere they did not ask
-    // to be — and a selection dragged across a link is still a selection.
+    // Drag-to-copy ends in a click, and a selection across a link is still
+    // a selection — answering either with an editor destroys it.
     expect(noteClickAction(true, null)).toBe("ignore");
     expect(noteClickAction(true, "note:alpha")).toBe("ignore");
   });
@@ -1274,13 +1260,9 @@ describe("noteClickAction", () => {
 });
 
 /**
- * The other half of the save race.
- *
- * `saveLanded` asks whether the *editor* is still the one that issued the
- * request. This asks whether the *text* is. Both can be true at once — same
- * session, newer bytes — which is the case a fast typist hits: the textarea
- * stays enabled during the round trip, so keystrokes can land that were
- * never in the payload, and closing on the reply would discard them.
+ * The other half of the save race: `saveLanded` asks whether the *editor* is
+ * still the one that issued the request, this asks whether the *text* is.
+ * Both hold at once when a fast typist keeps going through the round trip.
  */
 describe("draftMoved", () => {
   it("is false when the box still holds exactly what was sent", () => {
@@ -1288,8 +1270,7 @@ describe("draftMoved", () => {
   });
 
   it("is true when the user kept typing through the request", () => {
-    // These bytes never reached the server, so a success must not close over
-    // them — the loss would be silent, and identical to a failed save.
+    // These bytes never reached the server; closing over them loses them.
     expect(draftMoved("saved text", "saved text plus more")).toBe(true);
   });
 
