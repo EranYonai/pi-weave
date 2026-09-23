@@ -41,6 +41,7 @@ import {
   hasTextSelection,
   CREATED_WORD,
   draftDirty,
+  draftMoved,
   escapeHtml,
   excerptOf,
   isGhost,
@@ -1269,5 +1270,30 @@ describe("noteClickAction", () => {
 
   it("opens the editor on plain prose", () => {
     expect(noteClickAction(false, null)).toBe("edit");
+  });
+});
+
+/**
+ * The other half of the save race.
+ *
+ * `saveLanded` asks whether the *editor* is still the one that issued the
+ * request. This asks whether the *text* is. Both can be true at once — same
+ * session, newer bytes — which is the case a fast typist hits: the textarea
+ * stays enabled during the round trip, so keystrokes can land that were
+ * never in the payload, and closing on the reply would discard them.
+ */
+describe("draftMoved", () => {
+  it("is false when the box still holds exactly what was sent", () => {
+    expect(draftMoved("saved text", "saved text")).toBe(false);
+  });
+
+  it("is true when the user kept typing through the request", () => {
+    // These bytes never reached the server, so a success must not close over
+    // them — the loss would be silent, and identical to a failed save.
+    expect(draftMoved("saved text", "saved text plus more")).toBe(true);
+  });
+
+  it("is false once the editor has closed, which has nothing left to protect", () => {
+    expect(draftMoved("saved text", null)).toBe(false);
   });
 });

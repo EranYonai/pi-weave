@@ -823,6 +823,26 @@ export function saveLanded(issued: number, current: number): boolean {
   return issued === current;
 }
 
+/**
+ * Whether the draft has moved since the bytes a save actually sent.
+ *
+ * The textarea stays enabled during a request — a field that locks
+ * mid-sentence is its own bug — so a fast typist can add text that was never
+ * in the payload. Closing the editor on the reply would then discard
+ * keystrokes the server has never seen: a silent loss wearing a success's
+ * clothes, and the harder one to notice because nothing failed.
+ *
+ * Distinct from {@link saveLanded}, which asks whether the *editor* is still
+ * the one that issued the request. Both can be true at once — same session,
+ * newer text — which is exactly the case this catches.
+ *
+ * `current` is nullable because the editor may have closed under the reply;
+ * a closed editor has no unsaved keystrokes to protect.
+ */
+export function draftMoved(sent: string, current: string | null): boolean {
+  return current !== null && current !== sent;
+}
+
 /** The note header: title, provenance badge, relative time, tags. */
 export interface NoteHeaderView {
   readonly title: string;

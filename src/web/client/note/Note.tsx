@@ -70,6 +70,7 @@ import {
   SAVING_LABEL,
   WIKILINK_ATTR,
   draftDirty,
+  draftMoved,
   hasTextSelection,
   noteClickAction,
   saveLanded,
@@ -230,17 +231,33 @@ export function Note(props: NoteProps) {
   // to read the value as it is when the response lands rather than the one
   // captured by the render that started it.
   const session = useRef(0);
+  // The draft as it is *now*, for code that outlives the render it started
+  // in. `save` awaits a round trip and then has to compare against the text
+  // in the box at that moment; its captured `draft` is the one from the
+  // render that issued the request, which is precisely the value that cannot
+  // answer "did the user keep typing?".
+  const draftRef = useRef(draft);
+  draftRef.current = draft;
 
-  // Fill the shell's slot with a live thunk. A dependency on `dirty` alone
-  // would leave the slot pointing at a stale closure after any other render,
-  // so the effect runs whenever either moves; the cleanup empties the slot,
-  // which is what stops an unmounted column answering for a guard.
-  useEffect(() => {
-    props.editor.current = { dirty: () => dirty, discard: () => close() };
-    return () => {
-      props.editor.current = null;
-    };
-  }, [props.editor, dirty]);
+  // Filled **during render**, not in an effect, and that is the whole point:
+  // an effect runs *after* the browser has painted, so between the keystroke
+  // that dirties the draft and the effect that reports it there is a window
+  // where the slot still holds the previous, clean closure. A click landing
+  // in that window passes the shell's guard unchallenged, and the slug-change
+  // effect then closes the editor and takes the draft with it — no prompt, no
+  // trace. `Shell.tsx`'s own `live` ref is assigned during render for exactly
+  // this reason.
+  //
+  // Render-phase assignment to a ref is safe here because the value is
+  // derived entirely from this render's own state: a discarded render leaves
+  // a slot that the next render immediately overwrites, and nothing reads it
+  // in between.
+  props.editor.current = { dirty: () => dirty, discard: () => close() };
+  // The effect is now only a cleanup: an unmounted column must not keep
+  // answering for a guard.
+  useEffect(() => () => {
+    props.editor.current = null;
+  }, [props.editor]);
 
   const close = (): void => {
     session.current += 1;
@@ -256,8 +273,12 @@ export function Note(props: NoteProps) {
   const save = async (): Promise<void> => {
     if (note === null || draft === null || saving) return;
     const issued = session.current;
+    // What actually went to the server. The textarea stays enabled through
+    // the request — a field that locks mid-sentence is its own bug — so the
+    // draft can move underneath it, and the reply is only about these bytes.
+    const sent = draft;
     setSaving(true);
-    const ok = await props.onSave(note.slug, draft);
+    const ok = await props.onSave(note.slug, sent);
     // The editor this reply was meant for is gone — the user navigated away,
     // or closed and reopened it, and is now typing into a different session.
     // Closing that one would clear a draft this response knows nothing about.
@@ -265,8 +286,15 @@ export function Note(props: NoteProps) {
     // A failed save keeps the editor open with the draft intact: the text the
     // user typed is now the only copy of it, and closing over an error would
     // be the fastest way to lose work the server refused to take.
-    if (ok) close();
-    else setSaving(false);
+    //
+    // A *successful* save closes only if the draft is still the text that was
+    // sent. Keystrokes made during the round trip were never in the request,
+    // so closing over them would discard bytes the server has not seen — the
+    // same loss as a failed save, wearing a success's clothes. The editor
+    // stays open instead, holding the newer text for the next ⌘S.
+    if (!ok) setSaving(false);
+    else if (draftMoved(sent, draftRef.current)) setSaving(false);
+    else close();
   };
 
   const toggleEdit = (): void => {
