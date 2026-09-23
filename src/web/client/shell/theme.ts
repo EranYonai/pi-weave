@@ -411,6 +411,28 @@ body{font-size:var(--weave-px-base)}
 }
 .weave-note-open:hover{color:var(--weave-fg);background:var(--weave-line)}
 .weave-note-open-mark{display:inline-flex;line-height:0}
+/* Edit / Save sit beside it, chip-shaped: they belong to the same quiet row,
+   and a workflow control in a reading column should not outweigh the title. */
+.weave-note-edit,.weave-note-save{
+  font:inherit;font-size:var(--weave-px-caption);line-height:1;white-space:nowrap;cursor:pointer;
+  color:var(--weave-dim);background:var(--weave-panel);padding:4px 7px;
+  border:1px solid var(--weave-line-strong);border-radius:var(--weave-radius);
+}
+.weave-note-edit:hover,.weave-note-save:hover{color:var(--weave-fg);border-color:var(--weave-accent)}
+/* Save is the row's only affirmative action, so it is the only one that takes
+   the accent - the same vocabulary weave-chip-on uses for "this is live". */
+.weave-note-save{color:var(--weave-accent);border-color:var(--weave-accent)}
+.weave-note-save:disabled{color:var(--weave-faint);border-color:var(--weave-line-strong);cursor:default}
+.weave-note-edit[aria-pressed="true"]{color:var(--weave-accent);border-color:var(--weave-accent)}
+/* The editor fills the column the prose would have. Mono and a tighter line
+   than the rendered body: this is Markdown source, where alignment carries
+   meaning that proportional text throws away. */
+.weave-note-editor{
+  display:block;width:100%;flex:1;min-height:0;resize:none;
+  padding:12px var(--weave-note-gutter) 28px;box-sizing:border-box;
+  font-family:var(--weave-mono);font-size:var(--weave-px-row);line-height:1.6;
+  color:var(--weave-fg);background:var(--weave-bg);border:0;outline:0;
+}
 .weave-note-tags{margin:6px 0 0;display:flex;gap:5px;flex-wrap:wrap}
 .weave-tag{
   font-size:var(--weave-px-caption);color:var(--weave-accent);background:var(--weave-panel);

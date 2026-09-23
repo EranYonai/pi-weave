@@ -7,6 +7,7 @@
  * | GET    | `/app.js`                | the committed bundle, `Cache-Control: no-store` |
  * | GET    | `/api/graph`             | {@link GraphPayload}, ETag'd on `stamp`      |
  * | GET    | `/api/note/:slug`        | {@link NotePayload}                          |
+ * | POST   | `/api/note/:slug`        | save a note's Markdown body                  |
  * | POST   | `/api/note/:slug/rename` | rename a vault note                          |
  * | POST   | `/api/note/:slug/move`   | move a vault note                            |
  * | DELETE | `/api/note/:slug`        | delete a vault note                          |
@@ -52,7 +53,7 @@ import type { GraphModel as CoreGraphModel } from "../../core/graph/model";
 import { openNoteInEditor } from "../../core/openInEditor";
 import type { Note } from "../../core/types";
 import type { VaultMutationResult } from "../../core/vault";
-import { createFolder, deleteFolder, deleteNote, getNote, moveNote, renameFolder, renameNote, resolveHtmlPath, searchNotes } from "../../core/vault";
+import { createFolder, deleteFolder, deleteNote, getNote, moveNote, renameFolder, renameNote, resolveHtmlPath, searchNotes, setNoteBody } from "../../core/vault";
 import { deriveTagIndex, type TaggedNote } from "../../core/view/links";
 import type {
   GraphPayload,
@@ -555,6 +556,18 @@ async function routeNote(
   }
   const action = target.endsWith("/rename") ? "rename" : target.endsWith("/move") ? "move" : null;
   const slug = action === null ? target : target.slice(0, -(action.length + 1));
+  // A save carries no revision and takes no conflict check: see core's
+  // `setNoteBody` for why last-write-wins is the right trade in a vault with
+  // one human in it. The CSRF defence is not this handler's to remember —
+  // `handleRequest` runs `security.authorize` before routing, and
+  // `checkOrigin` refuses any non-GET without a same-origin `Origin`.
+  if (method === "POST" && action === null) {
+    const body = await readJsonBody(req);
+    const text = typeof body === "object" && body !== null ? (body as { body?: unknown }).body : undefined;
+    if (typeof text !== "string") sendJson(res, 400, { error: "expected { body: string }" });
+    else sendMutation(res, await setNoteBody(deps.vaultRoot, slug, text));
+    return true;
+  }
   if (method === "POST" && action !== null) {
     const body = await readJsonBody(req);
     if (typeof body !== "object" || body === null) {

@@ -539,8 +539,8 @@ Per-response nonce. No `'unsafe-inline'`, no `'unsafe-eval'`, no `blob:`. Assert
 | GET | `/` | HTML shell: nonce'd inline CSS-variable theme, `<script nonce src="/app.js">`, a bootstrap `<script type="application/json">` |
 | GET | `/app.js` | The committed bundle. `Cache-Control: no-store` (it changes on rebuild). |
 | GET | `/api/graph` | `GraphPayload` — the wire model (below) |
-| GET | `/api/note/:slug` | `NotePayload` — `{ note, revision }` (P5; it was a bare `ViewNote` through P4) |
-| POST | `/api/note/:slug` | update → `NotePayload`, or `409` (P5) |
+| GET | `/api/note/:slug` | `NotePayload` — `{ note }`. The revision the P5 editor read alongside it went away with the conflict machinery |
+| POST | `/api/note/:slug` | `{ body }` → save the Markdown body. `MutationResult`, or `400`/`404` |
 | POST | `/api/note/:slug/rename` | rename → `NotePayload`, or `409` |
 | DELETE | `/api/note/:slug` | `{ deleted: true }`. Hard delete — the vault has no trash. |
 | GET | `/api/okf/:rel` | `{ path, body }` |
@@ -548,27 +548,22 @@ Per-response nonce. No `'unsafe-inline'`, no `'unsafe-eval'`, no `blob:`. Assert
 | POST | `/api/open` | `{ slug }` → `openNoteInEditor`. The only write through P4. |
 | GET | `/events` | SSE stream |
 
-**The write routes and their status codes (P5).** `MutationResult` → HTTP is the one mapping `routes.ts` owns:
+**The write routes and their status codes.** `VaultMutationResult` → HTTP is the one mapping `routes.ts` owns:
 
 | Core result | Status | Body |
 | --- | ---: | --- |
-| `ok` | `200` | `NotePayload`, **re-read** so the revision describes the bytes just written rather than one inferred from the write |
+| `ok` | `200` | `{ ok: true, id? }` — the node id to select, when the write moved one |
 | `reason: "missing"` | `404` | `ErrorPayload` |
-| `reason: "conflict"` | `409` | `{ reason: "conflict", current: NotePayload }` — the whole current note, so the client can offer reload-or-overwrite with no second round trip |
-| `reason: "collision"` | `409` | `{ reason: "collision", slug }` — the destination is taken |
+| `reason: "collision"` | `409` | `ErrorPayload` — the destination is taken |
+| `reason: "invalid"` | `400` | `ErrorPayload` — an unusable slug, path or name |
 
-One status for both failures, discriminated by `reason` in the body. They are the same *kind* of answer — the vault is not in the state you
-thought it was — and the client's response to each is a question for the user, so two status codes would buy a distinction the HTTP layer
-has no use for while making the client branch twice.
+The response carries an **id, not the note**. A write is followed by a refetch the client was going to make anyway (the 2 s poll), so
+echoing the saved bytes back would be sending the note twice to save a round trip nobody is waiting on.
 
-`SaveNoteRequest` is decoded through a field-by-field **allowlist**, which is a security control rather than ceremony: `updateNote` spreads
-`meta` over the note's front matter, so anything that survives the decode reaches the file. Only `title`, `tags` and `source` are copied
-(and `source` only when it is one of the three legal values). `created` is not the caller's to set and `updated` is the server's — a client
-that could set the latter could make an edit look older than the state it overwrote.
-
-`revision` rides in the **body**, not an `ETag`. `api.ts`'s `HttpResponse` port exposes `ok`, `status` and `json()` and nothing else,
-because it exists so a two-line fake can stand in for `fetch` in a repository with no DOM (§10) — and, more to the point, the revision is a
-property of the *note*, not of the HTTP representation, unlike `/api/graph`'s stamp, which really is a cache validator.
+A save's request body is exactly `{ body: string }` — the narrowest thing that can express the edit. Metadata is deliberately not accepted:
+`title` has its own route (`/rename`, which also moves the file), `created` is not the caller's to set, and `updated` is the server's — a
+client that could set the last of those could make an edit look older than the state it overwrote. There is no `expectedRevision`; see §11
+P5.3 for why conflict detection is absent rather than pending.
 
 The wire model is **not** `GraphModel` verbatim — the graph is lossy (§Handoff findings): tags are a joined string, note bodies are absent,
 dangling targets are discarded.
@@ -1136,68 +1131,57 @@ visible focus rings.
 
 *Exit:* the whole workspace is drivable without a mouse.
 
-### P5 — Editing (gated) — ✅ **done**
+### P5 — Editing (gated) — ✅ **done**, then simplified
 
 **It was blocked on core work, and that gate was the point.** `parseNoteFile` dropped unknown front-matter fields, so a naive browser save
 would have silently destroyed user properties. P5a opened the gate in core; P5b built the server routes and the browser editor on top of it.
 
+P5 shipped with a conflict-safe editor: a revision read with the body, a `409` carrying the current note, and a reducer to resolve it. The
+"read-only workspace" refactor deleted the whole stack, and the editor was later rebuilt **without** the conflict half. What follows
+describes what exists now; the original design is in the git history (`90702b2^`) and stays there on purpose.
+
 1. ✅ **Lossless front-matter round-trip** — `Note.frontMatter` carries the block verbatim, owned keys re-render in place, everything else is
-   emitted as the exact bytes it was read as. `tests/core/frontmatterRoundTrip.test.ts` states it as a property over generated inputs.
-2. ✅ **`updateNote` / `renameNote` / `deleteNote`** in `src/core/vault.ts`, through `withNoteLocks`. `getNoteWithRevision` is the read half
-   of the conflict primitive; a `conflict` failure carries the current `RevisionedNote`, so a `409` body can offer reload-or-overwrite with
-   no second round trip.
-3. ✅ **Conflict handling** — the save carries the revision read at load; a mismatch is a `409` and the UI offers reload-or-overwrite.
-   "Overwrite" is the same request re-sent **without** `expectedRevision`, which is how core spells last-write-wins — adopting the
-   conflict's revision instead would look equivalent and would turn a second concurrent writer into a second surprise conflict.
-4. ✅ **`<textarea>` editor**, `⌘S` save, `⌘E` toggle (§0 V10: CM6 is 118 KB gzip, more than the entire rest of the client). No live preview:
-   piping the draft through `marked` + DOMPurify on every keystroke is a parse and a sanitise per character, and `⌘E` is instant and shows
-   the text that actually exists.
-5. ✅ **`POST /api/note/:slug`**, plus `/rename` and `DELETE`, all through the §5.1 gate — which they inherit rather than re-implement,
-   because `handleRequest` authorizes before it routes. Each is tested against five rejection paths (absent Origin, foreign Origin, no
-   token, foreign Host, `?t=` handoff on a write), and each asserts the file on disk is untouched as well as the status.
+   emitted as the exact bytes it was read as. `tests/core/frontmatterRoundTrip.test.ts` states it as a property over generated inputs. This
+   is the part that was worth gating on, and it is unchanged.
+2. ✅ **`setNoteBody` / `renameNote` / `moveNote` / `deleteNote`** in `src/core/vault.ts`, through the vault lock. `setNoteBody` replaces the
+   body and moves `updated`; every other byte in the file is copied from the note as it is. It re-attaches the append-only `## Raw` tail
+   when the incoming body omits one, exactly as `finalizeNote` does — a browser editor cannot delete a dictated note's verbatim scribbles by
+   not showing them.
+3. ❌ **Conflict handling — deliberately absent.** Last write wins. The revision primitive (`getNoteWithRevision`, `expectedRevision`, the
+   `409` and the reducer that resolved it) was ~950 lines guarding a race between one user and themselves, in a vault that has one human in
+   it. The client refetches every 2 s, so an outside change is visible quickly and the cost of losing the race is one edit rather than the
+   file. `setNoteBody` is shaped so an optional `expectedRevision` can come back as a change in core and the route, not in the UI.
+4. ✅ **`<textarea>` editor**, `⌘S` save, `Esc` close, toggled by an **Edit** button in the note header (§0 V10: CM6 is 118 KB gzip, more
+   than the entire rest of the client). No live preview: piping the draft through `marked` + DOMPurify on every keystroke is a parse and a
+   sanitise per character. Both keys are bound on the textarea rather than in `keys.model.ts` — the global listener sees every keystroke in
+   the workspace, so a binding there is a workspace-wide claim, and this one only ever means something inside the editor.
+5. ✅ **`POST /api/note/:slug`**, plus `/rename`, `/move` and `DELETE`, all through the §5.1 gate — which they inherit rather than
+   re-implement, because `handleRequest` authorizes before it routes. A save with a foreign Origin is a `403` before the handler is reached.
 
-*Exit met:* `tests/web/editor.roundtrip.test.ts` drives the criterion through the code the browser actually runs — `editor.model.ts`
-deciding, `editor.controller.ts` fetching, `api.ts` encoding, over a real socket into a real vault — and asserts the bytes afterwards. An
-Obsidian-shaped block (an `aliases:` inline array, a `cssclass:`, a `tags:` **block list** with two children, a YAML comment, a blank line,
-a nested map) comes back **array-equal**, in its original order, modulo the `updated:` line the save asked to move. Stated as an equality
-rather than a `toContain` sweep, because a silently-sorted block would pass the latter and is still a diff the user did not make.
+*Exit met:* the criterion — a note authored in the browser and a note authored in Obsidian are byte-compatible — is asserted in
+`tests/core/vault.test.ts`. An Obsidian-shaped block (an `aliases:` inline array, a `cssclass:`, a `tags:` **block list** with two children,
+a YAML comment, a blank line, a nested map) comes back **array-equal**, in its original order, modulo the `updated:` line the save asked to
+move. Stated as an equality rather than a `toContain` sweep, because a silently-sorted block would pass the latter and is still a diff the
+user did not make. The route test asserts the same property one layer up, over a real socket into a real vault.
 
-**The three ways an edit can be lost, and what stops each.** This is what the editor is actually for, and it is why the logic is a reducer
-rather than a handful of `useState` calls — each guard is a statement about two or three fields moving together:
+**The ways an edit can be lost, and what stops each.** Two of the five guards the original editor had are kept; the three that are gone
+were all about the conflict machinery:
 
 | Loss | Guard |
 | --- | --- |
-| Another writer overwrites you | `expectedRevision` on every save → `409` |
-| You overwrite another writer | the same `409`, offered as a choice rather than taken as a default |
-| You navigate away mid-edit | the navigation is refused *and* the **destination** is parked, so confirming costs one click, not two |
-| You close the tab | `shouldBlockUnload` on `beforeunload` |
-| A slow save's echo lands after you typed again | the echo is adopted only if the draft has not moved; the baseline advances either way |
+| You navigate away mid-edit | every selection path routes through the shell's `select`, which reads the note column's `dirty` slot and confirms |
+| You close the tab | a `beforeunload` listener reading the same slot |
+| A background poll lands while you type | the draft is component state; a refetch updates `props.note` and cannot reach it |
+| Another writer overwrites you | **nothing.** Last write wins — see 3 above |
+| You overwrite another writer | **nothing.** Same trade |
 
-**An SSE change to the note being edited: keep typing, offer the reload.** Three policies were available and only one is defensible.
-Overwriting the draft destroys unsaved work in response to a background event the user did not cause. A modal steals focus mid-sentence,
-from a notification rather than an action. So a load carrying a revision we do not hold, *while dirty*, is recorded rather than applied and
-the draft is untouched. What makes that safe rather than merely polite is that it is not the last line of defence: the held revision is now
-stale by construction, so the next `⌘S` produces a `409` carrying the current note — the same choice, re-offered at the moment the user is
-actually about to write, and authoritative rather than a snapshot that may itself have aged. The marker is an early warning; the `409` is
-the guarantee. When the note is *clean* the same load is adopted silently, because there is nothing to protect and a "changed on disk" badge
-over a document someone is only reading is noise.
+Both surviving guards read a **thunk**, not a value: a listener registered at mount outlives every render, so a captured flag would answer
+with the editor as it was when the tab opened — always clean, making a guard that looks installed and is a no-op.
 
-**Self-write suppression (§6) is wired.** Every write calls the watcher's `suppress(absPath)` **before** the mutation — `fs.watch` can
-deliver an event while the write syscall is still returning, so a window opened afterwards is a window that opened second. A rename
-suppresses both ends, with the destination `slugify`'d first: suppressing the requested string would open the window over `notes/Alpha
-Renamed.md` while the write went to `notes/alpha-renamed.md`, which is a suppression that is present, plausible and useless.
-`Watcher.suppress` is **optional** on the interface `routes.ts` declares, so a future poller or remote-FS watcher need not implement a
-concept it does not have; `server.ts` bridges it when present and writes go unsuppressed when it is not, costing one spurious refetch rather
-than a lost edit.
-
-**Deviations from plan.** `GET /api/note/:slug` now serves `{ note, revision }` rather than a bare `ViewNote` — the revision must be read
-*with* the body or the pair describes two different states of the file. The revision travels in the **body**, not an `ETag`: `api.ts`'s
-`HttpResponse` port exposes `ok`, `status` and `json()` so a two-line fake can stand in for `fetch` (§10), and the revision is a property of
-the note rather than of the HTTP representation — unlike `/api/graph`'s stamp, which really is a cache validator. `frontMatter` never
-crosses the wire in either direction, and a test asserts it on both: a client that receives it is a client that might send it back, and
-preservation would stop being something core enforces by re-reading the file and become something the browser is trusted to have got right.
-The editor's controller is `editor.controller.ts` rather than the usual `editor.ts`, because `editor.ts` and `Editor.tsx` collide on a
-case-insensitive filesystem (`TS1149`) and renaming the *component* would break the `.tsx` = view convention the client is read by.
+**Deviations from plan.** `GET /api/note/:slug` serves a bare `{ note }`; the `revision` P5 added to it went away with the conflict
+machinery that was its only consumer. `frontMatter` never crosses the wire in either direction, and a test asserts it on both: a client that
+receives it is a client that might send it back, and preservation would stop being something core enforces by re-reading the file and become
+something the browser is trusted to have got right. A save therefore sends only `{ body }` — the narrowest thing that can express the edit.
 
 ### Not in scope
 
@@ -1545,12 +1529,12 @@ session itself.
 - **Live updates.** A debounced `fs.watch` over the vault and `<repo>/.okf`, plus a 2 s git HEAD/index poll, pushes an SSE frame keyed by a
   content digest; the client refetches conditionally, so editing a note in `$EDITOR` updates the workspace with no manual refresh. The
   server is a singleton per pi session, shuts down 30 minutes after the last client leaves, and is torn down on `session_shutdown`.
-- **Editing** (P5) — `⌘E` opens a `<textarea>` over the note body, `⌘S` saves. The save carries the revision read at load, so a write that
-  raced another writer is a `409` offering reload-or-overwrite rather than a silent clobber, and the prompt is answerable from the `409`'s
-  own body. Unsaved work is guarded on every exit: navigating away parks the destination and asks, `⌘E` out of a dirty editor is refused,
-  and `beforeunload` blocks a tab close. An **Open in $EDITOR** button hands the note to `$EDITOR`. A note edited in the browser and a note
-  edited in Obsidian are byte-compatible — unknown front-matter keys, key order, block lists and comments all survive a browser save
-  identically, which is P5's exit criterion and is asserted end to end in `tests/web/editor.roundtrip.test.ts`.
+- **Editing** — an **Edit** button in the note header opens a `<textarea>` over the body; `⌘S` saves, `Esc` closes. Both keys are handled on
+  the textarea rather than in the global keymap, so the workspace-wide key table stays unclaimed. Unsaved work is guarded at the two exits
+  that can destroy it: navigating to another note asks first (the shell reads a `dirty` slot the note column fills, the same ref pattern the
+  graph column uses for `fit`), and `beforeunload` blocks a tab close. An **Open in $EDITOR** button hands the note to `$EDITOR`. A note
+  edited in the browser and a note edited in Obsidian are byte-compatible — unknown front-matter keys, key order, block lists and comments
+  all survive a save identically, and a dictated note's append-only `## Raw` tail is re-attached even if the editor's text dropped it.
 - **Security**: a 256-bit per-session token handed off once via `/?t=…` into a `__Host-` cookie, loopback binding, a Host allowlist against
   DNS rebinding, an Origin rule on writes (required on **every** non-GET, which is what makes the three write routes CSRF-proof), and a
   nonce'd CSP with no `unsafe-inline`, no `unsafe-eval` and no `blob:`.
@@ -1588,20 +1572,20 @@ on purpose is worth more than a shorter list:
   disabled version it replaced.
 - ~~**P5 — editing.**~~ Built, and the gate held: the lossless round trip landed in core *first* (P5a), then the routes and the editor
   (P5b). §11 P5 has the account.
-- ~~**"Open in $EDITOR" is specified, plumbed and not wired up."**~~ Wired. The note column's toolbar has the button; it dispatches an
-  `open` event into `editor.model.ts`, which returns an `open` effect, which `editor.controller.ts` turns into the `POST /api/open` that
-  `api.ts` had been exporting uncalled since P2. Both outcomes — opened, and refused — surface in the toolbar's status line.
+- ~~**"Open in $EDITOR" is specified, plumbed and not wired up."**~~ Wired. The note header carries the `↗` button, which calls the
+  `POST /api/open` that `api.ts` had been exporting uncalled since P2. Both outcomes — opened, and refused — reach the user: the shell
+  reports a failed hand-off rather than discarding the result, which for a while made a `403` look exactly like an editor that opened
+  nothing.
+- ~~**Rename and delete have routes and client functions but no UI.**~~ Wired into the tree column's right-click menu, with the
+  destructive-affordance question answered per target: a note deletes on one click (one file, whose name the row just showed), a folder
+  arms first and deletes on the second, because it is an `fs.rm(recursive)` over a subtree the row shows no count for.
 
 Genuinely absent, and deliberately:
 
-- **Rename and delete have routes and client functions but no UI.** `POST /api/note/:slug/rename` and `DELETE /api/note/:slug` are
-  implemented, covered and reachable through `api.ts`'s `renameNote`/`deleteNote`; nothing in the note column calls them. That is the same
-  shape the "Open in $EDITOR" gap had, and it is left open on purpose rather than by omission: a delete button is a *destructive* affordance
-  and the vault has **no trash** by design (`deleteNote`'s doc comment argues the case), so the confirmation flow around it is a real design
-  decision and not a wiring task. Rename is milder but has the same tell — it deliberately does not rewrite inbound wikilinks, so the UI has
-  to say something honest about the ghosts a rename creates.
-- **No live preview while editing.** §11 P5.4 mentions one; the built answer is `⌘E`. Rendering the draft on every keystroke means a
-  `marked` parse and a DOMPurify pass per character, and the toggle is instant and shows text that actually exists.
+- **No live preview while editing.** §11 P5.4 mentions one; the built answer is the Edit toggle. Rendering the draft on every keystroke
+  means a `marked` parse and a DOMPurify pass per character, and the toggle is instant and shows text that actually exists.
+- **No save conflict detection.** §11 P5.3 has the argument: last write wins, and the ~950 lines that used to prevent it were guarding a
+  race between one user and themselves.
 - **CodeMirror.** §0 V10 defers it until the textarea demonstrably fails. It has not.
 
 ### Open items a contributor should know about

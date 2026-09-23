@@ -19,6 +19,7 @@ import {
   readVault,
   resolveNotePath,
   searchNotes,
+  setNoteBody,
   statNotes,
   summarizeNote,
   vaultExists,
@@ -264,6 +265,107 @@ describe("finalizeNote", () => {
   it("returns null for unknown or unsafe slugs", async () => {
     expect(await finalizeNote(vault, "ghost", { body: "x" })).toBeNull();
     expect(await finalizeNote(vault, "../escape", { body: "x" })).toBeNull();
+  });
+});
+
+/**
+ * The browser editor's write path.
+ *
+ * The interesting claim is not "the body changed" — it is that **nothing
+ * else** did. A save from a `<textarea>` sees only the Markdown body, so
+ * every other byte in the file is something the editor has no opinion about
+ * and must therefore leave exactly where it found it. The Obsidian case
+ * below is the real test: each of those lines is one the engine's own
+ * front-matter subset cannot represent, so a naive rewrite destroys it.
+ */
+describe("setNoteBody", () => {
+  it("replaces the body and moves only `updated`", async () => {
+    const note = await addNote(vault, {
+      title: "Auth decision",
+      body: "first draft",
+      tags: ["auth", "adr"],
+      source: "human",
+      now: new Date("2026-08-20T10:00:00Z"),
+    });
+    const result = await setNoteBody(vault, note.slug, "second draft", new Date("2026-08-21T10:00:00Z"));
+    expect(result).toEqual({ ok: true, slug: note.slug });
+
+    const saved = await getNote(vault, note.slug);
+    expect(saved?.body).toBe("second draft");
+    expect(saved?.updated).toBe("2026-08-21T10:00:00.000Z");
+    // Everything an edit is not entitled to touch.
+    expect(saved?.created).toBe(note.created);
+    expect(saved?.title).toBe("Auth decision");
+    expect(saved?.tags).toEqual(["auth", "adr"]);
+    expect(saved?.source).toBe("human");
+  });
+
+  it("leaves an Obsidian-shaped front-matter block byte-identical except `updated`", async () => {
+    // Written by hand rather than through addNote: the point is a block this
+    // engine cannot author, arriving from Obsidian and leaving unharmed.
+    const frontMatter = [
+      "---",
+      "title: Imported",
+      "created: 2026-08-20T10:00:00.000Z",
+      "updated: 2026-08-20T10:00:00.000Z",
+      "aliases: [\"a: b\", 'c, d']",
+      "cssclass: wide",
+      "# a comment belonging to no key",
+      "",
+      "tags:",
+      "  - auth",
+      "  - adr",
+      "nested:",
+      "  child: value",
+      "source: human",
+      "---",
+    ].join("\n");
+    await fs.mkdir(join(vault, "notes"), { recursive: true });
+    await fs.writeFile(join(vault, "notes", "imported.md"), `${frontMatter}\n\noriginal body\n`, "utf8");
+
+    const result = await setNoteBody(vault, "imported", "edited body", new Date("2026-08-21T10:00:00Z"));
+    expect(result).toEqual({ ok: true, slug: "imported" });
+
+    const text = await fs.readFile(join(vault, "notes", "imported.md"), "utf8");
+    // An array equality, not a bag of `toContain`s: a block that had been
+    // silently reordered would pass those and is still a diff in the user's
+    // git history that they did not make.
+    expect(text.split("\n---\n")[0]?.split("\n")).toEqual(
+      frontMatter.replace("updated: 2026-08-20T10:00:00.000Z", "updated: 2026-08-21T10:00:00.000Z").split("\n").slice(0, -1),
+    );
+    expect(text).toContain("edited body");
+    expect(text).not.toContain("original body");
+  });
+
+  it("re-attaches a `## Raw` tail the editor dropped, and never doubles one it kept", async () => {
+    const note = await addNote(vault, { title: "Dictated", body: "summary", source: "human" });
+    await appendToNote(vault, note.slug, "spoken words", new Date("2026-08-20T10:00:00Z"), { raw: true });
+    const withTail = await getNote(vault, note.slug);
+    const tail = extractRawTail(withTail!.body);
+    expect(tail).not.toBe("");
+
+    // Dropped: the tail comes back, because it is append-only (notepad §4).
+    await setNoteBody(vault, note.slug, "rewritten summary");
+    const dropped = await getNote(vault, note.slug);
+    expect(dropped?.body).toContain("rewritten summary");
+    expect(extractRawTail(dropped!.body)).toBe(tail);
+
+    // Kept: an editor showing the whole file round-trips without a duplicate.
+    await setNoteBody(vault, note.slug, dropped!.body);
+    const kept = await getNote(vault, note.slug);
+    expect(kept?.body.match(/## Raw/g)?.length).toBe(1);
+    expect(kept?.body).toContain("spoken words");
+  });
+
+  it("refuses an unknown slug and never writes outside the notes directory", async () => {
+    expect(await setNoteBody(vault, "ghost", "x")).toEqual({ ok: false, reason: "missing" });
+    expect(await setNoteBody(vault, "", "x")).toEqual({ ok: false, reason: "invalid" });
+
+    const target = join(vault, "target.md");
+    const original = "---\ntitle: Target\nsource: human\n---\n\noriginal body\n";
+    await fs.writeFile(target, original, "utf8");
+    expect(await setNoteBody(vault, "../target", "injected")).toEqual({ ok: false, reason: "invalid" });
+    expect(await fs.readFile(target, "utf8")).toBe(original);
   });
 });
 

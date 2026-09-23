@@ -596,6 +596,55 @@ export async function repairVaultLinks(root: string, options: { apply?: boolean 
   });
 }
 
+/**
+ * Re-attach the existing `## Raw` tail unless the replacement already has one.
+ *
+ * The consequence is deliberate and worth naming, because it surprises
+ * people: deleting the tail in an editor that shows it does **not** delete it
+ * on disk. `docs/notepad.md` §4 declares the tail append-only and verbatim,
+ * so a body that omits it is read as "the editorial region above the tail",
+ * exactly as `finalizeNote` reads one — not as an instruction to destroy the
+ * user's own dictated words. A body that *does* carry a tail is written as
+ * given, so a round trip through an editor showing the whole file is not
+ * punished with a duplicate.
+ */
+function preserveRawTail(currentBody: string, nextBody: string): string {
+  const tail = extractRawTail(currentBody);
+  if (tail === "" || extractRawTail(nextBody) !== "") return nextBody.trim();
+  return `${nextBody.trim()}\n\n${tail}`;
+}
+
+/**
+ * Replace a note's Markdown body, leaving everything else alone.
+ *
+ * The write path for the browser's editor. Unknown front-matter keys survive
+ * because they ride on `note.frontMatter` through `writeNote` — the same
+ * mechanism that keeps an Obsidian note byte-compatible through a rename —
+ * and `title`, `created`, `tags` and `source` are copied from the note as it
+ * is. Only `updated` moves, which is the one field an edit is entitled to.
+ *
+ * ## Last write wins, on purpose
+ *
+ * There is no `expectedRevision` here. This vault has one human in it, and
+ * the machinery that made a save conflict-safe (a revision read with the
+ * body, a `409` carrying the current note, a reducer to resolve it) was ~950
+ * lines guarding a race between a user and themselves. The browser refetches
+ * every couple of seconds, so a concurrent `$EDITOR` change is visible
+ * quickly; the cost of losing that race is one edit, not the file. Adding an
+ * optional revision later is a change here and in the route, not in the UI.
+ */
+export async function setNoteBody(root: string, slug: string, body: string, now = new Date()): Promise<VaultMutationResult> {
+  const path = resolveNotePath(root, slug);
+  if (path === null) return { ok: false, reason: "invalid" };
+  return withVaultLock(root, async () => {
+    const note = await getNote(root, slug);
+    if (note === null) return { ok: false, reason: "missing" };
+    const next = preserveRawTail(note.body, body);
+    await writeNote(path, slug, { ...note, updated: now.toISOString() }, next, note.frontMatter);
+    return { ok: true, slug };
+  });
+}
+
 /** Rename a note in place and keep its front-matter title in sync. */
 export async function renameNote(root: string, slug: string, name: string, now = new Date()): Promise<VaultMutationResult> {
   const from = resolveNotePath(root, slug);

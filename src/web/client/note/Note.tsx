@@ -3,8 +3,30 @@
  *
  * Props in, JSX out. The markdown pipeline, sanitiser config, wikilink
  * resolution and every string are in `note.model.ts`. This file wires the
- * rendered body, selection-safe wikilink navigation, and the Open in
- * `$EDITOR` action.
+ * rendered body, selection-safe wikilink navigation, the Open in `$EDITOR`
+ * action, and the body editor.
+ *
+ * ## The editor
+ *
+ * A `<textarea>` that replaces the rendered body, and two component-state
+ * fields (`editing`, `draft`) rather than a reducer. There was once a
+ * 686-line state machine here; almost all of it existed to resolve save
+ * conflicts against a revision the server no longer issues — see core's
+ * `setNoteBody` for why a single-human vault takes last-write-wins instead.
+ * What remains of that design is the part that was never about conflicts:
+ * `⌘S` is handled on the textarea itself, not in the global keymap, so the
+ * save fires from the element that owns the text and the workspace-wide key
+ * table stays unclaimed.
+ *
+ * The draft is component state, so the 2 s poll in `workspace.ts` cannot
+ * reach it: new bytes from the server land in `props.note` and are ignored
+ * until the editor closes. Losing a draft to a background refetch would be
+ * the one failure mode a reader cannot see coming.
+ *
+ * Unsaved work is guarded at the two exits that can destroy it — navigating
+ * to another note (the `dirty` slot the shell consults) and closing the tab
+ * (`beforeunload`, also the shell's). Neither lives here, because neither is
+ * this column's event to see.
  *
  * `dangerouslySetInnerHTML` is used deliberately for sanitized note HTML. The
  * alternative is parsing marked's output into a Preact tree, which means a
@@ -31,15 +53,22 @@
  */
 
 import DOMPurify from "dompurify";
-import { useLayoutEffect, useMemo, useRef, useState } from "preact/hooks";
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "preact/hooks";
 import type { GraphPayload, NotePayload } from "../../shared/wire";
 import {
   CREATED_WORD,
   artifactKeyOfNode,
+  DISCARD_PROMPT,
+  DONE_LABEL,
+  EDIT_LABEL,
   EDITED_WORD,
+  EDITOR_ARIA_LABEL,
   EMPTY_PREVIEW,
   PREVIEW_ID,
+  SAVE_LABEL,
+  SAVING_LABEL,
   WIKILINK_ATTR,
+  draftDirty,
   hasTextSelection,
   noteEmptyMessage,
   noteHeader,
@@ -70,6 +99,20 @@ export interface NoteProps {
   selectedId: string | null;
   onSelect: (id: string) => void;
   onOpen: (slug: string) => void;
+  /**
+   * Save the note's body. Resolves `true` when the write landed; a `false`
+   * has already been reported to the user by the shell, which owns the one
+   * error-reporting gesture the client has.
+   */
+  onSave: (slug: string, body: string) => Promise<boolean>;
+  /**
+   * The shell's dirty slot, filled by this column and read by the navigation
+   * and unload guards. The same mutable-ref pattern the graph column uses for
+   * `fit`: a thunk rather than a value, because a guard registered once at
+   * mount would otherwise answer with the editor as it was when the tab
+   * opened — always clean, making the guard a no-op that looks installed.
+   */
+  dirty: { current: (() => boolean) | null };
   /** Epoch ms for relative times. Injected so the render is deterministic. */
   now: number;
 }
@@ -85,14 +128,30 @@ export interface NoteProps {
 function Header({
   view,
   open,
+  editing,
+  saving,
+  onEdit,
+  onSave,
 }: {
   view: NoteHeaderView;
   open: () => void;
+  editing: boolean;
+  saving: boolean;
+  onEdit: () => void;
+  onSave: () => void;
 }) {
   return (
     <header class="weave-note-head">
       <h3 class="weave-note-title">{view.title}</h3>
       <p class="weave-note-meta">
+        {editing ? (
+          <button type="button" class="weave-note-save" disabled={saving} onClick={onSave}>
+            {saving ? SAVING_LABEL : SAVE_LABEL}
+          </button>
+        ) : null}
+        <button type="button" class="weave-note-edit" aria-pressed={editing} onClick={onEdit}>
+          {editing ? DONE_LABEL : EDIT_LABEL}
+        </button>
         <button type="button" class="weave-note-open" title="Open in $EDITOR" aria-label="Open in $EDITOR" onClick={open}>
           <span class="weave-note-open-mark" aria-hidden="true">↗</span>
         </button>
@@ -142,6 +201,46 @@ export function Note(props: NoteProps) {
   const dispatch = (event: PreviewEvent): void => void sendPreview((state) => reducePreview(state, event));
   const bodyRef = useRef<HTMLDivElement | null>(null);
   const cardRef = useRef<HTMLDivElement | null>(null);
+
+  // The editor. `draft` is `null` in read mode — one field rather than a
+  // separate `editing` flag, so "there is text being edited" and "we are in
+  // edit mode" cannot disagree.
+  const [draft, setDraft] = useState<string | null>(null);
+  const [saving, setSaving] = useState(false);
+  const dirty = note !== null && draft !== null && draftDirty(draft, note.body);
+
+  // Fill the shell's slot with a live thunk. A dependency on `dirty` alone
+  // would leave the slot pointing at a stale closure after any other render,
+  // so the effect runs whenever either moves; the cleanup empties the slot,
+  // which is what stops an unmounted column answering for a guard.
+  useEffect(() => {
+    props.dirty.current = () => dirty;
+    return () => {
+      props.dirty.current = null;
+    };
+  }, [props.dirty, dirty]);
+
+  const close = (): void => {
+    setDraft(null);
+    setSaving(false);
+  };
+
+  const save = async (): Promise<void> => {
+    if (note === null || draft === null || saving) return;
+    setSaving(true);
+    const ok = await props.onSave(note.slug, draft);
+    // A failed save keeps the editor open with the draft intact: the text the
+    // user typed is now the only copy of it, and closing over an error would
+    // be the fastest way to lose work the server refused to take.
+    if (ok) close();
+    else setSaving(false);
+  };
+
+  const toggleEdit = (): void => {
+    if (note === null) return;
+    if (draft === null) setDraft(note.body);
+    else if (!dirty || window.confirm(DISCARD_PROMPT)) close();
+  };
   const card = preview.anchor === null ? null : previewCard(props.graph, preview.anchor);
 
   // A card whose target note left the screen is a claim about a document that
@@ -152,6 +251,10 @@ export function Note(props: NoteProps) {
   // slug changes as rarely as navigation happens.
   useLayoutEffect(() => {
     dispatch({ type: "hide" });
+    // A different note is a different document: an open editor holding the
+    // previous one's text would save it over this one. The shell's guard is
+    // what asks before a dirty draft gets here.
+    close();
   }, [note === null ? null : note.slug]);
 
   // Wired after the card mounts, because both jobs depend on the live DOM:
@@ -223,7 +326,36 @@ export function Note(props: NoteProps) {
       <Header
         view={header}
         open={() => props.onOpen(note.slug)}
+        editing={draft !== null}
+        saving={saving}
+        onEdit={toggleEdit}
+        onSave={() => void save()}
       />
+      {draft !== null ? (
+        <textarea
+          class="weave-note-editor"
+          aria-label={EDITOR_ARIA_LABEL}
+          spellcheck
+          value={draft}
+          onInput={(event) => setDraft((event.target as HTMLTextAreaElement).value)}
+          onKeyDown={(event) => {
+            // Stopped here rather than claimed in `keys.model.ts`: the global
+            // listener sees every keystroke in the workspace, so binding a
+            // combination there is a workspace-wide claim. Handling both on
+            // the element that owns the text keeps the claim local, and
+            // stopping propagation is what prevents Escape reaching the
+            // shell and clearing the selection out from under the editor.
+            if (event.key === "Escape") {
+              event.stopPropagation();
+              toggleEdit();
+              return;
+            }
+            if (event.key.toLowerCase() !== "s" || !(event.metaKey || event.ctrlKey)) return;
+            event.preventDefault();
+            void save();
+          }}
+        />
+      ) : (
       <div
           ref={bodyRef}
           class="weave-note-body"
@@ -289,6 +421,7 @@ export function Note(props: NoteProps) {
           // Sanitised by `renderNote`'s three layers — see note.model.ts.
           dangerouslySetInnerHTML={{ __html: html }}
         />
+      )}
       {card === null ? null : (
         <div
           ref={cardRef}

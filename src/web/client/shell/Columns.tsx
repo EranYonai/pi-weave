@@ -40,6 +40,10 @@ export interface ColumnsProps {
   onSelect: (id: string | null) => void;
   onRefresh: () => void;
   onOpen: (slug: string) => void;
+  /** Save a note's body. Resolves `true` when the write landed. */
+  onSave: (slug: string, body: string) => Promise<boolean>;
+  /** Slot the note column fills with "is the draft dirty?", for the shell's guards. */
+  dirty: { current: (() => boolean) | null };
   /** Epoch ms for relative times, read once per render by the shell. */
   now: number;
   /**
@@ -84,6 +88,8 @@ function Column({ id, props }: { id: ColumnId; props: ColumnsProps }) {
           onSelect={props.onSelect}
           now={props.now}
           onOpen={props.onOpen}
+          onSave={props.onSave}
+          dirty={props.dirty}
         />
       ) : null}
       {id === "graph" ? (

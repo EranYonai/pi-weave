@@ -19,7 +19,8 @@
 
 import { useEffect, useMemo, useRef, useState } from "preact/hooks";
 import { fetchJson } from "../api.dom";
-import { openNote } from "../api";
+import { openNote, saveNote } from "../api";
+import { DISCARD_PROMPT } from "../note/note.model";
 import type { ColorScheme } from "../graph/graph.model";
 import { schemeOf, watchScheme } from "../graph/scheme";
 import { createSigmaRenderer } from "../graph/renderer.dom";
@@ -83,6 +84,15 @@ export function Shell(props: ShellProps) {
   // Filled by the graph column at mount, cleared on unmount. The global `g`
   // key's only route to the renderer — see `Graph.tsx`'s `fit` prop.
   const fit = useRef<(() => void) | null>(null);
+  // Filled by the note column while an editor is open. The two exits that can
+  // destroy a draft — navigating away and closing the tab — are the shell's
+  // events, not the column's, so the question is asked through this slot.
+  const dirty = useRef<(() => boolean) | null>(null);
+  /** Every selection change routes through here, so no exit skips the guard. */
+  const select = (id: string | null): void => {
+    if (dirty.current?.() === true && !window.confirm(DISCARD_PROMPT)) return;
+    void workspace.current?.select(id);
+  };
   // The global key listener reads through this so a handler registered at
   // mount still sees the current overlay.
   const live = useRef({ overlay, selectedId: workspaceState.selectedId, layout, width });
@@ -155,6 +165,21 @@ export function Shell(props: ShellProps) {
   // choice) keep up while the choice is "system".
   useEffect(() => watchScheme(window, setSystemScheme), []);
 
+  // The other exit. A thunk, not a captured value, for the same reason the
+  // key listener reads through `live`: this listener is registered once and
+  // outlives every render. No custom message — every browser has ignored the
+  // string since 2017 and shows its own wording — but `returnValue` is set as
+  // well as `preventDefault`, which is the only spelling all of them honour.
+  useEffect(() => {
+    const guard = (event: BeforeUnloadEvent): void => {
+      if (dirty.current?.() !== true) return;
+      event.preventDefault();
+      event.returnValue = "";
+    };
+    window.addEventListener("beforeunload", guard);
+    return () => window.removeEventListener("beforeunload", guard);
+  }, []);
+
   useEffect(
     () =>
       watchKeys(document, {
@@ -164,7 +189,7 @@ export function Shell(props: ShellProps) {
             setOverlay,
             focusSelector: (selector) => focusSelector(document, selector),
             fitGraph: () => fit.current?.(),
-            clearSelection: () => { void workspace.current?.select(null); },
+            clearSelection: () => select(null),
             cycleTheme: () => setTheme((current) => cycleTheme(current)),
           }),
       }),
@@ -201,9 +226,28 @@ export function Shell(props: ShellProps) {
         note={workspaceState.note}
         selectedId={workspaceState.selectedId}
         recentIds={workspaceState.recentIds}
-        onSelect={(id) => void workspace.current?.select(id)}
+        onSelect={select}
         onRefresh={() => workspace.current?.refresh()}
-        onOpen={(slug) => void openNote(fetchJson, slug)}
+        onOpen={(slug) => void (async () => {
+          // The result was discarded here for a while, which made a 403 or a
+          // missing note look exactly like a successful hand-off to an editor
+          // that opened nothing. `alert` is what the tree already uses.
+          const result = await openNote(fetchJson, slug);
+          if (!result.ok) window.alert(result.message);
+          else if (!result.data.opened) window.alert("could not open the note in an editor");
+        })()}
+        onSave={async (slug, body) => {
+          const result = await saveNote(fetchJson, slug, body);
+          if (!result.ok) {
+            window.alert(result.message);
+            return false;
+          }
+          // The poll would get there within two seconds; refreshing now means
+          // the graph and the note column agree the moment the save lands.
+          workspace.current?.refresh();
+          return true;
+        }}
+        dirty={dirty}
         now={now}
         // The graph column's three ports (§7.5, §10). Supplied here, at the
         // one place that is already allowed to name browser globals, so
@@ -227,7 +271,7 @@ export function Shell(props: ShellProps) {
       {overlay === "search" ? (
         <SearchPalette
           graph={workspaceState.graph}
-          onSelect={(id) => void workspace.current?.select(id)}
+          onSelect={select}
           onClose={() => setOverlay(null)}
           ports={{ fetch: fetchJson }}
         />

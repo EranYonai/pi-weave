@@ -35,6 +35,7 @@ import {
   openNote,
   renameFolder,
   renameNote,
+  saveNote,
 } from "../../src/web/client/api";
 import type { FetchLike, HttpRequest, HttpResponse } from "../../src/web/client/api";
 import type { GraphPayload, NotePayload, ViewNote } from "../../src/web/shared/wire";
@@ -100,6 +101,18 @@ describe("vault mutations", () => {
     expect(isMutationResult({ ok: true })).toBe(true);
     expect(isMutationResult({ ok: true, id: "note:a" })).toBe(true);
     expect(isMutationResult({ ok: true, id: 1 })).toBe(false);
+  });
+
+  it("posts a body save to the note's own URL, slug encoded", async () => {
+    const fetch = respondsWith({ ok: true });
+    await saveNote(fetch, "folder/a", "new body");
+    const [call] = fetch.calls;
+    // The bare note URL, not a sub-resource: a save is an update of the note
+    // itself, and `/rename` is the only sub-resource the server serves.
+    expect(call?.url).toBe("/api/note/folder%2Fa");
+    expect(call?.init?.method).toBe("POST");
+    expect(call?.init?.headers).toEqual({ "content-type": "application/json" });
+    expect(JSON.parse(call?.init?.body ?? "")).toEqual({ body: "new body" });
   });
 
   it("uses the narrow mutation routes", async () => {

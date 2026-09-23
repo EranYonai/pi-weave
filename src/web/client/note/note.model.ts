@@ -745,6 +745,36 @@ export function hasTextSelection(selection: SelectionLike | null | undefined): b
 export const EDITED_WORD = "edited";
 export const CREATED_WORD = "created";
 
+// --- the editor -------------------------------------------------------------------------
+
+/**
+ * The editor's strings, here with every other string in this file.
+ *
+ * "Done" rather than "Cancel" for the read-mode toggle: leaving a clean
+ * editor discards nothing, and a button offering to cancel work that was
+ * never done invites the reader to wonder what they are losing.
+ */
+export const EDIT_LABEL = "Edit";
+export const DONE_LABEL = "Done";
+export const SAVE_LABEL = "Save";
+export const SAVING_LABEL = "Saving…";
+export const EDITOR_ARIA_LABEL = "Note body";
+export const DISCARD_PROMPT = "Discard unsaved changes to this note?";
+
+/**
+ * Whether the draft differs from the note as last loaded.
+ *
+ * Trailing whitespace counts as a difference and is deliberately **not**
+ * trimmed away here: a save does trim (core's `preserveRawTail` calls
+ * `.trim()`), so trimming in the comparison too would call a draft clean
+ * while the file on disk still holds the untrimmed text — a discard prompt
+ * that never fires for the one edit that would be silently reverted. Erring
+ * towards "dirty" costs a prompt; erring the other way costs the edit.
+ */
+export function draftDirty(draft: string, body: string): boolean {
+  return draft !== body;
+}
+
 /** The note header: title, provenance badge, relative time, tags. */
 export interface NoteHeaderView {
   readonly title: string;

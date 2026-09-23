@@ -40,6 +40,7 @@ import {
   WIKILINK_ATTR,
   hasTextSelection,
   CREATED_WORD,
+  draftDirty,
   escapeHtml,
   excerptOf,
   isGhost,
@@ -1194,5 +1195,29 @@ describe("reducePreview", () => {
   it("dismiss closes the card on Escape by the same route", () => {
     const open: PreviewState = { anchor: ANCHOR, pointerX: 1, pointerY: 2 };
     expect(reducePreview(open, { type: "dismiss" })).toBe(EMPTY_PREVIEW);
+  });
+});
+
+/**
+ * The editor's one decision.
+ *
+ * Everything else about the editor is a `<textarea>` and two state fields in
+ * `Note.tsx`; this predicate is the whole of what a discard prompt and an
+ * unload guard are gated on, so it is the piece worth pinning down.
+ */
+describe("draftDirty", () => {
+  it("is false only for an exact match", () => {
+    expect(draftDirty("same", "same")).toBe(false);
+    expect(draftDirty("edited", "original")).toBe(true);
+    expect(draftDirty("", "original")).toBe(true);
+    // An emptied note is a real edit, not an absent one.
+    expect(draftDirty("", "")).toBe(false);
+  });
+
+  it("counts trailing whitespace as dirty, because a save would change it", () => {
+    // The save path trims, so calling this pair clean would let the one edit
+    // that gets silently reverted slip past the discard prompt.
+    expect(draftDirty("body\n", "body")).toBe(true);
+    expect(draftDirty("body ", "body")).toBe(true);
   });
 });
