@@ -750,11 +750,12 @@ export const CREATED_WORD = "created";
 /**
  * The editor's strings, here with every other string in this file.
  *
- * "Done" rather than "Cancel" for the read-mode toggle: leaving a clean
- * editor discards nothing, and a button offering to cancel work that was
- * never done invites the reader to wonder what they are losing.
+ * There is no "Edit" label because there is no Edit button: clicking the
+ * prose opens the editor (see {@link noteClickAction}). "Done" rather than
+ * "Cancel" for the way out — leaving a clean editor discards nothing, and a
+ * button offering to cancel work that was never done invites the reader to
+ * wonder what they are losing.
  */
-export const EDIT_LABEL = "Edit";
 export const DONE_LABEL = "Done";
 export const SAVE_LABEL = "Save";
 export const SAVING_LABEL = "Saving…";
@@ -773,6 +774,34 @@ export const DISCARD_PROMPT = "Discard unsaved changes to this note?";
  */
 export function draftDirty(draft: string, body: string): boolean {
   return draft !== body;
+}
+
+/** What a click on the rendered body means. */
+export type NoteClickAction = "ignore" | "navigate" | "edit";
+
+/**
+ * Resolve a click on the note's prose — the ordering, as a value.
+ *
+ * Three gestures land on the same element and only one of them is editing,
+ * so the precedence *is* the logic:
+ *
+ * 1. **A text selection wins.** Selecting a sentence to copy ends in a click,
+ *    and answering that with an editor both destroys the selection and puts
+ *    the reader somewhere they did not ask to be. This is the older of the
+ *    two guards — the same one that stopped a drag from toggling the editor
+ *    back when there was a button — and it comes first for the same reason.
+ * 2. **A wikilink is navigation.** Following a link is what a link is for;
+ *    the editor would swallow the gesture.
+ * 3. **Anything else opens the editor.** Prose is the affordance: click the
+ *    text you want to change.
+ *
+ * Pure and taking already-resolved answers rather than an event, so the
+ * precedence is testable without a DOM — `Note.tsx` supplies
+ * `hasTextSelection(window.getSelection())` and `wikilinkTargetOf(target)`.
+ */
+export function noteClickAction(hasSelection: boolean, wikilinkTarget: string | null): NoteClickAction {
+  if (hasSelection) return "ignore";
+  return wikilinkTarget === null ? "edit" : "navigate";
 }
 
 /**

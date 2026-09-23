@@ -423,7 +423,6 @@ body{font-size:var(--weave-px-base)}
    the accent - the same vocabulary weave-chip-on uses for "this is live". */
 .weave-note-save{color:var(--weave-accent);border-color:var(--weave-accent)}
 .weave-note-save:disabled{color:var(--weave-faint);border-color:var(--weave-line-strong);cursor:default}
-.weave-note-edit[aria-pressed="true"]{color:var(--weave-accent);border-color:var(--weave-accent)}
 /* The editor fills the column the prose would have. Mono and a tighter line
    than the rendered body: this is Markdown source, where alignment carries
    meaning that proportional text throws away. */
@@ -444,6 +443,14 @@ body{font-size:var(--weave-px-base)}
    chrome's 1.6: the extra leading is what a page of running text needs that a
    status bar does not. Code stays mono deliberately. */
 .weave-note-body{padding:12px var(--weave-note-gutter) 28px;font-size:var(--weave-px-body);line-height:1.7;color:var(--weave-fg)}
+/* The prose is the edit affordance, so it says so on hover — a text caret and
+   the faintest warming of the page. Deliberately not a border or a button
+   outline: the reading column is read far more often than it is edited, and a
+   control drawn around the whole body would shout that on every visit. The
+   caret is the honest hint, because it is the same one a text field gives. */
+.weave-note-body{cursor:text}
+.weave-note-body:hover{background:var(--weave-panel)}
+@media (prefers-reduced-motion: no-preference){.weave-note-body{transition:background 120ms ease}}
 .weave-note-body>*:first-child{margin-top:0}
 .weave-note-body h1,.weave-note-body h2,.weave-note-body h3,
 .weave-note-body h4,.weave-note-body h5,.weave-note-body h6{

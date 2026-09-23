@@ -62,7 +62,6 @@ import {
   artifactKeyOfNode,
   DISCARD_PROMPT,
   DONE_LABEL,
-  EDIT_LABEL,
   EDITED_WORD,
   EDITOR_ARIA_LABEL,
   EMPTY_PREVIEW,
@@ -72,6 +71,7 @@ import {
   WIKILINK_ATTR,
   draftDirty,
   hasTextSelection,
+  noteClickAction,
   saveLanded,
   noteEmptyMessage,
   noteHeader,
@@ -140,28 +140,34 @@ function Header({
   open,
   editing,
   saving,
-  onEdit,
+  onDone,
   onSave,
 }: {
   view: NoteHeaderView;
   open: () => void;
   editing: boolean;
   saving: boolean;
-  onEdit: () => void;
+  onDone: () => void;
   onSave: () => void;
 }) {
   return (
     <header class="weave-note-head">
       <h3 class="weave-note-title">{view.title}</h3>
       <p class="weave-note-meta">
+        {/*
+          Nothing here in read mode. The way *in* is clicking the prose, so a
+          button saying "Edit" would be a second door to the same room — and
+          the meta line is a footnote, not a toolbar. The way *out* needs a
+          control, because "click the text" cannot also mean "stop editing".
+        */}
         {editing ? (
-          <button type="button" class="weave-note-save" disabled={saving} onClick={onSave}>
-            {saving ? SAVING_LABEL : SAVE_LABEL}
-          </button>
+          <>
+            <button type="button" class="weave-note-save" disabled={saving} onClick={onSave}>
+              {saving ? SAVING_LABEL : SAVE_LABEL}
+            </button>
+            <button type="button" class="weave-note-edit" onClick={onDone}>{DONE_LABEL}</button>
+          </>
         ) : null}
-        <button type="button" class="weave-note-edit" aria-pressed={editing} onClick={onEdit}>
-          {editing ? DONE_LABEL : EDIT_LABEL}
-        </button>
         <button type="button" class="weave-note-open" title="Open in $EDITOR" aria-label="Open in $EDITOR" onClick={open}>
           <span class="weave-note-open-mark" aria-hidden="true">↗</span>
         </button>
@@ -355,7 +361,7 @@ export function Note(props: NoteProps) {
         open={() => props.onOpen(note.slug)}
         editing={draft !== null}
         saving={saving}
-        onEdit={toggleEdit}
+        onDone={toggleEdit}
         onSave={() => void save()}
       />
       {draft !== null ? (
@@ -414,19 +420,21 @@ export function Note(props: NoteProps) {
           }}
           onBlur={() => dispatch({ type: "hide" })}
           onClick={(event) => {
-            // Selecting text to copy must not trigger wikilink navigation.
+            // Three gestures land here and `noteClickAction` owns which one
+            // this is — selection first, then wikilinks, then editing. A
+            // drag to copy ends in a click, and answering that with an
+            // editor would both destroy the selection and move the reader
+            // somewhere they did not ask to go.
             const selection =
               typeof window !== "undefined" && typeof window.getSelection === "function"
                 ? window.getSelection()
                 : null;
-            if (hasTextSelection(selection)) return;
-
-            // A wikilink carries no href, so route it onto the context bus.
             const target = wikilinkTargetOf(event.target as unknown as Parameters<typeof wikilinkTargetOf>[0]);
-            if (target !== null) {
-              props.onSelect(target);
-              return;
-            }
+            const action = noteClickAction(hasTextSelection(selection), target);
+            // A wikilink carries no href, so route it onto the context bus.
+            if (action === "navigate" && target !== null) props.onSelect(target);
+            // Prose is the affordance: click the text you want to change.
+            else if (action === "edit") open(note.body);
           }}
           onKeyDown={(event) => {
             // Escape is first so the card closes on the gesture a keyboard
@@ -441,9 +449,14 @@ export function Note(props: NoteProps) {
             }
             if (event.key !== "Enter" && event.key !== " ") return;
             const target = wikilinkTargetOf(event.target as unknown as Parameters<typeof wikilinkTargetOf>[0]);
-            if (target === null) return;
             event.preventDefault();
-            props.onSelect(target);
+            // Enter on a wikilink follows it; Enter on the body opens the
+            // editor. The keyboard's half of the click above — without it,
+            // removing the Edit button would have left editing reachable by
+            // mouse only, which is the kind of regression `⌘2` and the `j/k`
+            // navigation exist to prevent.
+            if (target !== null) props.onSelect(target);
+            else open(note.body);
           }}
           // Sanitised by `renderNote`'s three layers — see note.model.ts.
           dangerouslySetInnerHTML={{ __html: html }}

@@ -44,6 +44,7 @@ import {
   escapeHtml,
   excerptOf,
   isGhost,
+  noteClickAction,
   noteEmptyMessage,
   noteHeader,
   parseWikilink,
@@ -1240,5 +1241,33 @@ describe("saveLanded", () => {
     // Navigated away mid-save, or closed and reopened the same note — both
     // bump the counter, and both mean this reply is about a dead editor.
     expect(saveLanded(3, 4)).toBe(false);
+  });
+});
+
+/**
+ * Click-to-edit, and the gesture it must not steal.
+ *
+ * The note column has no Edit button: clicking the prose opens the editor.
+ * That puts editing on the same element as two older gestures, so the
+ * precedence is the whole of the logic — and the selection case is a
+ * regression guard with history. Selecting text to copy used to flip the
+ * editor open (fixed in 865da37, when the toggle was a button); making the
+ * body itself the affordance re-opens exactly that hazard.
+ */
+describe("noteClickAction", () => {
+  it("ignores a click that ends a text selection, even over a wikilink", () => {
+    // Drag-to-copy ends in a click. Answering it with an editor would both
+    // destroy the selection and move the reader somewhere they did not ask
+    // to be — and a selection dragged across a link is still a selection.
+    expect(noteClickAction(true, null)).toBe("ignore");
+    expect(noteClickAction(true, "note:alpha")).toBe("ignore");
+  });
+
+  it("follows a wikilink when there is no selection", () => {
+    expect(noteClickAction(false, "note:alpha")).toBe("navigate");
+  });
+
+  it("opens the editor on plain prose", () => {
+    expect(noteClickAction(false, null)).toBe("edit");
   });
 });
