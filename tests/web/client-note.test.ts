@@ -884,6 +884,13 @@ describe("task checkboxes", () => {
     expect(toggleTaskCheckbox(body, 1)).toBeNull();
   });
 
+  it("ignores indented code without losing legitimately indented tasks", () => {
+    const body = "- example\n\n      - [ ] code\n\n10. parent\n    - [ ] nested\n\n- [ ] real\n";
+    expect(toggleTaskCheckbox(body, 0)).toBe("- example\n\n      - [ ] code\n\n10. parent\n    - [x] nested\n\n- [ ] real\n");
+    expect(toggleTaskCheckbox(body, 1)).toBe("- example\n\n      - [ ] code\n\n10. parent\n    - [ ] nested\n\n- [x] real\n");
+    expect(toggleTaskCheckbox(body, 2)).toBeNull();
+  });
+
   it("preserves CRLF and every byte outside the marker", () => {
     expect(toggleTaskCheckbox("- [ ] first\r\n- [x] second\r\n", 1)).toBe("- [ ] first\r\n- [ ] second\r\n");
   });

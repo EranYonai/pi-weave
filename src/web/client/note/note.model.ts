@@ -684,11 +684,10 @@ export function renderNote(purify: Purifier, body: string, index: WikiIndex): st
 // --- reading a click back out of the DOM --------------------------------------------------
 
 const TASK_LINE_RE = /^((?: {0,3}>[ \t]?)*[ \t]*(?:[*+-]|\d{1,9}[.)])[ \t]+\[)([ xX])(\] +\S)/;
-const FENCE_LINE_RE = /^(?: {0,3}>[ \t]?)*[ \t]*(`{3,}|~{3,})(.*)$/;
 
 /** Source offsets for the task markers marked will render, in render order. */
-function taskMarkerOffsets(body: string): number[] {
-  const offsets: number[] = [];
+function taskMarkerOffsets(body: string): Array<number | null> {
+  const candidates: number[] = [];
   const source = body.replace(/\r\n?/g, "\n");
   let sourceOffset = 0;
 
@@ -699,25 +698,46 @@ function taskMarkerOffsets(body: string): number[] {
     if (token.type !== "list" && token.type !== "blockquote") continue;
 
     let lineOffset = 0;
-    let fence: { marker: string; length: number } | null = null;
     while (lineOffset < token.raw.length) {
       const newline = token.raw.indexOf("\n", lineOffset);
       const lineEnd = newline === -1 ? token.raw.length : newline;
       const line = token.raw.slice(lineOffset, lineEnd).replace(/\r$/, "");
-      const fenced = FENCE_LINE_RE.exec(line);
-      if (fenced !== null) {
-        const run = fenced[1] as string;
-        if (fence === null) fence = { marker: run[0] as string, length: run.length };
-        else if (run[0] === fence.marker && run.length >= fence.length && (fenced[2] as string).trim() === "") fence = null;
-      } else if (fence === null) {
-        const task = TASK_LINE_RE.exec(line);
-        if (task !== null) offsets.push(tokenOffset + lineOffset + (task[1] as string).length);
-      }
+      const task = TASK_LINE_RE.exec(line);
+      if (task !== null) candidates.push(tokenOffset + lineOffset + (task[1] as string).length);
       lineOffset = newline === -1 ? token.raw.length : newline + 1;
     }
   }
 
+  const walker = new Marked();
+  const states = (markdown: string): boolean[] => {
+    const checked: boolean[] = [];
+    walker.walkTokens(Lexer.lex(markdown, { gfm: true }), (token) => {
+      if (token.type === "checkbox") checked.push(token.checked);
+    });
+    return checked;
+  };
+  const baseline = states(source);
+  const offsets: Array<number | null> = baseline.map(() => null);
+  // ponytail: re-lex each candidate so Marked remains the sole judge of
+  // Markdown structure; use token source positions if Marked adds them.
+  for (const offset of candidates) {
+    const toggled = `${source.slice(0, offset)}${source[offset] === " " ? "x" : " "}${source.slice(offset + 1)}`;
+    const next = states(toggled);
+    if (next.length !== baseline.length) continue;
+    let changed = -1;
+    for (let index = 0; index < baseline.length; index += 1) {
+      if (next[index] === baseline[index]) continue;
+      if (changed !== -1) {
+        changed = -1;
+        break;
+      }
+      changed = index;
+    }
+    if (changed !== -1) offsets[changed] = offset;
+  }
+
   return offsets.map((offset) => {
+    if (offset === null) return null;
     let original = 0;
     let normalized = 0;
     while (normalized < offset) {
@@ -732,7 +752,7 @@ function taskMarkerOffsets(body: string): number[] {
 export function toggleTaskCheckbox(body: string, index: number): string | null {
   if (!Number.isSafeInteger(index) || index < 0) return null;
   const offset = taskMarkerOffsets(body)[index];
-  if (offset === undefined) return null;
+  if (offset === undefined || offset === null) return null;
   return `${body.slice(0, offset)}${body[offset] === " " ? "x" : " "}${body.slice(offset + 1)}`;
 }
 
