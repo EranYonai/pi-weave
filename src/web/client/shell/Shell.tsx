@@ -232,6 +232,7 @@ export function Shell(props: ShellProps) {
         bootFailed={workspaceState.graphFailed}
         graph={workspaceState.graph}
         note={workspaceState.note}
+        noteFailed={workspaceState.noteFailed}
         selectedId={workspaceState.selectedId}
         recentIds={workspaceState.recentIds}
         onSelect={select}

@@ -54,11 +54,12 @@ export function startWorkspace(opts: WorkspaceOptions): WorkspaceHandle {
   const loadNote = async (): Promise<void> => {
     const slug = noteSlug(state.selectedId);
     if (slug === null) {
-      update({ note: null });
+      update({ note: null, noteFailed: false });
       return;
     }
     const result = await fetchNote(opts.fetch, slug);
-    if (result.ok) update({ note: result.data });
+    if (result.ok) update({ note: result.data, noteFailed: false });
+    else update({ note: null, noteFailed: true });
   };
   const loadGraph = async (): Promise<ApiResult<unknown>> => {
     const previous = state.graph;
@@ -86,7 +87,7 @@ export function startWorkspace(opts: WorkspaceOptions): WorkspaceHandle {
     polling = true;
     try {
       const result = await loadGraph();
-      if (result.ok && !result.cached && noteSlug(state.selectedId) !== null) await loadNote();
+      if (noteSlug(state.selectedId) !== null && (state.note === null || (result.ok && !result.cached))) await loadNote();
     } finally {
       polling = false;
     }

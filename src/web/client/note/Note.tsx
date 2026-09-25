@@ -83,6 +83,7 @@ const PREVIEW_Y = "weave-preview-y";
 
 export interface NoteProps {
   note: NotePayload | null;
+  loadFailed: boolean;
   graph: GraphPayload | null;
   selectedId: string | null;
   onSelect: (id: string) => void;
@@ -167,7 +168,7 @@ function Header({
 export function Note(props: NoteProps) {
   const note = props.note?.note ?? null;
   const artifactPath = selectedArtifactPath(props.graph, props.selectedId);
-  const empty = noteEmptyMessage(props.selectedId, note);
+  const empty = noteEmptyMessage(props.selectedId, note, props.loadFailed);
 
   // Both hook calls sit before the empty-return so the hook order cannot
   // depend on whether a note is loaded. The memoization is cheap insurance:
