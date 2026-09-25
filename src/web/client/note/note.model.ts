@@ -1151,9 +1151,10 @@ export function reducePreview(state: PreviewState, event: PreviewEvent): Preview
  * message for all of them is how a user concludes the app is broken when they
  * click a module and the reading pane does not change.
  */
-export function noteEmptyMessage(selectedId: string | null, note: ViewNote | null): string | null {
+export function noteEmptyMessage(selectedId: string | null, note: ViewNote | null, failed = false): string | null {
   if (note !== null) return null;
   if (selectedId === null) return "Nothing open — search with ⌘K, or walk the tree with j and k.";
+  if (failed) return "Couldn’t load this note — retrying…";
   if (selectedId.startsWith(NOTE_PREFIX)) return "Loading…";
   // A module, a file, a package, the git state: real nodes with no prose
   // behind them. The context rail beside this column is where their

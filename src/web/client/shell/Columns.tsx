@@ -26,6 +26,7 @@ export interface ColumnsProps {
   /** The §1.3 context bus, as the columns see it. */
   graph: GraphPayload | null;
   note: NotePayload | null;
+  noteFailed: boolean;
   selectedId: string | null;
   recentIds: ReadonlySet<string>;
   /**
@@ -88,6 +89,7 @@ function Column({ id, props }: { id: ColumnId; props: ColumnsProps }) {
       {id === "note" ? (
         <Note
           note={props.note}
+          loadFailed={props.noteFailed}
           graph={props.graph}
           selectedId={props.selectedId}
           onSelect={props.onSelect}

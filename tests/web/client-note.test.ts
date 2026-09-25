@@ -908,6 +908,10 @@ describe("noteEmptyMessage", () => {
     expect(noteEmptyMessage("note:release-plan", null)).toBe("Loading…");
   });
 
+  it("reports a failed note while the workspace retries it", () => {
+    expect(noteEmptyMessage("note:release-plan", null, true)).toBe("Couldn’t load this note — retrying…");
+  });
+
   it("explains a node that has no prose, and points at the rail", () => {
     // Without this the user clicks a module, the reading pane does not change,
     // and they conclude the app is broken.

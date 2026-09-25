@@ -78,6 +78,33 @@ describe("startWorkspace", () => {
     workspace.stop();
   });
 
+  it("retries a failed note fetch when the graph is cached", async () => {
+    let state: WorkspaceState = { ...initialWorkspaceState(), selectedId: "note:alpha" };
+    let graphCalls = 0;
+    let noteCalls = 0;
+    let tick: (() => void) | undefined;
+    const fetch: FetchLike = async (url) => {
+      if (url === "/api/graph") {
+        graphCalls += 1;
+        return graphCalls === 1
+          ? { ok: true, status: 200, json: async () => GRAPH }
+          : { ok: false, status: 304, json: async () => { throw new Error("no body"); } };
+      }
+      noteCalls += 1;
+      return noteCalls === 1
+        ? { ok: false, status: 500, json: async () => ({}) }
+        : { ok: true, status: 200, json: async () => NOTE };
+    };
+    const workspace = startWorkspace({ fetch, state, setState: (next) => { state = next; }, repeat: (fn) => { tick = fn; return () => {}; } });
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(state).toMatchObject({ note: null, noteFailed: true });
+    tick?.();
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(state).toMatchObject({ note: NOTE, noteFailed: false });
+    expect([graphCalls, noteCalls]).toEqual([2, 2]);
+    workspace.stop();
+  });
+
   it("stops polling", async () => {
     let cancelled = false;
     let state = initialWorkspaceState();
