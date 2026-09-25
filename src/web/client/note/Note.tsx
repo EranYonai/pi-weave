@@ -8,8 +8,8 @@
  *
  * ## The editor
  *
- * Clicking the prose swaps it for a `<textarea>`; `draft` is `null` in read
- * mode, so text and mode cannot disagree. No reducer — the 686-line one that
+ * The explicit Edit control swaps the body for a `<textarea>`; `draft` is
+ * `null` in read mode, so text and mode cannot disagree. No reducer — the 686-line one that
  * stood here resolved conflicts against a revision the server no longer
  * issues. Being component state, the draft is out of the 2 s poll's reach;
  * the shell guards it through the `editor` slot below.
@@ -23,7 +23,7 @@
  * ## Wikilink preview (P6.3)
  *
  * Hovering or focusing a wikilink opens a small card for its target. The
- * delegated pattern the click handler established extends to the card for
+ * body's delegated handlers extend to the card for
  * free — `mouseover`, `focusin` and `keydown` are read through the same
  * ancestor walk (`previewAnchorOf`), the state machine is `reducePreview`,
  * and this file's only contribution is forwarding the pointer's viewport
@@ -46,17 +46,18 @@ import {
   artifactKeyOfNode,
   DISCARD_PROMPT,
   DONE_LABEL,
+  EDIT_LABEL,
   EDITED_WORD,
   EDITOR_ARIA_LABEL,
   EMPTY_PREVIEW,
   PREVIEW_ID,
   SAVE_LABEL,
   SAVING_LABEL,
+  TASK_CHECKBOX_ATTR,
   WIKILINK_ATTR,
   draftDirty,
   draftMoved,
   hasTextSelection,
-  noteClickAction,
   saveLanded,
   noteEmptyMessage,
   noteHeader,
@@ -67,6 +68,9 @@ import {
   renderNote,
   selectedArtifactPath,
   tagLabel,
+  taskCheckboxIndexOf,
+  taskCheckboxLabel,
+  toggleTaskCheckbox,
   wikiIndex,
   wikilinkTargetOf,
 } from "./note.model";
@@ -117,30 +121,28 @@ function Header({
   open,
   editing,
   saving,
-  onDone,
+  onToggle,
   onSave,
 }: {
   view: NoteHeaderView;
   open: () => void;
   editing: boolean;
   saving: boolean;
-  onDone: () => void;
+  onToggle: () => void;
   onSave: () => void;
 }) {
   return (
     <header class="weave-note-head">
       <h3 class="weave-note-title">{view.title}</h3>
       <p class="weave-note-meta">
-        {/* Nothing in read mode: the prose is the way in. The way out needs a
-            control, because "click the text" cannot also mean "stop". */}
         {editing ? (
           <>
             <button type="button" class="weave-note-save" disabled={saving} onClick={onSave}>
               {saving ? SAVING_LABEL : SAVE_LABEL}
             </button>
-            <button type="button" class="weave-note-edit" onClick={onDone}>{DONE_LABEL}</button>
+            <button type="button" class="weave-note-edit" onClick={onToggle}>{DONE_LABEL}</button>
           </>
-        ) : null}
+        ) : <button type="button" class="weave-note-edit" onClick={onToggle}>{EDIT_LABEL}</button>}
         <button type="button" class="weave-note-open" title="Open in $EDITOR" aria-label="Open in $EDITOR" onClick={open}>
           <span class="weave-note-open-mark" aria-hidden="true">↗</span>
         </button>
@@ -190,6 +192,12 @@ export function Note(props: NoteProps) {
   const dispatch = (event: PreviewEvent): void => void sendPreview((state) => reducePreview(state, event));
   const bodyRef = useRef<HTMLDivElement | null>(null);
   const cardRef = useRef<HTMLDivElement | null>(null);
+  const taskSaving = useRef(false);
+  const taskSource = useRef<{ slug: string; serverBody: string; body: string } | null>(null);
+  if (note === null) taskSource.current = null;
+  else if (taskSource.current === null || taskSource.current.slug !== note.slug || taskSource.current.serverBody !== note.body) {
+    taskSource.current = { slug: note.slug, serverBody: note.body, body: note.body };
+  }
 
   const [draft, setDraft] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
@@ -232,6 +240,33 @@ export function Note(props: NoteProps) {
     // text the server does not have, and closing would discard it.
     if (!ok || draftMoved(sent, draftRef.current)) setSaving(false);
     else close();
+  };
+
+  const saveTask = async (checkbox: HTMLInputElement, taskIndex: number): Promise<void> => {
+    const source = taskSource.current;
+    const restore = (): void => {
+      checkbox.checked = !checkbox.checked;
+      checkbox.setAttribute("aria-label", taskCheckboxLabel(checkbox.checked));
+    };
+    if (source === null || taskSaving.current) {
+      restore();
+      return;
+    }
+    const body = toggleTaskCheckbox(source.body, taskIndex);
+    if (body === null) {
+      restore();
+      return;
+    }
+
+    const inputs = [...(bodyRef.current?.querySelectorAll<HTMLInputElement>(`input[${TASK_CHECKBOX_ATTR}]`) ?? [])];
+    taskSaving.current = true;
+    checkbox.setAttribute("aria-label", taskCheckboxLabel(checkbox.checked));
+    for (const input of inputs) input.disabled = true;
+    const ok = await props.onSave(source.slug, body);
+    if (ok) source.body = body;
+    else restore();
+    for (const input of inputs) input.disabled = false;
+    taskSaving.current = false;
   };
 
   const toggleEdit = (): void => {
@@ -326,7 +361,7 @@ export function Note(props: NoteProps) {
         open={() => props.onOpen(note.slug)}
         editing={draft !== null}
         saving={saving}
-        onDone={toggleEdit}
+        onToggle={toggleEdit}
         onSave={() => void save()}
       />
       {draft !== null ? (
@@ -381,16 +416,20 @@ export function Note(props: NoteProps) {
           }}
           onBlur={() => dispatch({ type: "hide" })}
           onClick={(event) => {
-            // Three gestures, one element; `noteClickAction` owns the order.
+            const checkbox = event.target as HTMLInputElement;
+            const taskIndex = taskCheckboxIndexOf(checkbox);
+            if (taskIndex !== null) {
+              void saveTask(checkbox, taskIndex);
+              return;
+            }
             const selection =
               typeof window !== "undefined" && typeof window.getSelection === "function"
                 ? window.getSelection()
                 : null;
+            if (hasTextSelection(selection)) return;
             const target = wikilinkTargetOf(event.target as unknown as Parameters<typeof wikilinkTargetOf>[0]);
-            const action = noteClickAction(hasTextSelection(selection), target);
             // A wikilink carries no href, so route it onto the context bus.
-            if (action === "navigate" && target !== null) props.onSelect(target);
-            else if (action === "edit") open(note.body);
+            if (target !== null) props.onSelect(target);
           }}
           onKeyDown={(event) => {
             // Escape is first so the card closes on the gesture a keyboard
@@ -405,11 +444,9 @@ export function Note(props: NoteProps) {
             }
             if (event.key !== "Enter" && event.key !== " ") return;
             const target = wikilinkTargetOf(event.target as unknown as Parameters<typeof wikilinkTargetOf>[0]);
+            if (target === null) return;
             event.preventDefault();
-            // The keyboard's half of the click: without it, editing would be
-            // mouse-only now that the Edit button is gone.
-            if (target !== null) props.onSelect(target);
-            else open(note.body);
+            props.onSelect(target);
           }}
           // Sanitised by `renderNote`'s three layers — see note.model.ts.
           dangerouslySetInnerHTML={{ __html: html }}
