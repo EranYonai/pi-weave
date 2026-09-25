@@ -1165,18 +1165,15 @@ describes what exists now; the original design is in the git history (`90702b2^`
    `saveNote` — so it touches `wire.ts`, `routes.ts`, `api.ts` and the column. What it does *not* need is the reducer: `onSave` already
    returns `false` on failure and keeps the draft, so a `409` can be one alert and a retained editor. That is the shape a future change
    should take; it is deferred, not designed away.
-4. ✅ **`<textarea>` editor**, `⌘S` save, `Esc` close, opened by **clicking the prose** (§0 V10: CM6 is 118 KB gzip, more
+4. ✅ **`<textarea>` editor**, `⌘S` save, `Esc` close, opened by an explicit **Edit** control (§0 V10: CM6 is 118 KB gzip, more
    than the entire rest of the client). No live preview: piping the draft through `marked` + DOMPurify on every keystroke is a parse and a
    sanitise per character. Both keys are bound on the textarea rather than in `keys.model.ts` — the global listener sees every keystroke in
    the workspace, so a binding there is a workspace-wide claim, and this one only ever means something inside the editor.
 
-   **The prose is the affordance, and there is no Edit button.** Three gestures now land on the same element, so the precedence is the
-   feature: a text selection wins, then a wikilink, then editing — `noteClickAction` in `note.model.ts` states it as a value, which is why
-   the ordering is testable without a DOM. The selection case is a **regression guard with history**: selecting text to copy once flipped
-   the editor open (fixed in `865da37`, back when the toggle was a button), and making the body itself the affordance re-opens exactly that
-   hazard. A drag to copy ends in a click, and answering that with an editor destroys the selection *and* moves the reader somewhere they
-   did not ask to be. Enter on the focused body does the same thing as the click, so removing the button did not make editing
-   mouse-only. The way *out* keeps a control (**Done**), because "click the text" cannot also mean "stop editing".
+   Reading mode is deliberately stable: plain prose has no click action, text selection stays selection, and wikilinks navigate only when
+   the click did not end a selection. GFM task checkboxes are native controls; each carries its source-order index, flips the corresponding
+   Markdown marker through the existing body-save path, and reverts visually if that save fails. **Edit** and **Done** are the explicit
+   mode boundary for mouse, touch and keyboard users.
 5. ✅ **`POST /api/note/:slug`**, plus `/rename`, `/move` and `DELETE`, all through the §5.1 gate — which they inherit rather than
    re-implement, because `handleRequest` authorizes before it routes. A save with a foreign Origin is a `403` before the handler is reached.
 
@@ -1551,7 +1548,8 @@ session itself.
 - **Live updates.** A debounced `fs.watch` over the vault and `<repo>/.okf`, plus a 2 s git HEAD/index poll, pushes an SSE frame keyed by a
   content digest; the client refetches conditionally, so editing a note in `$EDITOR` updates the workspace with no manual refresh. The
   server is a singleton per pi session, shuts down 30 minutes after the last client leaves, and is torn down on `session_shutdown`.
-- **Editing** — **clicking the note's prose** opens a `<textarea>` over it; `⌘S` saves, `Esc` or **Done** closes. Both keys are handled on
+- **Editing** — an explicit **Edit** control opens a `<textarea>` over the note; `⌘S` saves, `Esc` or **Done** closes. Plain prose stays a
+  reading surface, while rendered task-list checkboxes toggle and save their Markdown markers directly. Both editor keys are handled on
   the textarea rather than in the global keymap, so the workspace-wide key table stays unclaimed. Unsaved work is guarded at the two exits
   that can destroy it: navigating to another note asks first (the shell reads a `dirty` slot the note column fills, the same ref pattern the
   graph column uses for `fit`), and `beforeunload` blocks a tab close. An **Open in $EDITOR** button hands the note to `$EDITOR`. A note

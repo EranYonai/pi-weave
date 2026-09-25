@@ -67,7 +67,7 @@
  * `tsconfig.json` project compile the tests.
  */
 
-import { Marked } from "marked";
+import { Lexer, Marked } from "marked";
 import type { TokenizerAndRendererExtension, Tokens } from "marked";
 import { relTime } from "../../shared/view";
 import type { GraphPayload, ViewNote, WireGraphNode, WireNoteSource } from "../../shared/wire";
@@ -196,6 +196,14 @@ export function safeUrl(raw: string): string | null {
  *    which are inverses of each other.
  */
 export const WIKILINK_ATTR = "data-weave-target";
+
+/** The rendered task checkbox's zero-based source-order index. */
+export const TASK_CHECKBOX_ATTR = "data-weave-task";
+
+/** The action a task checkbox offers from its current state. */
+export function taskCheckboxLabel(checked: boolean): string {
+  return checked ? "Mark task incomplete" : "Mark task complete";
+}
 
 /** Prefix core's graph builder gives note nodes. Mirrors `noteSlug`. */
 const NOTE_PREFIX = "note:";
@@ -465,11 +473,16 @@ export function renderWikilink(index: WikiIndex, target: string, alias: string):
  * rather than `string | Promise<string>`; nothing here is asynchronous.
  */
 export function markdownRenderer(index: WikiIndex): Marked {
+  let taskIndex = 0;
   return new Marked({
     gfm: true,
     async: false,
     extensions: [wikilinkExtension(index)],
     renderer: {
+      checkbox({ checked }) {
+        const state = checked ? ' checked=""' : "";
+        return `<input type="checkbox"${state} ${TASK_CHECKBOX_ATTR}="${taskIndex++}" aria-label="${taskCheckboxLabel(checked)}"> `;
+      },
       /**
        * Layer 1. Raw HTML in a note body is rendered as **text**.
        *
@@ -551,7 +564,6 @@ export interface SanitizeConfig {
   readonly ALLOW_DATA_ATTR: boolean;
   readonly ALLOW_ARIA_ATTR: boolean;
   readonly ALLOW_UNKNOWN_PROTOCOLS: boolean;
-  readonly USE_PROFILES: { readonly html: true };
 }
 
 /**
@@ -575,9 +587,9 @@ export interface SanitizeConfig {
  * and keeps the element. It also contains no `style`, so a CSS-based overlay
  * attack has no attribute to live in.
  *
- * `ALLOW_DATA_ATTR: false` with {@link WIKILINK_ATTR} named explicitly is
+ * `ALLOW_DATA_ATTR: false` with the two renderer-owned data attributes named explicitly is
  * narrower than leaving data attributes on: the only `data-` attribute that
- * may exist in rendered output is the one this module writes.
+ * may exist in rendered output is one this module writes.
  * `ADD_URI_SAFE_ATTR` then tells DOMPurify that the attribute's value is not a
  * URL and must not be run through `IS_ALLOWED_URI` — without it a slug like
  * `note-2` is fine but the check is being applied to a value that was never a
@@ -644,15 +656,15 @@ export const SANITIZE_CONFIG: SanitizeConfig = frozen({
     "align",
     "type",
     "checked",
-    "disabled",
+    "aria-label",
     "start",
     WIKILINK_ATTR,
+    TASK_CHECKBOX_ATTR,
   ]),
-  ADD_URI_SAFE_ATTR: frozen([WIKILINK_ATTR]),
+  ADD_URI_SAFE_ATTR: frozen([WIKILINK_ATTR, TASK_CHECKBOX_ATTR]),
   ALLOW_DATA_ATTR: false,
   ALLOW_ARIA_ATTR: false,
   ALLOW_UNKNOWN_PROTOCOLS: false,
-  USE_PROFILES: frozen({ html: true as const }),
 });
 
 /**
@@ -671,10 +683,90 @@ export function renderNote(purify: Purifier, body: string, index: WikiIndex): st
 
 // --- reading a click back out of the DOM --------------------------------------------------
 
+const TASK_LINE_RE = /^((?: {0,3}>[ \t]?)*[ \t]*(?:[*+-]|\d{1,9}[.)])[ \t]+\[)([ xX])(\] +\S)/;
+
+/** Source offsets for the task markers marked will render, in render order. */
+function taskMarkerOffsets(body: string): Array<number | null> {
+  const candidates: number[] = [];
+  const source = body.replace(/\r\n?/g, "\n");
+  let sourceOffset = 0;
+
+  for (const token of Lexer.lex(source, { gfm: true })) {
+    const tokenOffset = source.indexOf(token.raw, sourceOffset);
+    if (tokenOffset === -1) continue;
+    sourceOffset = tokenOffset + token.raw.length;
+    if (token.type !== "list" && token.type !== "blockquote") continue;
+
+    let lineOffset = 0;
+    while (lineOffset < token.raw.length) {
+      const newline = token.raw.indexOf("\n", lineOffset);
+      const lineEnd = newline === -1 ? token.raw.length : newline;
+      const line = token.raw.slice(lineOffset, lineEnd).replace(/\r$/, "");
+      const task = TASK_LINE_RE.exec(line);
+      if (task !== null) candidates.push(tokenOffset + lineOffset + (task[1] as string).length);
+      lineOffset = newline === -1 ? token.raw.length : newline + 1;
+    }
+  }
+
+  const walker = new Marked();
+  const states = (markdown: string): boolean[] => {
+    const checked: boolean[] = [];
+    walker.walkTokens(Lexer.lex(markdown, { gfm: true }), (token) => {
+      if (token.type === "checkbox") checked.push(token.checked);
+    });
+    return checked;
+  };
+  const baseline = states(source);
+  const offsets: Array<number | null> = baseline.map(() => null);
+  // ponytail: re-lex each candidate so Marked remains the sole judge of
+  // Markdown structure; use token source positions if Marked adds them.
+  for (const offset of candidates) {
+    const toggled = `${source.slice(0, offset)}${source[offset] === " " ? "x" : " "}${source.slice(offset + 1)}`;
+    const next = states(toggled);
+    if (next.length !== baseline.length) continue;
+    let changed = -1;
+    for (let index = 0; index < baseline.length; index += 1) {
+      if (next[index] === baseline[index]) continue;
+      if (changed !== -1) {
+        changed = -1;
+        break;
+      }
+      changed = index;
+    }
+    if (changed !== -1) offsets[changed] = offset;
+  }
+
+  return offsets.map((offset) => {
+    if (offset === null) return null;
+    let original = 0;
+    let normalized = 0;
+    while (normalized < offset) {
+      original += body[original] === "\r" && body[original + 1] === "\n" ? 2 : 1;
+      normalized += 1;
+    }
+    return original;
+  });
+}
+
+/** Flip one rendered GFM task marker without changing any other source byte. */
+export function toggleTaskCheckbox(body: string, index: number): string | null {
+  if (!Number.isSafeInteger(index) || index < 0) return null;
+  const offset = taskMarkerOffsets(body)[index];
+  if (offset === undefined || offset === null) return null;
+  return `${body.slice(0, offset)}${body[offset] === " " ? "x" : " "}${body.slice(offset + 1)}`;
+}
+
 /** The slice of `Element` {@link wikilinkTargetOf} walks. `HTMLElement` satisfies it. */
 export interface ClosestElement {
   getAttribute(name: string): string | null;
   readonly parentElement: ClosestElement | null;
+}
+
+/** The task index carried by a rendered checkbox, if the target is one. */
+export function taskCheckboxIndexOf(element: ClosestElement | null): number | null {
+  const raw = element?.getAttribute(TASK_CHECKBOX_ATTR);
+  if (raw === null || raw === undefined || !/^(?:0|[1-9]\d*)$/.test(raw)) return null;
+  return Number(raw);
 }
 
 /**
@@ -747,11 +839,8 @@ export const CREATED_WORD = "created";
 
 // --- the editor -------------------------------------------------------------------------
 
-/**
- * The editor's strings. No "Edit" label — clicking the prose opens it (see
- * {@link noteClickAction}); "Done", because leaving a clean editor cancels
- * nothing.
- */
+/** The editor's controls and prompts. */
+export const EDIT_LABEL = "Edit";
 export const DONE_LABEL = "Done";
 export const SAVE_LABEL = "Save";
 export const SAVING_LABEL = "Saving…";
@@ -765,18 +854,6 @@ export const DISCARD_PROMPT = "Discard unsaved changes to this note?";
  */
 export function draftDirty(draft: string, body: string): boolean {
   return draft !== body;
-}
-
-/** What a click on the rendered body means. */
-export type NoteClickAction = "ignore" | "navigate" | "edit";
-
-/**
- * Resolve a click on the prose. Selection wins (a drag to copy ends in a
- * click, and 865da37 is that bug), then wikilinks, then editing.
- */
-export function noteClickAction(hasSelection: boolean, wikilinkTarget: string | null): NoteClickAction {
-  if (hasSelection) return "ignore";
-  return wikilinkTarget === null ? "edit" : "navigate";
 }
 
 /**

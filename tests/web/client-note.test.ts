@@ -37,6 +37,7 @@ import {
   PREVIEW_LIMIT,
   SAFE_SCHEMES,
   SANITIZE_CONFIG,
+  TASK_CHECKBOX_ATTR,
   WIKILINK_ATTR,
   hasTextSelection,
   CREATED_WORD,
@@ -45,7 +46,6 @@ import {
   escapeHtml,
   excerptOf,
   isGhost,
-  noteClickAction,
   noteEmptyMessage,
   noteHeader,
   parseWikilink,
@@ -65,6 +65,9 @@ import {
   slugOfNode,
   stripMarkdown,
   tagLabel,
+  taskCheckboxIndexOf,
+  taskCheckboxLabel,
+  toggleTaskCheckbox,
   wikiIndex,
   wikilinkTargetOf,
 } from "../../src/web/client/note/note.model";
@@ -547,7 +550,10 @@ describe("renderMarkdown", () => {
 
   it("renders GFM tables, task lists and fenced code", () => {
     expect(renderMarkdown("| a |\n| - |\n| 1 |", index)).toContain("<table>");
-    expect(renderMarkdown("- [x] done", index)).toContain('type="checkbox"');
+    const tasks = renderMarkdown("- [ ] todo\n- [x] done", index);
+    expect(tasks).toContain(`type="checkbox" ${TASK_CHECKBOX_ATTR}="0" aria-label="Mark task complete"`);
+    expect(tasks).toContain(`type="checkbox" checked="" ${TASK_CHECKBOX_ATTR}="1" aria-label="Mark task incomplete"`);
+    expect(tasks).not.toContain("disabled");
     expect(renderMarkdown("```ts\nconst x = 1;\n```", index)).toContain('class="language-ts"');
   });
 
@@ -683,7 +689,7 @@ describe("renderMarkdown", () => {
     it("passes ordinary rendered Markdown", () => {
       expect(liveMarkup('<p><a href="https://x.example" rel="noreferrer noopener" target="_blank">x</a></p>')).toEqual([]);
       expect(liveMarkup('<img src="https://x.example/a.png" alt="a">')).toEqual([]);
-      expect(liveMarkup('<input checked="" disabled="" type="checkbox">')).toEqual([]);
+      expect(liveMarkup(`<input type="checkbox" checked="" ${TASK_CHECKBOX_ATTR}="0" aria-label="Mark task incomplete">`)).toEqual([]);
     });
   });
 });
@@ -692,6 +698,7 @@ describe("renderMarkdown", () => {
 
 describe("SANITIZE_CONFIG", () => {
   it("allows no tag that can execute, embed, or restyle the page", () => {
+    expect(SANITIZE_CONFIG).not.toHaveProperty("USE_PROFILES");
     for (const tag of ["script", "iframe", "object", "embed", "form", "style", "svg", "math", "template", "base", "link", "meta", "noscript"]) {
       expect(SANITIZE_CONFIG.ALLOWED_TAGS, tag).not.toContain(tag);
     }
@@ -713,13 +720,16 @@ describe("SANITIZE_CONFIG", () => {
     expect(SANITIZE_CONFIG.ALLOWED_ATTR).not.toContain("style");
   });
 
-  it("permits the wikilink attribute and treats its value as a non-URL", () => {
+  it("permits only the renderer's data attributes and treats their values as non-URLs", () => {
     // Without ADD_URI_SAFE_ATTR the value is run through IS_ALLOWED_URI — a
     // URL grammar applied to something that was never a URL, which passes
     // today by accident and is exactly the sort of thing a patch release
     // changes.
     expect(SANITIZE_CONFIG.ALLOWED_ATTR).toContain(WIKILINK_ATTR);
-    expect(SANITIZE_CONFIG.ADD_URI_SAFE_ATTR).toEqual([WIKILINK_ATTR]);
+    expect(SANITIZE_CONFIG.ALLOWED_ATTR).toContain(TASK_CHECKBOX_ATTR);
+    expect(SANITIZE_CONFIG.ALLOWED_ATTR).toContain("aria-label");
+    expect(SANITIZE_CONFIG.ALLOWED_ATTR).not.toContain("disabled");
+    expect(SANITIZE_CONFIG.ADD_URI_SAFE_ATTR).toEqual([WIKILINK_ATTR, TASK_CHECKBOX_ATTR]);
   });
 
   it("admits no other data-* or aria-* attribute", () => {
@@ -843,6 +853,57 @@ describe("hasTextSelection", () => {
   it("returns true when there is a non-empty selection range", () => {
     expect(hasTextSelection({ isCollapsed: false, toString: () => "selected prose" })).toBe(true);
     expect(hasTextSelection({ toString: () => "selected prose" })).toBe(true);
+  });
+});
+
+describe("task checkboxes", () => {
+  const element = (value: string | null): ClosestElement => ({
+    getAttribute: (name) => name === TASK_CHECKBOX_ATTR ? value : null,
+    parentElement: null,
+  });
+
+  it("reads only a canonical non-negative task index", () => {
+    expect(taskCheckboxIndexOf(element("0"))).toBe(0);
+    expect(taskCheckboxIndexOf(element("12"))).toBe(12);
+    expect(taskCheckboxIndexOf(element("-1"))).toBeNull();
+    expect(taskCheckboxIndexOf(element("01"))).toBeNull();
+    expect(taskCheckboxIndexOf(element("task"))).toBeNull();
+    expect(taskCheckboxIndexOf(null)).toBeNull();
+  });
+
+  it("flips exactly the selected marker across task-list shapes", () => {
+    const body = "- parent\n  - [ ] nested\n\n3. [X] ordered\n\n> - [ ] quoted\n";
+    expect(toggleTaskCheckbox(body, 0)).toBe("- parent\n  - [x] nested\n\n3. [X] ordered\n\n> - [ ] quoted\n");
+    expect(toggleTaskCheckbox(body, 1)).toBe("- parent\n  - [ ] nested\n\n3. [ ] ordered\n\n> - [ ] quoted\n");
+    expect(toggleTaskCheckbox(body, 2)).toBe("- parent\n  - [ ] nested\n\n3. [X] ordered\n\n> - [x] quoted\n");
+  });
+
+  it("ignores checkbox-shaped prose and fenced code", () => {
+    const body = "prose [ ] only\n\n```md\n- [ ] code\n```\n\n- [ ] real\n";
+    expect(toggleTaskCheckbox(body, 0)).toBe("prose [ ] only\n\n```md\n- [ ] code\n```\n\n- [x] real\n");
+    expect(toggleTaskCheckbox(body, 1)).toBeNull();
+  });
+
+  it("ignores indented code without losing legitimately indented tasks", () => {
+    const body = "- example\n\n      - [ ] code\n\n10. parent\n    - [ ] nested\n\n- [ ] real\n";
+    expect(toggleTaskCheckbox(body, 0)).toBe("- example\n\n      - [ ] code\n\n10. parent\n    - [x] nested\n\n- [ ] real\n");
+    expect(toggleTaskCheckbox(body, 1)).toBe("- example\n\n      - [ ] code\n\n10. parent\n    - [ ] nested\n\n- [x] real\n");
+    expect(toggleTaskCheckbox(body, 2)).toBeNull();
+  });
+
+  it("preserves CRLF and every byte outside the marker", () => {
+    expect(toggleTaskCheckbox("- [ ] first\r\n- [x] second\r\n", 1)).toBe("- [ ] first\r\n- [ ] second\r\n");
+  });
+
+  it("rejects an invalid or missing index", () => {
+    expect(toggleTaskCheckbox("- [ ] task", -1)).toBeNull();
+    expect(toggleTaskCheckbox("- [ ] task", 0.5)).toBeNull();
+    expect(toggleTaskCheckbox("- [ ] task", 1)).toBeNull();
+  });
+
+  it("names the action represented by each state", () => {
+    expect(taskCheckboxLabel(false)).toBe("Mark task complete");
+    expect(taskCheckboxLabel(true)).toBe("Mark task incomplete");
   });
 });
 
@@ -1238,28 +1299,6 @@ describe("saveLanded", () => {
   it("drops a reply from a session that has since closed or moved on", () => {
     // Navigated away mid-save, or reopened the same note: both bump it.
     expect(saveLanded(3, 4)).toBe(false);
-  });
-});
-
-/**
- * Click-to-edit, and the gesture it must not steal. The selection case is a
- * regression guard with history: copying text used to flip the editor open
- * (865da37), and making the body the affordance re-opens that hazard.
- */
-describe("noteClickAction", () => {
-  it("ignores a click that ends a text selection, even over a wikilink", () => {
-    // Drag-to-copy ends in a click, and a selection across a link is still
-    // a selection — answering either with an editor destroys it.
-    expect(noteClickAction(true, null)).toBe("ignore");
-    expect(noteClickAction(true, "note:alpha")).toBe("ignore");
-  });
-
-  it("follows a wikilink when there is no selection", () => {
-    expect(noteClickAction(false, "note:alpha")).toBe("navigate");
-  });
-
-  it("opens the editor on plain prose", () => {
-    expect(noteClickAction(false, null)).toBe("edit");
   });
 });
 

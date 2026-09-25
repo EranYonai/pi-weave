@@ -441,11 +441,6 @@ body{font-size:var(--weave-px-base)}
    chrome's 1.6: the extra leading is what a page of running text needs that a
    status bar does not. Code stays mono deliberately. */
 .weave-note-body{padding:12px var(--weave-note-gutter) 28px;font-size:var(--weave-px-body);line-height:1.7;color:var(--weave-fg)}
-/* The prose is the edit affordance: a caret and a faint wash, not a border.
-   This column is read far more often than edited. */
-.weave-note-body{cursor:text}
-.weave-note-body:hover{background:var(--weave-panel)}
-@media (prefers-reduced-motion: no-preference){.weave-note-body{transition:background 120ms ease}}
 .weave-note-body>*:first-child{margin-top:0}
 .weave-note-body h1,.weave-note-body h2,.weave-note-body h3,
 .weave-note-body h4,.weave-note-body h5,.weave-note-body h6{
@@ -462,6 +457,8 @@ body{font-size:var(--weave-px-base)}
 .weave-note-body p,.weave-note-body ul,.weave-note-body ol,.weave-note-body blockquote{margin:0 0 12px}
 .weave-note-body ul,.weave-note-body ol{padding-left:20px}
 .weave-note-body li{margin:4px 0}
+.weave-note-body input[type="checkbox"]{accent-color:var(--weave-accent);cursor:pointer}
+.weave-note-body input[type="checkbox"]:disabled{cursor:wait}
 .weave-note-body blockquote{
   padding-left:10px;border-left:2px solid var(--weave-line-strong);color:var(--weave-dim);
 }
