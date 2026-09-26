@@ -121,7 +121,7 @@ ask the user for another identifier instead of reformulating and repeating the s
 
 Search results are strongest-first and include match evidence, metadata, excerpts, and a bounded set of connected notes found through
 links, backlinks, shared tags, and shared distinctive terms. Use that context before making another tool call. Connections are lexical and
-explicit, not semantic: a search for `boats` will not invent `ships` or `sea` unless those concepts are present in the returned notes.
+explicit, not semantic.
 
 When a note and the repository index disagree, trust the repository for facts about code and flag the discrepancy — the note may be stale
 intent.
