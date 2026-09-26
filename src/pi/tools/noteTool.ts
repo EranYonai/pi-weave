@@ -120,14 +120,14 @@ export function registerNoteTool(pi: ExtensionAPI): void {
       "Read and write notes in the pi-weave vault — a persistent, human-readable knowledge base " +
       "of Markdown notes. Actions: list (all notes — avoid on large vaults, prefer search), get (one note by slug), add (new note), " +
       "append (extend a note; raw=true appends verbatim dictation into the ## Raw tail), " +
-      "finalize (restructure a note above its raw tail), search (title/tags/body), " +
+      "finalize (restructure a note above its raw tail), search (title/tags/body; returns the full note when one result or one exact title resolves), " +
       "links (audit stale [[wiki-links]]; fix=true repairs the unambiguous ones), " +
       "suggest (rank unlinked notes that share distinctive vocabulary; reports only, never writes). " +
       "Use it to remember decisions, facts, and user preferences across sessions.",
     promptSnippet: "Remember and retrieve durable knowledge in the pi-weave vault",
     promptGuidelines: [
       "Use weave_note to store durable knowledge (decisions, preferences, key facts) that should survive the session, marking source as agent-written knowledge.",
-      "Use weave_note with action=search before answering questions about past decisions, people, or projects; generated notes under sessions/ carry takeaways from earlier sessions.",
+      "Use weave_note with action=get when the slug is known; otherwise use one targeted action=search before answering questions about past decisions, people, or projects. A resolved search already contains the full note; do not fetch it again or retry with reformulated queries.",
       "Use weave_note with action=links to find and repair stale [[wiki-links]] deterministically instead of rereading the vault to reconnect notes by hand; add fix=true to apply the unambiguous repairs.",
       "Use weave_note with action=suggest to discover notes that belong together but are not linked (optionally scoped to one slug); it only reports — propose the links to the user rather than writing them.",
     ],
@@ -279,6 +279,18 @@ export function registerNoteTool(pi: ExtensionAPI): void {
               content: [{ type: "text", text: `No notes matched '${params.query}'.` }],
               details: { action: "search", hits: [] },
             };
+          }
+          const query = params.query.trim().toLowerCase();
+          const exact = hits.filter((hit) => hit.summary.title.trim().toLowerCase() === query);
+          const resolved = hits.length === 1 ? hits[0] : exact.length === 1 ? exact[0] : undefined;
+          if (resolved) {
+            const note = await getNote(vault, resolved.summary.slug);
+            if (note) {
+              return {
+                content: [{ type: "text", text: formatNote(note) }],
+                details: { action: "search", hits, resolved: note },
+              };
+            }
           }
           const lines = hits.map(
             (h) => `- ${h.summary.slug}: ${h.summary.title} (score ${h.score})\n  ${h.snippet}`,

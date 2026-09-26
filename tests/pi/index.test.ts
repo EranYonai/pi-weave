@@ -508,6 +508,70 @@ describe("weave_note tool", () => {
     });
   });
 
+  it("returns the full note for one unique exact-title match", async () => {
+    const mock = buildExtension();
+    const ctx = createMockCtx(await makeTempDir());
+    await withVaultEnv(await makeTempDir(), async () => {
+      await mock.runTool("weave_note", { action: "add", title: "Auth", text: "Exact decision.", tags: ["security"] }, ctx);
+      await mock.runTool("weave_note", { action: "add", title: "Auth migration", text: "Broader plan." }, ctx);
+
+      const result = await mock.runTool("weave_note", { action: "search", query: " AUTH " }, ctx);
+
+      expect(result.content[0]?.text).toContain("# Auth\n(slug: auth");
+      expect(result.content[0]?.text).toContain("tags: security");
+      expect(result.content[0]?.text).toContain("Exact decision.");
+      expect(result.content[0]?.text).not.toContain("2 hit(s)");
+      expect(result.details).toMatchObject({ action: "search", resolved: { slug: "auth" } });
+    });
+  });
+
+  it("returns the full note when a body search has only one result", async () => {
+    const mock = buildExtension();
+    const ctx = createMockCtx(await makeTempDir());
+    await withVaultEnv(await makeTempDir(), async () => {
+      await mock.runTool("weave_note", { action: "add", title: "Gateway notes", text: "The zephyrine boundary stays local." }, ctx);
+
+      const result = await mock.runTool("weave_note", { action: "search", query: "zephyrine" }, ctx);
+
+      expect(result.content[0]?.text).toContain("# Gateway notes");
+      expect(result.content[0]?.text).toContain("The zephyrine boundary stays local.");
+      expect(result.details).toMatchObject({ action: "search", resolved: { slug: "gateway-notes" } });
+    });
+  });
+
+  it("keeps duplicate exact titles ambiguous", async () => {
+    const mock = buildExtension();
+    const ctx = createMockCtx(await makeTempDir());
+    await withVaultEnv(await makeTempDir(), async () => {
+      await mock.runTool("weave_note", { action: "add", title: "Duplicate", text: "First." }, ctx);
+      await mock.runTool("weave_note", { action: "add", title: "Duplicate", text: "Second." }, ctx);
+
+      const result = await mock.runTool("weave_note", { action: "search", query: "duplicate" }, ctx);
+
+      expect(result.content[0]?.text).toContain("2 hit(s)");
+      expect(result.content[0]?.text).toContain("duplicate:");
+      expect(result.content[0]?.text).toContain("duplicate-2:");
+      expect(result.details).toMatchObject({ action: "search", hits: [{}, {}] });
+      expect((result.details as Record<string, unknown>).resolved).toBeUndefined();
+    });
+  });
+
+  it("returns candidates when several non-exact matches remain", async () => {
+    const mock = buildExtension();
+    const ctx = createMockCtx(await makeTempDir());
+    await withVaultEnv(await makeTempDir(), async () => {
+      await mock.runTool("weave_note", { action: "add", title: "Auth boundary", text: "Gateway." }, ctx);
+      await mock.runTool("weave_note", { action: "add", title: "Auth migration", text: "OIDC." }, ctx);
+
+      const result = await mock.runTool("weave_note", { action: "search", query: "auth" }, ctx);
+
+      expect(result.content[0]?.text).toContain("2 hit(s)");
+      expect(result.content[0]?.text).toContain("auth-boundary:");
+      expect(result.content[0]?.text).toContain("auth-migration:");
+      expect((result.details as Record<string, unknown>).resolved).toBeUndefined();
+    });
+  });
+
   it("finalize restructures the body above the raw tail and preserves it", async () => {
     const mock = buildExtension();
     const ctx = createMockCtx(await makeTempDir());

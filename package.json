@@ -1,7 +1,7 @@
 {
   "name": "pi-weave",
   "version": "0.2.0",
-  "description": "An agent-native knowledge workspace for your life and your code. Smart notepad + repository exploration, readable by humans and agents alike.",
+  "description": "Local-first Markdown memory and knowledge graph for Pi: preserve decisions, recall across sessions, and explore notes with code.",
   "type": "module",
   "sideEffects": false,
   "publishConfig": {
@@ -9,10 +9,15 @@
   },
   "keywords": [
     "pi-package",
+    "pi-coding-agent",
+    "agent-memory",
+    "persistent-memory",
+    "markdown",
+    "local-first",
     "knowledge-graph",
-    "agent",
-    "notepad",
-    "repository-index"
+    "codebase-memory",
+    "obsidian",
+    "developer-tools"
   ],
   "license": "MIT",
   "author": "Eran Yonai <yonai.eran@gmail.com>",
