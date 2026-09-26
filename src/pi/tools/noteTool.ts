@@ -12,6 +12,7 @@ import {
   getNote,
   listNotes,
   NOTES_DIR,
+  relatedNotes,
   repairVaultLinks,
   resolveNotePath,
   withMutationQueue,
@@ -20,14 +21,20 @@ import {
   suggestLinks,
   readVault,
   type LinkRepairResult,
+  type RelatedNote,
   type SuggestionReport,
 } from "../../core";
+import type { Note, NoteSearchHit } from "../../core/types";
 
 /** Cap on how many rows of each link-audit category get printed. */
 const LINK_REPORT_CAP = 20;
 
 /** Cap on notes printed by `list`; `details.notes` still carries them all. */
 const LIST_CAP = 50;
+
+/** Keep search useful without flooding the model on a broad query. */
+const SEARCH_REPORT_CAP = 10;
+const RELATED_REPORT_CAP = 5;
 
 function capped<T>(items: readonly T[], render: (item: T) => string): string[] {
   const lines = items.slice(0, LINK_REPORT_CAP).map(render);
@@ -61,6 +68,63 @@ function formatSuggestions(report: SuggestionReport, focus: string | undefined):
     "",
     "These are suggestions, not links — nothing was written. Add a [[wikilink]] to any pair worth keeping.",
   ].join("\n");
+}
+
+function searchReasons(hit: NoteSearchHit, query: string): string[] {
+  const q = query.trim().toLowerCase();
+  const title = hit.summary.title.toLowerCase();
+  const slug = hit.summary.slug.toLowerCase();
+  const reasons: string[] = [];
+  if (title === q) reasons.push("exact title");
+  else if (slug === q) reasons.push("exact slug");
+  else if (title.includes(q)) reasons.push("title");
+  else if (slug.includes(q)) reasons.push("slug");
+  const tags = hit.summary.tags.filter((tag) => tag.toLowerCase().includes(q));
+  if (tags.length > 0) reasons.push(`tags: ${tags.join(", ")}`);
+  if (hit.snippet.toLowerCase().includes(q)) reasons.push("body");
+  return reasons;
+}
+
+function formatSearchHits(
+  hits: readonly NoteSearchHit[],
+  query: string,
+  relations: ReadonlyMap<string, RelatedNote>,
+): string {
+  const shown = hits.slice(0, SEARCH_REPORT_CAP);
+  const lines = shown.map((hit) => {
+    const tags = hit.summary.tags.length > 0 ? `; tags: ${hit.summary.tags.join(", ")}` : "";
+    const relation = relations.get(hit.summary.slug);
+    const connected = relation ? `; connected: ${relation.reasons.join("; ")}` : "";
+    return `- ${hit.summary.slug}: ${hit.summary.title}\n  matched: ${searchReasons(hit, query).join(", ")}${connected}; source: ${hit.summary.source}; updated: ${hit.summary.updated}${tags}\n  ${hit.snippet}`;
+  });
+  if (hits.length > shown.length) lines.push(`… and ${hits.length - shown.length} more direct match(es).`);
+  return lines.join("\n");
+}
+
+function preview(body: string): string {
+  const flat = body.trim().replace(/\s+/g, " ");
+  return flat.length > 180 ? `${flat.slice(0, 180)}…` : flat;
+}
+
+function formatRelatedNotes(
+  relations: readonly RelatedNote[],
+  notes: ReadonlyMap<string, Note>,
+  direct: ReadonlySet<string>,
+  anchor: Note,
+): string {
+  const shown = relations
+    .filter((relation) => !direct.has(relation.slug))
+    .flatMap((relation) => {
+      const note = notes.get(relation.slug);
+      return note ? [{ relation, note }] : [];
+    })
+    .slice(0, RELATED_REPORT_CAP);
+  if (shown.length === 0) return "";
+  const lines = shown.map(({ relation, note }) => {
+    const tags = note.tags.length > 0 ? `; tags: ${note.tags.join(", ")}` : "";
+    return `- ${note.slug}: ${note.title}\n  connected: ${relation.reasons.join("; ")}; source: ${note.source}; updated: ${note.updated}${tags}\n  ${preview(note.body)}`;
+  });
+  return `Connected notes to '${anchor.title}' (not direct query matches):\n${lines.join("\n")}`;
 }
 
 /** Render a link audit (and any repair) as the text the model reads. */
@@ -120,7 +184,7 @@ export function registerNoteTool(pi: ExtensionAPI): void {
       "Read and write notes in the pi-weave vault — a persistent, human-readable knowledge base " +
       "of Markdown notes. Actions: list (all notes — avoid on large vaults, prefer search), get (one note by slug), add (new note), " +
       "append (extend a note; raw=true appends verbatim dictation into the ## Raw tail), " +
-      "finalize (restructure a note above its raw tail), search (title/tags/body; returns the full note when one result or one exact title resolves), " +
+      "finalize (restructure a note above its raw tail), search (ranked slug/title/tags/body matches plus linked, tagged, and lexically related notes; returns the full note when one result or one exact identity resolves), " +
       "links (audit stale [[wiki-links]]; fix=true repairs the unambiguous ones), " +
       "suggest (rank unlinked notes that share distinctive vocabulary; reports only, never writes). " +
       "Use it to remember decisions, facts, and user preferences across sessions.",
@@ -280,24 +344,43 @@ export function registerNoteTool(pi: ExtensionAPI): void {
               details: { action: "search", hits: [] },
             };
           }
+          const { notes } = await readVault(vault);
+          const bySlug = new Map(notes.map((note) => [note.slug, note]));
+          const direct = new Set(hits.map((hit) => hit.summary.slug));
+          const anchor = bySlug.get(hits[0]!.summary.slug);
+          const related = anchor ? relatedNotes({ notes }, anchor.slug) : [];
+          const relatedBySlug = new Map(related.map((relation) => [relation.slug, relation]));
+          const connected = anchor ? formatRelatedNotes(related, bySlug, direct, anchor) : "";
           const query = params.query.trim().toLowerCase();
-          const exact = hits.filter((hit) => hit.summary.title.trim().toLowerCase() === query);
+          const exact = hits.filter((hit) =>
+            hit.summary.title.trim().toLowerCase() === query || hit.summary.slug.toLowerCase() === query
+          );
           const resolved = hits.length === 1 ? hits[0] : exact.length === 1 ? exact[0] : undefined;
           if (resolved) {
-            const note = await getNote(vault, resolved.summary.slug);
+            const note = bySlug.get(resolved.summary.slug);
             if (note) {
+              const others = hits.filter((hit) => hit.summary.slug !== note.slug);
+              const otherMatches = others.length > 0
+                ? `Other direct matches (${others.length}):\n${formatSearchHits(others, params.query, relatedBySlug)}`
+                : "";
               return {
-                content: [{ type: "text", text: formatNote(note) }],
-                details: { action: "search", hits, resolved: note },
+                content: [{
+                  type: "text",
+                  text: [formatNote(note).trimEnd(), otherMatches, connected].filter(Boolean).join("\n\n") + "\n",
+                }],
+                details: { action: "search", hits, resolved: note, related },
               };
             }
           }
-          const lines = hits.map(
-            (h) => `- ${h.summary.slug}: ${h.summary.title} (score ${h.score})\n  ${h.snippet}`,
-          );
           return {
-            content: [{ type: "text", text: `${hits.length} hit(s) for '${params.query}':\n${lines.join("\n")}` }],
-            details: { action: "search", hits },
+            content: [{
+              type: "text",
+              text: [
+                `${hits.length} direct match(es) for '${params.query}', strongest first:\n${formatSearchHits(hits, params.query, relatedBySlug)}`,
+                connected,
+              ].filter(Boolean).join("\n\n"),
+            }],
+            details: { action: "search", hits, related },
           };
         }
 

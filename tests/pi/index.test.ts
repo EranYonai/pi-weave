@@ -548,7 +548,7 @@ describe("weave_note tool", () => {
 
       const result = await mock.runTool("weave_note", { action: "search", query: "duplicate" }, ctx);
 
-      expect(result.content[0]?.text).toContain("2 hit(s)");
+      expect(result.content[0]?.text).toContain("2 direct match(es)");
       expect(result.content[0]?.text).toContain("duplicate:");
       expect(result.content[0]?.text).toContain("duplicate-2:");
       expect(result.details).toMatchObject({ action: "search", hits: [{}, {}] });
@@ -565,10 +565,39 @@ describe("weave_note tool", () => {
 
       const result = await mock.runTool("weave_note", { action: "search", query: "auth" }, ctx);
 
-      expect(result.content[0]?.text).toContain("2 hit(s)");
+      expect(result.content[0]?.text).toContain("2 direct match(es)");
       expect(result.content[0]?.text).toContain("auth-boundary:");
       expect(result.content[0]?.text).toContain("auth-migration:");
       expect((result.details as Record<string, unknown>).resolved).toBeUndefined();
+    });
+  });
+
+  it("returns direct and connected note context with reviewable reasons", async () => {
+    const mock = buildExtension();
+    const ctx = createMockCtx(await makeTempDir());
+    await withVaultEnv(await makeTempDir(), async () => {
+      await mock.runTool("weave_note", { action: "add", title: "Boats", text: "Hull navigation. See [[marina]].", tags: ["sailing"] }, ctx);
+      await mock.runTool("weave_note", { action: "add", title: "Boat register", text: "boats appear here" }, ctx);
+      await mock.runTool("weave_note", { action: "add", title: "Marina", text: "Dock assignments." }, ctx);
+      await mock.runTool("weave_note", { action: "add", title: "Harbor log", text: "References [[boats]]." }, ctx);
+      await mock.runTool("weave_note", { action: "add", title: "Sailing checklist", text: "Life jackets.", tags: ["sailing"] }, ctx);
+      await mock.runTool("weave_note", { action: "add", title: "Hull maintenance", text: "Hull navigation checklist." }, ctx);
+
+      const result = await mock.runTool("weave_note", { action: "search", query: "boats" }, ctx);
+      const text = result.content[0]?.text ?? "";
+
+      expect(text.startsWith("# Boats\n")).toBe(true);
+      expect(text).toContain("Other direct matches");
+      expect(text).toContain("boat-register: Boat register");
+      expect(text).toContain("harbor-log: Harbor log");
+      expect(text).toContain("connected: links to boats");
+      expect(text).toContain("Connected notes to 'Boats'");
+      expect(text).toContain("marina: Marina");
+      expect(text).toContain("connected: linked from boats");
+      expect(text).toContain("sailing-checklist: Sailing checklist");
+      expect(text).toContain("shared tags: sailing");
+      expect(text).toContain("hull-maintenance: Hull maintenance");
+      expect(text).toContain("shared terms:");
     });
   });
 
