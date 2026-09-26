@@ -35,6 +35,8 @@ const LIST_CAP = 50;
 /** Keep search useful without flooding the model on a broad query. */
 const SEARCH_REPORT_CAP = 10;
 const RELATED_REPORT_CAP = 5;
+const COMPLETE_BODY_CAP = 2_000;
+const COMPLETE_BODY_RESULTS = 3;
 
 function capped<T>(items: readonly T[], render: (item: T) => string): string[] {
   const lines = items.slice(0, LINK_REPORT_CAP).map(render);
@@ -82,20 +84,33 @@ function searchReasons(hit: NoteSearchHit, query: string): string[] {
   const tags = hit.summary.tags.filter((tag) => tag.toLowerCase().includes(q));
   if (tags.length > 0) reasons.push(`tags: ${tags.join(", ")}`);
   if (hit.snippet.toLowerCase().includes(q)) reasons.push("body");
+  if (reasons.length === 0) {
+    const haystack = `${title} ${slug} ${hit.summary.tags.join(" ").toLowerCase()} ${hit.snippet.toLowerCase()}`;
+    const terms = [...new Set(q.match(/[\p{L}\p{N}_-]{2,}/gu) ?? [])].filter((term) => haystack.includes(term));
+    if (terms.length > 0) reasons.push(`query terms: ${terms.join(", ")}`);
+  }
   return reasons;
+}
+
+function searchContent(note: Note | undefined, snippet: string, complete: boolean): string {
+  const body = note?.body.trim() ?? "";
+  if (complete && body.length <= COMPLETE_BODY_CAP) return `[complete body]\n  ${body}`;
+  return `[excerpt${body.length > COMPLETE_BODY_CAP ? "; use get for the full note" : ""}]\n  ${snippet}`;
 }
 
 function formatSearchHits(
   hits: readonly NoteSearchHit[],
   query: string,
   relations: ReadonlyMap<string, RelatedNote>,
+  notes: ReadonlyMap<string, Note>,
 ): string {
   const shown = hits.slice(0, SEARCH_REPORT_CAP);
-  const lines = shown.map((hit) => {
+  const lines = shown.map((hit, index) => {
     const tags = hit.summary.tags.length > 0 ? `; tags: ${hit.summary.tags.join(", ")}` : "";
     const relation = relations.get(hit.summary.slug);
     const connected = relation ? `; connected: ${relation.reasons.join("; ")}` : "";
-    return `- ${hit.summary.slug}: ${hit.summary.title}\n  matched: ${searchReasons(hit, query).join(", ")}${connected}; source: ${hit.summary.source}; updated: ${hit.summary.updated}${tags}\n  ${hit.snippet}`;
+    const content = searchContent(notes.get(hit.summary.slug), hit.snippet, index < COMPLETE_BODY_RESULTS);
+    return `- ${hit.summary.slug}: ${hit.summary.title}\n  matched: ${searchReasons(hit, query).join(", ")}${connected}; source: ${hit.summary.source}; updated: ${hit.summary.updated}${tags}\n  ${content}`;
   });
   if (hits.length > shown.length) lines.push(`… and ${hits.length - shown.length} more direct match(es).`);
   return lines.join("\n");
@@ -120,11 +135,12 @@ function formatRelatedNotes(
     })
     .slice(0, RELATED_REPORT_CAP);
   if (shown.length === 0) return "";
-  const lines = shown.map(({ relation, note }) => {
+  const lines = shown.map(({ relation, note }, index) => {
     const tags = note.tags.length > 0 ? `; tags: ${note.tags.join(", ")}` : "";
-    return `- ${note.slug}: ${note.title}\n  connected: ${relation.reasons.join("; ")}; source: ${note.source}; updated: ${note.updated}${tags}\n  ${preview(note.body)}`;
+    const content = searchContent(note, preview(note.body), index < COMPLETE_BODY_RESULTS);
+    return `- ${note.slug}: ${note.title}\n  connected: ${relation.reasons.join("; ")}; source: ${note.source}; updated: ${note.updated}${tags}\n  ${content}`;
   });
-  return `Connected notes to '${anchor.title}' (not direct query matches):\n${lines.join("\n")}`;
+  return `Connected notes to '${anchor.title}' (discovery context only — not direct query matches or evidence about the query):\n${lines.join("\n")}`;
 }
 
 /** Render a link audit (and any repair) as the text the model reads. */
@@ -361,7 +377,7 @@ export function registerNoteTool(pi: ExtensionAPI): void {
             if (note) {
               const others = hits.filter((hit) => hit.summary.slug !== note.slug);
               const otherMatches = others.length > 0
-                ? `Other direct matches (${others.length}):\n${formatSearchHits(others, params.query, relatedBySlug)}`
+                ? `Other direct matches (${others.length}):\n${formatSearchHits(others, params.query, relatedBySlug, bySlug)}`
                 : "";
               return {
                 content: [{
@@ -376,7 +392,7 @@ export function registerNoteTool(pi: ExtensionAPI): void {
             content: [{
               type: "text",
               text: [
-                `${hits.length} direct match(es) for '${params.query}', strongest first:\n${formatSearchHits(hits, params.query, relatedBySlug)}`,
+                `${hits.length} direct match(es) for '${params.query}', strongest first:\n${formatSearchHits(hits, params.query, relatedBySlug, bySlug)}`,
                 connected,
               ].filter(Boolean).join("\n\n"),
             }],

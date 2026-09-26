@@ -978,19 +978,45 @@ export async function noteCount(root: string): Promise<number> {
   return (await listNoteFiles(root)).filter(isMarkdown).length;
 }
 
+const SEARCH_TERM_RE = /[\p{L}\p{N}]+(?:[._/:\-][\p{L}\p{N}]+)*/gu;
+
+/** Terms models naturally put in a search query, including code-ish tokens. */
+function searchTerms(value: string): string[] {
+  const terms = new Set<string>();
+  for (const match of value.toLowerCase().matchAll(SEARCH_TERM_RE)) {
+    const term = match[0];
+    if (term.length > 1) terms.add(term);
+    for (const part of term.split(/[._/:\-]+/)) {
+      if (part.length > 1) terms.add(part);
+    }
+  }
+  return [...terms];
+}
+
+function matchingTerm(terms: ReadonlySet<string>, query: string): string | undefined {
+  if (terms.has(query)) return query;
+  if (query.length < 5 || !/^\p{L}+$/u.test(query)) return undefined;
+  // ponytail: cheap inflection tolerance; use stemming only if false matches become measurable.
+  const prefix = query.slice(0, 4);
+  return [...terms].find((term) => term.length >= 5 && /^\p{L}+$/u.test(term) && term.startsWith(prefix));
+}
+
 /**
- * Substring search over slug, title, tags, and body.
- * Score tiers keep identity above repetition: exact slug/title = 100,
- * partial slug/title = 30, tag = 20, body = 1 each (capped at 5).
- * Case-insensitive. Deterministic ordering: score desc, then slug asc.
+ * Search slug, title, tags, and body.
+ *
+ * Exact substring behaviour stays first and unchanged. When a natural
+ * multi-term query has no literal match, an IDF-weighted lexical fallback
+ * ranks notes by term coverage: title/slug above tags above body. This makes
+ * one model-style query useful without adding a second search mode.
  */
 export async function searchNotes(root: string, query: string): Promise<NoteSearchHit[]> {
   const q = query.toLowerCase().trim();
   if (q.length === 0) return [];
 
+  const notes = (await readVault(root)).notes;
   const hits: NoteSearchHit[] = [];
   // One pass: `listNotes` + a `getNote` per slug would read every file twice.
-  for (const note of (await readVault(root)).notes) {
+  for (const note of notes) {
     let score = 0;
     const title = note.title.toLowerCase();
     const slug = note.slug.toLowerCase();
@@ -1009,6 +1035,48 @@ export async function searchNotes(root: string, query: string): Promise<NoteSear
 
     if (score === 0) continue;
     hits.push({ summary: summarizeNote(note), score, snippet: makeSnippet(note.body, q) });
+  }
+  if (hits.length > 0) return hits.sort((a, b) => b.score - a.score || a.summary.slug.localeCompare(b.summary.slug));
+
+  const indexed = notes.map((note) => {
+    const title = new Set(searchTerms(note.title));
+    const slug = new Set(searchTerms(note.slug));
+    const tags = new Set(note.tags.flatMap(searchTerms));
+    const body = new Set(searchTerms(note.body));
+    return { note, title, slug, tags, body, all: new Set([...title, ...slug, ...tags, ...body]) };
+  });
+  const terms = searchTerms(q).flatMap((term) => {
+    const frequency = indexed.filter((entry) => matchingTerm(entry.all, term) !== undefined).length;
+    return frequency === 0 ? [] : [{ term, frequency }];
+  });
+  if (terms.length === 0) return [];
+
+  for (const entry of indexed) {
+    let score = 0;
+    let matched = 0;
+    let snippetTerm = "";
+    for (const { term, frequency } of terms) {
+      const idf = Math.log((indexed.length + 1) / (frequency + 1)) + 1;
+      const bodyTerm = matchingTerm(entry.body, term);
+      const fieldScore = matchingTerm(entry.title, term) !== undefined || matchingTerm(entry.slug, term) !== undefined
+        ? 30
+        : matchingTerm(entry.tags, term) !== undefined
+          ? 20
+          : bodyTerm !== undefined
+            ? 5
+            : 0;
+      if (fieldScore === 0) continue;
+      score += fieldScore * idf;
+      matched++;
+      if (snippetTerm === "" && bodyTerm !== undefined) snippetTerm = bodyTerm;
+    }
+    if (matched === 0) continue;
+    score += 20 * matched / terms.length;
+    hits.push({
+      summary: summarizeNote(entry.note),
+      score,
+      snippet: makeSnippet(entry.note.body, snippetTerm || q),
+    });
   }
   return hits.sort((a, b) => b.score - a.score || a.summary.slug.localeCompare(b.summary.slug));
 }

@@ -572,6 +572,32 @@ describe("weave_note tool", () => {
     });
   });
 
+  it("answers model-style queries with complete top bodies in one search", async () => {
+    const mock = buildExtension();
+    const ctx = createMockCtx(await makeTempDir());
+    await withVaultEnv(await makeTempDir(), async () => {
+      await mock.runTool("weave_note", {
+        action: "add",
+        title: "Observability Rollout",
+        text: "Sample 10% of normal traces and retain them for 14 days.",
+        tags: ["platform"],
+      }, ctx);
+      await mock.runTool("weave_note", {
+        action: "add",
+        title: "Tracing Notes",
+        text: "Tracing terminology reference.",
+      }, ctx);
+
+      const result = await mock.runTool("weave_note", { action: "search", query: "trace sampling retention policy" }, ctx);
+      const text = result.content[0]?.text ?? "";
+
+      expect(text).toContain("observability-rollout: Observability Rollout");
+      expect(text).toContain("matched: query terms:");
+      expect(text).toContain("[complete body]");
+      expect(text).toContain("Sample 10% of normal traces and retain them for 14 days.");
+    });
+  });
+
   it("returns direct and connected note context with reviewable reasons", async () => {
     const mock = buildExtension();
     const ctx = createMockCtx(await makeTempDir());

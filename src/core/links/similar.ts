@@ -87,8 +87,9 @@ export interface SuggestOptions {
   evidence?: number;
 }
 
-/** Words too structural to carry meaning in any vault, in any domain. */
 const TERM_RE = /[\p{L}][\p{L}\p{N}_-]{2,}/gu;
+/** Link prose too structural to connect otherwise unrelated notes. */
+const STRUCTURAL_TERMS = new Set(["and", "see", "the"]);
 
 /**
  * Smallest document-frequency ceiling, whatever `maxDocFrequency` computes.
@@ -114,7 +115,10 @@ export const MIN_TERM_CEILING = 10;
 function terms(note: Pick<Note, "title" | "tags" | "body">): Set<string> {
   const text = `${note.title} ${note.tags.join(" ")} ${note.body}`;
   const out = new Set<string>();
-  for (const match of text.matchAll(TERM_RE)) out.add(match[0].toLowerCase());
+  for (const match of text.matchAll(TERM_RE)) {
+    const term = match[0].toLowerCase();
+    if (!STRUCTURAL_TERMS.has(term)) out.add(term);
+  }
   return out;
 }
 

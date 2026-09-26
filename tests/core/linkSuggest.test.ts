@@ -50,6 +50,15 @@ describe("suggestLinks", () => {
     expect(suggestLinks(input).suggestions).toEqual([]);
   });
 
+  it("does not connect notes that share only structural link prose", () => {
+    const input = corpus([
+      note("a/x", "X", "See the appliance measurements."),
+      note("b/y", "Y", "See the payments incident."),
+    ]);
+
+    expect(suggestLinks(input, { slug: "a/x" }).suggestions).toEqual([]);
+  });
+
   it("never re-suggests a pair that is already linked", () => {
     const linked = corpus([
       note("a/alpha", "Alpha", "zephyrine quorum handoff — see [[b/beta]]"),

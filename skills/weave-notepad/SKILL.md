@@ -119,9 +119,11 @@ one result or one unique exact-title match returns the full note; that result is
 plausible candidates remain, fetch at most the three strongest slugs together in the next tool round. If the answer is still ambiguous,
 ask the user for another identifier instead of reformulating and repeating the search. Never list the vault to find a note.
 
-Search results are strongest-first and include match evidence, metadata, excerpts, and a bounded set of connected notes found through
-links, backlinks, shared tags, and shared distinctive terms. Use that context before making another tool call. Connections are lexical and
-explicit, not semantic.
+Search accepts ordinary multi-term queries and automatically falls back from an exact phrase to ranked lexical terms. Results are
+strongest-first and include match evidence, metadata, bounded note content, and connected notes found through links, backlinks, shared
+tags, and shared distinctive terms. A body marked `complete` is sufficient; call `get` only for content explicitly marked as an excerpt.
+Use that context before making another tool call. Connected notes are discovery context, not evidence that they match the query; include
+them in an answer only when their stated relationship is relevant. Connections are lexical and explicit, not semantic.
 
 When a note and the repository index disagree, trust the repository for facts about code and flag the discrepancy — the note may be stale
 intent.
