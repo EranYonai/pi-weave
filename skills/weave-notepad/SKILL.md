@@ -114,8 +114,17 @@ The scan is opt-in and never runs on its own. Suggest it when the user asks why 
 
 ## Retrieving knowledge
 
-Use `weave_note` action=search with the user's key terms, then `get` the best hits. When a note and the repository index disagree, trust the
-repository for facts about code and flag the discrepancy — the note may be stale intent.
+When the slug is known, use `weave_note` action=get directly. Otherwise use one targeted `search` with the user's key terms. A search with
+one result or one unique exact-title match returns the full note; that result is sufficient, so do not call `get` again. If several
+plausible candidates remain, fetch at most the three strongest slugs together in the next tool round. If the answer is still ambiguous,
+ask the user for another identifier instead of reformulating and repeating the search. Never list the vault to find a note.
+
+Search results are strongest-first and include match evidence, metadata, excerpts, and a bounded set of connected notes found through
+links, backlinks, shared tags, and shared distinctive terms. Use that context before making another tool call. Connections are lexical and
+explicit, not semantic.
+
+When a note and the repository index disagree, trust the repository for facts about code and flag the discrepancy — the note may be stale
+intent.
 
 ## Repairing stale links
 

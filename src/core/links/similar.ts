@@ -123,6 +123,49 @@ export interface SuggestInput {
   notes: readonly Pick<Note, "slug" | "title" | "tags" | "body">[];
 }
 
+/** One deterministic neighbour of a note, with reviewable evidence. */
+export interface RelatedNote {
+  slug: string;
+  score: number;
+  reasons: string[];
+}
+
+function resolvedLinks(notes: SuggestInput["notes"]): {
+  pairs: Set<string>;
+  outgoing: Map<string, Set<string>>;
+} {
+  const pairs = new Set<string>();
+  const outgoing = new Map<string, Set<string>>();
+  const bySlug = new Set(notes.map((note) => note.slug));
+  const byBasename = new Map<string, string[]>();
+  const byTitle = new Map<string, string[]>();
+  for (const note of notes) {
+    const base = note.slug.split("/").pop()!;
+    byBasename.set(base, [...(byBasename.get(base) ?? []), note.slug]);
+    const title = slugify(note.title);
+    if (title.length > 0) byTitle.set(title, [...(byTitle.get(title) ?? []), note.slug]);
+  }
+  for (const note of notes) {
+    for (const link of scanLinks(note.body)) {
+      const byBase = byBasename.get(link.target) ?? [];
+      const byTtl = byTitle.get(link.target) ?? [];
+      const target = bySlug.has(link.target)
+        ? link.target
+        : byBase.length === 1
+          ? byBase[0]!
+          : byTtl.length === 1
+            ? byTtl[0]!
+            : null;
+      if (target === null) continue;
+      pairs.add(pairKey(note.slug, target));
+      const targets = outgoing.get(note.slug);
+      if (targets) targets.add(target);
+      else outgoing.set(note.slug, new Set([target]));
+    }
+  }
+  return { pairs, outgoing };
+}
+
 /**
  * Rank pairs of notes that share distinctive vocabulary but no link.
  *
@@ -175,34 +218,7 @@ export function suggestLinks(input: SuggestInput, options: SuggestOptions = {}):
 
   // Existing links, both directions, so a connection the user already made
   // is never offered back to them.
-  const linked = new Set<string>();
-  const bySlug = new Set(notes.map((note) => note.slug));
-  const byBasename = new Map<string, string[]>();
-  const byTitle = new Map<string, string[]>();
-  for (const note of notes) {
-    const base = note.slug.split("/").pop()!;
-    byBasename.set(base, [...(byBasename.get(base) ?? []), note.slug]);
-    const title = slugify(note.title);
-    if (title.length > 0) byTitle.set(title, [...(byTitle.get(title) ?? []), note.slug]);
-  }
-  for (const note of notes) {
-    for (const link of scanLinks(note.body)) {
-      // The same three-rung ladder `auditLinks` walks — exact slug, unique
-      // basename, unique title. It has to be all three: a link repair would
-      // resolve counts as a connection that already exists, so resolving a
-      // rung short here would suggest a pair the vault has already linked.
-      const byBase = byBasename.get(link.target) ?? [];
-      const byTtl = byTitle.get(link.target) ?? [];
-      const target = bySlug.has(link.target)
-        ? link.target
-        : byBase.length === 1
-          ? byBase[0]!
-          : byTtl.length === 1
-            ? byTtl[0]!
-            : null;
-      if (target !== null) linked.add(pairKey(note.slug, target));
-    }
-  }
+  const { pairs: linked } = resolvedLinks(notes);
 
   // Candidate generation through an inverted index on distinctive terms
   // only. Comparing every pair is O(n²) and mostly compares notes with
@@ -250,6 +266,53 @@ export function suggestLinks(input: SuggestInput, options: SuggestOptions = {}):
   suggestions.sort((x, y) => y.score - x.score || x.a.localeCompare(y.a) || x.b.localeCompare(y.b));
 
   return { considered: vectors.size, suggestions: suggestions.slice(0, limit) };
+}
+
+/**
+ * Rank the explicit and lexical neighbours of one note.
+ *
+ * This is deliberately not semantic search: every result cites a link,
+ * backlink, shared tag, or shared term already present in the vault.
+ */
+export function relatedNotes(input: SuggestInput, slug: string, limit = 20): RelatedNote[] {
+  if (limit <= 0) return [];
+  const focus = input.notes.find((note) => note.slug === slug);
+  if (!focus) return [];
+
+  const related = new Map<string, RelatedNote>();
+  const add = (target: string, score: number, reason: string) => {
+    if (target === slug) return;
+    const existing = related.get(target);
+    if (existing) {
+      existing.score = Math.max(existing.score, score);
+      if (!existing.reasons.includes(reason)) existing.reasons.push(reason);
+    } else {
+      related.set(target, { slug: target, score, reasons: [reason] });
+    }
+  };
+
+  const { outgoing } = resolvedLinks(input.notes);
+  for (const target of outgoing.get(slug) ?? []) add(target, 400, `linked from ${slug}`);
+  for (const [source, targets] of outgoing) {
+    if (targets.has(slug)) add(source, 400, `links to ${slug}`);
+  }
+
+  const focusTags = new Map(focus.tags.map((tag) => [tag.toLowerCase(), tag]));
+  for (const note of input.notes) {
+    const shared = [...new Set(note.tags.map((tag) => tag.toLowerCase()))]
+      .filter((tag) => focusTags.has(tag))
+      .map((tag) => focusTags.get(tag)!);
+    if (shared.length > 0) add(note.slug, 300 + shared.length, `shared tags: ${shared.join(", ")}`);
+  }
+
+  for (const suggestion of suggestLinks(input, { slug, limit: Math.max(limit, 20) }).suggestions) {
+    const target = suggestion.a === slug ? suggestion.b : suggestion.a;
+    add(target, 200 + suggestion.score, `shared terms: ${suggestion.shared.join(", ")}`);
+  }
+
+  return [...related.values()]
+    .sort((a, b) => b.score - a.score || a.slug.localeCompare(b.slug))
+    .slice(0, limit);
 }
 
 /** Order-independent key for an unordered pair. */

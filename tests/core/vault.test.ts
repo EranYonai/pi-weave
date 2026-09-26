@@ -659,6 +659,13 @@ describe("searchNotes", () => {
     expect(hits[0]?.snippet).toContain("JWT");
   });
 
+  it("keeps an exact identity ahead of repeated body mentions", async () => {
+    await addNote(vault, { title: "Boats", body: "The primary note." });
+    await addNote(vault, { title: "Journal", body: "boats boats boats boats boats" });
+    const hits = await searchNotes(vault, "boats");
+    expect(hits.map((hit) => hit.summary.slug)).toEqual(["boats", "journal"]);
+  });
+
   it("finds matches by tag", async () => {
     const hits = await searchNotes(vault, "personal");
     expect(hits.map((h) => h.summary.slug)).toEqual(["vacation-plans"]);

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { suggestLinks, suggestionTarget } from "../../src/core/links/similar";
+import { relatedNotes, suggestLinks, suggestionTarget } from "../../src/core/links/similar";
 
 const note = (slug: string, title: string, body = "", tags: string[] = []) => ({ slug, title, tags, body });
 
@@ -161,6 +161,36 @@ describe("suggestLinks", () => {
 describe("suggestionTarget", () => {
   it("slugifies each path segment", () => {
     expect(suggestionTarget("1-1s/Some Note")).toBe("1-1s/some-note");
+  });
+});
+
+describe("relatedNotes", () => {
+  const input = corpus([
+    note("a/anchor", "Anchor", "zephyrine hull navigation [[b/outbound]]", ["sailing"]),
+    note("b/outbound", "Outbound", "dock plan"),
+    note("b/inbound", "Inbound", "see [[a/anchor]]"),
+    note("c/tagged", "Tagged", "checklist", ["sailing"]),
+    note("d/lexical", "Lexical", "zephyrine hull navigation checklist"),
+  ]);
+
+  it("orders explicit links, shared tags, then shared vocabulary", () => {
+    const related = relatedNotes(input, "a/anchor");
+    expect(related.slice(0, 4).map((item) => item.slug)).toEqual([
+      "b/inbound",
+      "b/outbound",
+      "c/tagged",
+      "d/lexical",
+    ]);
+    expect(related.find((item) => item.slug === "b/outbound")?.reasons).toContain("linked from a/anchor");
+    expect(related.find((item) => item.slug === "b/inbound")?.reasons).toContain("links to a/anchor");
+    expect(related.find((item) => item.slug === "c/tagged")?.reasons).toContain("shared tags: sailing");
+    expect(related.find((item) => item.slug === "d/lexical")?.reasons[0]).toContain("shared terms:");
+  });
+
+  it("honours missing focuses and the output cap", () => {
+    expect(relatedNotes(input, "missing")).toEqual([]);
+    expect(relatedNotes(input, "a/anchor", 0)).toEqual([]);
+    expect(relatedNotes(input, "a/anchor", 2)).toHaveLength(2);
   });
 });
 

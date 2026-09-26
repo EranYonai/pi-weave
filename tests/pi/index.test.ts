@@ -508,6 +508,99 @@ describe("weave_note tool", () => {
     });
   });
 
+  it("returns the full note for one unique exact-title match", async () => {
+    const mock = buildExtension();
+    const ctx = createMockCtx(await makeTempDir());
+    await withVaultEnv(await makeTempDir(), async () => {
+      await mock.runTool("weave_note", { action: "add", title: "Auth", text: "Exact decision.", tags: ["security"] }, ctx);
+      await mock.runTool("weave_note", { action: "add", title: "Auth migration", text: "Broader plan." }, ctx);
+
+      const result = await mock.runTool("weave_note", { action: "search", query: " AUTH " }, ctx);
+
+      expect(result.content[0]?.text).toContain("# Auth\n(slug: auth");
+      expect(result.content[0]?.text).toContain("tags: security");
+      expect(result.content[0]?.text).toContain("Exact decision.");
+      expect(result.content[0]?.text).not.toContain("2 hit(s)");
+      expect(result.details).toMatchObject({ action: "search", resolved: { slug: "auth" } });
+    });
+  });
+
+  it("returns the full note when a body search has only one result", async () => {
+    const mock = buildExtension();
+    const ctx = createMockCtx(await makeTempDir());
+    await withVaultEnv(await makeTempDir(), async () => {
+      await mock.runTool("weave_note", { action: "add", title: "Gateway notes", text: "The zephyrine boundary stays local." }, ctx);
+
+      const result = await mock.runTool("weave_note", { action: "search", query: "zephyrine" }, ctx);
+
+      expect(result.content[0]?.text).toContain("# Gateway notes");
+      expect(result.content[0]?.text).toContain("The zephyrine boundary stays local.");
+      expect(result.details).toMatchObject({ action: "search", resolved: { slug: "gateway-notes" } });
+    });
+  });
+
+  it("keeps duplicate exact titles ambiguous", async () => {
+    const mock = buildExtension();
+    const ctx = createMockCtx(await makeTempDir());
+    await withVaultEnv(await makeTempDir(), async () => {
+      await mock.runTool("weave_note", { action: "add", title: "Duplicate", text: "First." }, ctx);
+      await mock.runTool("weave_note", { action: "add", title: "Duplicate", text: "Second." }, ctx);
+
+      const result = await mock.runTool("weave_note", { action: "search", query: "duplicate" }, ctx);
+
+      expect(result.content[0]?.text).toContain("2 direct match(es)");
+      expect(result.content[0]?.text).toContain("duplicate:");
+      expect(result.content[0]?.text).toContain("duplicate-2:");
+      expect(result.details).toMatchObject({ action: "search", hits: [{}, {}] });
+      expect((result.details as Record<string, unknown>).resolved).toBeUndefined();
+    });
+  });
+
+  it("returns candidates when several non-exact matches remain", async () => {
+    const mock = buildExtension();
+    const ctx = createMockCtx(await makeTempDir());
+    await withVaultEnv(await makeTempDir(), async () => {
+      await mock.runTool("weave_note", { action: "add", title: "Auth boundary", text: "Gateway." }, ctx);
+      await mock.runTool("weave_note", { action: "add", title: "Auth migration", text: "OIDC." }, ctx);
+
+      const result = await mock.runTool("weave_note", { action: "search", query: "auth" }, ctx);
+
+      expect(result.content[0]?.text).toContain("2 direct match(es)");
+      expect(result.content[0]?.text).toContain("auth-boundary:");
+      expect(result.content[0]?.text).toContain("auth-migration:");
+      expect((result.details as Record<string, unknown>).resolved).toBeUndefined();
+    });
+  });
+
+  it("returns direct and connected note context with reviewable reasons", async () => {
+    const mock = buildExtension();
+    const ctx = createMockCtx(await makeTempDir());
+    await withVaultEnv(await makeTempDir(), async () => {
+      await mock.runTool("weave_note", { action: "add", title: "Boats", text: "Hull navigation. See [[marina]].", tags: ["sailing"] }, ctx);
+      await mock.runTool("weave_note", { action: "add", title: "Boat register", text: "boats appear here" }, ctx);
+      await mock.runTool("weave_note", { action: "add", title: "Marina", text: "Dock assignments." }, ctx);
+      await mock.runTool("weave_note", { action: "add", title: "Harbor log", text: "References [[boats]]." }, ctx);
+      await mock.runTool("weave_note", { action: "add", title: "Sailing checklist", text: "Life jackets.", tags: ["sailing"] }, ctx);
+      await mock.runTool("weave_note", { action: "add", title: "Hull maintenance", text: "Hull navigation checklist." }, ctx);
+
+      const result = await mock.runTool("weave_note", { action: "search", query: "boats" }, ctx);
+      const text = result.content[0]?.text ?? "";
+
+      expect(text.startsWith("# Boats\n")).toBe(true);
+      expect(text).toContain("Other direct matches");
+      expect(text).toContain("boat-register: Boat register");
+      expect(text).toContain("harbor-log: Harbor log");
+      expect(text).toContain("connected: links to boats");
+      expect(text).toContain("Connected notes to 'Boats'");
+      expect(text).toContain("marina: Marina");
+      expect(text).toContain("connected: linked from boats");
+      expect(text).toContain("sailing-checklist: Sailing checklist");
+      expect(text).toContain("shared tags: sailing");
+      expect(text).toContain("hull-maintenance: Hull maintenance");
+      expect(text).toContain("shared terms:");
+    });
+  });
+
   it("finalize restructures the body above the raw tail and preserves it", async () => {
     const mock = buildExtension();
     const ctx = createMockCtx(await makeTempDir());

@@ -979,8 +979,9 @@ export async function noteCount(root: string): Promise<number> {
 }
 
 /**
- * Substring search over title, tags, and body.
- * Score: title match = 3, tag match = 2, body match = 1 each (capped).
+ * Substring search over slug, title, tags, and body.
+ * Score tiers keep identity above repetition: exact slug/title = 100,
+ * partial slug/title = 30, tag = 20, body = 1 each (capped at 5).
  * Case-insensitive. Deterministic ordering: score desc, then slug asc.
  */
 export async function searchNotes(root: string, query: string): Promise<NoteSearchHit[]> {
@@ -991,8 +992,11 @@ export async function searchNotes(root: string, query: string): Promise<NoteSear
   // One pass: `listNotes` + a `getNote` per slug would read every file twice.
   for (const note of (await readVault(root)).notes) {
     let score = 0;
-    if (note.title.toLowerCase().includes(q)) score += 3;
-    if (note.tags.some((t) => t.toLowerCase().includes(q))) score += 2;
+    const title = note.title.toLowerCase();
+    const slug = note.slug.toLowerCase();
+    if (title === q || slug === q) score += 100;
+    else if (title.includes(q) || slug.includes(q)) score += 30;
+    if (note.tags.some((t) => t.toLowerCase().includes(q))) score += 20;
 
     const bodyLower = note.body.toLowerCase();
     let bodyMatches = 0;
