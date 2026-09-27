@@ -64,8 +64,10 @@ export {
   type LinkRepairResult,
 } from "./vault";
 export {
+  relatedNotes,
   suggestLinks,
   type LinkSuggestion,
+  type RelatedNote,
   type SuggestOptions,
   type SuggestionReport,
 } from "./links/similar";

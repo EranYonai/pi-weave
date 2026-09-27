@@ -659,6 +659,13 @@ describe("searchNotes", () => {
     expect(hits[0]?.snippet).toContain("JWT");
   });
 
+  it("keeps an exact identity ahead of repeated body mentions", async () => {
+    await addNote(vault, { title: "Boats", body: "The primary note." });
+    await addNote(vault, { title: "Journal", body: "boats boats boats boats boats" });
+    const hits = await searchNotes(vault, "boats");
+    expect(hits.map((hit) => hit.summary.slug)).toEqual(["boats", "journal"]);
+  });
+
   it("finds matches by tag", async () => {
     const hits = await searchNotes(vault, "personal");
     expect(hits.map((h) => h.summary.slug)).toEqual(["vacation-plans"]);
@@ -684,6 +691,45 @@ describe("searchNotes", () => {
   it("falls back to body prefix snippet when the body has no match (title hit)", async () => {
     const hits = await searchNotes(vault, "vacation");
     expect(hits[0]?.snippet).toBe("Lisbon in autumn.");
+  });
+
+  it("falls back to ranked query terms when a model-style phrase has no literal match", async () => {
+    await addNote(vault, {
+      title: "Appliance Measurements",
+      body: "Fridge alcove is 92 cm wide. Dishwasher is 45 cm.",
+      tags: ["home", "renovation"],
+    });
+    await addNote(vault, { title: "Kitchen Ideas", body: "A wide oak shelf." });
+
+    const hits = await searchNotes(vault, "fridge alcove dishwasher spaces width");
+
+    expect(hits[0]?.summary.slug).toBe("appliance-measurements");
+    expect(hits[0]?.snippet).toContain("Fridge alcove");
+  });
+
+  it("handles tag syntax, code tokens, and nearby word forms in lexical fallback", async () => {
+    await addNote(vault, {
+      title: "Observability Rollout",
+      body: "Sample 10% of normal traces and retain them for 14 days.",
+      tags: ["platform", "observability"],
+    });
+    await addNote(vault, {
+      title: "Atlas API Migration",
+      body: "POST /v2/orders requests require Idempotency-Key.",
+      tags: ["api", "migration"],
+    });
+
+    expect((await searchNotes(vault, "trace sampling retention"))[0]?.summary.slug).toBe("observability-rollout");
+    expect((await searchNotes(vault, "Atlas clients /v2/orders idempotency header"))[0]?.summary.slug).toBe("atlas-api-migration");
+    expect((await searchNotes(vault, "tag:personal plans"))[0]?.summary.slug).toBe("vacation-plans");
+  });
+
+  it("treats a grep-style pipe as an OR separator", async () => {
+    await addNote(vault, { title: "Boats", body: "Harbor notes." });
+    await addNote(vault, { title: "Ships", body: "Fleet notes." });
+
+    expect((await searchNotes(vault, "boats | ships")).map((hit) => hit.summary.slug)).toEqual(["boats", "ships"]);
+    expect((await searchNotes(vault, "boats|ships")).map((hit) => hit.summary.slug)).toEqual(["boats", "ships"]);
   });
 
   it("returns [] when nothing matches", async () => {
