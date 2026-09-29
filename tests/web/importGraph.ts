@@ -23,7 +23,7 @@ export const ROOT = resolve(new URL("../../", import.meta.url).pathname);
 export const SRC = join(ROOT, "src");
 
 /** Every declared tier directory, longest-prefix-wins when classifying. */
-export const ALL_TIERS = ["src/core", "src/web/shared", "src/web/server", "src/web/client", "src/pi"] as const;
+export const ALL_TIERS = ["src/core", "src/web/shared", "src/web/server", "src/web/client", "src/pi", "src/opencode"] as const;
 
 /** Generated output, not source. Walked by `tests/web/build.test.ts` instead. */
 const SKIP_DIRS = new Set(["dist", "node_modules"]);
