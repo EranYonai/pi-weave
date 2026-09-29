@@ -42,6 +42,11 @@ describe("OpenCode plugin", () => {
           return registration;
         },
       },
+      rpc: {
+        async register() {
+          return { dispose: async () => {}, events: { emit: async () => {} } };
+        },
+      },
       session: {},
     };
 
@@ -50,7 +55,7 @@ describe("OpenCode plugin", () => {
 
       expect([...tools.keys()].sort()).toEqual(["weave_note", "weave_repo"]);
       expect([...skills.keys()].sort()).toEqual(["weave-explore", "weave-notepad"]);
-      expect([...commands.keys()].sort()).toEqual(["weave", "weave-scan", "weave-scan-cancel"]);
+      expect([...commands.keys()].sort()).toEqual(["weave", "weave-scan", "weave-scan-cancel", "weave-view"]);
       expect(skills.get("weave-notepad")?.path).toMatch(/skills\/weave-notepad\/SKILL\.md$/);
       expect(skills.get("weave-notepad")?.content).toContain("# Weave Notepad");
 

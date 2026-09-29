@@ -33,43 +33,19 @@
  * run, rather than that some private function was called.
  */
 
-import { platform as osPlatform } from "node:os";
 import type { ExtensionCommandContext } from "@earendil-works/pi-coding-agent";
-import { resolveVaultRoot, WorkspaceCache } from "../../../core";
 import {
-  startWorkspaceServer,
-  type StartWorkspaceServerOptions,
-  type WorkspaceServer,
-} from "../../../web/server/server";
+  browserOpenCommand,
+  WorkspaceServerController,
+  type StartServerFn,
+  type WorkspaceServerSession,
+} from "../../../web/server/controller";
 
 /** The slice of `ExtensionAPI.exec` this module uses. */
 export type ExecFn = (command: string, args: string[]) => Promise<{ code: number; stderr: string }>;
 
-/** `startWorkspaceServer`, as a seam so tests can pin `idleMs` and the bundle. */
-export type StartServerFn = (opts: StartWorkspaceServerOptions) => Promise<WorkspaceServer>;
-
-/**
- * The command that hands a URL to the desktop's default browser.
- *
- * `os` is injectable so the whole mapping is unit-testable on any host
- * without stubbing globals — the same convention as `openNoteCommand`.
- */
-export function browserOpenCommand(
-  url: string,
-  os: NodeJS.Platform = osPlatform(),
-): { command: string; args: string[] } {
-  if (os === "darwin") return { command: "open", args: [url] };
-  // The empty string is `start`'s title argument. Without it, a URL that
-  // happens to be quoted is consumed as the window title and nothing opens.
-  if (os === "win32") return { command: "cmd", args: ["/c", "start", "", url] };
-  return { command: "xdg-open", args: [url] };
-}
-
-/** Everything one running workspace owns. Closed as a unit. */
-export interface WebWorkspaceSession {
-  server: WorkspaceServer;
-  cache: WorkspaceCache;
-}
+export { browserOpenCommand };
+export type WebWorkspaceSession = WorkspaceServerSession;
 
 export interface WebWorkspaceDeps {
   /** `ExtensionAPI.exec`. Used only to launch the browser. */
@@ -115,17 +91,20 @@ export interface RunWebOutcome {
  */
 export class WebWorkspaceController {
   private readonly deps: WebWorkspaceDeps;
-  private session: WebWorkspaceSession | null = null;
-  /** The single in-flight boot, so two fast `/weave-view`s do not race. */
-  private booting: Promise<WebWorkspaceSession> | null = null;
+  private readonly server: WorkspaceServerController;
 
   constructor(deps: WebWorkspaceDeps) {
     this.deps = deps;
+    this.server = new WorkspaceServerController({
+      ...(deps.startServer ? { startServer: deps.startServer } : {}),
+      ...(deps.vaultRoot ? { vaultRoot: deps.vaultRoot } : {}),
+      ...(deps.onStateChange ? { onStateChange: deps.onStateChange } : {}),
+    });
   }
 
   /** Bound port while a workspace is running, else `null`. Drives the status line. */
   port(): number | null {
-    return this.session?.server.port ?? null;
+    return this.server.port();
   }
 
   /**
@@ -136,9 +115,7 @@ export class WebWorkspaceController {
    * rather than a server they cannot find.
    */
   async run(ctx: ExtensionCommandContext, opts: RunWebOptions): Promise<RunWebOutcome> {
-    const existing = this.session;
-    const session = existing ?? (await this.boot(ctx));
-    const started = existing === null;
+    const { session, started } = await this.server.run(ctx.cwd);
 
     // Only a session with a UI has a browser worth spawning: over `--mode
     // rpc` or a plain SSH pipe there is no desktop on this side of the
@@ -154,45 +131,7 @@ export class WebWorkspaceController {
 
   /** Stop the workspace server. Idempotent. */
   async close(): Promise<void> {
-    // A close arriving mid-boot must still close what that boot produced,
-    // or `session_shutdown` during a slow start leaks the whole stack.
-    const booting = this.booting;
-    if (booting !== null) await booting.catch(() => undefined);
-    const session = this.session;
-    if (session === null) return;
-    this.session = null;
-    await session.server.close();
-    this.deps.onStateChange?.();
-  }
-
-  // --- internals --------------------------------------------------------------
-
-  private async boot(ctx: ExtensionCommandContext): Promise<WebWorkspaceSession> {
-    if (this.booting !== null) return this.booting;
-    const boot = this.bootOnce(ctx);
-    this.booting = boot;
-    try {
-      const session = await boot;
-      this.session = session;
-      this.deps.onStateChange?.();
-      return session;
-    } finally {
-      this.booting = null;
-    }
-  }
-
-  private async bootOnce(ctx: ExtensionCommandContext): Promise<WebWorkspaceSession> {
-    const cwd = ctx.cwd;
-    const vaultRoot = (this.deps.vaultRoot ?? resolveVaultRoot)();
-    const cache = new WorkspaceCache({ cwd, vaultRoot });
-    const startServer = this.deps.startServer ?? startWorkspaceServer;
-    const server = await startServer({
-      cwd,
-      vaultRoot,
-      cache,
-    });
-
-    return { server, cache };
+    await this.server.close();
   }
 
   /** Spawn the browser, reporting failure rather than throwing it. */

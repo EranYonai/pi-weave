@@ -7,6 +7,7 @@ import {
   registerOpenCodeCommands,
   type OpenCodeScanStatus,
 } from "../../src/opencode/commands";
+import { WorkspaceServerController } from "../../src/web/server/controller";
 import { commitAll, gitInit, makeTempDir, withVaultEnv, writeFixture } from "../helpers";
 
 interface Command {
@@ -116,9 +117,16 @@ describe("OpenCode commands", () => {
     commitAll(cwd);
     const mock = mockContext(cwd);
     const statuses: OpenCodeScanStatus[] = [];
+    const viewer = new WorkspaceServerController({ vaultRoot: () => vault });
+    const viewerEvents: { url: string; open: boolean; started: boolean }[] = [];
 
     await withVaultEnv(vault, async () => {
-      const registered = await registerOpenCodeCommands(mock.context as never, (status) => statuses.push(status));
+      const registered = await registerOpenCodeCommands(
+        mock.context as never,
+        (status) => statuses.push(status),
+        viewer,
+        (event) => viewerEvents.push(event),
+      );
       await invoke(mock.commands.get("weave")!);
       expect(mock.output.at(-1)).toContain("Vault");
 
@@ -149,7 +157,15 @@ describe("OpenCode commands", () => {
 
       await invoke(mock.commands.get("weave-scan-cancel")!);
       expect(mock.output.at(-1)).toContain("no scan");
+
+      await invoke(mock.commands.get("weave-view")!, "bad");
+      expect(mock.output.at(-1)).toContain("usage:");
+      await invoke(mock.commands.get("weave-view")!, "--no-open");
+      expect(viewerEvents.at(-1)).toMatchObject({ open: false, started: true });
+      await invoke(mock.commands.get("weave-view")!);
+      expect(viewerEvents.at(-1)).toMatchObject({ open: true, started: false });
       await registered.cleanup();
+      await viewer.close();
     });
   });
 

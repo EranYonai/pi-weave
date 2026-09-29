@@ -3,6 +3,8 @@ import { fileURLToPath } from "node:url";
 import {
   executeNoteAction,
   executeRepoAction,
+  formatStatusLine,
+  getWorkspaceStatus,
   WEAVE_NOTE_DESCRIPTION,
   WEAVE_REPO_DESCRIPTION,
   type NoteActionInput,
@@ -10,6 +12,8 @@ import {
 } from "../core";
 import { parseFrontMatter, unquoteField } from "../core/frontmatter";
 import { registerOpenCodeCommands } from "./commands";
+import { WEAVE_RPC } from "./rpc";
+import { WorkspaceServerController } from "../web/server/controller";
 
 const noteInput = {
   type: "object",
@@ -85,9 +89,31 @@ const weave = {
     const skillRegistration = await context.skill.transform((editor) => {
       for (const skill of skills) editor.add(skill);
     });
-    const commands = await registerOpenCodeCommands(context);
+    const viewer = new WorkspaceServerController();
+    let status: { text: string; active: boolean; sessionID?: string; viewerUrl?: string } = {
+      text: formatStatusLine(await getWorkspaceStatus(context.location.directory)),
+      active: false,
+    };
+    const rpc = await context.rpc.register(WEAVE_RPC, {
+      status: async () => status,
+    });
+    const commands = await registerOpenCodeCommands(
+      context,
+      (next) => {
+        status = { ...status, ...next };
+        void rpc.events.emit("status", status).catch(() => {});
+      },
+      viewer,
+      (event) => {
+        status = { ...status, viewerUrl: event.url };
+        void rpc.events.emit("viewer", event).catch(() => {});
+        void rpc.events.emit("status", status).catch(() => {});
+      },
+    );
     return async () => {
       await commands.cleanup();
+      await viewer.close();
+      await rpc.dispose();
       await skillRegistration.dispose();
       await toolRegistration.dispose();
     };

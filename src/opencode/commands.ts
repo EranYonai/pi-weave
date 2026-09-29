@@ -20,6 +20,7 @@ import {
   type SessionDigest,
   type SummarizeFn,
 } from "../core";
+import type { WorkspaceServerController } from "../web/server/controller";
 
 type Context = import("@opencode/plugin").Plugin.Context;
 type SessionID = Parameters<Context["session"]["get"]>[0]["sessionID"];
@@ -164,6 +165,8 @@ function summarizer(
 export async function registerOpenCodeCommands(
   context: Context,
   onStatus: (status: OpenCodeScanStatus) => void = () => {},
+  viewer?: WorkspaceServerController,
+  onViewer: (event: { sessionID: string; url: string; open: boolean; started: boolean }) => void = () => {},
 ): Promise<OpenCodeCommands> {
   const running = new Map<string, RunningScan>();
   const registrations: Awaited<ReturnType<Context["command"]["transform"]>>[] = [];
@@ -306,6 +309,28 @@ export async function registerOpenCodeCommands(
         await output(sessionID, "pi-weave: scan cancellation requested.");
       },
     });
+
+    if (viewer) {
+      editor.add({
+        name: "weave-view",
+        description: "Open the pi-weave browser workspace; use --no-open to only print the URL",
+        async execute({ sessionID, prompt }) {
+          const args = prompt.text.trim();
+          if (args && args !== "--no-open") {
+            await output(sessionID, "usage: /weave-view [--no-open]");
+            return;
+          }
+          const { session, started } = await viewer.run(await cwdOf(sessionID));
+          const url = session.server.entryUrl;
+          const open = args !== "--no-open";
+          onViewer({ sessionID: String(sessionID), url, open, started });
+          await output(
+            sessionID,
+            `pi-weave: workspace ${started ? "running" : "already running"} at ${url}${open ? " — opening when the terminal is local." : " — open it in a browser."}`,
+          );
+        },
+      });
+    }
   }));
 
   return {
