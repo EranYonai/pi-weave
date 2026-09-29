@@ -53,14 +53,18 @@ pi-weave keeps track of where knowledge came from, while making the whole worksp
 
 **The conversation can end. The knowledge doesn't have to.**
 
-## Built on Pi
+## Install
 
-pi-weave is built as an extension for [Pi](https://github.com/earendil-works/pi).
+pi-weave supports [Pi](https://github.com/earendil-works/pi) and OpenCode V2 from the same package. Both adapters use the same vault,
+repository index, browser workspace, tools, and skills.
 
-I've grown to love Pi precisely because it is such a lightweight agent harness. It gives the model tools and context without trying to
-become the product itself, and its extensibility makes projects like pi-weave possible.
+OpenCode V2:
 
-Install pi-weave:
+```bash
+opencode plugin add pi-weave
+```
+
+Pi:
 
 ```bash
 pi install npm:pi-weave
@@ -75,7 +79,7 @@ pi install /path/to/pi-weave
 
 Requires Node **20.13 or newer**.
 
-Then just talk to Pi.
+Then just talk to your agent.
 
 ## Start taking notes
 
@@ -92,21 +96,21 @@ You: Add that the gateway team owns the migration plan.
 You: What open questions are in this note?
 ```
 
-For live narration or interview notes, tell Pi that you are dictating:
+For live narration or interview notes, tell your agent that you are dictating:
 
 ```text
 You: Start a note for this interview. I’m going to narrate; keep my words
      verbatim and organize the note as we go.
 ```
 
-For each chunk, Pi:
+For each chunk, the agent:
 
 1. appends your words unchanged to the note’s `## Raw` tail;
 2. refreshes the structured summary above it;
 3. leaves the raw record untouched.
 
 This makes the note readable during the conversation without replacing your words with an AI reconstruction. Notes based on your dictation
-remain marked `source: human`; notes drafted by Pi are marked `source: agent`.
+remain marked `source: human`; notes drafted by the agent are marked `source: agent`.
 
 Useful requests include:
 
@@ -141,7 +145,7 @@ Renaming or moving a note rewrites its inbound links automatically, so its backl
 ```bash
 /weave-view              # open the browser workspace
 /weave-view --no-open    # start it and print the URL
-/weave-view tui          # terminal UI for SSH or browser-free use
+/weave-view tui          # Pi only: terminal UI for SSH or browser-free use
 ```
 
 The browser workspace has four connected views:
@@ -163,17 +167,18 @@ last writer wins, and the workspace picks up outside changes within a couple of 
 
 `/weave-view tui` is the smaller, read-only terminal explorer: tree, focused neighborhood, details, and link health over the same graph.
 
-## Remember past pi sessions
+## Remember sessions
 
 ```bash
-/weave-scan sessions                    # pi history (default)
+/weave-scan sessions                    # Pi history, or the current OpenCode session
 /weave-scan sessions /path/to/history   # explicit history root
 ```
 
 This opt-in scan treats a supplied file—or every bounded text file under a supplied directory—as opaque session material for the active
-model to interpret, then writes generated notes under `~/.okf/notes/sessions/`. That makes it usable with Claude Code, opencode, Codex, or
-exported history trees without requiring their schema or file extension. It skips unchanged files, captures outcomes plus reusable technical
-takeaways, works outside Git repositories, and can be stopped with `/weave-scan-cancel`.
+model to interpret, then writes generated notes under `~/.okf/notes/sessions/`. In OpenCode, the pathless form reads the current session
+through the public plugin API; it never inspects OpenCode's internal database. That makes explicit paths usable with Claude Code, OpenCode,
+Codex, or exported history trees without requiring their schema or file extension. It skips unchanged files, captures outcomes plus reusable
+technical takeaways, works outside Git repositories, and can be stopped with `/weave-scan-cancel`.
 
 ## Repository knowledge
 
@@ -196,7 +201,7 @@ Most people only need natural language and `/weave-view`.
 
 | Surface | Name | Purpose |
 |---|---|---|
-| Command | `/weave-view` | Open the browser or terminal workspace |
+| Command | `/weave-view` | Open the browser workspace (`tui` is a Pi-only argument) |
 | Command | `/weave` | Show vault and repository status |
 | Command | `/weave-scan` | Build or refresh the repository index |
 | Command | `/weave-scan deep` | Add incremental model-written file summaries |
@@ -205,7 +210,7 @@ Most people only need natural language and `/weave-view`.
 | Tool | `weave_note` | List, read, add, append, finalize, and search notes |
 | Tool | `weave_repo` | Check, scan, and summarize the repository index |
 
-The included `weave-notepad` and `weave-explore` skills teach Pi when and how to use these tools.
+The included `weave-notepad` and `weave-explore` skills teach Pi and OpenCode when and how to use these tools.
 
 ## Files, privacy, and portability
 
@@ -246,10 +251,11 @@ We probably want OIDC next quarter…
 Set `PI_WEAVE_VAULT` to use a different vault location.
 
 Reading, writing, searching, and viewing notes are local operations. Deep repository scans and session summaries send bounded input to
-whichever model you configured in pi. The browser workspace binds only to loopback, uses a per-session token, and shuts down with the pi
-session.
+whichever model is selected in the active Pi or OpenCode session. The browser workspace binds only to loopback, uses a per-session token,
+and shuts down with the plugin lifecycle. OpenCode opens it automatically only when its server filesystem is local; remote sessions print
+the URL for a tunnel or browser on the server host.
 
-The vault format, repository index, and skills are intentionally harness-agnostic. `src/core` contains no pi-specific imports.
+The vault format, repository index, and skills are intentionally harness-agnostic. `src/core` contains no Pi- or OpenCode-specific imports.
 
 ## Development
 
@@ -265,6 +271,7 @@ npm run typecheck
 npm test
 npm run coverage
 npm run build:web
+npm run smoke:opencode
 ```
 
 Coverage must remain at or above **95%** for lines, branches, functions, and statements. If browser source changes, rebuild and commit

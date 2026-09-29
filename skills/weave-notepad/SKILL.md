@@ -22,9 +22,9 @@ In Pi or OpenCode, use the `weave_note` tool. In other harnesses (or when the to
 
 ## Raw Tail Format
 
-With Pi or OpenCode you rarely format this by hand: `weave_note` append with `raw: true` appends a dated fenced block into the tail (and creates the whole
-tail — separator, heading, notice — when the note has none). The format below is what that produces, and what to write when editing files
-directly or working in other harnesses.
+With Pi or OpenCode you rarely format this by hand: `weave_note` append with `raw: true` appends a dated fenced block into the tail (and
+creates the whole tail — separator, heading, notice — when the note has none). The format below is what that produces, and what to write
+when editing files directly or working in other harnesses.
 
 Every note maintains a verbatim, append-only raw section at the bottom separated by a horizontal rule (`---`):
 
