@@ -50,7 +50,7 @@ function mockContext(cwd: string) {
     },
     session: {
       async get() { return session; },
-      async context() { return messages; },
+      async context(_input?: unknown, _options?: { signal?: AbortSignal }) { return messages; },
       async synthetic(input: { text: string }) { output.push(input.text); },
       async generate(input: { prompt: string }, _options?: { signal?: AbortSignal }) {
         generated.push(input.prompt);
@@ -107,6 +107,26 @@ describe("OpenCode commands", () => {
       lastAssistantText: "answer",
       compactions: ["compact"],
     });
+  });
+
+  it("tolerates sparse and long public session records", () => {
+    const messages: Record<string, unknown>[] = Array.from({ length: 61 }, (_, index) => ({
+      type: "user",
+      text: index === 0 ? "x".repeat(500) : index === 1 ? 42 : `message ${index}`,
+    }));
+    messages.push(
+      ...Array.from({ length: 4 }, (_, index) => ({ type: "compaction", summary: index === 0 ? null : `summary ${index}` })),
+      { type: "assistant", model: {}, content: "not-an-array" },
+      { type: "assistant", model: { providerID: "p", id: "m" }, content: [{ type: "tool", state: {} }] },
+      { type: "assistant", model: { providerID: "p", id: "m" }, content: [] },
+    );
+    const result = openCodeSessionDigest(null, messages);
+    expect(result.id).toBe("");
+    expect(result.startedAt).toBe("");
+    expect(result.userMessages).toHaveLength(60);
+    expect(result.compactions).toEqual(["summary 1", "summary 2", "summary 3"]);
+    expect(result.models).toEqual(["p/m"]);
+    expect(result.tools.unknown).toBe(1);
   });
 
   it("runs dashboard, shallow/deep, and current-session scans", async () => {
@@ -214,6 +234,38 @@ describe("OpenCode commands", () => {
     expect(mock.output.at(-1)).toContain("needs an active session model");
     await invoke(mock.commands.get("weave-scan")!, "sessions");
     expect(mock.output.at(-1)).toContain("needs an active session model");
+
+    mock.session.model = { providerID: "test", id: "model" };
+    mock.context.session.context = async () => { throw new Error("public context unavailable"); };
+    await invoke(mock.commands.get("weave-scan")!, "sessions");
+    await registered.done("session-1");
+    expect(mock.output.at(-1)).toContain("scan failed — public context unavailable");
+
+    mock.context.session.context = async () => { throw "context offline"; };
+    await invoke(mock.commands.get("weave-scan")!, "sessions");
+    await registered.done("session-1");
+    expect(mock.output.at(-1)).toContain("scan failed — context offline");
+
+    mock.context.session.context = async (_input?: unknown, options?: { signal?: AbortSignal }) =>
+      new Promise((_resolve, reject) => options?.signal?.addEventListener("abort", () => reject(new Error("aborted"))));
+    await invoke(mock.commands.get("weave-scan")!, "sessions");
+    await invoke(mock.commands.get("weave-scan-cancel")!);
+    await registered.done("session-1");
+    expect(mock.output.at(-1)).toContain("cancelled");
     await registered.cleanup();
+  });
+
+  it("scans with an active model even when its provenance label is unavailable", async () => {
+    const cwd = await makeTempDir();
+    const vault = await makeTempDir();
+    const mock = mockContext(cwd);
+    mock.session.model = { providerID: 1, id: "model" } as never;
+    await withVaultEnv(vault, async () => {
+      const registered = await registerOpenCodeCommands(mock.context as never);
+      await invoke(mock.commands.get("weave-scan")!, "sessions");
+      await registered.done("session-1");
+      expect(mock.output.at(-1)).toContain("session scan complete");
+      await registered.cleanup();
+    });
   });
 });

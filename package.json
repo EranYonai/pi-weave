@@ -1,7 +1,7 @@
 {
   "name": "pi-weave",
   "version": "0.2.0",
-  "description": "Local-first Markdown memory and knowledge graph for Pi: preserve decisions, recall across sessions, and explore notes with code.",
+  "description": "Local-first Markdown memory and knowledge graph for Pi and OpenCode: preserve decisions, recall sessions, and explore notes with code.",
   "type": "module",
   "sideEffects": false,
   "publishConfig": {
@@ -10,6 +10,7 @@
   "keywords": [
     "pi-package",
     "pi-coding-agent",
+    "opencode-plugin",
     "agent-memory",
     "persistent-memory",
     "markdown",
@@ -59,6 +60,7 @@
     "build:web": "node scripts/build-web.mjs",
     "build:web:check": "node scripts/build-web.mjs --check",
     "check": "npm run typecheck && npm run build:web:check && npm run coverage",
+    "smoke:opencode": "node scripts/smoke-opencode-package.mjs",
     "eval:notepad": "node scripts/eval-notepad-search.mjs",
     "rewrap:md": "node scripts/rewrap-md.mjs",
     "rewrap:md:check": "node scripts/rewrap-md.mjs --check",
