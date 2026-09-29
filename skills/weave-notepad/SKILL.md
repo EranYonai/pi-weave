@@ -10,7 +10,7 @@ The pi-weave vault is the user's long-term memory: plain Markdown notes with fro
 
 ## Tools
 
-In pi, use the `weave_note` tool. In other harnesses (or when the tool is not available), operate on the files directly:
+In Pi or OpenCode, use the `weave_note` tool. In other harnesses (or when the tool is not available), operate on the files directly:
 
 - **Notes** live at `~/.okf/notes/<slug>.md` (vault root overridable via `PI_WEAVE_VAULT`).
 - Each note has YAML front matter: `title`, `created`, `updated` (ISO-8601), `tags: [..]`, and `source: human | agent | generated`.
@@ -18,11 +18,11 @@ In pi, use the `weave_note` tool. In other harnesses (or when the tool is not av
   preserves the tail verbatim — a body with no tail yet is preserved **in full** as a newly created tail, so finalization never destroys
   dictation.
 - **Dictation appends**: use `append` with `raw: true` — the tool appends the text verbatim into the `## Raw` tail as a dated fenced block,
-  creating the tail if the note has none. In pi, never hand-format the raw tail; the tool maintains it.
+  creating the tail if the note has none. When the tool is available, never hand-format the raw tail; the tool maintains it.
 
 ## Raw Tail Format
 
-In pi you rarely format this by hand: `weave_note` append with `raw: true` appends a dated fenced block into the tail (and creates the whole
+With Pi or OpenCode you rarely format this by hand: `weave_note` append with `raw: true` appends a dated fenced block into the tail (and creates the whole
 tail — separator, heading, notice — when the note has none). The format below is what that produces, and what to write when editing files
 directly or working in other harnesses.
 

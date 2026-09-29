@@ -85,6 +85,18 @@ export { withMutationQueue } from "./mutex";
 export { formatDashboard, formatStatusLine, getWorkspaceStatus } from "./workspace";
 export { WorkspaceCache } from "./cache/workspace";
 export {
+  executeNoteAction,
+  WEAVE_NOTE_DESCRIPTION,
+  type NoteActionInput,
+  type NoteActionResult,
+} from "./noteAction";
+export {
+  executeRepoAction,
+  WEAVE_REPO_DESCRIPTION,
+  type RepoActionInput,
+  type RepoActionResult,
+} from "./repoAction";
+export {
   buildCurrentGraph,
   readNoteForView,
   readOkfFileForView,
