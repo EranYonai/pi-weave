@@ -9,6 +9,7 @@ import {
   type RepoActionInput,
 } from "../core";
 import { parseFrontMatter, unquoteField } from "../core/frontmatter";
+import { registerOpenCodeCommands } from "./commands";
 
 const noteInput = {
   type: "object",
@@ -55,7 +56,7 @@ async function packagedSkill(relativePath: string): Promise<import("@opencode/pl
 const weave = {
   id: "pi-weave",
   async setup(context) {
-    context.tool.transform((editor) => {
+    const toolRegistration = await context.tool.transform((editor) => {
       editor.add({
         name: "weave_note",
         description: WEAVE_NOTE_DESCRIPTION,
@@ -81,9 +82,15 @@ const weave = {
     });
 
     const skills = await Promise.all([packagedSkill("weave-notepad"), packagedSkill("weave-explore")]);
-    context.skill.transform((editor) => {
+    const skillRegistration = await context.skill.transform((editor) => {
       for (const skill of skills) editor.add(skill);
     });
+    const commands = await registerOpenCodeCommands(context);
+    return async () => {
+      await commands.cleanup();
+      await skillRegistration.dispose();
+      await toolRegistration.dispose();
+    };
   },
 } satisfies import("@opencode/plugin").Plugin.Plugin;
 

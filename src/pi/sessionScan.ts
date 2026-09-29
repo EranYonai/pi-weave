@@ -14,20 +14,13 @@ import {
   resolveSessionsRoot,
   resolveVaultRoot,
   runSessionScan,
+  SESSION_SCAN_SYSTEM_PROMPT,
+  formatSessionScanResult,
   type SessionScanOptions,
   type SessionScanResult,
   type SummarizeFn,
 } from "../core";
 import { createModelSummarizer, type SummarizerDeps } from "./summarize";
-
-const SESSION_SYSTEM_PROMPT = [
-  "You write durable memory notes that compact coding-agent sessions into their bottom line.",
-  "First summarize what happened, what shipped (features, files, commands, decisions), and",
-  "what went less well (dead ends, breakage, unfinished work) using concrete technical details.",
-  "Then add a '## Takeaways' section with 2–4 reusable lessons: gotchas, root causes of tricky",
-  "failures, non-obvious syntax rules, or architecture patterns a future agent can apply.",
-  "Past tense. No preamble or code fences. Omit lessons unsupported by the transcript.",
-].join("\n");
 
 const SESSION_MAX_OUTPUT_TOKENS = 3_000;
 
@@ -36,7 +29,7 @@ export function createSessionSummarizer(
   ctx: Pick<ExtensionContext, "model" | "modelRegistry">,
   deps: SummarizerDeps = {},
 ): { summarize: SummarizeFn; label: string } | null {
-  return createModelSummarizer(ctx, SESSION_SYSTEM_PROMPT, SESSION_MAX_OUTPUT_TOKENS, deps);
+  return createModelSummarizer(ctx, SESSION_SCAN_SYSTEM_PROMPT, SESSION_MAX_OUTPUT_TOKENS, deps);
 }
 
 export type SessionScanOutcome =
@@ -85,21 +78,4 @@ export async function scanPiSessions(
   return { kind: "ok", result };
 }
 
-/** One-line human summary of a session-scan result (for notify output). */
-export function formatSessionScanResult(result: SessionScanResult): string {
-  const parts = [
-    `${result.written} summarized (${result.created} new, ${result.updated} updated)`,
-    `${result.skippedFresh} unchanged`,
-  ];
-  if (result.skippedEmpty > 0) parts.push(`${result.skippedEmpty} empty`);
-  if (result.skippedTooBig > 0) parts.push(`${result.skippedTooBig} skipped (size)`);
-  if (result.skippedUnreadable > 0) parts.push(`${result.skippedUnreadable} unreadable`);
-  let text = `${parts.join(", ")} — ${result.considered} sessions considered`;
-  if (result.failed.length > 0) {
-    const [failed0] = result.failed;
-    if (failed0) {
-      text += `; ${result.failed.length} failed, first: ${failed0.path}: ${failed0.error}`;
-    }
-  }
-  return text;
-}
+export { formatSessionScanResult };

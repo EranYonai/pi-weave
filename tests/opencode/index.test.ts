@@ -20,25 +20,37 @@ describe("OpenCode plugin", () => {
 
     const tools = new Map<string, RegisteredTool>();
     const skills = new Map<string, { id: string; path: string; content: string }>();
+    const commands = new Map<string, unknown>();
+    const registration = { dispose: async () => {} };
     const context = {
       location: { directory: cwd },
       tool: {
         transform(transform: (editor: { add(tool: RegisteredTool): void }) => void) {
           transform({ add: (tool) => tools.set(tool.name, tool) });
+          return registration;
         },
       },
       skill: {
         transform(transform: (editor: { add(skill: { id: string; path: string; content: string }): void }) => void) {
           transform({ add: (skill) => skills.set(skill.id, skill) });
+          return registration;
         },
       },
+      command: {
+        transform(transform: (editor: { add(command: { name: string }): void }) => void) {
+          transform({ add: (command) => commands.set(command.name, command) });
+          return registration;
+        },
+      },
+      session: {},
     };
 
     await withVaultEnv(vault, async () => {
-      await weave.setup(context as never);
+      const cleanup = await weave.setup(context as never);
 
       expect([...tools.keys()].sort()).toEqual(["weave_note", "weave_repo"]);
       expect([...skills.keys()].sort()).toEqual(["weave-explore", "weave-notepad"]);
+      expect([...commands.keys()].sort()).toEqual(["weave", "weave-scan", "weave-scan-cancel"]);
       expect(skills.get("weave-notepad")?.path).toMatch(/skills\/weave-notepad\/SKILL\.md$/);
       expect(skills.get("weave-notepad")?.content).toContain("# Weave Notepad");
 
@@ -53,6 +65,7 @@ describe("OpenCode plugin", () => {
       const repo = await tools.get("weave_repo")!.execute({ action: "status" }, toolContext);
       expect(repo.content).toMatch(/^Repository .*piweave-test-/);
       expect(repo.metadata?.inRepo).toBe(true);
+      await cleanup?.();
     });
   });
 });

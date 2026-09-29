@@ -17,7 +17,14 @@ import {
   type Model,
 } from "@earendil-works/pi-ai";
 import type { ExtensionContext } from "@earendil-works/pi-coding-agent";
-import { runDeepScan, type DeepScanOptions, type DeepScanResult, type SummarizeFn } from "../core";
+import {
+  DEEP_SCAN_SYSTEM_PROMPT,
+  formatDeepScanResult,
+  runDeepScan,
+  type DeepScanOptions,
+  type DeepScanResult,
+  type SummarizeFn,
+} from "../core";
 
 export type CompleteFn = (
   model: Model<Api>,
@@ -34,12 +41,6 @@ export interface LlmSummarizer {
   /** Provenance label recorded in sidecar front matter (e.g. "ollama/kimi-k3:cloud"). */
   label: string;
 }
-
-const SYSTEM_PROMPT = [
-  "You write terse, navigation-oriented summaries of source files for a codebase index.",
-  "Rules: 1–3 sentences. What the file does, its outward surface (exports/routes/commands),",
-  "anything surprising (globals, side effects, generated sections). No preamble, no headings, no code fences.",
-].join("\n");
 
 const MAX_OUTPUT_TOKENS = 220;
 const REQUEST_TIMEOUT_MS = 30_000;
@@ -138,7 +139,7 @@ export function createLlmSummarizer(
   ctx: Pick<ExtensionContext, "model" | "modelRegistry">,
   deps: SummarizerDeps = {},
 ): LlmSummarizer | null {
-  return createModelSummarizer(ctx, SYSTEM_PROMPT, MAX_OUTPUT_TOKENS, deps);
+  return createModelSummarizer(ctx, DEEP_SCAN_SYSTEM_PROMPT, MAX_OUTPUT_TOKENS, deps);
 }
 
 export type DeepScanOutcome =
@@ -178,20 +179,4 @@ export async function deepScanRepository(
   return { kind: "ok", result };
 }
 
-/** One-line human summary of a deep-scan result (for notify output). */
-export function formatDeepScanResult(result: DeepScanResult): string {
-  const parts = [
-    `${result.written} summarized`,
-    `${result.skippedFresh} unchanged`,
-  ];
-  if (result.skippedTooBig > 0) parts.push(`${result.skippedTooBig} skipped (size/type)`);
-  if (result.pruned > 0) parts.push(`${result.pruned} pruned`);
-  let text = `${parts.join(", ")} — ${result.considered} files considered`;
-  if (result.failed.length > 0) {
-    const [failed0] = result.failed;
-    if (failed0) {
-      text += `; ${result.failed.length} failed, first: ${failed0.path}: ${failed0.error}`;
-    }
-  }
-  return text;
-}
+export { formatDeepScanResult };

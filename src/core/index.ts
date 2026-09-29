@@ -13,11 +13,20 @@ export {
   summarizeIndex,
   writeRepoIndex,
 } from "./repoIndex";
-export { runDeepScan, type DeepScanOptions, type DeepScanResult, type SummarizeFn } from "./summaries";
+export {
+  DEEP_SCAN_SYSTEM_PROMPT,
+  formatDeepScanResult,
+  hashContent,
+  runDeepScan,
+  type DeepScanOptions,
+  type DeepScanResult,
+  type SummarizeFn,
+} from "./summaries";
 export {
   DEFAULT_SESSIONS_ROOT,
   SESSIONS_ENV_VAR,
   deriveSessionTitle,
+  formatSessionScanResult,
   listSessionFiles,
   migrateLegacySessionNotes,
   parseSessionDigest,
@@ -27,6 +36,8 @@ export {
   renderSessionDigest,
   resolveSessionsRoot,
   runSessionScan,
+  runSessionDigestScan,
+  SESSION_SCAN_SYSTEM_PROMPT,
   sessionHasContent,
   sessionNoteBody,
   sessionNoteFields,
@@ -34,6 +45,7 @@ export {
   writeSessionNote,
   type SessionChain,
   type SessionDigest,
+  type SessionDigestScanOptions,
   type SessionScanOptions,
   type SessionScanResult,
 } from "./sessions";
