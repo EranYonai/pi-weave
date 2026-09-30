@@ -1,5 +1,4 @@
 import { execFile } from "node:child_process";
-import { access } from "node:fs/promises";
 import { browserOpenCommand } from "../web/server/controller";
 import { WEAVE_RPC } from "./rpc";
 
@@ -7,10 +6,13 @@ function record(value: unknown): Record<string, unknown> {
   return value !== null && typeof value === "object" ? value as Record<string, unknown> : {};
 }
 
-export async function serverIsLocal(info: { paths: { tmp: string } }): Promise<boolean> {
+export async function viewerIsLocal(url: string, request: typeof fetch = fetch): Promise<boolean> {
   try {
-    await access(info.paths.tmp);
-    return true;
+    const target = new URL(url);
+    if (target.protocol !== "http:" || !["127.0.0.1", "::1", "localhost"].includes(target.hostname)) return false;
+    const response = await request(target, { signal: AbortSignal.timeout(1_000) });
+    await response.body?.cancel().catch(() => undefined);
+    return response.ok;
   } catch {
     return false;
   }
@@ -63,8 +65,7 @@ const weaveTui = {
       if (typeof data.url !== "string") return;
       let opened = false;
       if (data.open === true) {
-        const info = await context.client.server.info();
-        if (await serverIsLocal(info)) opened = await openBrowser(data.url);
+        if (await viewerIsLocal(data.url)) opened = await openBrowser(data.url);
       }
       context.ui.toast.show({
         title: "pi-weave",

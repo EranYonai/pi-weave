@@ -184,6 +184,11 @@ describe("OpenCode commands", () => {
       expect(viewerEvents.at(-1)).toMatchObject({ open: false, started: true });
       await invoke(mock.commands.get("weave-view")!);
       expect(viewerEvents.at(-1)).toMatchObject({ open: true, started: false });
+      const firstUrl = viewerEvents.at(-1)!.url;
+      mock.session.location.directory = await makeTempDir();
+      await invoke(mock.commands.get("weave-view")!, "--no-open");
+      expect(viewerEvents.at(-1)).toMatchObject({ open: false, started: true });
+      expect(viewerEvents.at(-1)!.url).not.toBe(firstUrl);
       await registered.cleanup();
       await viewer.close();
     });

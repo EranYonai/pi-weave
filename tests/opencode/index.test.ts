@@ -4,7 +4,7 @@ import { commitAll, gitInit, makeTempDir, withVaultEnv, writeFixture } from "../
 
 interface RegisteredTool {
   name: string;
-  execute(input: unknown, context: { progress(update: Record<string, unknown>): Promise<void> }): Promise<{
+  execute(input: unknown, context: { sessionID: string; progress(update: Record<string, unknown>): Promise<void> }): Promise<{
     content?: string;
     metadata?: Record<string, unknown>;
   }>;
@@ -13,10 +13,14 @@ interface RegisteredTool {
 describe("OpenCode plugin", () => {
   it("registers shared tools and packaged skills", async () => {
     const cwd = await makeTempDir();
+    const sessionCwd = await makeTempDir();
     const vault = await makeTempDir();
     gitInit(cwd);
     await writeFixture(cwd, "README.md", "# fixture\n");
     commitAll(cwd);
+    gitInit(sessionCwd);
+    await writeFixture(sessionCwd, "README.md", "# invoking session\n");
+    commitAll(sessionCwd);
 
     const tools = new Map<string, RegisteredTool>();
     const skills = new Map<string, { id: string; path: string; content: string }>();
@@ -47,7 +51,9 @@ describe("OpenCode plugin", () => {
           return { dispose: async () => {}, events: { emit: async () => {} } };
         },
       },
-      session: {},
+      session: {
+        async get() { return { location: { directory: sessionCwd } }; },
+      },
     };
 
     await withVaultEnv(vault, async () => {
@@ -59,7 +65,7 @@ describe("OpenCode plugin", () => {
       expect(skills.get("weave-notepad")?.path).toMatch(/skills\/weave-notepad\/SKILL\.md$/);
       expect(skills.get("weave-notepad")?.content).toContain("# Weave Notepad");
 
-      const toolContext = { progress: async () => {} };
+      const toolContext = { sessionID: "session-1", progress: async () => {} };
       const added = await tools.get("weave_note")!.execute(
         { action: "add", title: "OpenCode", text: "Shared core." },
         toolContext,
@@ -68,7 +74,7 @@ describe("OpenCode plugin", () => {
       expect(added.metadata?.action).toBe("add");
 
       const repo = await tools.get("weave_repo")!.execute({ action: "status" }, toolContext);
-      expect(repo.content).toMatch(/^Repository .*piweave-test-/);
+      expect(repo.content).toContain(sessionCwd);
       expect(repo.metadata?.inRepo).toBe(true);
       await cleanup?.();
     });

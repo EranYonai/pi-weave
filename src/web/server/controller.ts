@@ -11,6 +11,7 @@ export type StartServerFn = (opts: StartWorkspaceServerOptions) => Promise<Works
 export interface WorkspaceServerSession {
   server: WorkspaceServer;
   cache: WorkspaceCache;
+  cwd: string;
 }
 
 export interface WorkspaceServerControllerDeps {
@@ -31,8 +32,11 @@ export class WorkspaceServerController {
   }
 
   async run(cwd: string): Promise<{ session: WorkspaceServerSession; started: boolean }> {
+    if (this.booting) await this.booting.catch(() => undefined);
     const existing = this.session;
-    return { session: existing ?? await this.boot(cwd), started: existing === null };
+    if (existing?.cwd === cwd) return { session: existing, started: false };
+    if (existing) await this.close();
+    return { session: await this.boot(cwd), started: true };
   }
 
   async close(): Promise<void> {
@@ -45,7 +49,6 @@ export class WorkspaceServerController {
   }
 
   private async boot(cwd: string): Promise<WorkspaceServerSession> {
-    if (this.booting) return this.booting;
     this.booting = this.bootOnce(cwd);
     try {
       this.session = await this.booting;
@@ -60,7 +63,7 @@ export class WorkspaceServerController {
     const vaultRoot = (this.deps.vaultRoot ?? resolveVaultRoot)();
     const cache = new WorkspaceCache({ cwd, vaultRoot });
     const server = await (this.deps.startServer ?? startWorkspaceServer)({ cwd, vaultRoot, cache });
-    return { server, cache };
+    return { server, cache, cwd };
   }
 }
 

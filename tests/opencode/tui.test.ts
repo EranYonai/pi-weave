@@ -1,20 +1,30 @@
 import { execFile } from "node:child_process";
-import { describe, expect, it, vi } from "vitest";
-import weaveTui, { serverIsLocal } from "../../src/opencode/tui";
-import { makeTempDir } from "../helpers";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import weaveTui, { viewerIsLocal } from "../../src/opencode/tui";
 
 vi.mock("node:child_process", () => ({
   execFile: vi.fn((_command: string, _args: string[], callback: (error: Error | null) => void) => callback(null)),
 }));
 
 describe("OpenCode terminal companion", () => {
-  it("detects whether the server filesystem is local", async () => {
-    expect(await serverIsLocal({ paths: { tmp: await makeTempDir() } })).toBe(true);
-    expect(await serverIsLocal({ paths: { tmp: "/definitely/not/a/local/opencode/server" } })).toBe(false);
+  beforeEach(() => {
+    vi.stubGlobal("fetch", vi.fn(async () => new Response("ok")));
+  });
+
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
+  it("opens only a reachable loopback viewer", async () => {
+    const reachable = vi.fn(async () => new Response("ok"));
+    const unreachable = vi.fn(async () => { throw new Error("offline"); });
+    expect(await viewerIsLocal("http://127.0.0.1:1234/?t=token", reachable)).toBe(true);
+    expect(await viewerIsLocal("http://127.0.0.1:1234/?t=token", unreachable)).toBe(false);
+    expect(await viewerIsLocal("https://example.com/?t=token", reachable)).toBe(false);
+    expect(reachable).toHaveBeenCalledTimes(1);
   });
 
   it("renders status, surfaces completion, and opens local viewer events", async () => {
-    const tmp = await makeTempDir();
     const handlers = new Map<string, (event: { data: Record<string, unknown> }) => void | Promise<void>>();
     const toasts: { message: string; variant?: string }[] = [];
     const slots: { render(): unknown }[] = [];
@@ -31,7 +41,6 @@ describe("OpenCode terminal companion", () => {
     const context = {
       client: {
         rpc: () => rpc,
-        server: { info: async () => ({ paths: { tmp } }) },
       },
       storage: {
         memory: () => [state, (mutate: (draft: typeof state) => void) => mutate(state)],
@@ -63,6 +72,7 @@ describe("OpenCode terminal companion", () => {
   });
 
   it("prints the URL instead of opening when the server is remote or --no-open was used", async () => {
+    vi.stubGlobal("fetch", vi.fn(async () => { throw new Error("remote loopback"); }));
     const handlers = new Map<string, (event: { data: Record<string, unknown> }) => void | Promise<void>>();
     const toasts: { message: string }[] = [];
     const rpc = {
@@ -77,7 +87,6 @@ describe("OpenCode terminal companion", () => {
     const context = {
       client: {
         rpc: () => rpc,
-        server: { info: async () => ({ paths: { tmp: "/not/local" } }) },
       },
       storage: { memory: () => [{ text: "", active: false }, () => {}] },
       ui: {

@@ -75,9 +75,10 @@ const weave = {
         description: WEAVE_REPO_DESCRIPTION,
         input: repoInput,
         async execute(input, toolContext) {
+          const session = await context.session.get({ sessionID: toolContext.sessionID });
           const result = await executeRepoAction(
             input as RepoActionInput,
-            context.location.directory,
+            session.location.directory,
             (status) => toolContext.progress({ status }),
           );
           return { content: result.text, metadata: result.details };
