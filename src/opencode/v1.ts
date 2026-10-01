@@ -137,11 +137,13 @@ export const server: Plugin = async ({ client }) => {
       try {
         // V1 cannot suppress the normal model reply after this hook.
         await command.execute(input.sessionID, input.arguments);
-        output.parts = output.parts.map((part) => part.type === "text" ? {
-          ...part,
-          text: `Report this pi-weave result without running tools:\n${lines.join("\n") || "Scan started; completion will be reported separately."}`,
-          synthetic: true, metadata: { "pi-weave": true },
-        } : part);
+        // V1 retains the original parts array after this hook; mutate it in place.
+        for (const part of output.parts) {
+          if (part.type !== "text") continue;
+          part.text = `Report this pi-weave result without running tools:\n${lines.join("\n") || "Scan started; completion will be reported separately."}`;
+          part.synthetic = true;
+          part.metadata = { "pi-weave": true };
+        }
       } finally {
         collected.delete(input.sessionID);
       }

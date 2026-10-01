@@ -45,11 +45,13 @@ try {
   execFileSync("git", ["add", "."], { cwd: pluginRepo });
   execFileSync("git", ["-c", "user.name=Smoke", "-c", "user.email=smoke@example.invalid", "commit", "-qm", "packed package"], { cwd: pluginRepo });
   // A local deterministic model exercises host execution without accounts or API spend.
+  const prompts = [];
   const model = createServer(async (request, response) => {
     let body = "";
     for await (const chunk of request) body += chunk;
     const input = JSON.parse(body);
     const last = input.messages.at(-1);
+    prompts.push(JSON.stringify(last.content));
     const calls = input.tools?.length && last.role === "user" && JSON.stringify(last.content).includes("WEAVE_SMOKE_TOOLS") && !JSON.stringify(last.content).includes("File:")
       ? [
         { index: 0, id: "call_note", type: "function", function: { name: "weave_note", arguments: JSON.stringify({ action: "add", title: "Smoke memory", text: "Shared tools work." }) } },
@@ -168,13 +170,24 @@ try {
         }
         const note = await readFile(join(env.PI_WEAVE_VAULT, "notes", "smoke-memory.md"), "utf8");
         if (!note.includes("Shared tools work.")) throw new Error(`${version} tool did not write note`);
-        for (const [command, args] of [["weave", ""], ["weave-scan", "deep"], ["weave-scan", "sessions"], ["weave-view", "--no-open"]]) {
+        for (const [command, args, expectedResult] of [
+          ["weave", "", "Vault"],
+          ["weave-scan", "", "index refreshed"],
+          ["weave-scan-cancel", "", "no scan is currently running"],
+          ["weave-scan", "deep", "index refreshed"],
+          ["weave-scan", "sessions", "Scan started"],
+          ["weave-view", "--no-open", "http://127.0.0.1:"],
+        ]) {
+          const promptOffset = prompts.length;
           if (client) await client.session.command({ sessionID: session.id, name: command, text: args });
           else {
             const result = await request(`/session/${session.id}/command`, { method: "POST", body: JSON.stringify({ command, arguments: args }) });
             if (result.info.error) throw new Error(JSON.stringify(result.info.error));
+            if (!prompts.slice(promptOffset).some((text) => text.includes("Report this pi-weave result") && text.includes(expectedResult))) {
+              throw new Error(`V1 /${command} ${args}: command result never reached the model`);
+            }
           }
-          if (command === "weave-scan") {
+          if (command === "weave-scan" && args) {
             const expected = args === "deep" ? "deep scan complete" : "session scan complete";
             let complete = false;
             for (let attempt = 0; attempt < 100; attempt++) {

@@ -27,9 +27,11 @@ function host(cwd: string) {
 }
 
 async function invoke(hooks: Hooks, command: string, args = "") {
-  const output = { parts: [{ type: "text", text: "template" }, { type: "file", url: "unchanged" }] };
-  await hooks["command.execute.before"]!({ command, sessionID: "s1", arguments: args }, output as never);
-  return output.parts[0]!.text!;
+  // V1 passes a wrapper to the hook, then sends the original array to the model.
+  const parts = [{ type: "text", text: "template" }, { type: "file", url: "unchanged" }];
+  await hooks["command.execute.before"]!({ command, sessionID: "s1", arguments: args }, { parts } as never);
+  expect(parts[1]).toEqual({ type: "file", url: "unchanged" });
+  return parts[0]!.text!;
 }
 
 async function fixture() {
