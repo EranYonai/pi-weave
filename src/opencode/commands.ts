@@ -270,6 +270,7 @@ export async function registerOpenCodeCommands(
         }
         await writeRepoIndex(root, index);
         await output(sessionID, `pi-weave: index refreshed\n${summarizeIndex(index).join("\n")}`);
+        onStatus({ sessionID: key, text: "pi-weave: index refreshed", active: false });
         if (mode.toLowerCase() !== "deep") return;
 
         const session = await context.session.get({ sessionID });

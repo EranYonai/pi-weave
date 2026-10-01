@@ -1,6 +1,10 @@
 import { execFile } from "node:child_process";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import weaveTui, { viewerIsLocal } from "../../src/opencode/tui";
+import { WorkspaceServerController } from "../../src/web/server/controller";
+import { makeTempDir } from "../helpers";
+
+const realFetch = globalThis.fetch;
 
 vi.mock("node:child_process", () => ({
   execFile: vi.fn((_command: string, _args: string[], callback: (error: Error | null) => void) => callback(null)),
@@ -8,7 +12,7 @@ vi.mock("node:child_process", () => ({
 
 describe("OpenCode terminal companion", () => {
   beforeEach(() => {
-    vi.stubGlobal("fetch", vi.fn(async () => new Response("ok")));
+    vi.stubGlobal("fetch", vi.fn(async () => new Response(null, { status: 302, headers: { "set-cookie": "session=token" } })));
   });
 
   afterEach(() => {
@@ -16,12 +20,25 @@ describe("OpenCode terminal companion", () => {
   });
 
   it("opens only a reachable loopback viewer", async () => {
-    const reachable = vi.fn(async () => new Response("ok"));
+    const reachable = vi.fn(async () => new Response(null, { status: 302, headers: { "set-cookie": "session=token" } }));
     const unreachable = vi.fn(async () => { throw new Error("offline"); });
     expect(await viewerIsLocal("http://127.0.0.1:1234/?t=token", reachable)).toBe(true);
     expect(await viewerIsLocal("http://127.0.0.1:1234/?t=token", unreachable)).toBe(false);
     expect(await viewerIsLocal("https://example.com/?t=token", reachable)).toBe(false);
+    expect(await viewerIsLocal("http://127.0.0.1:1234/?t=token", async () => new Response("forbidden", { status: 403 }))).toBe(false);
     expect(reachable).toHaveBeenCalledTimes(1);
+    expect(reachable).toHaveBeenCalledWith(expect.any(URL), expect.objectContaining({ redirect: "manual" }));
+  });
+
+  it("recognizes the real viewer token handoff", async () => {
+    const vault = await makeTempDir();
+    const controller = new WorkspaceServerController({ vaultRoot: () => vault });
+    try {
+      const { session } = await controller.run(await makeTempDir());
+      expect(await viewerIsLocal(session.server.entryUrl, realFetch)).toBe(true);
+    } finally {
+      await controller.close();
+    }
   });
 
   it("renders status, surfaces completion, and opens local viewer events", async () => {

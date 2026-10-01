@@ -23,7 +23,7 @@ export interface WorkspaceServerControllerDeps {
 /** Owns one browser-workspace server for one plugin instance. */
 export class WorkspaceServerController {
   private session: WorkspaceServerSession | null = null;
-  private booting: Promise<WorkspaceServerSession> | null = null;
+  private pending: Promise<void> = Promise.resolve();
 
   constructor(private readonly deps: WorkspaceServerControllerDeps = {}) {}
 
@@ -31,32 +31,34 @@ export class WorkspaceServerController {
     return this.session?.server.port ?? null;
   }
 
-  async run(cwd: string): Promise<{ session: WorkspaceServerSession; started: boolean }> {
-    if (this.booting) await this.booting.catch(() => undefined);
-    const existing = this.session;
-    if (existing?.cwd === cwd) return { session: existing, started: false };
-    if (existing) await this.close();
-    return { session: await this.boot(cwd), started: true };
+  run(cwd: string): Promise<{ session: WorkspaceServerSession; started: boolean }> {
+    return this.enqueue(async () => {
+      const existing = this.session;
+      if (existing?.cwd === cwd) return { session: existing, started: false };
+      if (existing) await this.stop();
+      const session = await this.bootOnce(cwd);
+      this.session = session;
+      this.deps.onStateChange?.();
+      return { session, started: true };
+    });
   }
 
-  async close(): Promise<void> {
-    if (this.booting) await this.booting.catch(() => undefined);
+  close(): Promise<void> {
+    return this.enqueue(() => this.stop());
+  }
+
+  private enqueue<T>(task: () => Promise<T>): Promise<T> {
+    const result = this.pending.then(task);
+    this.pending = result.then(() => undefined, () => undefined);
+    return result;
+  }
+
+  private async stop(): Promise<void> {
     const session = this.session;
     if (!session) return;
     this.session = null;
     await session.server.close();
     this.deps.onStateChange?.();
-  }
-
-  private async boot(cwd: string): Promise<WorkspaceServerSession> {
-    this.booting = this.bootOnce(cwd);
-    try {
-      this.session = await this.booting;
-      this.deps.onStateChange?.();
-      return this.session;
-    } finally {
-      this.booting = null;
-    }
   }
 
   private async bootOnce(cwd: string): Promise<WorkspaceServerSession> {

@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import weave from "../../src/opencode";
 import { commitAll, gitInit, makeTempDir, withVaultEnv, writeFixture } from "../helpers";
 
@@ -24,7 +24,8 @@ describe("OpenCode plugin", () => {
 
     const tools = new Map<string, RegisteredTool>();
     const skills = new Map<string, { id: string; path: string; content: string }>();
-    const commands = new Map<string, unknown>();
+    const commands = new Map<string, { execute(input: { sessionID: string; prompt: { text: string }; delivery: "queue" }): Promise<void> }>();
+    const statusEvents: { text: string; active: boolean }[] = [];
     const registration = { dispose: async () => {} };
     const context = {
       location: { directory: cwd },
@@ -41,18 +42,21 @@ describe("OpenCode plugin", () => {
         },
       },
       command: {
-        transform(transform: (editor: { add(command: { name: string }): void }) => void) {
+        transform(transform: (editor: { add(command: { name: string; execute: (input: never) => Promise<void> }): void }) => void) {
           transform({ add: (command) => commands.set(command.name, command) });
           return registration;
         },
       },
       rpc: {
         async register() {
-          return { dispose: async () => {}, events: { emit: async () => {} } };
+          return { dispose: async () => {}, events: { emit: async (name: string, event: { text: string; active: boolean }) => {
+            if (name === "status") statusEvents.push(event);
+          } } };
         },
       },
       session: {
         async get() { return { location: { directory: sessionCwd } }; },
+        async synthetic() {},
       },
     };
 
@@ -72,6 +76,10 @@ describe("OpenCode plugin", () => {
       );
       expect(added.content).toContain("Note created: opencode");
       expect(added.metadata?.action).toBe("add");
+      expect(statusEvents.at(-1)?.text).toContain("vault:1");
+
+      await commands.get("weave-scan")!.execute({ sessionID: "session-1", prompt: { text: "" }, delivery: "queue" });
+      await vi.waitFor(() => expect(statusEvents.at(-1)?.text).toMatch(/:ok$/));
 
       const repo = await tools.get("weave_repo")!.execute({ action: "status" }, toolContext);
       expect(repo.content).toContain(sessionCwd);

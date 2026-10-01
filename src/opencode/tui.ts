@@ -10,9 +10,9 @@ export async function viewerIsLocal(url: string, request: typeof fetch = fetch):
   try {
     const target = new URL(url);
     if (target.protocol !== "http:" || !["127.0.0.1", "::1", "localhost"].includes(target.hostname)) return false;
-    const response = await request(target, { signal: AbortSignal.timeout(1_000) });
+    const response = await request(target, { redirect: "manual", signal: AbortSignal.timeout(1_000) });
     await response.body?.cancel().catch(() => undefined);
-    return response.ok;
+    return response.status === 302 && response.headers.has("set-cookie");
   } catch {
     return false;
   }

@@ -65,8 +65,9 @@ const weave = {
         name: "weave_note",
         description: WEAVE_NOTE_DESCRIPTION,
         input: noteInput,
-        async execute(input) {
+        async execute(input, toolContext) {
           const result = await executeNoteAction(input as NoteActionInput);
+          await refreshStatus(toolContext.sessionID);
           return { content: result.text, metadata: result.details };
         },
       });
@@ -81,6 +82,7 @@ const weave = {
             session.location.directory,
             (status) => toolContext.progress({ status }),
           );
+          await refreshStatus(toolContext.sessionID);
           return { content: result.text, metadata: result.details };
         },
       });
@@ -98,11 +100,20 @@ const weave = {
     const rpc = await context.rpc.register(WEAVE_RPC, {
       status: async () => status,
     });
+    const publishStatus = (next: Partial<typeof status>) => {
+      status = { ...status, ...next };
+      void rpc.events.emit("status", status).catch(() => {});
+    };
+    const refreshStatus = async (sessionID: Parameters<typeof context.session.get>[0]["sessionID"]) => {
+      const session = await context.session.get({ sessionID });
+      const text = formatStatusLine(await getWorkspaceStatus(session.location.directory));
+      if (!status.active) publishStatus({ sessionID, text, active: false });
+    };
     const commands = await registerOpenCodeCommands(
       context,
       (next) => {
-        status = { ...status, ...next };
-        void rpc.events.emit("status", status).catch(() => {});
+        publishStatus(next);
+        if (!next.active) void refreshStatus(next.sessionID as Parameters<typeof context.session.get>[0]["sessionID"]).catch(() => {});
       },
       viewer,
       (event) => {
