@@ -42,8 +42,8 @@ printf '{"plugin":["%s"]}\n' "$weave_plugin" > "$weave_test/v1/config/opencode/t
 printf '{"plugins":["%s"]}\n' "$weave_plugin" > "$weave_test/v2/config/opencode/opencode.json"
 ```
 
-V1 loads terminal plugins separately from `tui.json`; both V1 configuration files above are required for native result dialogs and automatic
-browser opening.
+V1 loads terminal plugins separately from `tui.json`; both V1 configuration files above are required for automatic browser opening and the
+viewer URL fallback dialog.
 
 ## V1 — minimum supported release
 
@@ -63,8 +63,7 @@ session, our decision is to keep project notes in local Markdown.” V1 scans us
 Run this checklist:
 
 1. **Dashboard:** `/weave` reports the test vault and fixture repository. V1 runs slash commands through a model reply; an extra model
-   response is expected. A native dialog displays the exact command result with full paths; it must not depend on the model's wording. Press
-   Enter or Escape to close it.
+   response in the regular conversation is expected. `/weave` must not open a dialog or browser window.
 2. **Skills:** ask the agent to load `weave-notepad` and `weave-explore`. Both should be discoverable without copying skill files.
 3. **Notes:** “Use weave_note to create a note titled Adapter E2E saying: We chose local Markdown for project memory.” Then append a detail
    and ask “What did we decide about project memory?” Inspect the tool calls and returned note. Agent-created notes must have `source:

@@ -20,7 +20,7 @@ describe("OpenCode terminal companion", () => {
     vi.restoreAllMocks();
   });
 
-  it("shows exact V1 results in a native dialog and opens the viewer from the terminal", async () => {
+  it("keeps V1 command results in the conversation and handles only viewer events in the terminal", async () => {
     let handler: (event: unknown) => Promise<void>;
     const stop = vi.fn();
     const alert = vi.fn();
@@ -45,8 +45,8 @@ describe("OpenCode terminal companion", () => {
     await send({ ...part, sessionID: "other", metadata });
     expect(alert).not.toHaveBeenCalled();
     await send({ ...part, metadata });
-    expect(alert).toHaveBeenLastCalledWith({ title: "pi-weave", message: text });
-    alert.mockClear();
+    expect(alert).not.toHaveBeenCalled();
+    expect(toast).not.toHaveBeenCalled();
     const url = "http://127.0.0.1:1234/?t=unchanged-token";
     const viewer = (open: boolean) => send({ ...part, metadata: { "pi-weave-result": { text: url, viewer: { url, open } } } });
     vi.mocked(execFile).mockClear();

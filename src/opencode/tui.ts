@@ -45,11 +45,10 @@ const weaveTui = {
       const route = api.route.current;
       if (route.name === "session" && route.params?.sessionID !== part.sessionID) return;
       const viewer = record(result.viewer);
-      if (typeof viewer.url === "string") {
-        const notice = await viewerNotice(viewer.url, viewer.open === true);
-        api.ui.toast({ title: "pi-weave", ...notice });
-        if (notice.variant === "success") return;
-      }
+      if (typeof viewer.url !== "string") return;
+      const notice = await viewerNotice(viewer.url, viewer.open === true);
+      api.ui.toast({ title: "pi-weave", ...notice });
+      if (notice.variant === "success") return;
       api.ui.dialog.replace(() => api.ui.DialogAlert({ title: "pi-weave", message: result.text as string }));
     }));
   },

@@ -64,7 +64,7 @@ OpenCode V2:
 opencode plugin add pi-weave
 ```
 
-OpenCode V1 1.18.29+: add the package to both `opencode.json` (server) and `tui.json` (terminal dialogs and browser opening):
+OpenCode V1 1.18.29+: add the package to both `opencode.json` (server) and `tui.json` (browser opening):
 
 ```json
 { "plugin": ["pi-weave"] }
@@ -218,8 +218,8 @@ Most people only need natural language and `/weave-view`.
 
 The included `weave-notepad` and `weave-explore` skills teach Pi and OpenCode when and how to use these tools. In OpenCode, `/weave` shows
 vault/repository status and scan progress appears in toasts; Pi keeps its persistent status line. V1 slash commands use its standard prompt
-pipeline, so an extra model reply follows the command. The terminal shows the exact result in a native dialog. V1 scans use the model from
-your last chat message: send a message after selecting a model, then scan. Generation runs in temporary child sessions with tools denied;
+pipeline, so the model reports command results in the conversation. `/weave` does not open a dialog. V1 scans use the model from your last
+chat message: send a message after selecting a model, then scan. Generation runs in temporary child sessions with tools denied;
 those sessions are removed on completion or cancellation. V2 uses its direct command and generation APIs.
 
 ## Files, privacy, and portability
