@@ -545,9 +545,10 @@ export interface ViewBox {
  * session: the node stays under the cursor, the canvas bounds the drag, and
  * `[fit]` re-frames onto whatever the current positions are.
  *
- * The box is the exact extent of the rendered positions — no padding of its
- * own, because sigma's `stagePadding` (in pixels) already insets the fit, and
- * the same box handed back on `fit()` re-frames dragged-apart graphs.
+ * Use the position extent, with a minimum span of four collision radii.
+ * A single node (or coincident nodes) has no extent; Sigma scales layout-unit
+ * node sizes by that span, so a near-zero box magnifies one node across the
+ * canvas. Pixel-based `stagePadding` cannot prevent that.
  *
  * `null` for an empty graph: there is nothing to frame, and the caller
  * clears the override so sigma falls back to its own behaviour.
@@ -567,7 +568,8 @@ export function frameBox(points: readonly Point[]): ViewBox | null {
     if (p.y > maxY) maxY = p.y;
   }
   if (seen === 0) return null;
-  return { x: [minX, maxX], y: [minY, maxY] };
+  const padding = Math.max(0, (COLLIDE_RADIUS * 4 - Math.max(maxX - minX, maxY - minY)) / 2);
+  return { x: [minX - padding, maxX + padding], y: [minY - padding, maxY + padding] };
 }
 
 /** The empty graph. What the column renders before the first payload lands. */

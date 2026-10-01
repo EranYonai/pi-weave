@@ -766,13 +766,24 @@ describe("the reducers at partial progress (§7.4)", () => {
 // --- settings (§7.4) ----------------------------------------------------------------------
 
 describe("frameBox — the frozen view box", () => {
-  it("is the exact extent of the positions", () => {
+  it.each([
+    [{ x: 10, y: 20 }],
+    [{ x: 10, y: 20 }, { x: 10, y: 20 }],
+    [{ x: 10, y: 20 }, { x: 10.001, y: 20 }],
+  ])("gives tiny graphs room for their nodes instead of magnifying them across the canvas: %j", (...points) => {
+    const box = frameBox(points)!;
+    expect(Math.max(box.x[1] - box.x[0], box.y[1] - box.y[0])).toBeCloseTo(COLLIDE_RADIUS * 4);
+    expect((box.x[0] + box.x[1]) / 2).toBeCloseTo((points[0]!.x + points.at(-1)!.x) / 2);
+    expect((box.y[0] + box.y[1]) / 2).toBe(20);
+  });
+
+  it("keeps the exact extent when positions already span enough room", () => {
     const box = frameBox([
-      { x: -10, y: 5 },
-      { x: 30, y: -2 },
-      { x: 7, y: 9 },
+      { x: -100, y: 50 },
+      { x: 300, y: -20 },
+      { x: 70, y: 90 },
     ]);
-    expect(box).toEqual({ x: [-10, 30], y: [-2, 9] });
+    expect(box).toEqual({ x: [-100, 300], y: [-20, 90] });
   });
 
   it("is null for no finite positions", () => {
@@ -784,11 +795,11 @@ describe("frameBox — the frozen view box", () => {
 
   it("keeps finite positions and drops poisoned ones", () => {
     const box = frameBox([
-      { x: 1, y: 1 },
+      { x: 100, y: 100 },
       { x: Number.NaN, y: 4 },
-      { x: 5, y: -3 },
+      { x: 500, y: -300 },
     ]);
-    expect(box).toEqual({ x: [1, 5], y: [-3, 1] });
+    expect(box).toEqual({ x: [100, 500], y: [-300, 100] });
   });
 });
 
@@ -1237,7 +1248,7 @@ describe("sigmaRenderer over the injected constructor (§7.5)", () => {
     const renderer = sigmaRenderer(fake.factory, "dark");
     renderer.setGraph(model);
     renderer.mount(container);
-    expect(fake.boxes()).toEqual([{ x: [0, 10], y: [0, 10] }]);
+    expect(fake.boxes()).toEqual([{ x: [-31, 41], y: [-31, 41] }]);
   });
 
   it("re-frames the box on a new graph, and never while the sim settles", () => {
@@ -1277,7 +1288,7 @@ describe("sigmaRenderer over the injected constructor (§7.5)", () => {
     );
     renderer.fit();
     const last = fake.boxes()[fake.boxes().length - 1];
-    expect(last).toEqual({ x: [100, 110], y: [0, 10] });
+    expect(last).toEqual({ x: [69, 141], y: [-31, 41] });
     expect(fake.resets()).toBe(1);
   });
 
