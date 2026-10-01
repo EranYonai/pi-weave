@@ -27,6 +27,8 @@ async function openBrowser(url: string): Promise<boolean> {
 
 const weaveTui = {
   id: "pi-weave.tui",
+  // V1 delivers toasts through its server SDK; no terminal-side setup is needed.
+  async tui() {},
   async setup(context) {
     const rpc = context.client.rpc(WEAVE_RPC);
     try {
@@ -73,6 +75,6 @@ const weaveTui = {
       stopStatus();
     };
   },
-} satisfies import("@opencode/plugin/tui").Plugin.Definition;
+} satisfies import("@opencode/plugin/tui").Plugin.Definition & Pick<import("@opencode-ai/plugin/tui").TuiPluginModule, "tui">;
 
 export default weaveTui;

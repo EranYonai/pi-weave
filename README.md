@@ -55,13 +55,19 @@ pi-weave keeps track of where knowledge came from, while making the whole worksp
 
 ## Install
 
-pi-weave supports [Pi](https://github.com/earendil-works/pi) and OpenCode V2 from the same package. Both adapters use the same vault,
-repository index, browser workspace, tools, and skills.
+pi-weave supports [Pi](https://github.com/earendil-works/pi) and OpenCode (V1 **1.18.29+** and V2) from the same package. The adapters share
+the vault, repository index, browser workspace, tools, and skills.
 
 OpenCode V2:
 
 ```bash
 opencode plugin add pi-weave
+```
+
+OpenCode V1 1.18.29+: add the package to `opencode.json`:
+
+```json
+{ "plugin": ["pi-weave"] }
 ```
 
 Pi:
@@ -210,8 +216,11 @@ Most people only need natural language and `/weave-view`.
 | Tool | `weave_note` | List, read, add, append, finalize, and search notes |
 | Tool | `weave_repo` | Check, scan, and summarize the repository index |
 
-The included `weave-notepad` and `weave-explore` skills teach Pi and OpenCode when and how to use these tools.
-In OpenCode, `/weave` shows vault/repository status and scan progress appears in toasts; Pi keeps its persistent status line.
+The included `weave-notepad` and `weave-explore` skills teach Pi and OpenCode when and how to use these tools. In OpenCode, `/weave` shows
+vault/repository status and scan progress appears in toasts; Pi keeps its persistent status line. V1 slash commands use its standard prompt
+pipeline, so the selected model reports the command result. V1 scans use the model from your last chat message: send a message after
+selecting a model, then scan. Generation runs in temporary child sessions with tools denied; those sessions are removed on completion or
+cancellation. V2 uses its direct command and generation APIs.
 
 ## Files, privacy, and portability
 
@@ -251,14 +260,18 @@ We probably want OIDC next quarter…
 
 Set `PI_WEAVE_VAULT` to use a different vault location.
 
-Reading, writing, searching, and viewing notes are local operations. Deep repository scans and session summaries send bounded input to
-whichever model is selected in the active Pi or OpenCode session. The browser workspace binds only to loopback, uses a per-session token,
-and shuts down with the plugin lifecycle. OpenCode opens it automatically when the terminal can reach the viewer's loopback URL; remote
-sessions print the URL for a tunnel or browser on the server host.
+Reading, writing, searching, and viewing notes are local operations. Deep repository scans and session summaries send bounded input to the
+active Pi/V2 model or the last-used V1 chat model. The browser workspace binds only to loopback, uses a per-session token, and shuts down
+with the plugin lifecycle. OpenCode V2 opens it automatically when the terminal can reach the viewer's loopback URL. V1 and remote sessions
+print the URL for a browser or tunnel.
 
 The vault format, repository index, and skills are intentionally harness-agnostic. `src/core` contains no Pi- or OpenCode-specific imports.
 
 ## Development
+
+The OpenCode V1/V2 bindings share tool schemas, core actions, and one command/scan workflow. Zod is the only direct runtime dependency,
+required by V1's tool-schema protocol; OpenCode SDKs and host binaries are development-only. See [the OpenCode E2E
+checklist](docs/opencode-e2e.md) to test this branch in isolated V1 and V2 profiles.
 
 ```bash
 npm install

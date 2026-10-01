@@ -199,7 +199,7 @@ const TIERS: readonly Tier[] = [
   },
   {
     id: "src/opencode",
-    npm: new Set(["@opencode/plugin", "@opencode/plugin/tui"]),
+    npm: new Set(["@opencode/plugin", "@opencode/plugin/tui", "@opencode-ai/plugin", "@opencode-ai/plugin/tui", "@opencode-ai/sdk", "zod"]),
     imports: ["src/opencode", "src/core", "src/web/server", "src/web/shared"],
     typeOnly: [],
     moduleExceptions: NO_EXCEPTIONS,

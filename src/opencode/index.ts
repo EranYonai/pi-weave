@@ -1,46 +1,11 @@
 import { readFile } from "node:fs/promises";
 import { fileURLToPath } from "node:url";
-import {
-  executeNoteAction,
-  executeRepoAction,
-  formatStatusLine,
-  getWorkspaceStatus,
-  WEAVE_NOTE_DESCRIPTION,
-  WEAVE_REPO_DESCRIPTION,
-  type NoteActionInput,
-  type RepoActionInput,
-} from "../core";
+import { formatStatusLine, getWorkspaceStatus } from "../core";
 import { parseFrontMatter, unquoteField } from "../core/frontmatter";
 import { registerOpenCodeCommands } from "./commands";
+import { weaveTools } from "./tools";
 import { WEAVE_RPC } from "./rpc";
 import { WorkspaceServerController } from "../web/server/controller";
-
-const noteInput = {
-  type: "object",
-  properties: {
-    action: { type: "string", enum: ["list", "get", "add", "append", "finalize", "search", "links", "suggest"] },
-    title: { type: "string", description: "Note title (add)" },
-    text: { type: "string", description: "Markdown body (add), addition (append), or restructured body (finalize)" },
-    tags: { type: "array", items: { type: "string" }, description: "Tags (add)" },
-    slug: { type: "string", description: "Note slug (get, append, finalize)" },
-    raw: { type: "boolean", description: "append: preserve text verbatim in the ## Raw tail" },
-    source: { type: "string", enum: ["human", "agent"], description: "Provenance (add; defaults to agent)" },
-    query: { type: "string", description: "Search query (search)" },
-    fix: { type: "boolean", description: "links: apply unambiguous repairs" },
-    limit: { type: "number", description: "suggest: maximum suggestions (default 20)" },
-  },
-  required: ["action"],
-  additionalProperties: false,
-} as const;
-
-const repoInput = {
-  type: "object",
-  properties: {
-    action: { type: "string", enum: ["status", "scan", "overview"] },
-  },
-  required: ["action"],
-  additionalProperties: false,
-} as const;
 
 async function packagedSkill(relativePath: string): Promise<import("@opencode/plugin").Skill.Info> {
   const path = fileURLToPath(new URL(`../../skills/${relativePath}/SKILL.md`, import.meta.url));
@@ -59,29 +24,17 @@ async function packagedSkill(relativePath: string): Promise<import("@opencode/pl
 
 const weave = {
   id: "pi-weave",
+  server: async (input: import("@opencode-ai/plugin").PluginInput) => (await import("./v1")).server(input),
   async setup(context) {
     const toolRegistration = await context.tool.transform((editor) => {
-      editor.add({
-        name: "weave_note",
-        description: WEAVE_NOTE_DESCRIPTION,
-        input: noteInput,
-        async execute(input, toolContext) {
-          const result = await executeNoteAction(input as NoteActionInput);
-          await refreshStatus(toolContext.sessionID);
-          return { content: result.text, metadata: result.details };
-        },
-      });
-      editor.add({
-        name: "weave_repo",
-        description: WEAVE_REPO_DESCRIPTION,
-        input: repoInput,
+      for (const tool of weaveTools) editor.add({
+        name: tool.name,
+        description: tool.description,
+        input: tool.input,
+        options: { codemode: false },
         async execute(input, toolContext) {
           const session = await context.session.get({ sessionID: toolContext.sessionID });
-          const result = await executeRepoAction(
-            input as RepoActionInput,
-            session.location.directory,
-            (status) => toolContext.progress({ status }),
-          );
+          const result = await tool.execute(input, session.location.directory, (status) => toolContext.progress({ status }));
           await refreshStatus(toolContext.sessionID);
           return { content: result.text, metadata: result.details };
         },
@@ -130,6 +83,6 @@ const weave = {
       await toolRegistration.dispose();
     };
   },
-} satisfies import("@opencode/plugin").Plugin.Plugin;
+} satisfies import("@opencode/plugin").Plugin.Plugin & Pick<import("@opencode-ai/plugin").PluginModule, "server">;
 
 export default weave;

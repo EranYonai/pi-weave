@@ -273,4 +273,22 @@ describe("OpenCode commands", () => {
       await registered.cleanup();
     });
   });
+  it("does not save a late model response after cancellation", async () => {
+    const mock = mockContext(await makeTempDir());
+    const vault = await makeTempDir();
+    let resolveModel: ((value: { text: string }) => void) | undefined;
+    mock.context.session.generate = async () => new Promise((resolve) => { resolveModel = resolve; });
+    await withVaultEnv(vault, async () => {
+      const registered = await registerOpenCodeCommands(mock.context as never);
+      await invoke(mock.commands.get("weave-scan")!, "sessions");
+      await vi.waitFor(() => expect(resolveModel).toBeDefined());
+      await invoke(mock.commands.get("weave-scan-cancel")!);
+      resolveModel!({ text: "Late summary" });
+      await registered.done("session-1");
+      expect(mock.output.at(-1)).toContain("cancelled");
+      expect(await getNote(vault, "sessions/opencode-adapter")).toBeNull();
+      await registered.cleanup();
+    });
+  });
+
 });

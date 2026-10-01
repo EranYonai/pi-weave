@@ -4,6 +4,7 @@ import { commitAll, gitInit, makeTempDir, withVaultEnv, writeFixture } from "../
 
 interface RegisteredTool {
   name: string;
+  options: { codemode: boolean };
   execute(input: unknown, context: { sessionID: string; progress(update: Record<string, unknown>): Promise<void> }): Promise<{
     content?: string;
     metadata?: Record<string, unknown>;
@@ -64,6 +65,7 @@ describe("OpenCode plugin", () => {
       const cleanup = await weave.setup(context as never);
 
       expect([...tools.keys()].sort()).toEqual(["weave_note", "weave_repo"]);
+      expect([...tools.values()].every((tool) => tool.options.codemode === false)).toBe(true);
       expect([...skills.keys()].sort()).toEqual(["weave-explore", "weave-notepad"]);
       expect([...commands.keys()].sort()).toEqual(["weave", "weave-scan", "weave-scan-cancel", "weave-view"]);
       expect(skills.get("weave-notepad")?.path).toMatch(/skills\/weave-notepad\/SKILL\.md$/);
