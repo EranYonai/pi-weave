@@ -64,7 +64,7 @@ OpenCode V2:
 opencode plugin add pi-weave
 ```
 
-OpenCode V1 1.18.29+: add the package to `opencode.json`:
+OpenCode V1 1.18.29+: add the package to both `opencode.json` (server) and `tui.json` (terminal dialogs and browser opening):
 
 ```json
 { "plugin": ["pi-weave"] }
@@ -218,9 +218,9 @@ Most people only need natural language and `/weave-view`.
 
 The included `weave-notepad` and `weave-explore` skills teach Pi and OpenCode when and how to use these tools. In OpenCode, `/weave` shows
 vault/repository status and scan progress appears in toasts; Pi keeps its persistent status line. V1 slash commands use its standard prompt
-pipeline, so the selected model reports the command result. V1 scans use the model from your last chat message: send a message after
-selecting a model, then scan. Generation runs in temporary child sessions with tools denied; those sessions are removed on completion or
-cancellation. V2 uses its direct command and generation APIs.
+pipeline, so an extra model reply follows the command. The terminal shows the exact result in a native dialog. V1 scans use the model from
+your last chat message: send a message after selecting a model, then scan. Generation runs in temporary child sessions with tools denied;
+those sessions are removed on completion or cancellation. V2 uses its direct command and generation APIs.
 
 ## Files, privacy, and portability
 
@@ -262,8 +262,8 @@ Set `PI_WEAVE_VAULT` to use a different vault location.
 
 Reading, writing, searching, and viewing notes are local operations. Deep repository scans and session summaries send bounded input to the
 active Pi/V2 model or the last-used V1 chat model. The browser workspace binds only to loopback, uses a per-session token, and shuts down
-with the plugin lifecycle. OpenCode V2 opens it automatically when the terminal can reach the viewer's loopback URL. V1 and remote sessions
-print the URL for a browser or tunnel.
+with the plugin lifecycle. OpenCode opens it automatically when the terminal can reach the viewer's loopback URL. Otherwise, it shows the
+exact URL for a browser or tunnel.
 
 The vault format, repository index, and skills are intentionally harness-agnostic. `src/core` contains no Pi- or OpenCode-specific imports.
 

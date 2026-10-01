@@ -1,7 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 import { tool, type Hooks, type PluginInput } from "@opencode-ai/plugin";
 import weave from "../../src/opencode";
-import weaveTui from "../../src/opencode/tui";
 import { v1SessionDigest } from "../../src/opencode/v1";
 import { commitAll, gitInit, makeTempDir, withVaultEnv, writeFixture } from "../helpers";
 
@@ -30,6 +29,9 @@ async function invoke(hooks: Hooks, command: string, args = "") {
   // V1 passes a wrapper to the hook, then sends the original array to the model.
   const parts = [{ type: "text", text: "template" }, { type: "file", url: "unchanged" }];
   await hooks["command.execute.before"]!({ command, sessionID: "s1", arguments: args }, { parts } as never);
+  if (command !== "unrelated") expect(parts[0]).toMatchObject({
+    metadata: { "pi-weave": true, "pi-weave-result": { text: expect.any(String) } },
+  });
   expect(parts[1]).toEqual({ type: "file", url: "unchanged" });
   return parts[0]!.text!;
 }
@@ -49,7 +51,6 @@ describe("OpenCode V1 1.18.29", () => {
     const mock = host(cwd);
     await withVaultEnv(vault, async () => {
       const hooks = await weave.server(mock.input);
-      await weaveTui.tui();
       const config = { command: {}, skills: { paths: ["/existing"] } };
       await hooks.config!(config);
       await hooks.config!(config);
@@ -72,7 +73,7 @@ describe("OpenCode V1 1.18.29", () => {
       const repo = await hooks.tool!.weave_repo!.execute({ action: "scan" }, toolContext);
       expect(repo).toMatchObject({ output: expect.stringContaining(cwd) });
       const view = await invoke(hooks, "weave-view");
-      expect(view).not.toContain("opening when");
+      expect(view).toContain("opening when");
       const url = view.match(/http:\/\/\S+/)![0];
       expect((await fetch(url, { redirect: "manual" })).status).toBe(302);
       await hooks.dispose!();

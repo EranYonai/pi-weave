@@ -9,6 +9,7 @@ import { openCodeSessionDigest } from "./commands";
 import { weaveTools } from "./tools";
 
 type Client = Parameters<Plugin>[0]["client"];
+type CommandResult = { lines: string[]; viewer?: { url: string; open: boolean } };
 
 // ponytail: only our flat tool schemas; use a converter if nested inputs are added.
 function legacyArgs(input: (typeof weaveTools)[number]["input"]) {
@@ -75,7 +76,7 @@ async function generate(client: Client, sessionID: string, prompt: string, signa
 
 export const server: Plugin = async ({ client }) => {
   const viewer = new WorkspaceServerController();
-  const collected = new Map<string, string[]>();
+  const collected = new Map<string, CommandResult>();
   const toast = (message: string, variant: "info" | "success" | "error" = "info") =>
     client.tui.showToast({ body: { title: "pi-weave", message, variant } }).catch(() => {});
   let lastProgress = 0;
@@ -96,7 +97,7 @@ export const server: Plugin = async ({ client }) => {
     generate: (id, prompt, signal, model) => generate(client, id, prompt, signal, model),
     async output(sessionID, text) {
       const output = collected.get(sessionID);
-      if (output) { output.push(text); return; }
+      if (output) { output.lines.push(text); return; }
       await client.session.prompt({
         path: { id: sessionID },
         body: { noReply: true, parts: [{ type: "text", text, synthetic: true, metadata: { "pi-weave": true } }] },
@@ -107,7 +108,10 @@ export const server: Plugin = async ({ client }) => {
     if (status.active && Date.now() - lastProgress < 2_000) return;
     lastProgress = Date.now();
     void toast(status.text, status.active ? "info" : status.text.includes("failed") ? "error" : "success");
-  }, viewer);
+  }, viewer, ({ sessionID, url, open }) => {
+    const result = collected.get(sessionID);
+    if (result) result.viewer = { url, open };
+  });
 
   return {
     tool: Object.fromEntries(weaveTools.map((definition) => [definition.name, {
@@ -132,17 +136,18 @@ export const server: Plugin = async ({ client }) => {
     async "command.execute.before"(input, output) {
       const command = shared.commands.find((command) => command.name === input.command);
       if (!command) return;
-      const lines: string[] = [];
-      collected.set(input.sessionID, lines);
+      const result: CommandResult = { lines: [] };
+      collected.set(input.sessionID, result);
       try {
         // V1 cannot suppress the normal model reply after this hook.
         await command.execute(input.sessionID, input.arguments);
+        const text = result.lines.join("\n") || "Scan started; completion will be reported separately.";
         // V1 retains the original parts array after this hook; mutate it in place.
         for (const part of output.parts) {
           if (part.type !== "text") continue;
-          part.text = `Report this pi-weave result without running tools:\n${lines.join("\n") || "Scan started; completion will be reported separately."}`;
+          part.text = `Report this pi-weave result without running tools:\n${text}`;
           part.synthetic = true;
-          part.metadata = { "pi-weave": true };
+          part.metadata = { "pi-weave": true, "pi-weave-result": { text, viewer: result.viewer } };
         }
       } finally {
         collected.delete(input.sessionID);

@@ -15,8 +15,9 @@ npm run smoke:opencode
 ```
 
 The smoke packs the actual npm artifact and starts OpenCode 1.18.29 and 2.0.19 with isolated configuration, caches, data, repositories, and
-vaults. A local deterministic model exercises tools and scans without credentials or API charges. It also checks packaged skill discovery
-and V2 RPC. Interactive rendering, real provider authentication, and browser launching still need the manual pass below.
+vaults. A local deterministic model exercises tools and scans without credentials or API charges. It also checks packaged skill discovery,
+V1 command-result metadata, and V2 RPC. Interactive rendering, real provider authentication, and browser launching still need the manual
+pass below.
 
 ## Prepare an isolated manual fixture
 
@@ -37,8 +38,12 @@ git -C "$weave_test/repo" init -q
 git -C "$weave_test/repo" add .
 git -C "$weave_test/repo" -c user.name=WeaveTest -c user.email=weave-test@example.invalid commit -qm fixture
 printf '{"plugin":["%s"]}\n' "$weave_plugin" > "$weave_test/v1/config/opencode/opencode.json"
+printf '{"plugin":["%s"]}\n' "$weave_plugin" > "$weave_test/v1/config/opencode/tui.json"
 printf '{"plugins":["%s"]}\n' "$weave_plugin" > "$weave_test/v2/config/opencode/opencode.json"
 ```
+
+V1 loads terminal plugins separately from `tui.json`; both V1 configuration files above are required for native result dialogs and automatic
+browser opening.
 
 ## V1 — minimum supported release
 
@@ -58,7 +63,8 @@ session, our decision is to keep project notes in local Markdown.” V1 scans us
 Run this checklist:
 
 1. **Dashboard:** `/weave` reports the test vault and fixture repository. V1 runs slash commands through a model reply; an extra model
-   response is expected. The command's actual work is deterministic and already completed when that reply starts.
+   response is expected. A native dialog displays the exact command result with full paths; it must not depend on the model's wording. Press
+   Enter or Escape to close it.
 2. **Skills:** ask the agent to load `weave-notepad` and `weave-explore`. Both should be discoverable without copying skill files.
 3. **Notes:** “Use weave_note to create a note titled Adapter E2E saying: We chose local Markdown for project memory.” Then append a detail
    and ask “What did we decide about project memory?” Inspect the tool calls and returned note. Agent-created notes must have `source:
@@ -70,8 +76,9 @@ Run this checklist:
    conversation's decisions and an `opencode:session:` source reference.
 7. **Cancellation:** start a deep/session scan with changed input and run `/weave-scan-cancel` while it is generating. Expect cancellation,
    no leaked scan child session, and no late summary saved after cancellation. A scan that already completed will report “no scan”.
-8. **Viewer:** `/weave-view`. V1 prints a URL to open manually. Open it and check notes, repository graph, and editing. Repeat with
-   `/weave-view --no-open`; the existing viewer should be reused. An unknown argument should print usage.
+8. **Viewer:** `/weave-view` opens the browser when the terminal can reach the local viewer. Check notes, repository graph, and editing.
+   Repeat with `/weave-view --no-open`; the existing viewer should be reused and a native dialog should show the exact URL without opening a
+   browser. An unknown argument should print usage.
 9. **Cleanup:** quit OpenCode completely. Refresh the viewer URL; the old server should no longer answer.
 
 ## V2 — regression pass

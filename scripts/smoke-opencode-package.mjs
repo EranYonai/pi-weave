@@ -186,6 +186,13 @@ try {
             if (!prompts.slice(promptOffset).some((text) => text.includes("Report this pi-weave result") && text.includes(expectedResult))) {
               throw new Error(`V1 /${command} ${args}: command result never reached the model`);
             }
+            const messages = await request(`/session/${session.id}/message`);
+            const resultPart = messages.flatMap((message) => message.parts).findLast((part) => part.metadata?.["pi-weave-result"]);
+            const native = resultPart?.metadata["pi-weave-result"];
+            if (!resultPart?.synthetic || !native.text.includes(expectedResult)) throw new Error(`V1 /${command}: native result missing`);
+            if (command === "weave-view" && (native.viewer.open !== false || !native.text.includes(native.viewer.url))) {
+              throw new Error("V1 viewer handoff lost its exact URL or --no-open flag");
+            }
           }
           if (command === "weave-scan" && args) {
             const expected = args === "deep" ? "deep scan complete" : "session scan complete";

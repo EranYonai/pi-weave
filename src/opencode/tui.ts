@@ -25,10 +25,34 @@ async function openBrowser(url: string): Promise<boolean> {
   });
 }
 
+async function viewerNotice(url: string, open: boolean) {
+  const opened = open && await viewerIsLocal(url) && await openBrowser(url);
+  return {
+    message: opened
+      ? `Workspace opened at ${url}`
+      : `Workspace running at ${url}${open ? " — open this URL from the server host or through a tunnel." : ""}`,
+    variant: opened ? "success" as const : "info" as const,
+  };
+}
+
 const weaveTui = {
   id: "pi-weave.tui",
-  // V1 delivers toasts through its server SDK; no terminal-side setup is needed.
-  async tui() {},
+  async tui(api) {
+    api.lifecycle.onDispose(api.event.on("message.part.updated", async ({ properties: { part } }) => {
+      if (part.type !== "text" || !part.synthetic) return;
+      const result = record(part.metadata?.["pi-weave-result"]);
+      if (typeof result.text !== "string") return;
+      const route = api.route.current;
+      if (route.name === "session" && route.params?.sessionID !== part.sessionID) return;
+      const viewer = record(result.viewer);
+      if (typeof viewer.url === "string") {
+        const notice = await viewerNotice(viewer.url, viewer.open === true);
+        api.ui.toast({ title: "pi-weave", ...notice });
+        if (notice.variant === "success") return;
+      }
+      api.ui.dialog.replace(() => api.ui.DialogAlert({ title: "pi-weave", message: result.text as string }));
+    }));
+  },
   async setup(context) {
     const rpc = context.client.rpc(WEAVE_RPC);
     try {
@@ -57,16 +81,9 @@ const weaveTui = {
     const stopViewer = rpc.events.on("viewer", async (event) => {
       const data = record(event.data);
       if (typeof data.url !== "string") return;
-      let opened = false;
-      if (data.open === true) {
-        if (await viewerIsLocal(data.url)) opened = await openBrowser(data.url);
-      }
       context.ui.toast.show({
         title: "pi-weave",
-        message: opened
-          ? `Workspace opened at ${data.url}`
-          : `Workspace running at ${data.url}${data.open === true ? " — open this URL from the server host or through a tunnel." : ""}`,
-        variant: opened ? "success" : "info",
+        ...await viewerNotice(data.url, data.open === true),
         ...(typeof data.sessionID === "string" ? { sessionID: data.sessionID } : {}),
       });
     });

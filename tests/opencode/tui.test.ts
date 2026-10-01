@@ -20,6 +20,51 @@ describe("OpenCode terminal companion", () => {
     vi.restoreAllMocks();
   });
 
+  it("shows exact V1 results in a native dialog and opens the viewer from the terminal", async () => {
+    let handler: (event: unknown) => Promise<void>;
+    const stop = vi.fn();
+    const alert = vi.fn();
+    const toast = vi.fn();
+    const dispose = vi.fn();
+    const api = {
+      route: { current: { name: "session", params: { sessionID: "s1" } } },
+      lifecycle: { onDispose: dispose },
+      event: { on: vi.fn((_name, callback) => { handler = callback; return stop; }) },
+      ui: { toast, DialogAlert: alert, dialog: { replace: (render: () => void) => render() } },
+    };
+    await weaveTui.tui(api as never);
+    expect(api.event.on).toHaveBeenCalledWith("message.part.updated", expect.any(Function));
+    expect(dispose).toHaveBeenCalledWith(stop);
+    const send = (part: unknown) => handler({ properties: { part } });
+    const part = { type: "text", sessionID: "s1", synthetic: true };
+    await send({ type: "tool" });
+    await send({ ...part, synthetic: false });
+    await send(part);
+    const text = "Vault (/private/var/folders/full/path/vault):\n  not initialized";
+    const metadata = { "pi-weave-result": { text } };
+    await send({ ...part, sessionID: "other", metadata });
+    expect(alert).not.toHaveBeenCalled();
+    await send({ ...part, metadata });
+    expect(alert).toHaveBeenLastCalledWith({ title: "pi-weave", message: text });
+    alert.mockClear();
+    const url = "http://127.0.0.1:1234/?t=unchanged-token";
+    const viewer = (open: boolean) => send({ ...part, metadata: { "pi-weave-result": { text: url, viewer: { url, open } } } });
+    vi.mocked(execFile).mockClear();
+    await viewer(true);
+    expect(execFile).toHaveBeenCalledWith(expect.any(String), expect.arrayContaining([url]), expect.any(Function));
+    expect(toast).toHaveBeenLastCalledWith({ title: "pi-weave", message: `Workspace opened at ${url}`, variant: "success" });
+    expect(alert).not.toHaveBeenCalled();
+    vi.mocked(execFile).mockClear();
+    await viewer(false);
+    expect(execFile).not.toHaveBeenCalled();
+    expect(alert).toHaveBeenLastCalledWith({ title: "pi-weave", message: url });
+    vi.stubGlobal("fetch", vi.fn(async () => { throw new Error("remote loopback"); }));
+    await viewer(true);
+    expect(execFile).not.toHaveBeenCalled();
+    expect(toast.mock.lastCall?.[0].message).toContain("through a tunnel");
+    expect(alert).toHaveBeenLastCalledWith({ title: "pi-weave", message: url });
+  });
+
   it("opens only a reachable loopback viewer", async () => {
     const reachable = vi.fn(async () => new Response(null, { status: 302, headers: { "set-cookie": "session=token" } }));
     const unreachable = vi.fn(async () => { throw new Error("offline"); });
