@@ -17,6 +17,7 @@ describe("OpenCode terminal companion", () => {
 
   afterEach(() => {
     vi.unstubAllGlobals();
+    vi.restoreAllMocks();
   });
 
   it("opens only a reachable loopback viewer", async () => {
@@ -41,11 +42,9 @@ describe("OpenCode terminal companion", () => {
     }
   });
 
-  it("renders status, surfaces completion, and opens local viewer events", async () => {
+  it("surfaces progress and completion, and opens local viewer events", async () => {
     const handlers = new Map<string, (event: { data: Record<string, unknown> }) => void | Promise<void>>();
-    const toasts: { message: string; variant?: string }[] = [];
-    const slots: { render(): unknown }[] = [];
-    const state = { text: "", active: false };
+    const toasts: { message: string; variant?: string; sessionID?: string }[] = [];
     const rpc = {
       async status() { return { text: "🕸️ vault:0 · repo:unindexed", active: false }; },
       events: {
@@ -59,25 +58,25 @@ describe("OpenCode terminal companion", () => {
       client: {
         rpc: () => rpc,
       },
-      storage: {
-        memory: () => [state, (mutate: (draft: typeof state) => void) => mutate(state)],
-      },
       ui: {
-        toast: { show: (toast: { message: string; variant?: string }) => toasts.push(toast) },
-        slot(claim: { render(): unknown }) {
-          slots.push(claim);
-          return () => {};
-        },
+        toast: { show: (toast: { message: string; variant?: string; sessionID?: string }) => toasts.push(toast) },
       },
     };
 
     const cleanup = await weaveTui.setup(context as never);
-    expect(slots).toHaveLength(2);
-    expect(slots[0]!.render()).toBe("🕸️ vault:0 · repo:unindexed");
     expect(toasts[0]?.message).toContain("not indexed");
 
+    const now = vi.spyOn(Date, "now").mockReturnValue(5_000);
+    await handlers.get("status")!({ data: { text: "🕸️ deep scan: 1/3", active: true, sessionID: "s1" } });
+    expect(toasts.at(-1)).toMatchObject({ message: "🕸️ deep scan: 1/3", variant: "info", sessionID: "s1" });
+    now.mockReturnValue(6_000);
+    await handlers.get("status")!({ data: { text: "🕸️ deep scan: 2/3", active: true } });
+    expect(toasts.at(-1)?.message).toBe("🕸️ deep scan: 1/3");
+    now.mockReturnValue(8_000);
+    await handlers.get("status")!({ data: { text: "🕸️ deep scan: 3/3", active: true } });
+    expect(toasts.at(-1)?.message).toBe("🕸️ deep scan: 3/3");
+
     await handlers.get("status")!({ data: { text: "pi-weave: deep scan complete", active: false, sessionID: "s1" } });
-    expect(slots[1]!.render()).toContain("scan complete");
     expect(toasts.at(-1)?.variant).toBe("success");
 
     await handlers.get("viewer")!({
@@ -105,10 +104,8 @@ describe("OpenCode terminal companion", () => {
       client: {
         rpc: () => rpc,
       },
-      storage: { memory: () => [{ text: "", active: false }, () => {}] },
       ui: {
         toast: { show: (toast: { message: string }) => toasts.push(toast) },
-        slot: () => () => {},
       },
     };
     await weaveTui.setup(context as never);
@@ -125,7 +122,7 @@ describe("OpenCode terminal companion", () => {
   });
 
   it("degrades cleanly when the server plugin is unavailable", async () => {
-    const state = { text: "", active: false };
+    const toasts: { message: string; variant: string }[] = [];
     const context = {
       client: {
         rpc: () => ({
@@ -133,11 +130,10 @@ describe("OpenCode terminal companion", () => {
           events: { on: () => () => {} },
         }),
       },
-      storage: { memory: () => [state, (mutate: (draft: typeof state) => void) => mutate(state)] },
-      ui: { toast: { show: () => {} }, slot: () => () => {} },
+      ui: { toast: { show: (toast: { message: string; variant: string }) => toasts.push(toast) } },
     };
     await weaveTui.setup(context as never);
-    expect(state.text).toBe("🕸️ unavailable");
+    expect(toasts).toContainEqual({ message: "pi-weave unavailable", variant: "warning" });
   });
 
   it("accepts an initial status without display text", async () => {
@@ -148,8 +144,7 @@ describe("OpenCode terminal companion", () => {
           events: { on: () => () => {} },
         }),
       },
-      storage: { memory: () => [{ text: "loading", active: false }, () => {}] },
-      ui: { toast: { show: () => {} }, slot: () => () => {} },
+      ui: { toast: { show: () => {} } },
     };
     await weaveTui.setup(context as never);
   });

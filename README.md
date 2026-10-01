@@ -211,6 +211,7 @@ Most people only need natural language and `/weave-view`.
 | Tool | `weave_repo` | Check, scan, and summarize the repository index |
 
 The included `weave-notepad` and `weave-explore` skills teach Pi and OpenCode when and how to use these tools.
+In OpenCode, `/weave` shows vault/repository status and scan progress appears in toasts; Pi keeps its persistent status line.
 
 ## Files, privacy, and portability
 

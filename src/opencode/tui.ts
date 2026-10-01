@@ -29,20 +29,8 @@ const weaveTui = {
   id: "pi-weave.tui",
   async setup(context) {
     const rpc = context.client.rpc(WEAVE_RPC);
-    const [status, setStatus] = context.storage.memory("pi-weave.status", {
-      initial: { text: "🕸️ loading…", active: false },
-    });
-    const update = (value: unknown) => {
-      const next = record(value);
-      setStatus((draft) => {
-        if (typeof next.text === "string") draft.text = next.text;
-        if (typeof next.active === "boolean") draft.active = next.active;
-      });
-    };
-
     try {
       const initial = await rpc.status({});
-      update(initial);
       const text = String(record(initial).text ?? "");
       if (text.includes("repo:unindexed")) {
         context.ui.toast.show({ message: "This repository is not indexed yet. Run /weave-scan.", variant: "info" });
@@ -50,12 +38,16 @@ const weaveTui = {
         context.ui.toast.show({ message: "The pi-weave repository index is stale. Run /weave-scan.", variant: "warning" });
       }
     } catch {
-      setStatus((draft) => { draft.text = "🕸️ unavailable"; });
+      context.ui.toast.show({ message: "pi-weave unavailable", variant: "warning" });
     }
 
+    let lastProgress = 0;
     const stopStatus = rpc.events.on("status", (event) => {
-      update(event.data);
       const data = record(event.data);
+      if (data.active === true && typeof data.text === "string" && Date.now() - lastProgress >= 2_000) {
+        lastProgress = Date.now();
+        context.ui.toast.show({ message: data.text, variant: "info", duration: 2_000, ...(typeof data.sessionID === "string" ? { sessionID: data.sessionID } : {}) });
+      }
       if (data.active === false && typeof data.text === "string" && data.text.includes("complete")) {
         context.ui.toast.show({ message: data.text, variant: "success", ...(typeof data.sessionID === "string" ? { sessionID: data.sessionID } : {}) });
       }
@@ -76,12 +68,7 @@ const weaveTui = {
         ...(typeof data.sessionID === "string" ? { sessionID: data.sessionID } : {}),
       });
     });
-    const stopHome = context.ui.slot({ append: "home.footer.status", render: () => status.text });
-    const stopPrompt = context.ui.slot({ append: "prompt.footer.status", render: () => status.text });
-
     return () => {
-      stopPrompt();
-      stopHome();
       stopViewer();
       stopStatus();
     };
