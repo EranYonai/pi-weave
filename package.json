@@ -76,6 +76,7 @@
     "@earendil-works/pi-ai": "^0.84.2",
     "@earendil-works/pi-coding-agent": "^0.84.2",
     "@earendil-works/pi-tui": "^0.84.2",
+    "@opencode/cli": "2.0.19",
     "@opencode/plugin": "^2.0.19",
     "@types/d3-force": "^3.0.10",
     "@types/node": "^24.0.0",

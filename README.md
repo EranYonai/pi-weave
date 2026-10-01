@@ -252,8 +252,8 @@ Set `PI_WEAVE_VAULT` to use a different vault location.
 
 Reading, writing, searching, and viewing notes are local operations. Deep repository scans and session summaries send bounded input to
 whichever model is selected in the active Pi or OpenCode session. The browser workspace binds only to loopback, uses a per-session token,
-and shuts down with the plugin lifecycle. OpenCode opens it automatically only when its server filesystem is local; remote sessions print
-the URL for a tunnel or browser on the server host.
+and shuts down with the plugin lifecycle. OpenCode opens it automatically when the terminal can reach the viewer's loopback URL; remote
+sessions print the URL for a tunnel or browser on the server host.
 
 The vault format, repository index, and skills are intentionally harness-agnostic. `src/core` contains no Pi- or OpenCode-specific imports.
 
