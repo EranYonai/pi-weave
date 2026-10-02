@@ -48,6 +48,15 @@ export const SESSION_SCAN_MAX_SESSIONS = 100;
 export const SESSION_SCAN_MAX_FILE_BYTES = 16 * 1024 * 1024;
 export const SESSION_SCAN_CONCURRENCY = 2;
 
+export const SESSION_SCAN_SYSTEM_PROMPT = [
+  "You write durable memory notes that compact coding-agent sessions into their bottom line.",
+  "First summarize what happened, what shipped (features, files, commands, decisions), and",
+  "what went less well (dead ends, breakage, unfinished work) using concrete technical details.",
+  "Then add a '## Takeaways' section with 2–4 reusable lessons: gotchas, root causes of tricky",
+  "failures, non-obvious syntax rules, or architecture patterns a future agent can apply.",
+  "Past tense. No preamble or code fences. Omit lessons unsupported by the transcript.",
+].join("\n");
+
 const DIGEST_MAX_CHARS = 12_000;
 const USER_MSG_MAX_CHARS = 400;
 const MAX_USER_MESSAGES = 60;
@@ -808,6 +817,76 @@ export interface SessionScanResult {
   /** Notes moved from the legacy `notes/` layout into `sessions/`. */
   migrated: number;
   failed: SessionScanFailure[];
+}
+
+export function formatSessionScanResult(result: SessionScanResult): string {
+  const parts = [
+    `${result.written} summarized (${result.created} new, ${result.updated} updated)`,
+    `${result.skippedFresh} unchanged`,
+  ];
+  if (result.skippedEmpty > 0) parts.push(`${result.skippedEmpty} empty`);
+  if (result.skippedTooBig > 0) parts.push(`${result.skippedTooBig} skipped (size)`);
+  if (result.skippedUnreadable > 0) parts.push(`${result.skippedUnreadable} unreadable`);
+  let text = `${parts.join(", ")} — ${result.considered} sessions considered`;
+  const first = result.failed[0];
+  if (first) text += `; ${result.failed.length} failed, first: ${first.path}: ${first.error}`;
+  return text;
+}
+
+export interface SessionDigestScanOptions {
+  vaultRoot: string;
+  digest: SessionDigest;
+  content: string;
+  source: string;
+  hash: string;
+  summarize: SummarizeFn;
+  model?: string;
+  now?: () => Date;
+}
+
+/** Summarize one in-memory public session without reading a harness database. */
+export async function runSessionDigestScan(options: SessionDigestScanOptions): Promise<SessionScanResult> {
+  const result: SessionScanResult = {
+    discovered: 1,
+    considered: 1,
+    written: 0,
+    created: 0,
+    updated: 0,
+    skippedFresh: 0,
+    skippedEmpty: 0,
+    skippedTooBig: 0,
+    skippedUnreadable: 0,
+    migrated: await migrateLegacySessionNotes(options.vaultRoot),
+    failed: [],
+  };
+  const pointer = (await readSessionNoteIndex(options.vaultRoot)).get(options.digest.id);
+  if (pointer?.hash === options.hash) {
+    result.skippedFresh = 1;
+    return result;
+  }
+  if (!sessionHasContent(options.digest)) {
+    result.skippedEmpty = 1;
+    return result;
+  }
+  try {
+    const summary = (await options.summarize({ path: options.source, content: options.content })).trim();
+    if (summary.length === 0) throw new Error("model returned an empty summary");
+    await writeSessionNote(options.vaultRoot, {
+      digest: options.digest,
+      file: { path: options.source },
+      hash: options.hash,
+      summary,
+      model: options.model ?? null,
+      at: (options.now ?? (() => new Date()))().toISOString(),
+      existingSlug: pointer?.slug ?? null,
+    });
+    result.written = 1;
+    if (pointer) result.updated = 1;
+    else result.created = 1;
+  } catch (error) {
+    result.failed.push({ path: options.source, error: error instanceof Error ? error.message : String(error) });
+  }
+  return result;
 }
 
 /**

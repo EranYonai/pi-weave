@@ -9,6 +9,7 @@
  * | `src/web/server/**` | node builtins, `src/core`, `…/shared` | DOM, `src/web/client`, `@earendil-works/*`          |
  * | `src/web/client/**` | `src/web/shared`, browser deps        | `node:*`, `src/core`, `src/pi`                      |
  * | `src/pi/**`         | everything                            | —                                                    |
+ * | `src/opencode/**`   | core, web server, OpenCode types      | Pi packages                                          |
  *
  * This file is the **single source of truth** for those rules; it absorbed the
  * former `tests/core/purity.test.ts` and the tier half of
@@ -195,6 +196,16 @@ const TIERS: readonly Tier[] = [
     nodeBuiltins: true,
     domGlobals: true,
     extensions: [".ts", ".tsx"],
+  },
+  {
+    id: "src/opencode",
+    npm: new Set(["@opencode/plugin", "@opencode/plugin/tui", "@opencode-ai/plugin", "@opencode-ai/plugin/tui", "@opencode-ai/sdk", "zod"]),
+    imports: ["src/opencode", "src/core", "src/web/server", "src/web/shared"],
+    typeOnly: [],
+    moduleExceptions: NO_EXCEPTIONS,
+    nodeBuiltins: true,
+    domGlobals: false,
+    extensions: [".ts"],
   },
 ];
 

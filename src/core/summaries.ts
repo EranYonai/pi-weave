@@ -24,6 +24,12 @@ export const DEEP_SCAN_MAX_FILES = 300;
 export const DEEP_SCAN_MAX_FILE_BYTES = 32_768;
 export const DEEP_SCAN_CONCURRENCY = 4;
 
+export const DEEP_SCAN_SYSTEM_PROMPT = [
+  "You write terse, navigation-oriented summaries of source files for a codebase index.",
+  "Rules: 1–3 sentences. What the file does, its outward surface (exports/routes/commands),",
+  "anything surprising (globals, side effects, generated sections). No preamble, no headings, no code fences.",
+].join("\n");
+
 /** A parsed summary sidecar. */
 export interface SummaryRecord {
   /** Repo-relative source path this summary describes. */
@@ -73,6 +79,16 @@ export interface DeepScanResult {
   failed: DeepScanFailure[];
   /** Sidecars removed because their target is no longer tracked. */
   pruned: number;
+}
+
+export function formatDeepScanResult(result: DeepScanResult): string {
+  const parts = [`${result.written} summarized`, `${result.skippedFresh} unchanged`];
+  if (result.skippedTooBig > 0) parts.push(`${result.skippedTooBig} skipped (size/type)`);
+  if (result.pruned > 0) parts.push(`${result.pruned} pruned`);
+  let text = `${parts.join(", ")} — ${result.considered} files considered`;
+  const first = result.failed[0];
+  if (first) text += `; ${result.failed.length} failed, first: ${first.path}: ${first.error}`;
+  return text;
 }
 
 /** Deterministic sidecar file name for a repo-relative target path. */

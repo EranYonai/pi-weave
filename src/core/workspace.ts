@@ -71,7 +71,7 @@ export function formatDashboard(status: WorkspaceStatus): string {
   const repo = status.repository;
   lines.push(`Repository (${repo.name} @ ${repo.root}):`);
   if (!repo.indexed) {
-    lines.push("  not indexed — run a repository scan or ask pi to explore");
+    lines.push("  not indexed — run /weave-scan or ask your agent to explore");
     return lines.join("\n");
   }
   lines.push(`  index: ${repo.staleness.state}`);

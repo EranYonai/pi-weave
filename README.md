@@ -53,14 +53,24 @@ pi-weave keeps track of where knowledge came from, while making the whole worksp
 
 **The conversation can end. The knowledge doesn't have to.**
 
-## Built on Pi
+## Install
 
-pi-weave is built as an extension for [Pi](https://github.com/earendil-works/pi).
+pi-weave supports [Pi](https://github.com/earendil-works/pi) and OpenCode (V1 **1.18.29+** and V2) from the same package. The adapters share
+the vault, repository index, browser workspace, tools, and skills.
 
-I've grown to love Pi precisely because it is such a lightweight agent harness. It gives the model tools and context without trying to
-become the product itself, and its extensibility makes projects like pi-weave possible.
+OpenCode V2:
 
-Install pi-weave:
+```bash
+opencode plugin add pi-weave
+```
+
+OpenCode V1 1.18.29+: add the package to both `opencode.json` (server) and `tui.json` (browser opening):
+
+```json
+{ "plugin": ["pi-weave"] }
+```
+
+Pi:
 
 ```bash
 pi install npm:pi-weave
@@ -75,7 +85,7 @@ pi install /path/to/pi-weave
 
 Requires Node **20.13 or newer**.
 
-Then just talk to Pi.
+Then just talk to your agent.
 
 ## Start taking notes
 
@@ -92,21 +102,21 @@ You: Add that the gateway team owns the migration plan.
 You: What open questions are in this note?
 ```
 
-For live narration or interview notes, tell Pi that you are dictating:
+For live narration or interview notes, tell your agent that you are dictating:
 
 ```text
 You: Start a note for this interview. I’m going to narrate; keep my words
      verbatim and organize the note as we go.
 ```
 
-For each chunk, Pi:
+For each chunk, the agent:
 
 1. appends your words unchanged to the note’s `## Raw` tail;
 2. refreshes the structured summary above it;
 3. leaves the raw record untouched.
 
 This makes the note readable during the conversation without replacing your words with an AI reconstruction. Notes based on your dictation
-remain marked `source: human`; notes drafted by Pi are marked `source: agent`.
+remain marked `source: human`; notes drafted by the agent are marked `source: agent`.
 
 Useful requests include:
 
@@ -141,7 +151,7 @@ Renaming or moving a note rewrites its inbound links automatically, so its backl
 ```bash
 /weave-view              # open the browser workspace
 /weave-view --no-open    # start it and print the URL
-/weave-view tui          # terminal UI for SSH or browser-free use
+/weave-view tui          # Pi only: terminal UI for SSH or browser-free use
 ```
 
 The browser workspace has four connected views:
@@ -163,17 +173,18 @@ last writer wins, and the workspace picks up outside changes within a couple of 
 
 `/weave-view tui` is the smaller, read-only terminal explorer: tree, focused neighborhood, details, and link health over the same graph.
 
-## Remember past pi sessions
+## Remember sessions
 
 ```bash
-/weave-scan sessions                    # pi history (default)
+/weave-scan sessions                    # Pi history, or the current OpenCode session
 /weave-scan sessions /path/to/history   # explicit history root
 ```
 
 This opt-in scan treats a supplied file—or every bounded text file under a supplied directory—as opaque session material for the active
-model to interpret, then writes generated notes under `~/.okf/notes/sessions/`. That makes it usable with Claude Code, opencode, Codex, or
-exported history trees without requiring their schema or file extension. It skips unchanged files, captures outcomes plus reusable technical
-takeaways, works outside Git repositories, and can be stopped with `/weave-scan-cancel`.
+model to interpret, then writes generated notes under `~/.okf/notes/sessions/`. In OpenCode, the pathless form reads the current session
+through the public plugin API; it never inspects OpenCode's internal database. That makes explicit paths usable with Claude Code, OpenCode,
+Codex, or exported history trees without requiring their schema or file extension. It skips unchanged files, captures outcomes plus reusable
+technical takeaways, works outside Git repositories, and can be stopped with `/weave-scan-cancel`.
 
 ## Repository knowledge
 
@@ -196,7 +207,7 @@ Most people only need natural language and `/weave-view`.
 
 | Surface | Name | Purpose |
 |---|---|---|
-| Command | `/weave-view` | Open the browser or terminal workspace |
+| Command | `/weave-view` | Open the browser workspace (`tui` is a Pi-only argument) |
 | Command | `/weave` | Show vault and repository status |
 | Command | `/weave-scan` | Build or refresh the repository index |
 | Command | `/weave-scan deep` | Add incremental model-written file summaries |
@@ -205,7 +216,11 @@ Most people only need natural language and `/weave-view`.
 | Tool | `weave_note` | List, read, add, append, finalize, and search notes |
 | Tool | `weave_repo` | Check, scan, and summarize the repository index |
 
-The included `weave-notepad` and `weave-explore` skills teach Pi when and how to use these tools.
+The included `weave-notepad` and `weave-explore` skills teach Pi and OpenCode when and how to use these tools. In OpenCode, `/weave` shows
+vault/repository status and scan progress appears in toasts; Pi keeps its persistent status line. V1 slash commands use its standard prompt
+pipeline, so the model reports command results in the conversation. `/weave` does not open a dialog. V1 scans use the model from your last
+chat message: send a message after selecting a model, then scan. Generation runs in temporary child sessions with tools denied;
+those sessions are removed on completion or cancellation. V2 uses its direct command and generation APIs.
 
 ## Files, privacy, and portability
 
@@ -245,13 +260,17 @@ We probably want OIDC next quarter…
 
 Set `PI_WEAVE_VAULT` to use a different vault location.
 
-Reading, writing, searching, and viewing notes are local operations. Deep repository scans and session summaries send bounded input to
-whichever model you configured in pi. The browser workspace binds only to loopback, uses a per-session token, and shuts down with the pi
-session.
+Reading, writing, searching, and viewing notes are local operations. Deep repository scans and session summaries send bounded input to the
+active Pi/V2 model or the last-used V1 chat model. The browser workspace binds only to loopback, uses a per-session token, and shuts down
+with the plugin lifecycle. OpenCode opens it automatically when the terminal can reach the viewer's loopback URL. Otherwise, it shows the
+exact URL for a browser or tunnel.
 
-The vault format, repository index, and skills are intentionally harness-agnostic. `src/core` contains no pi-specific imports.
+The vault format, repository index, and skills are intentionally harness-agnostic. `src/core` contains no Pi- or OpenCode-specific imports.
 
 ## Development
+
+The OpenCode V1/V2 bindings share tool schemas, core actions, and one command/scan workflow. Zod is the only direct runtime dependency,
+required by V1's tool-schema protocol; OpenCode SDKs are development-only.
 
 ```bash
 npm install

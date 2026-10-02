@@ -1,54 +1,38 @@
 ---
 name: weave-explore
-description: Explore a git repository through its pi-weave knowledge index (.okf). Use when starting work in an unfamiliar repo, when asked to "explore this repository", or before broad structural questions about modules, packages, or architecture.
+description: Explore unfamiliar git repositories and answer structural questions about modules, packages, or architecture using the pi-weave index (.okf).
 ---
 
 # Weave Explore
 
-pi-weave keeps a **derived** knowledge index of the repository at `<repo>/.okf/`. Source code is the truth; the index is a rebuildable
-cache. Deleting `.okf` loses nothing — rescan to regenerate it.
-
-## Tools
-
-In pi, use the `weave_repo` tool (or the `/weave-scan` command). To see the assembled graph in the terminal, run `/weave-view tui` (Explore
-tree, Focus neighborhood, Health surface); `/weave-view` opens the browser viewer. In other harnesses, read the JSON documents under `.okf/`
-directly.
+Use `weave_repo`. Without the tool, read `<repo>/.okf/` directly. The index is a generated, rebuildable cache; source code is authoritative.
 
 ## Workflow
 
-1. **Check for an index**: `weave_repo` action=status.
-   - `missing` → offer to scan (`weave_repo` action=scan), or scan directly when the user asked to explore.
-   - `stale` → scan again; the repository moved on.
-   - `fresh` → read it: action=overview.
-2. **Start from the overview**: file counts, languages, packages, module groupings, and likely entry points. This replaces dozens of
-   `ls`/`find` calls.
-3. **Descend progressively** (design §9): only open files in modules relevant to the user's question. The index gives you the map; the code
-   gives you the terrain.
-4. **Read summaries before full files**: if the repo has been deep-scanned (`.okf/repository/summaries/` exists), read the relevant sidecars
-   first — they tell you what a file does and its outward surface in 1–3 sentences, so you can decide whether to open the full file at all.
-5. **Answer with structure**: name modules and packages by their indexed paths so the user can jump straight to them.
+1. Check `action=status`: if missing, offer a scan or scan when exploration was requested; if stale, rescan; if fresh, read
+   `action=overview`.
+2. Use the overview's languages, packages, modules, and entry points to select relevant paths instead of listing the whole repository.
+3. Read available `.okf/repository/summaries/` sidecars before opening full files.
+4. Inspect the relevant code and cite indexed paths in your answer.
 
-## Deep summaries
+## Commands
 
-`/weave-scan deep` creates or refreshes `.okf/repository/summaries/` — one sidecar per file, written by the session model. It is **opt-in
-and incremental**: it never runs implicitly, and it only re-summarizes files whose content hash changed since their last summary. If
-summaries are missing or stale, offer `/weave-scan deep` to create or refresh them before diving into full files.
+- `/weave-scan` refreshes the index (`weave_repo` action=scan).
+- `/weave-scan deep` generates file summaries using the session model. Offer it when summaries are missing or stale; never run it
+  implicitly. Only changed content is summarized again.
+- `/weave-view` opens the browser workspace.
+- `/weave-scan sessions [path]` writes session memories to the vault, not the repository index; see `weave-notepad`.
 
-Its sibling `/weave-scan sessions` is a different scope: it summarizes past *session transcripts* into the vault (`notes/sessions/`), not the repository. See the `weave-notepad` skill — nothing it writes lands in `.okf/`.
-
-## On-disk layout
+## Files and trust
 
 ```text
 .okf/
 ├── okf.json               # format version + generator
 └── repository/
     ├── identity.json      # name, remotes, default branch
-    ├── git.json           # HEAD sha + branch + changed files (staleness anchor)
+    ├── git.json           # HEAD, branch, changed files
     ├── structure.json     # languages, packages, modules, entry points
-    └── summaries/         # deep-scan sidecars (one per file, when present)
+    └── summaries/         # generated file summaries, when present
 ```
 
-## Trust model
-
-Everything in `.okf` is machine-generated (`source: generated`). If the user corrects an interpretation, that correction belongs in the
-vault (see the `weave-notepad` skill) as human knowledge, not in the derived index.
+Index content is `source: generated`. Store user corrections as human knowledge in the vault, never only in the derived index.
