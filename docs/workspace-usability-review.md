@@ -1,13 +1,13 @@
 # Workspace usability review
 
-Date: 2026-10-02–03. Reference: Obsidian 1.13.7, its small `test` / `Welcome` vault.
+Date: 2026-10-02–03. Reference: a desktop Markdown workspace, version 1.13.7, with a small `test` / `Welcome` vault.
 Implementation: PR #62, browser workspace first; dedicated macOS window follows.
 
 The review asks whether someone can read, compare, edit, and return to their work without
 understanding the pane model. It combines a Sol 6.1 source review with a second live pass
-through Obsidian and Weave. Weave testing uses a disposable vault, never the real vault.
+through the reference app and Weave. Weave testing uses a disposable vault, never the real vault.
 
-## What the second Obsidian pass established
+## What the second reference-app pass established
 
 - A file click replaces the active pane's document, leaving the other pane alone. The
   tab strip and file list provide stable reference points.
@@ -23,7 +23,7 @@ through Obsidian and Weave. Weave testing uses a disposable vault, never the rea
   Welcome document has no Markdown headings, so its empty state correctly says so.
 - Graph is a peer reading surface. Back returned from it to the previous document.
 
-The temporary split, outline, and pop-out were closed afterward. No Obsidian note bodies
+The temporary split, outline, and pop-out were closed afterward. No reference-app note bodies
 were edited. This is a small-vault interaction review, not a large-vault performance claim.
 
 ## Controls and the user flows they serve
@@ -50,7 +50,7 @@ were edited. This is a small-vault interaction review, not a large-vault perform
 | Edit / Save / Done | Deliberately change a note | Explicit editing, one draft per note, visible save state, and discard protection |
 | Task checkbox | Record a small change without opening the editor | Shared body and write protection across duplicate views; visible checkboxes must match that body |
 | Open in external editor | Use a familiar editing tool | Retain the existing action and reload behavior; external changes do not silently replace a draft |
-| File rename / move / delete | Organize notes | Guard every affected draft, including background tabs and folder descendants; preserve unrelated drafts |
+| File actions / rename / move / delete | Organize notes | Visible menu trigger alongside filters; guard every affected draft, including background tabs and folder descendants; preserve unrelated drafts |
 | Theme | Adapt the reading surface | Existing system/light/dark cycle and next-action tooltip |
 | Refresh workspace | Retry or fetch external changes immediately | Keep the recovery action; replace implementation-oriented “Refetch everything” wording |
 | Help | Discover shortcuts and pane actions | Accessible button; shortcuts describe the actual workspace flows |
@@ -74,6 +74,10 @@ The live pass found another menu bug: Escape in pane options cleared the documen
 empty tab while leaving the menu open. Escape now closes that menu and returns focus to
 its trigger. Outside clicks dismiss menus. Focusing a document that is still loading falls
 back to its visible panel instead of leaving focus on a hidden Graph surface.
+File actions also gain a visible trigger. Their menu focuses its first action, handles its
+own arrow keys, and returns focus on Escape without changing the document behind it.
+Rename and New folder reveal their inline controls even when collapsed ancestors or filters
+hide the selected item; cancelling leaves the document and files unchanged.
 
 ## Important follow-ups
 
@@ -82,9 +86,9 @@ back to its visible panel instead of leaving focus on a hidden Graph surface.
    This deserves a small, separately designed addition; it does not require graph changes.
 2. **Reveal the active file.** A note opened from search or a link can be inside a collapsed
    folder. A visible reveal action is more predictable than forcing folders to expand on
-   every navigation. Obsidian offers both reveal and optional automatic reveal.
+   every navigation. The reference app offers both reveal and optional automatic reveal.
 3. **Capture a new note in the viewer.** Today the agent is the capture entry point and
-   browser Edit changes existing notes. Obsidian's New note action makes a different
+   browser Edit changes existing notes. The reference app's New note action makes a different
    promise. Decide that workflow explicitly before adding a button: naming, location,
    human provenance, and empty-note handling all need a coherent path.
 4. **Dedicated window.** Native title bar, app switching, menus, focus/reopen behavior,
@@ -100,7 +104,8 @@ covers note comparison and graph-to-note exploration without another workspace s
 
 Regression tests cover the shared model, affected-draft guard, checkbox writes and load
 ordering, remembered document targets, bounded parsing, and recent visit ordering.
-Live browser checks cover the revised pane, focus, modifier, menu, and narrow-window flows.
+Live browser checks cover the revised pane, focus, modifier, menu, and narrow-window flows,
+including Rename of a filtered-out or collapsed-folder note and cancelling New folder.
 Two live reading panes reflected consecutive task changes and the same Edit baseline; an
 external restore to the earlier unchecked text reached both views. Reload on a fresh server
 port restored the comparison layout with both active tabs visible and no restoration error.
@@ -108,5 +113,31 @@ Native discard/reload confirmation handling remains a manual check where the in-
 browser cannot expose its dialog. Dedicated-window lifecycle is not implemented here.
 
 Sol 6.1 re-reviewed the corrections and found no remaining confirmed blockers. The full
-gate passes 2,129 tests in 76 files, with 98.90% statements/lines, 95.32% branches, and
-98.82% functions. The browser bundle is 121.3 KiB gzip, below its 150 KiB budget.
+gate passes 2,130 tests in 76 files, with 98.90% statements/lines, 95.32% branches, and
+98.82% functions. The browser bundle is 121.6 KiB gzip, below its 150 KiB budget.
+
+## Check locally
+
+From the implementation worktree:
+
+```sh
+cd /Users/eranyonai/.codex/worktrees/weave-workspace-facelift/pi-weave
+npm run check
+pi -ne -e ./src/pi/index.ts
+```
+
+Then run `/weave-view` in Pi. The explicit extension path loads this branch, while `-ne`
+avoids loading another installed copy. Keep Pi running while checking the browser.
+This uses your configured vault; prefix the Pi command with `PI_WEAVE_VAULT=/path/to/test-vault`
+to use a disposable vault instead. `/weave-view --no-open` prints the entry URL if needed.
+
+1. Open a note, follow a link, and use Back. Cmd/Ctrl-click a related note to retain both tabs.
+2. Split right, edit the same note in both panes, and confirm the shared draft and checkboxes.
+3. Open Graph, select a node, and verify the target opens beside it; focus-note returns to the
+   last active document. Close a pane and confirm its tabs remain in the other pane.
+4. Filter out the selected note, then use File actions → Rename. Its input should become
+   visible. Escape should cancel the operation without changing the document or files.
+5. Close the last view of an unsaved note: cancel first, then accept on disposable content.
+   Also cancel a browser reload with an unsaved draft. These native dialogs need a manual pass.
+6. Resize below 850 pixels, browse the tree with arrow keys, and switch panes. Reload a clean
+   workspace and confirm tabs, layout, and reading positions return.

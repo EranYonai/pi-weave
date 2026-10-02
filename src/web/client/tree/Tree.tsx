@@ -20,7 +20,6 @@ import {
   deleteNeedsConfirmation,
   depthVar,
   dropFolder,
-  expand,
   initialTreeView,
   newFolderParent,
   newFolderPath,
@@ -33,6 +32,7 @@ import {
   rowCountLabel,
   rowViews,
   rowsFor,
+  revealFolder,
   affectedNoteSlugs,
   setQuery,
   toggleExpanded,
@@ -162,6 +162,14 @@ export function Tree(props: TreeProps) {
    * what makes a mis-click cheap.
    */
   const [menu, setMenu] = useState<{ id: string; label: string; x: number; y: number; armed?: boolean } | null>(null);
+  const root = useRef<HTMLDivElement | null>(null);
+  useLayoutEffect(() => {
+    if (menu !== null) root.current?.querySelector<HTMLButtonElement>(".weave-menu button")?.focus();
+  }, [menu?.id]);
+  const closeMenu = (): void => {
+    setMenu(null);
+    root.current?.querySelector<HTMLButtonElement>(".weave-tree-actions")?.focus();
+  };
   const [editing, setEditing] = useState<{ id: string; label: string; value: string } | null>(null);
   /**
    * The parent path a pending "New folder" will be created under, or `null`.
@@ -191,10 +199,11 @@ export function Tree(props: TreeProps) {
       // gesture `rename` already uses, and it shows *where* the folder will
       // land, which a prompt cannot.
       const parent = newFolderParent(target);
-      if (parent !== "") setState((current) => expand(current, `vfolder:${parent}`));
+      setState((current) => revealFolder(current, parent));
       setDraft(parent);
       setEditing({ id: DRAFT_FOLDER_ID, label: "", value: "" });
     } else if (action === "rename") {
+      setState((current) => revealFolder(current, target.path.split("/").slice(0, -1).join("/")));
       setEditing({ id: menu.id, label: menu.label, value: menu.label });
     } else if (target.type !== "vault") {
       // Before the request: asking after a delete is asking about a file that
@@ -254,7 +263,10 @@ export function Tree(props: TreeProps) {
   };
 
   return (
-    <div class="weave-tree" onKeyDown={(event) => {
+    <div class="weave-tree" ref={root} onKeyDown={(event) => {
+      if (menu !== null && event.key === "Escape") {
+        event.preventDefault(); event.stopPropagation(); closeMenu(); return;
+      }
       const target = event.target as KeyTarget;
       const next = treeKey(rows, state, props.selectedId, event.key, isTextEntry(target?.tagName ?? null, target?.isContentEditable === true));
       if (!next.handled) return;
@@ -266,6 +278,11 @@ export function Tree(props: TreeProps) {
         <input type="search" class="weave-filter" value={state.query} placeholder={FILTER_PLACEHOLDER} aria-label={FILTER_LABEL} title={FILTER_HINT} onInput={(event) => setState(setQuery(state, event.currentTarget.value))} />
         <button type="button" class="weave-chip" title={provenanceHint(state.provFilter)} onClick={() => setState(cycleProvenance(state))}>◧ {provenanceLabel(state.provFilter)}</button>
         <button type="button" class="weave-chip" title={internalsHint(state.showInternals)} onClick={() => setState(toggleInternals(state))}>◧ {internalsLabel(state.showInternals)}</button>
+        <button type="button" class="weave-chip weave-tree-actions" aria-label="File actions" title="File actions for the selected item" onClick={(event) => {
+          const id = props.selectedId !== null && mutableTreeRow(props.selectedId) !== null ? props.selectedId : "vault";
+          const at = event.currentTarget.getBoundingClientRect();
+          setMenu({ id, label: props.graph?.model.nodes.find((node) => node.id === id)?.label ?? "Vault", x: at.left, y: at.bottom });
+        }}>···</button>
       </div>
       {empty === null ? (
         <ul
@@ -287,8 +304,18 @@ export function Tree(props: TreeProps) {
         const target = mutableTreeRow(menu.id)!;
         return (
           <>
-            <button type="button" class="weave-menu-backdrop" aria-label="Close context menu" onClick={() => setMenu(null)} />
-            <div class="weave-menu" role="menu" style={{ left: `${menu.x}px`, top: `${menu.y}px` }}>
+            <button type="button" class="weave-menu-backdrop" aria-label="Close context menu" onClick={closeMenu} />
+            <div class="weave-menu" role="menu" style={{ left: `${menu.x}px`, top: `${menu.y}px` }} onKeyDown={(event) => {
+              if (event.key === "Escape") { event.preventDefault(); closeMenu(); }
+              else if (["ArrowDown", "ArrowUp", "Home", "End"].includes(event.key)) {
+                event.preventDefault();
+                const items = [...event.currentTarget.querySelectorAll<HTMLButtonElement>("button")];
+                const index = items.indexOf(document.activeElement as HTMLButtonElement);
+                const next = event.key === "Home" ? 0 : event.key === "End" ? items.length - 1 : (index + (event.key === "ArrowDown" ? 1 : -1) + items.length) % items.length;
+                items[next]?.focus();
+              }
+              event.stopPropagation();
+            }}>
               <button type="button" role="menuitem" onClick={() => void act("newFolder")}>New folder…</button>
               {target.type !== "vault" ? (
                 <>

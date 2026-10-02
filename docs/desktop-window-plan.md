@@ -4,7 +4,7 @@ Date: 2026-10-02. Status: revised proposal following the user's clarification to
 
 ## 1. Decision and scope
 
-First give the existing browser viewer an Obsidian-inspired workspace: note tabs, per-tab navigation history, graph-as-a-tab, split panes, a clearer notes list, collapsible sidebars, and a visual facelift. Ship and validate that experience in the browser. Then add a dedicated macOS window around the same UI. Keep the agent session responsible for the local server. Reuse the existing reader, editor, graph renderer, search, and data APIs inside a revised shared web shell.
+First give the existing browser viewer an note-first workspace: note tabs, per-tab navigation history, graph-as-a-tab, split panes, a clearer notes list, collapsible sidebars, and a visual facelift. Ship and validate that experience in the browser. Then add a dedicated macOS window around the same UI. Keep the agent session responsible for the local server. Reuse the existing reader, editor, graph renderer, search, and data APIs inside a revised shared web shell.
 
 The user explicitly chose:
 
@@ -15,11 +15,11 @@ The user explicitly chose:
 
 “Standalone” in this plan describes the window: its own application identity, app switching, and native window controls. Closing the agent still stops its server. There is no detached server, background daemon, Dock-only workspace boot, or new knowledge store.
 
-The first delivery is **the workspace usability explored in Obsidian, running in today's browser viewer**. The second adds application identity and native window behavior. Native hosting must not block or shape the initial UI work. Minimize implementation by sharing components and using a bounded pane model, rather than omitting the requested experience.
+The first delivery is **the tabs, navigation, and pane behavior explored in the reference app, running in today's browser viewer**. The second adds application identity and native window behavior. Native hosting must not block or shape the initial UI work. Minimize implementation by sharing components and using a bounded pane model, rather than omitting the requested experience.
 
 ## 2. What was actually explored
 
-The open reference was Obsidian 1.13.7, in a small vault containing `test` and `Welcome`. These are observations from interacting with the app, not assumptions from screenshots alone.
+The open reference was a desktop Markdown workspace, version 1.13.7, in a small vault containing `test` and `Welcome`. These are observations from interacting with the app, not assumptions from screenshots alone.
 
 | Interaction tested | Observed behavior | Lesson for Weave |
 | --- | --- | --- |
@@ -38,13 +38,11 @@ The visible shell also has a narrow action ribbon, Files/Search/Bookmarks sideba
 
 The temporary split, extra tabs, and pop-out were closed, returning to the original graph and `test` tabs. No note bodies were edited. Search/history state was exercised. This was a usability exploration of a two-note vault, not a large-vault performance test, editing reliability audit, restart-persistence test, or plugin review.
 
-For the broader documented model, see Obsidian's [workspace](https://obsidian.md/help/workspace) and [tabs](https://obsidian.md/help/tabs) documentation.
-
 ## 3. What Weave already provides
 
 Inspected baseline: local `main` at `a13d32c`. This is the local checkout, not a claim that all other branches or remote work are incorporated. In particular, it has no `src/opencode` directory; launcher wiring must be reconciled with that adapter if it lands before implementation.
 
-Read `docs/design.md` first. Weave's distinguishing workspace remains human/agent knowledge plus repository knowledge, with plain files and explicit provenance. An Obsidian-like container should not turn the product into a separate notes database.
+Read `docs/design.md` first. Weave's distinguishing workspace remains human/agent knowledge plus repository knowledge, with plain files and explicit provenance. A desktop workspace shell should not turn the product into a separate notes database.
 
 I also launched the existing viewer against a disposable vault, opened a note, inspected the tree/note/graph composition, and used the existing search to navigate to another note. The real vault was not used for this comparison.
 
@@ -84,7 +82,7 @@ Split right:    Notes │ [Note A] [Note B] │ [Graph] │ Context
 Split down:    the same two tab groups arranged vertically
 ```
 
-This is a behavior sketch; refine spacing and visual hierarchy against the observed Obsidian experience before implementing the shell. Use restrained borders, clear active tabs and note selection, readable note width, compact navigation, and quieter metadata. Keep Weave's identity and provenance visible. Validate at a desktop viewport around 1280×800 and smaller sizes. Rework responsive rules for the new composition: collapse sidebars and show only the active pane when two panes would be unusably narrow, retaining the hidden pane's state and an explicit pane-switch control.
+This is a behavior sketch; refine spacing and visual hierarchy against the observed desktop workspace experience before implementing the shell. Use restrained borders, clear active tabs and note selection, readable note width, compact navigation, and quieter metadata. Keep Weave's identity and provenance visible. Validate at a desktop viewport around 1280×800 and smaller sizes. Rework responsive rules for the new composition: collapse sidebars and show only the active pane when two panes would be unusably narrow, retaining the hidden pane's state and an explicit pane-switch control.
 
 ### Notes, tabs, history, and search
 
@@ -93,7 +91,7 @@ This is a behavior sketch; refine spacing and visual hierarchy against the obser
 - Tabs have titles, active state, close controls, and unsaved indicators. Support explicit New tab, open in new tab, keyboard switching, and close. Start without pinning, preview-tab modes, or arbitrary drag-and-drop docking.
 - Each document tab owns back/forward history and reading position. Back/forward traverses notes within that tab rather than navigating away from the app. New navigation after Back drops the forward tail; deleted targets get a useful missing-note state.
 - Switching tabs preserves an unsaved draft. Replacing a tab's document, navigating its history, or closing its last view prompts before discarding a draft. Keep one draft per note identity across panes/tabs so opening the same note twice cannot create competing in-memory edits. External writes retain the existing last-writer-wins contract; do not overwrite an in-memory draft during a poll.
-- Keep explicit Edit/Save and existing Markdown rendering. This change does not introduce Obsidian Live Preview or a new editor engine.
+- Keep explicit Edit/Save and existing Markdown rendering. This change does not introduce inline preview editing or a new editor engine.
 - Keep `Cmd+K` for unified search. Show an Open in new tab action and its shortcut in results. Context links follow the same navigation rules as the notes list and wikilinks.
 
 ### Graph and split panes
@@ -238,7 +236,7 @@ A distributable macOS helper needs an explicit Developer ID signing/notarization
 
 Stage A is independently shippable. Complete and review it before starting native-host implementation.
 
-1. **A1 — Workspace layout and visual direction.** Make a reviewable browser mockup for note, graph, and split layouts using existing components and observed Obsidian patterns. Define active, dirty, empty, collapsed, and narrow-window states. Exit: the composition provides the requested note-first experience and leaves graph visuals intact.
+1. **A1 — Workspace layout and visual direction.** Make a reviewable browser mockup for note, graph, and split layouts using existing components and observed desktop workspace patterns. Define active, dirty, empty, collapsed, and narrow-window states. Exit: the composition provides the requested note-first experience and leaves graph visuals intact.
 2. **A2 — Tabs, history, and drafts.** Implement the small workspace state, shared drafts, document history, scroll continuity, and unified open actions. Exit: switching preserves drafts, closing/replacing protects them, and stale fetches cannot corrupt another tab.
 3. **A3 — Graph tab, splits, and sidebars.** Support two resizable tab groups, graph navigation, context following focus, collapsible sidebars, and keyboard-accessible controls. Exit: note–note and note–graph comparisons work without duplicate graph simulations or cross-pane selection leaks.
 4. **A4 — Restoration and browser validation.** Add bounded workspace snapshots and finish responsive layout and visual polish. Exercise actual reading/editing workflows in the browser, run project checks, and provide a manual user pass. Exit: tabs/layout/reading positions restore across server ports; drafts and graph behavior remain correct. The browser facelift can ship here with no desktop runtime dependency.

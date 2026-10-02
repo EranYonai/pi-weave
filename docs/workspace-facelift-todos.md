@@ -27,7 +27,7 @@ Branch: `codex/weave-workspace-facelift`. Browser first; dedicated macOS hosting
 - [x] Main: review diff, update docs, commit/push branch and open draft PR.
 - [x] Luna / tabs: independent self-review; fix and regression-test the confirmed stale clean-draft finding.
 - [x] Sol 6.1: independent self-review and re-review; correct data-safety and navigation findings.
-- [x] Main: second Obsidian pass and control-by-control user-flow review in `workspace-usability-review.md`.
+- [x] Main: second reference-app pass and control-by-control user-flow review in `workspace-usability-review.md`.
 
 ## Verification
 
@@ -35,9 +35,9 @@ Unit checks cover history, tab/pane moves, draft/save races, persisted input val
 
 ## Results
 
-- `npm run check`: typechecks, committed bundle check, and 2,129 tests pass (76 files).
+- `npm run check`: typechecks, committed bundle check, and 2,130 tests pass (76 files).
 - Coverage: 98.90% statements/lines, 95.32% branches, 98.82% functions; thresholds unchanged.
-- Bundle: 400.3 KiB raw, 121.3 KiB gzip (150 KiB gzip budget); no dependency changes.
+- Bundle: 401.4 KiB raw, 121.6 KiB gzip (150 KiB gzip budget); no dependency changes.
 - Disposable-vault browser checks at 1280×800 and 700×720: tab/new-tab search, wiki-link history,
   shared drafts across two views, save refresh, graph/note split, pane merge, sidebars, keyboard
   focus, narrow-pane switching, and scroll restoration. A 1440-pixel reading position survived tab
@@ -55,6 +55,9 @@ Unit checks cover history, tab/pane moves, draft/save races, persisted input val
   last-active document routing, keyboard focus, narrow tree browsing, context-link modifiers,
   and recent visits. Live checks additionally covered menu Escape/outside-click dismissal,
   active-tab visibility, synchronized task/editor bodies, external restores, and a fresh-port
-  layout reload. Sol re-reviewed the fixes with no remaining confirmed blockers.
+  layout reload. File actions now have a visible trigger and their own menu keyboard handling;
+  live checks verified focus, arrow navigation, Escape, new-folder cancellation, and Rename
+  of filtered-out and collapsed-folder notes.
+  Sol re-reviewed the fixes with no remaining confirmed blockers.
 - Graph renderer, layout physics, position caching, core knowledge code, and package dependencies
   are unchanged. Dedicated macOS hosting remains Stage B after browser review.

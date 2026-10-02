@@ -54,6 +54,7 @@ import {
   rowView,
   rowViews,
   rowsFor,
+  revealFolder,
   setQuery,
   toggleExpanded,
   toggleInternals,
@@ -887,6 +888,16 @@ describe("creating a folder inline, not through a prompt", () => {
   ]);
   const open = { ...initialTreeView(), expanded: new Set(["vault", "vfolder:docs", "vfolder:docs/deep"]) };
   const rows = rowsFor(folderModel, open);
+
+  it("reveals inline operations through collapsed ancestors and excluding filters", () => {
+    const hidden = { ...initialTreeView([]), query: "excluded", provFilter: "generated" as const };
+    expect(rowsFor(folderModel, hidden).some((row) => row.id === "note:docs/deep/two")).toBe(false);
+    const visible = revealFolder(hidden, "docs/deep");
+    expect(rowsFor(folderModel, visible).some((row) => row.id === "note:docs/deep/two")).toBe(true);
+    expect(visible.expanded).toEqual(new Set(["vault", "vfolder:docs", "vfolder:docs/deep"]));
+    expect(hidden.expanded.size).toBe(0);
+    expect(revealFolder(hidden, "").expanded).toEqual(new Set(["vault"]));
+  });
 
   it("puts a new folder where the gesture pointed", () => {
     // Right-clicking a *note* means "next to this", not "inside this" — a

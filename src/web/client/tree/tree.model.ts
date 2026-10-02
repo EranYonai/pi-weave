@@ -74,6 +74,17 @@ export function initialTreeView(roots: readonly string[] = ["vault", "repository
   return { expanded: new Set(roots), showInternals: false, provFilter: null, query: "" };
 }
 
+/** Make an inline file operation visible even when its destination was filtered or collapsed. */
+export function revealFolder(state: TreeViewState, path: string): TreeViewState {
+  const expanded = new Set(state.expanded).add("vault");
+  let parent = "";
+  for (const part of path ? path.split("/") : []) {
+    parent = parent ? `${parent}/${part}` : part;
+    expanded.add(`vfolder:${parent}`);
+  }
+  return { ...state, expanded, query: "", provFilter: null };
+}
+
 // --- reassembling the wire payload -------------------------------------------------
 
 /**
