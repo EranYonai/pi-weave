@@ -1,6 +1,6 @@
 {
   "name": "pi-weave",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "description": "Local-first Markdown memory and knowledge graph for Pi and OpenCode: preserve decisions, recall sessions, and explore notes with code.",
   "type": "module",
   "sideEffects": false,
