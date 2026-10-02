@@ -13,7 +13,7 @@ import { createDraftStore, mayMutateDrafts, mayRemoveDrafts } from "../note/draf
 import type { DraftStore } from "../note/drafts";
 import { DISCARD_PROMPT } from "../note/note.model";
 import { SearchPalette } from "../search/SearchPalette";
-import { Tree } from "../tree/Tree";
+import { Icon, Tree } from "../tree/Tree";
 import { initialWorkspaceState } from "../state";
 import { startWorkspace, watchNote } from "../workspace";
 import type { WorkspaceHandle } from "../workspace";
@@ -25,7 +25,7 @@ import { watchKeys } from "./keys";
 import { COLUMN_FOCUS_SELECTORS, TREE_FILTER_SELECTOR, focusSelector, runShellAction } from "./keys.model";
 import { StatusBar } from "./StatusBar";
 import type { OverlayId } from "./shell.model";
-import { TICK_MS, looksApple, recordVisit, searchShortcut, statusBarModel, summarize } from "./shell.model";
+import { TICK_MS, looksApple, recentEntries, recordVisit, searchShortcut, statusBarModel, summarize } from "./shell.model";
 import { cycleTheme, effectiveScheme, loadTheme, saveTheme, themeAttr, themeButton } from "./theme.model";
 
 export interface ShellProps { cwd: string; initialWidth: number; platform: string; tuner?: boolean }
@@ -34,6 +34,15 @@ function titleOf(tab: WorkspaceTab, graph: GraphPayload | null): string {
   if (tab.kind === "graph") return "Graph view";
   const id = tabSelection(tab);
   return id === null ? "New tab" : graph?.model.nodes.find((node) => node.id === id)?.label ?? id.replace(/^[^:]+:/, "");
+}
+
+function RecentList(props: { visits: readonly string[]; graph: GraphPayload | null; selectedId: string | null; onSelect: (id: string, newTab?: boolean) => void }) {
+  const [snapshot] = useState(props.visits);
+  return <div class="weave-recents">{recentEntries(snapshot, props.graph, props.selectedId).map((entry) => <button type="button" key={entry.id}
+    aria-current={entry.selected ? "page" : undefined} title={entry.label}
+    onClick={(event) => props.onSelect(entry.id, event.metaKey || event.ctrlKey)}>
+    <span class="weave-kind"><Icon name={entry.icon} class="weave-icon" /></span><span class="weave-recent-label">{entry.label}</span>
+  </button>)}</div>;
 }
 
 /** A tab view can unmount; the shared draft store outlives it. */
@@ -332,7 +341,7 @@ export function Shell(props: ShellProps) {
       </nav>
       {layout.treeVisible ? <><aside class="weave-sidebar weave-sidebar-notes" aria-label="Notes sidebar" style={{ width: Math.min(layout.treeWidth, width - 90) }}>
         <div class="weave-sidebar-heading"><button type="button" aria-pressed={!recentMode} onClick={() => setRecentMode(false)}>Files</button><button type="button" aria-pressed={recentMode} onClick={() => setRecentMode(true)}>Recent</button><button type="button" aria-label="Hide notes sidebar" onClick={() => setLayout({ ...layout, treeVisible: false })}>«</button></div>
-        {recentMode ? <div class="weave-recents">{visits.map((id) => <button type="button" key={id} onClick={(event) => select(id, event.metaKey || event.ctrlKey)}>{data.graph?.model.nodes.find((node) => node.id === id)?.label ?? id}</button>)}</div> : <Tree graph={data.graph} selectedId={selectedId} recentIds={data.recentIds} onSelect={(id, newTab, keepSidebar) => select(id, newTab, layout.activePane, keepSidebar)} onMutate={mayMutate} onRefresh={() => workspace.current?.refresh()} now={now} />}
+        {recentMode ? <RecentList visits={visits} graph={data.graph} selectedId={selectedId} onSelect={select} /> : <Tree graph={data.graph} selectedId={selectedId} recentIds={data.recentIds} onSelect={(id, newTab, keepSidebar) => select(id, newTab, layout.activePane, keepSidebar)} onMutate={mayMutate} onRefresh={() => workspace.current?.refresh()} now={now} />}
         <div class="weave-vault-label"><span>Workspace</span><strong title={props.cwd}>{props.cwd.split(/[\\/]/).filter(Boolean).pop() ?? "Weave"}</strong></div>
       </aside><ResizeHandle label="Resize notes sidebar" min={180} max={420} value={layout.treeWidth} onChange={(delta) => setLayout((value) => ({ ...value, treeWidth: Math.max(180, Math.min(420, value.treeWidth + delta)) }))} /></> : null}
       <main class={`weave-panes weave-split-${layout.split}`} style={layout.panes.length === 2 && width >= 850 ? { [layout.split === "right" ? "gridTemplateColumns" : "gridTemplateRows"]: `minmax(0, ${layout.ratio}fr) 4px minmax(0, ${1 - layout.ratio}fr)` } : {}}>

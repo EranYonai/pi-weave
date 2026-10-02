@@ -15,12 +15,30 @@
  */
 
 import type { GraphPayload, WireNodeKind, WireStalenessState } from "../../shared/wire";
+import { kindIcon } from "../tree/tree.model";
+import type { IconName } from "./icons.model";
 export type ColumnId = "tree" | "note" | "graph";
 export const COLUMNS: readonly ColumnId[] = ["tree", "note", "graph"];
 
 /** Most recent selections in this window, independent of whether their tabs stay open. */
 export function recordVisit(previous: readonly string[], id: string | null): readonly string[] {
   return id === null ? previous : [id, ...previous.filter((item) => item !== id)].slice(0, 100);
+}
+
+export interface RecentEntry {
+  readonly id: string;
+  readonly label: string;
+  readonly icon: IconName;
+  readonly selected: boolean;
+}
+
+/** Present a frozen visit order without changing it when selection moves. */
+export function recentEntries(ids: readonly string[], graph: GraphPayload | null, selectedId: string | null): RecentEntry[] {
+  return ids.map((id) => {
+    const node = graph?.model.nodes.find((entry) => entry.id === id);
+    const kind: WireNodeKind = node?.kind ?? (id.startsWith("vfolder:") ? "module" : id.startsWith("artifact:") ? "file" : "note");
+    return { id, label: node?.label ?? id.replace(/^[^:]+:/, ""), icon: kindIcon(kind), selected: id === selectedId };
+  });
 }
 
 // --- the header summary --------------------------------------------------------

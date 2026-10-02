@@ -28,8 +28,10 @@ export const WORKSPACE_CSS = `
 .weave-vault-label span{font-size:var(--weave-px-caption);color:var(--weave-faint);text-transform:uppercase;letter-spacing:.08em}
 .weave-vault-label strong{font-size:var(--weave-px-row);font-weight:500;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .weave-recents{display:flex;flex-direction:column;gap:3px;padding:6px 10px;overflow:auto}
-.weave-recents button{text-align:left;background:none;border:0;padding:9px;border-radius:var(--weave-radius);overflow:hidden;text-overflow:ellipsis}
+.weave-recents button{display:flex;align-items:center;gap:8px;width:100%;text-align:left;background:none;border:0;padding:9px;border-radius:var(--weave-radius);overflow:hidden}
 .weave-recents button:hover{background:var(--weave-new)}
+.weave-recents button[aria-current=page]{background:var(--weave-raise);color:var(--weave-fg)}
+.weave-recents .weave-recent-label{min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .weave-workspace-divider{flex:none;width:4px;background:var(--weave-panel);cursor:col-resize;touch-action:none;z-index:3}
 .weave-workspace-divider:hover,.weave-workspace-divider:focus-visible{background:var(--weave-accent)}
 .weave-workspace-divider[aria-orientation=horizontal]{width:auto;height:4px;cursor:row-resize}

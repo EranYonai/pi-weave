@@ -17,6 +17,7 @@ import {
   NO_VALUE,
   SEARCH_PLACEHOLDER,
   looksApple,
+  recentEntries,
   repoLabel,
   recordVisit,
   searchHint,
@@ -39,6 +40,36 @@ it("records recent visits in last-visit order without depending on open tabs", (
   for (let index = 0; index < 110; index++) visits = recordVisit(visits, `note:${index}`);
   expect(visits).toHaveLength(100);
   expect(visits[0]).toBe("note:109");
+});
+
+it("keeps a Recent browsing snapshot ordered while selection moves, then reflects MRU on reentry", () => {
+  const snapshot = ["note:a", "vfolder:Project", "artifact:Test Results.html"];
+  const graph = payload([
+    node("note:a", "note"),
+    node("vfolder:Project", "module"),
+    node("artifact:Test Results.html", "file"),
+  ]);
+  const updatedVisits = recordVisit(snapshot, "artifact:Test Results.html");
+  expect(recentEntries(snapshot, graph, "artifact:Test Results.html").map((entry) => entry.id)).toEqual(snapshot);
+  expect(recentEntries(snapshot, graph, "artifact:Test Results.html").map((entry) => entry.selected)).toEqual([false, false, true]);
+  expect(recentEntries(updatedVisits, graph, "artifact:Test Results.html").map((entry) => entry.id)).toEqual(["artifact:Test Results.html", "note:a", "vfolder:Project"]);
+});
+
+it("presents note, folder, and HTML artifact rows with their own icons and labels", () => {
+  const ids = ["note:a", "vfolder:Project", "artifact:Test Results.html"];
+  const graph = payload([
+    { ...node("note:a", "note"), label: "A note" },
+    { ...node("vfolder:Project", "module"), label: "Project" },
+    { ...node("artifact:Test Results.html", "file"), label: "Test Results" },
+  ]);
+  expect(recentEntries(ids, graph, null)).toEqual([
+    { id: "note:a", label: "A note", icon: "note", selected: false },
+    { id: "vfolder:Project", label: "Project", icon: "module", selected: false },
+    { id: "artifact:Test Results.html", label: "Test Results", icon: "file", selected: false },
+  ]);
+  expect(recentEntries(ids, null, null).map((entry) => [entry.label, entry.icon])).toEqual([
+    ["a", "note"], ["Project", "module"], ["Test Results.html", "file"],
+  ]);
 });
 
 function node(id: string, kind: WireGraphNode["kind"]): WireGraphNode {

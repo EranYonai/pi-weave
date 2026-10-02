@@ -157,7 +157,8 @@ Renaming or moving a note rewrites its inbound links automatically, so its backl
 The browser workspace puts notes at the center, with a collapsible notes sidebar, document tabs, and optional context for links,
 backlinks, tags, and code mentions. Open a note to replace the current document; `⌘` / `Ctrl` click a note or wiki-link to open a new tab.
 Each document tab has its own Back/Forward history and reading position. Search with `⌘K` / `Ctrl K`; `⌘` / `Ctrl Enter` opens a result
-in a new tab. Press `?` for shortcuts.
+in a new tab. **Recent** keeps its order while you browse; returning to it refreshes the visit order. Its rows show the same item icons
+as Files. Press `?` for shortcuts.
 
 Open **Graph view** from the left ribbon. It uses the existing graph renderer and controls. Use **Pane options (···)** to split right or
 down, move the current tab to the other pane, or close a pane while retaining its tabs. On small windows, **Switch pane** reaches the

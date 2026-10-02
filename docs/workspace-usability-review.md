@@ -35,7 +35,7 @@ were edited. This is a small-vault interaction review, not a large-vault perform
 | Files | Browse familiar folders and notes | Keep the list stable; file clicks follow the active pane |
 | Tree filter | Narrow the visible file list | A local list filter; it does not introduce another retrieval mode |
 | Provenance / knowledge filters | Inspect authorship or reveal repository internals | Secondary controls retain their explanatory tooltips |
-| Recent | Return to a document after leaving or closing its tab | Track actual visits in this window, latest first; tab closure no longer erases the list |
+| Recent | Return to a document after leaving or closing its tab | Keep row order stable while browsing; refresh visit order on reentry; show note, folder, and HTML-file icons |
 | Notes ribbon / sidebar hide | Recover reading space, then restore navigation | Both directions remain explicit; narrow keyboard browsing keeps the sidebar open |
 | Document tab | Return to a working context | Preserve its history, scroll, and shared draft; arrow keys navigate the strip |
 | Tab close | Finish with one context | Clear clean edit sessions; ask before discarding the final view of a dirty draft |
@@ -67,6 +67,9 @@ legitimate external restore to an earlier body. Content equality alone cannot do
 It also found navigation inconsistencies: focus-note changed tabs, Graph returned to the
 last-created rather than last-active document, narrow tree navigation hid its own sidebar,
 and context links ignored new-tab modifiers. Recent ordering and retention were corrected.
+Recent rows retain their order while the list is open, so clicking does not move other
+items under the pointer. Reentering Recent or reopening the notes sidebar picks up the
+latest visits. Rows reuse Files icons and show selection and full-title tooltips.
 Active tabs now scroll into view when selection, labels, or pane dimensions change, so a
 restored or newly selected document does not leave its tab hidden beyond the strip.
 
@@ -113,8 +116,8 @@ Native discard/reload confirmation handling remains a manual check where the in-
 browser cannot expose its dialog. Dedicated-window lifecycle is not implemented here.
 
 Sol 6.1 re-reviewed the corrections and found no remaining confirmed blockers. The full
-gate passes 2,130 tests in 76 files, with 98.90% statements/lines, 95.32% branches, and
-98.82% functions. The browser bundle is 121.6 KiB gzip, below its 150 KiB budget.
+gate passes 2,132 tests in 76 files, with 98.90% statements/lines, 95.33% branches, and
+98.83% functions. The browser bundle is 121.8 KiB gzip, below its 150 KiB budget.
 
 ## Check locally
 
