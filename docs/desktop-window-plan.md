@@ -97,7 +97,7 @@ This is a behavior sketch; refine spacing and visual hierarchy against the obser
 ### Graph and split panes
 
 - Provide a visible Graph action that opens or focuses one Graph tab per workspace. The existing graph fills that tab's available area.
-- Selecting a graph node opens or selects its note/details in the other pane when a split exists; otherwise it opens/focuses a document tab in the same group. The Graph tab remains available to return to, retaining camera and positions. Non-note repository nodes continue to use existing detail rendering.
+- Selecting a graph node first previews its title/type without leaving Graph. A second click or Open in new tab creates a document tab in the other pane when split, or the same group otherwise. The Graph tab remains available to return to, retaining camera and positions. Non-note repository nodes continue to use existing detail rendering.
 - Support **Split right** and **Split down** through visible tab/menu actions. Use at most two tab groups initially, a resizable divider, and explicit Move to other pane / Close pane actions. A split can duplicate the current note view while sharing its draft. Closing a pane moves its tabs into the remaining group rather than discarding work.
 - Clicking or focusing a pane makes it the destination for subsequent navigation. Context follows the active pane and selection, not whichever asynchronous request finished last.
 - Keep one graph renderer instance per workspace. Do not run multiple force simulations because the user opened tabs. Preserve its state when inactive and notify it of container resizing when shown or moved; verify that hidden-container sizing cannot reset its camera or positions.
@@ -286,6 +286,6 @@ Still outside this roadmap: graph redesign or force retuning; an independent ser
 
 Stage A is implemented on `codex/weave-workspace-facelift`: note-first shell, document tabs and history, shared in-memory drafts,
 single Graph tab, two resizable pane groups, collapsible sidebars, bounded per-view workspace snapshots, and responsive composition.
-The graph renderer and physics remain unchanged. Browser and automated validation are recorded in `workspace-facelift-todos.md`.
+Graph drawing and physics remain unchanged; node-click routing separates preview from opening. Browser and automated validation are recorded in `workspace-facelift-todos.md`.
 A manual user browser pass is the remaining product review before Stage B native-host prototyping. No desktop helper or runtime
 dependency is included in this browser change.

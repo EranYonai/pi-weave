@@ -44,6 +44,7 @@ export type RendererFactory = (scheme: ColorScheme) => GraphRenderer;
  */
 export interface SigmaLike {
   on(event: "clickNode", handler: (payload: { node: string }) => void): unknown;
+  on(event: "doubleClickNode", handler: (payload: { node: string; preventSigmaDefault(): void }) => void): unknown;
   on(event: "clickStage", handler: () => void): unknown;
   on(event: "downNode", handler: (payload: { node: string }) => void): unknown;
   on(event: "enterNode", handler: (payload: { node: string }) => void): unknown;
@@ -146,6 +147,7 @@ export function sigmaRenderer(
   let dragMove: (id: string, at: Point) => void = () => {};
   let dragEnd: (id: string) => void = () => {};
   let dragging: string | null = null;
+  let nodeMoved = false;
 
   const endDrag = (id: string | null): void => {
     if (dragging === null) return;
@@ -208,16 +210,22 @@ export function sigmaRenderer(
       const instance = create(graph, container, graphSettings(scheme));
       // §1.3's context bus: a click writes `selectedId`, and the note column,
       // the tree and the context rail all recompute from it.
-      instance.on("clickNode", ({ node }) => select(node));
+      instance.on("clickNode", ({ node }) => { if (!nodeMoved) select(node); });
+      instance.on("doubleClickNode", ({ node, preventSigmaDefault }) => {
+        preventSigmaDefault();
+        if (!nodeMoved) select(node);
+      });
       instance.on("clickStage", () => select(null));
       instance.on("downNode", ({ node }) => {
         dragging = node;
+        nodeMoved = false;
         // Hold the view still while the node follows the cursor (see endDrag).
         sigma?.setSetting("enableCameraPanning", false);
         dragStart(node);
       });
       instance.on("moveBody", (payload) => {
         if (dragging !== null) {
+          nodeMoved = true;
           // Sigma's captor pans the camera on every mouse move while the
           // button is down; during a node drag that is the pan the gesture
           // must not be. `preventSigmaDefault` is the captor's own gate — it

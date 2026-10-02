@@ -42,6 +42,7 @@ import {
   graphClick,
   graphColumnModel,
   graphCountLabel,
+  graphPreview,
   hoverHighlight,
 } from "./column.model";
 import type { PositionStorage } from "./positions";
@@ -54,11 +55,14 @@ import type { GraphSimulation } from "./dynamics";
 import { ForceTuner } from "./ForceTuner";
 import { POSITIONS_STORAGE_KEY } from "./positions";
 import { loadGroupColors, saveGroupColors } from "./tuner.model";
+import { Icon } from "../tree/Tree";
 
 export interface GraphProps {
   graph: GraphPayload | null;
   selectedId: string | null;
   onSelect: (id: string | null) => void;
+  previewId: string | null;
+  onOpen: (id: string) => void;
   /** Injected: `createSigmaRenderer` in the browser, a fake in a test. */
   renderer: RendererFactory;
   /** Injected: `localStorage`. See `positions.ts` for why it is a port. */
@@ -170,6 +174,7 @@ export function Graph(props: GraphProps) {
     () => graphColumnModel(props.graph, props.selectedId, view, props.storage, scheme, props.bootFailed, groupColors),
     [props.graph, props.selectedId, view, props.storage, scheme, props.bootFailed, forceRev, groupColors],
   );
+  const preview = graphPreview(props.graph, props.previewId);
 
   // Read by the mount-time `onSelect`, which outlives this render.
   const live = useRef({ view, model, onSelect: props.onSelect, selectedId: props.selectedId });
@@ -276,6 +281,19 @@ export function Graph(props: GraphProps) {
       {/* `tabIndex={-1}` is the `⌘3` focus target — see `Note.tsx`'s matching
           comment. The tree's target is the rows `<ul>`, which has its own. */}
       <div class="weave-graph-canvas" ref={canvas} role="img" aria-label="Knowledge graph" tabIndex={-1} />
+      {preview === null ? null : (
+        <aside class="weave-graph-preview" aria-label="Selected graph node">
+          <div class="weave-graph-preview-info">
+            <span class="weave-kind" aria-hidden="true"><Icon name={preview.icon} class="weave-icon" /></span>
+            <div class="weave-graph-preview-copy">
+              <span class="weave-graph-preview-kind">{preview.kind}</span>
+              <strong class="weave-graph-preview-title" title={preview.title}>{preview.title}</strong>
+            </div>
+          </div>
+          <button type="button" class="weave-graph-preview-close" aria-label="Clear graph selection" onClick={() => props.onSelect(null)}>×</button>
+          <button type="button" class="weave-chip" onClick={() => props.onOpen(preview.id)}>Open in new tab</button>
+        </aside>
+      )}
       {tunerOpen ? (
         <ForceTuner
           groupColors={groupColors}

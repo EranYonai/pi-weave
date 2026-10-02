@@ -31,6 +31,7 @@ import {
   graphColumnModel,
   graphCountLabel,
   graphEmptyMessage,
+  graphPreview,
   highlightFor,
   hoverHighlight,
   initialGraphView,
@@ -88,6 +89,32 @@ const SMALL = payloadOf(
 );
 
 const SMALL_MODEL = viewModel(SMALL);
+
+describe("graph selection preview", () => {
+  it("resolves original nodes even when their drawn graph node may be collapsed", () => {
+    expect(graphPreview(SMALL, "module:src")).toEqual({
+      id: "module:src",
+      title: "module:src",
+      kind: "module",
+      icon: "module",
+    });
+  });
+
+  it("labels synthesized folders and HTML artifacts for the preview card", () => {
+    const payload = payloadOf(
+      [node("vfolder:research", "module"), { ...node("artifact:report.html", "file"), label: "Report" }],
+      [],
+    );
+    expect(graphPreview(payload, "vfolder:research")).toMatchObject({ kind: "Folder", icon: "module" });
+    expect(graphPreview(payload, "artifact:report.html")).toMatchObject({ title: "Report", kind: "HTML artifact", icon: "file" });
+  });
+
+  it("shows no preview without a payload, selection, or matching original node", () => {
+    expect(graphPreview(null, "note:a")).toBeNull();
+    expect(graphPreview(SMALL, null)).toBeNull();
+    expect(graphPreview(SMALL, "unknown")).toBeNull();
+  });
+});
 
 /** A throwaway in-memory `PositionStorage`. */
 function storage(): PositionStorage {

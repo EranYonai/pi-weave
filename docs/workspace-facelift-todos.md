@@ -35,9 +35,9 @@ Unit checks cover history, tab/pane moves, draft/save races, persisted input val
 
 ## Results
 
-- `npm run check`: typechecks, committed bundle check, and 2,132 tests pass (76 files).
-- Coverage: 98.90% statements/lines, 95.33% branches, 98.83% functions; thresholds unchanged.
-- Bundle: 402.2 KiB raw, 121.8 KiB gzip (150 KiB gzip budget); no dependency changes.
+- `npm run check`: typechecks, committed bundle check, and 2,138 tests pass (76 files).
+- Coverage: 98.90% statements/lines, 95.35% branches, 98.83% functions; thresholds unchanged.
+- Bundle: 404.7 KiB raw, 122.5 KiB gzip (150 KiB gzip budget); no dependency changes.
 - Disposable-vault browser checks at 1280×800 and 700×720: tab/new-tab search, wiki-link history,
   shared drafts across two views, save refresh, graph/note split, pane merge, sidebars, keyboard
   focus, narrow-pane switching, and scroll restoration. A 1440-pixel reading position survived tab
@@ -61,5 +61,10 @@ Unit checks cover history, tab/pane moves, draft/save races, persisted input val
   Sol re-reviewed the fixes with no remaining confirmed blockers.
 - Recent stays stable while browsing and refreshes on reentry. Live checks verified note,
   folder, and HTML-file icons, selection, tooltips, sidebar reopening, and narrow widths.
-- Graph renderer, layout physics, position caching, core knowledge code, and package dependencies
-  are unchanged. Dedicated macOS hosting remains Stage B after browser review.
+- Graph drawing, layout physics, position caching, core knowledge code, and package dependencies
+  are unchanged; node-click routing now separates preview from opening. Dedicated macOS hosting remains Stage B after browser review.
+
+- Graph preview checks: first-click title/type, second-click and fast double-click, explicit Open,
+  split/single-pane destinations, Escape/Clear, return-to-Graph reset, and drag without opening.
+  Preview controls remain visible at 700×720 with the notes sidebar open. Sol 6.1 reviewed
+  and re-reviewed the drag safeguard with no further actionable findings.

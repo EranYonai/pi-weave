@@ -160,8 +160,9 @@ Each document tab has its own Back/Forward history and reading position. Search 
 in a new tab. **Recent** keeps its order while you browse; returning to it refreshes the visit order. Its rows show the same item icons
 as Files. Press `?` for shortcuts.
 
-Open **Graph view** from the left ribbon. It uses the existing graph renderer and controls. Use **Pane options (···)** to split right or
-down, move the current tab to the other pane, or close a pane while retaining its tabs. On small windows, **Switch pane** reaches the
+Open **Graph view** from the left ribbon. Click a node to preview its title and type while staying in Graph. Click the same node again
+or choose **Open in new tab** to open its content; in a split layout, the new tab opens in the other pane. Dragging does not open content.
+Use **Pane options (···)** to split right or down, move the current tab to the other pane, or close a pane while retaining its tabs. On small windows, **Switch pane** reaches the
 other group. Both sidebars can be shown or hidden from the ribbon.
 
 Click **Edit** to change a note's Markdown; `⌘S` / `Ctrl S` saves, and **Done** closes the editor. Drafts survive tab and pane switching,

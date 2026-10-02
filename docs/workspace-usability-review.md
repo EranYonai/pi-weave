@@ -45,7 +45,7 @@ were edited. This is a small-vault interaction review, not a large-vault perform
 | Close pane | Return to one reading area | Move its tabs into the remaining pane; tooltip explains that work is retained |
 | Divider | Give the more important document more space | Pointer drag and arrow-key resizing; no hidden gesture required |
 | Switch pane on narrow windows | Reach the other group when two cannot fit | A visible switch; neither group's tabs are destroyed |
-| Graph ribbon / Graph tab | Discover a connection, then inspect its content | One graph renderer; nodes route to the other pane, or the last active document in the same group |
+| Graph ribbon / Graph tab | Discover a connection, then inspect its content | One renderer; first click previews title/type without leaving Graph; second click or Open creates a new tab in the other pane when split |
 | Context ribbon / links | Find related notes without losing the current one | Normal click navigates; Cmd/Ctrl-click opens a new tab consistently with file and wiki links |
 | Edit / Save / Done | Deliberately change a note | Explicit editing, one draft per note, visible save state, and discard protection |
 | Task checkbox | Record a small change without opening the editor | Shared body and write protection across duplicate views; visible checkboxes must match that body |
@@ -116,8 +116,8 @@ Native discard/reload confirmation handling remains a manual check where the in-
 browser cannot expose its dialog. Dedicated-window lifecycle is not implemented here.
 
 Sol 6.1 re-reviewed the corrections and found no remaining confirmed blockers. The full
-gate passes 2,132 tests in 76 files, with 98.90% statements/lines, 95.33% branches, and
-98.83% functions. The browser bundle is 121.8 KiB gzip, below its 150 KiB budget.
+gate passes 2,138 tests in 76 files, with 98.90% statements/lines, 95.35% branches, and
+98.83% functions. The browser bundle is 122.5 KiB gzip, below its 150 KiB budget.
 
 ## Check locally
 
@@ -136,11 +136,20 @@ to use a disposable vault instead. `/weave-view --no-open` prints the entry URL 
 
 1. Open a note, follow a link, and use Back. Cmd/Ctrl-click a related note to retain both tabs.
 2. Split right, edit the same note in both panes, and confirm the shared draft and checkboxes.
-3. Open Graph, select a node, and verify the target opens beside it; focus-note returns to the
-   last active document. Close a pane and confirm its tabs remain in the other pane.
+3. Open Graph and click a node: its title/type preview appears while Graph stays active. Click
+   the same node again, or use Open in new tab: a new document tab opens beside Graph when
+   split, or in the same pane otherwise. Try a quick double-click and a drag after selection;
+   dragging must not open a tab. Escape clears the preview. Close a pane and confirm its tabs remain.
 4. Filter out the selected note, then use File actions → Rename. Its input should become
    visible. Escape should cancel the operation without changing the document or files.
 5. Close the last view of an unsaved note: cancel first, then accept on disposable content.
    Also cancel a browser reload with an unsaved draft. These native dialogs need a manual pass.
 6. Resize below 850 pixels, browse the tree with arrow keys, and switch panes. Reload a clean
    workspace and confirm tabs, layout, and reading positions return.
+
+Graph selection now has a title/type preview and explicit Open in new tab action. Live checks
+covered deliberate second clicks, fast double-clicks, dragging after selection, split and single
+panes, returning to Graph, Escape/Clear, and the narrow-window sidebar overlay. Sol 6.1 caught
+Sigma dispatching double-click before its drag guard; the renderer now suppresses activation
+after node movement. A regression test covers this sequence, and re-review found no further
+actionable issues. The card sits at lower right so the narrow notes sidebar does not cover it.

@@ -83,6 +83,14 @@ export const WORKSPACE_CSS = `
 .weave-sidebar-context .weave-ctx-link{padding-top:7px;padding-bottom:7px}
 .weave-graph-host{position:absolute;z-index:2;display:flex;background:var(--weave-bg)}
 .weave-graph-host>.weave-graph{width:100%;height:100%;flex:1}
+.weave-graph-preview{pointer-events:none;position:absolute;z-index:2;right:8px;bottom:64px;width:min(280px,calc(100% - 16px));box-sizing:border-box;display:flex;flex-direction:column;gap:8px;padding:10px 34px 10px 10px;background:var(--weave-panel);border:1px solid var(--weave-line-strong);border-radius:var(--weave-radius);box-shadow:0 6px 22px #0003}
+.weave-graph-preview-info{display:flex;align-items:center;gap:8px;min-width:0}
+.weave-graph-preview-copy{display:flex;flex-direction:column;min-width:0;gap:2px}
+.weave-graph-preview-kind{font-size:var(--weave-px-caption);color:var(--weave-faint);text-transform:capitalize}
+.weave-graph-preview-title{font-size:var(--weave-px-row);font-weight:550;line-height:1.35;overflow:hidden;display:-webkit-box;-webkit-box-orient:vertical;-webkit-line-clamp:2;overflow-wrap:anywhere}
+.weave-graph-preview-close{pointer-events:auto;position:absolute;right:5px;top:5px;width:24px;height:24px;border:0;border-radius:var(--weave-radius);background:transparent;font-size:18px;color:var(--weave-dim)}
+.weave-graph-preview-close:hover{background:var(--weave-new);color:var(--weave-fg)}
+.weave-graph-preview>.weave-chip{pointer-events:auto;align-self:flex-start;max-width:100%;white-space:normal;text-align:left}
 .weave-footer{display:flex;align-items:center;min-width:0;background:var(--weave-panel);border-top:1px solid var(--weave-line);font-size:var(--weave-px-ui);color:var(--weave-faint)}
 .weave-footer>.weave-status{flex:1;min-width:0;border:0}
 .weave-footer>span{padding:4px 10px;white-space:nowrap}

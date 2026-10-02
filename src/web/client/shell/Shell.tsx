@@ -25,7 +25,7 @@ import { watchKeys } from "./keys";
 import { COLUMN_FOCUS_SELECTORS, TREE_FILTER_SELECTOR, focusSelector, runShellAction } from "./keys.model";
 import { StatusBar } from "./StatusBar";
 import type { OverlayId } from "./shell.model";
-import { TICK_MS, looksApple, recentEntries, recordVisit, searchShortcut, statusBarModel, summarize } from "./shell.model";
+import { TICK_MS, graphClickOpensTab, looksApple, recentEntries, recordVisit, searchShortcut, statusBarModel, summarize } from "./shell.model";
 import { cycleTheme, effectiveScheme, loadTheme, saveTheme, themeAttr, themeButton } from "./theme.model";
 
 export interface ShellProps { cwd: string; initialWidth: number; platform: string; tuner?: boolean }
@@ -124,6 +124,7 @@ export function Shell(props: ShellProps) {
   const [revision, setRevision] = useState(0);
   const [, setDraftRevision] = useState(0);
   const [graphSelection, setGraphSelection] = useState<string | null>(null);
+  const [graphPreviewId, setGraphPreviewId] = useState<string | null>(null);
   const [recentMode, setRecentMode] = useState(false);
   const [visits, setVisits] = useState<readonly string[]>([]);
   const [compactContext, setCompactContext] = useState(false);
@@ -142,7 +143,12 @@ export function Shell(props: ShellProps) {
   const graphPane = layout.panes.find((group) => group.tabs.some((entry) => entry.id === group.activeTab && entry.kind === "graph"));
   const graphVisible = graphPane !== undefined && (width >= 850 || graphPane.id === layout.activePane);
   const hasGraph = layout.panes.some((group) => group.tabs.some((entry) => entry.kind === "graph"));
-  const live = useRef({ layout, overlay, selectedId, select: (_id: string | null) => {} });
+  const live = useRef({ layout, overlay, selectedId, graphPreviewId, select: (_id: string | null) => {} });
+  const previewGraphNode = (id: string | null): void => {
+    live.current.graphPreviewId = id;
+    setGraphPreviewId(id);
+  };
+  useEffect(() => { if (!graphVisible) previewGraphNode(null); }, [graphVisible]);
 
   const change = (next: WorkspaceLayout): void => {
     if (mayRemoveDrafts(drafts, layout, next, () => window.confirm(DISCARD_PROMPT))) setLayout(next);
@@ -153,13 +159,17 @@ export function Shell(props: ShellProps) {
     setCompactContext(false);
   };
   const showGraph = (): void => setLayout((current) => ({ ...openGraph(current), ...(width < 850 ? { treeVisible: false } : {}) }));
+  const openGraphNode = (id: string): void => {
+    previewGraphNode(null);
+    const other = layout.panes.find((group) => group.id !== graphPane?.id);
+    select(id, true, other?.id ?? graphPane?.id ?? layout.activePane);
+  };
   const selectGraph = (id: string | null): void => {
     setGraphSelection(id);
-    if (id === null) return;
-    const other = layout.panes.find((group) => group.id !== graphPane?.id);
-    select(id, false, other?.id ?? graphPane?.id ?? layout.activePane);
+    if (graphClickOpensTab(live.current.graphPreviewId, id)) openGraphNode(id);
+    else previewGraphNode(id);
   };
-  live.current = { layout, overlay, selectedId, select };
+  live.current = { layout, overlay, selectedId, graphPreviewId, select };
   const mayMutate = (slugs: readonly string[]): boolean => mayMutateDrafts(drafts, slugs, () => window.confirm("Discard unsaved changes to the affected notes before changing files?"));
   const save = async (slug: string, body: string): Promise<boolean> => {
     const result = await saveNote(fetchJson, slug, body);
@@ -247,7 +257,10 @@ export function Shell(props: ShellProps) {
     run: (action) => runShellAction(action, {
       setOverlay,
       fitGraph: () => fit.current?.(),
-      clearSelection: () => activeTab(live.current.layout).kind === "graph" ? setGraphSelection(null) : live.current.select(null),
+      clearSelection: () => {
+        if (activeTab(live.current.layout).kind === "graph") { setGraphSelection(null); previewGraphNode(null); }
+        else live.current.select(null);
+      },
       cycleTheme: () => setLayout((current) => ({ ...current, theme: cycleTheme(current.theme) })),
       focusSelector: (selector) => {
         if (selector === COLUMN_FOCUS_SELECTORS.graph) setLayout((current) => ({ ...openGraph(current), ...(window.innerWidth < 850 ? { treeVisible: false } : {}) }));
@@ -352,7 +365,7 @@ export function Shell(props: ShellProps) {
       </main>
       {(width < 1050 ? compactContext : layout.contextVisible) ? <><ResizeHandle label="Resize context sidebar" min={180} max={400} value={layout.contextWidth} onChange={(delta) => setLayout((value) => ({ ...value, contextWidth: Math.max(180, Math.min(400, value.contextWidth - delta)) }))} /><aside class="weave-sidebar weave-sidebar-context" style={{ width: layout.contextWidth }} aria-label="Context sidebar"><div class="weave-sidebar-heading"><strong>Context</strong><button type="button" aria-label="Hide context sidebar" onClick={() => { setCompactContext(false); setLayout({ ...layout, contextVisible: false }); }}>»</button></div><ContextRail graph={data.graph} selectedId={selectedId} onSelect={select} /></aside></> : null}
       {hasGraph ? <div class="weave-graph-host" onPointerDown={() => { if (graphPane) setLayout((current) => ({ ...current, activePane: graphPane.id })); }} onFocusCapture={() => { if (graphPane) setLayout((current) => ({ ...current, activePane: graphPane.id })); }} aria-hidden={!graphVisible} style={{ ...graphBox, visibility: graphVisible ? "visible" : "hidden", pointerEvents: graphVisible ? "auto" : "none" }}>
-        <Graph graph={data.graph} selectedId={selectedId} onSelect={selectGraph} renderer={createSigmaRenderer} storage={localStorage} host={window} scheme={effectiveScheme(layout.theme, scheme)} bootFailed={data.graphFailed} fit={fit} tuner={props.tuner === true} />
+        <Graph graph={data.graph} selectedId={selectedId} previewId={graphPreviewId} onSelect={selectGraph} onOpen={openGraphNode} renderer={createSigmaRenderer} storage={localStorage} host={window} scheme={effectiveScheme(layout.theme, scheme)} bootFailed={data.graphFailed} fit={fit} tuner={props.tuner === true} />
       </div> : null}
     </div>
     <div class="weave-footer"><StatusBar model={statusBarModel(props.cwd, selectedId, data.graph?.model.generatedAt ?? null)} />

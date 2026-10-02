@@ -17,6 +17,7 @@ import {
   NO_VALUE,
   SEARCH_PLACEHOLDER,
   looksApple,
+  graphClickOpensTab,
   recentEntries,
   repoLabel,
   recordVisit,
@@ -31,6 +32,14 @@ import { COLUMNS } from "../../src/web/client/shell/shell.model";
 import type { GraphPayload, WireGraphNode, WireStalenessState } from "../../src/web/shared/wire";
 
 // --- fixtures ---------------------------------------------------------------------
+
+it("opens a graph node only after selecting the same preview, never on first click or clear", () => {
+  expect(graphClickOpensTab(null, "note:a")).toBe(false);
+  expect(graphClickOpensTab("note:a", "note:b")).toBe(false);
+  expect(graphClickOpensTab("note:a", "note:a")).toBe(true);
+  expect(graphClickOpensTab("note:a", null)).toBe(false);
+  expect(graphClickOpensTab(null, null)).toBe(false);
+});
 
 it("records recent visits in last-visit order without depending on open tabs", () => {
   let visits: readonly string[] = [];

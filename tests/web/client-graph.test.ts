@@ -1083,6 +1083,7 @@ function fakeSigma() {
   let edges: ((key: string, data: RenderEdge) => EdgeDisplayOverride) | null = null;
   const handlers: {
     node?: (payload: { node: string }) => void;
+    doubleNode?: (payload: { node: string; preventSigmaDefault(): void }) => void;
     stage?: () => void;
     downNode?: (payload: { node: string }) => void;
     enterNode?: (payload: { node: string }) => void;
@@ -1102,6 +1103,7 @@ function fakeSigma() {
     on(event: string, handler: unknown) {
       calls.push(`on:${event}`);
       if (event === "clickNode") handlers.node = handler as (payload: { node: string }) => void;
+      if (event === "doubleClickNode") handlers.doubleNode = handler as (payload: { node: string; preventSigmaDefault(): void }) => void;
       if (event === "clickStage") handlers.stage = handler as () => void;
       if (event === "downNode") handlers.downNode = handler as (payload: { node: string }) => void;
       if (event === "enterNode") handlers.enterNode = handler as (payload: { node: string }) => void;
@@ -1167,6 +1169,7 @@ function fakeSigma() {
     nodeReducer: () => nodes,
     edgeReducer: () => edges,
     clickNode: (id: string) => handlers.node?.({ node: id }),
+    doubleClickNode: (id: string) => handlers.doubleNode?.({ node: id, preventSigmaDefault: () => { prevented++; } }),
     clickStage: () => handlers.stage?.(),
     downNode: (id: string) => handlers.downNode?.({ node: id }),
     enterNode: (id: string) => handlers.enterNode?.({ node: id }),
@@ -1302,6 +1305,39 @@ describe("sigmaRenderer over the injected constructor (§7.5)", () => {
     fake.clickNode("b");
     fake.clickStage();
     expect(seen).toEqual(["b", null]);
+  });
+
+  it("routes a fast second node click to activation while preventing automatic zoom", () => {
+    const fake = fakeSigma();
+    const renderer = sigmaRenderer(fake.factory, "dark");
+    const seen: Array<string | null> = [];
+    renderer.onSelect((id) => seen.push(id));
+    renderer.setGraph(model);
+    renderer.mount(container);
+    fake.clickNode("b");
+    fake.doubleClickNode("b");
+    expect(seen).toEqual(["b", "b"]);
+    expect(fake.prevented()).toBe(1);
+  });
+
+  it("does not activate a dragged node even inside the double-click interval", () => {
+    const fake = fakeSigma();
+    const renderer = sigmaRenderer(fake.factory, "dark");
+    const seen: Array<string | null> = [];
+    renderer.onSelect((id) => seen.push(id));
+    renderer.setGraph(model);
+    renderer.mount(container);
+    fake.clickNode("b");
+    fake.downNode("b");
+    fake.moveBody("b", 10, 20);
+    fake.upNode();
+    fake.doubleClickNode("b");
+    fake.clickNode("b");
+    expect(seen).toEqual(["b"]);
+    fake.downNode("b");
+    fake.upNode();
+    fake.clickNode("b");
+    expect(seen).toEqual(["b", "b"]);
   });
 
   it("survives a click or a hover before any handler is registered", () => {

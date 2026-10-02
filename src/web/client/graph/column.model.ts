@@ -43,7 +43,8 @@ import type { Point } from "../../shared/layout";
 import type { ClusterAggregate, ClusterInfo, ViewGraphModel } from "../../shared/view";
 import { clusterAggregate, focusNeighborhood } from "../../shared/view";
 import type { GraphPayload, WireGraphEdge } from "../../shared/wire";
-import { viewModel } from "../tree/tree.model";
+import { kindIcon, viewModel } from "../tree/tree.model";
+import type { IconName } from "../shell/icons.model";
 import type { ColorScheme, RenderGraph } from "./graph.model";
 import { EMPTY_RENDER_GRAPH, renderGraph } from "./graph.model";
 import { groupNodeColors } from "./groups";
@@ -80,6 +81,22 @@ export interface GraphViewState {
    * already described.
    */
   readonly expanded: ReadonlySet<string>;
+}
+
+export interface GraphPreview {
+  readonly id: string;
+  readonly title: string;
+  readonly kind: string;
+  readonly icon: IconName;
+}
+
+/** The original graph node selected for preview, including collapsed folders. */
+export function graphPreview(payload: GraphPayload | null, id: string | null): GraphPreview | null {
+  if (payload === null || id === null) return null;
+  const node = payload.model.nodes.find((candidate) => candidate.id === id);
+  if (node === undefined) return null;
+  const kind = id.startsWith("artifact:") ? "HTML artifact" : id.startsWith("vfolder:") ? "Folder" : node.kind;
+  return { id, title: node.label, kind, icon: kindIcon(node.kind) };
 }
 
 /**

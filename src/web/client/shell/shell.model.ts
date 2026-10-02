@@ -25,6 +25,11 @@ export function recordVisit(previous: readonly string[], id: string | null): rea
   return id === null ? previous : [id, ...previous.filter((item) => item !== id)].slice(0, 100);
 }
 
+/** A selected graph node opens only after its preview has already been shown. */
+export function graphClickOpensTab(previewId: string | null, id: string | null): id is string {
+  return id !== null && id === previewId;
+}
+
 export interface RecentEntry {
   readonly id: string;
   readonly label: string;
