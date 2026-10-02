@@ -5,7 +5,10 @@ description: "Create, update, and retrieve durable notes and past decisions. Use
 
 # Weave Notepad
 
-Use `weave_note`. Without the tool, edit Markdown files under `~/.okf/notes/` (`PI_WEAVE_VAULT` overrides the vault root). Front matter:
+The pi-weave vault is the user's long-term memory: plain Markdown notes with front matter under `~/.okf/notes/`. It is shared with the human
+— anything you write here, they can read and edit, and vice versa.
+
+Use `weave_note`. Without the tool, edit the files directly (`PI_WEAVE_VAULT` overrides the vault root). Front matter:
 `title`, `created`, `updated` (ISO-8601), `tags`, and `source: human | agent | generated`.
 
 ## Capture
@@ -19,18 +22,25 @@ Use `weave_note`. Without the tool, edit Markdown files under `~/.okf/notes/` (`
   Finalization changes presentation, not authorship. Preserve human meaning; put agent additions in a dated “Agent addendum”.
 - Do not store repository-derived facts, temporary task state, or secrets the user has not confirmed are safe to persist.
 
-## Dictation and finalization
+## Dictation mode (continuous compile)
 
-For every live dictation/interview append:
+During live dictation or interviews, keep the organized note current after every append; do not wait until the session ends:
 
-1. `append` with `raw: true` preserves the user's words verbatim in a dated fenced block under `## Raw`, creating the tail if needed.
-2. Immediately `finalize` the body above the tail: summary, sections, decisions, questions, tasks, entities, and links reflecting everything
-   said.
+1. `append` with `raw: true` preserves the user's words verbatim under `## Raw`. Never silently reword dictation.
+2. Immediately `finalize` the body above the tail: front-loaded summary, sections, decisions, questions, tasks, entities, and links
+   reflecting everything said so far.
 
-Never rewrite or delete the raw tail. Use the tool to format it when available. Outside dictation, finalize only on request. `finalize`
-preserves an existing tail verbatim; if absent, it saves the entire previous body as a new tail before restructuring.
+Outside dictation, finalize only on request.
 
-For direct file edits, preserve this append-only format and add a timestamp before each subsequent block:
+### How to capture and append raw input
+
+- Keep an append-only raw section at the bottom: `---`, then `## Raw`, then the notice shown below.
+- Fence verbatim input in code blocks. Prepend each subsequent block with `<!-- appended YYYY-MM-DD HH:MM -->`.
+- Use `append` with `raw: true` when available; it maintains this format and creates the tail if missing. Do not hand-format it.
+- `finalize` changes only the body above the tail. Never rewrite, remove, or move words out of the raw tail. If no tail exists, preserve the
+  entire previous body as a new raw tail before restructuring; the tool does this automatically.
+
+When editing files directly, preserve the same format:
 
 ````markdown
 ---
