@@ -334,7 +334,7 @@ export function resolveMarkdownLink(index: WikiIndex, href: string): string | nu
  * Whether an unresolved wikilink should be drawn as a ghost.
  *
  * See {@link WikiIndex}: only when the payload independently confirms this
- * note has unresolved links. Obsidian's ghost styling is an *offer to create
+ * note has unresolved links. Ghost styling is an *offer to create
  * the note*, so showing it for a link that in fact resolves would be an offer
  * to create a note that already exists.
  */

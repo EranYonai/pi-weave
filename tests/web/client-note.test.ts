@@ -467,8 +467,8 @@ describe("renderWikilink", () => {
 
   it("renders an unresolved link as a ghost span, not a broken anchor", () => {
     // A link that refuses to work is worse than no link: it is not focusable,
-    // not announced as a link, and the dashed underline is Obsidian's offer to
-    // create the missing note.
+    // not announced as a link, and the dashed underline offers to create the
+    // missing note.
     const html = renderWikilink(index, "Ghost Note", "");
     expect(html).toContain("weave-wiki-ghost");
     expect(html).toContain("<span");

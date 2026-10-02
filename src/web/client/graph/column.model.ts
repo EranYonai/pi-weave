@@ -169,7 +169,7 @@ export function highlightFor(edges: readonly WireGraphEdge[], selectedId: string
  * The highlight while the pointer is over a node — **hover wins, selection is
  * what it falls back to**.
  *
- * Obsidian's gesture, and the reason it is the same function as
+ * The reference interaction, and the reason it is the same function as
  * {@link highlightFor} rather than a second visual language: hovering asks
  * exactly the question clicking asks ("what is one hop from here?"), so the
  * two must produce the same set and reach the same reducers. Anything else

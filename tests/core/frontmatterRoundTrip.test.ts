@@ -5,7 +5,7 @@
  *
  * A vault note is a file a human also edits, in an editor pi-weave did not
  * write. Real notes therefore carry front-matter keys the engine has never
- * heard of — Obsidian's `aliases`, `cssclass`, `publish`, a `date` some
+ * heard of — `aliases`, `cssclass`, `publish`, a `date` some
  * template inserted. `parseNoteFile` reads five keys and, before this suite
  * existed, `serializeNote` wrote five keys, so **every** write through core
  * deleted the rest. Appending one line to a note destroyed its metadata.
@@ -72,7 +72,7 @@ const UNKNOWN_LINES: readonly string[] = [
   "date: 2026-03-04",
   "weight: 12",
   "author: Eran Yonai",
-  "obsidianUIMode: preview",
+  "customEditorMode: preview",
   "banner: attachments/hero.png",
   'description: "A quoted: value, with punctuation"',
   "empty:",
@@ -247,7 +247,7 @@ describe("front-matter preservation (named cases)", () => {
   });
 
   it("preserves unrepresentable syntax verbatim rather than reformatting it", () => {
-    // The Obsidian property editor writes tags as a block list. A
+    // A property editor may write tags as a block list. A
     // line-oriented rewrite that "understood" it would emit `tags: []` and
     // orphan the two children — worse than dropping them, because the file
     // stops parsing as the user intended while still looking plausible.

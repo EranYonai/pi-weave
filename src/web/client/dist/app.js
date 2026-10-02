@@ -831,8 +831,8 @@ body{font-size:var(--weave-px-base)}
   text-decoration-thickness:1px;text-underline-offset:2px;
 }
 .weave-note-body a:hover{text-decoration-color:var(--weave-accent)}
-/* A ghost is a name with no note behind it: Obsidian's dashed, dimmed
-   affordance to create one. */
+/* A ghost is a name with no note behind it: a dashed, dimmed affordance to
+   create one. */
 .weave-wiki{cursor:pointer;color:var(--weave-accent);text-decoration:none}
 .weave-wiki:hover{text-decoration:underline}
 .weave-wiki-ghost{

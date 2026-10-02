@@ -881,7 +881,7 @@ describe("the hover label (§7.4)", () => {
   const hovered: HoverLabelNode = { x: 40, y: 60, size: 9, label: "◆ a note" };
 
   it("floats the name centred under the node", () => {
-    // Obsidian's placement, and the reason sigma's own hover painter is
+    // The reference placement, and the reason sigma's own hover painter is
     // replaced: it puts a white box to the node's *right*.
     const fake = fakeContext();
     hoverLabelPainter("dark")(fake.context, hovered, settings);
@@ -1355,7 +1355,7 @@ describe("sigmaRenderer over the injected constructor (§7.5)", () => {
     // A node drag is a pin, not a pan: if sigma's captor moved the camera on
     // the same gesture that is moving the node, the node would slide away
     // from the cursor. Panning is disabled on `downNode` and restored on
-    // release — the Obsidian feel of a node staying under your pointer.
+    // release — keeping the node under your pointer.
     const fake = fakeSigma();
     const renderer = sigmaRenderer(fake.factory, "dark");
     renderer.setGraph(model);

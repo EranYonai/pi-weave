@@ -14,7 +14,7 @@ import { NOTE_SOURCES } from "./types";
  * not the same promise. `parseNoteFile` read five keys and `serializeNote`
  * wrote five keys, so every write through core silently deleted whatever
  * else the file carried — `aliases`, `cssclass`, `publish`, any property an
- * Obsidian user or another tool had added. Reading a note and appending one
+ * external editor or another tool had added. Reading a note and appending one
  * line destroyed the rest of its metadata (weave-workspace §11 P5).
  *
  * The fix is *not* a fuller YAML parser. A vault is plain text a human edits,
@@ -46,8 +46,8 @@ import { NOTE_SOURCES } from "./types";
  * change rather than a silent one. See {@link isDefaulted}.
  *
  * **An owned key whose on-disk syntax this subset cannot represent is
- * frozen**: carried verbatim, and not re-rendered or duplicated. Obsidian's
- * property editor writes tags as a YAML block list —
+ * frozen**: carried verbatim, and not re-rendered or duplicated. A property
+ * editor may write tags as a YAML block list —
  *
  * ```yaml
  * tags:

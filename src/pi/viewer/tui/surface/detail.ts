@@ -148,7 +148,7 @@ export class DetailSurface implements Surface {
     if (matchesKey(data, "enter")) {
       const row = this.activeRow();
       if (row?.target) {
-        // rebind this detail pane to the target (Obsidian "open in main" in place)
+        // rebind this detail pane to the target (open in main, in place)
         this.state = { nodeId: row.target, selectedId: row.target, scrollOffset: 0, gotoBuf: null };
         this._lines = undefined;
         this.requestBody(row.target);

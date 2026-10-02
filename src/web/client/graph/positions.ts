@@ -175,7 +175,7 @@ export function graphShapeKey(nodes: readonly WireGraphNode[], edges: readonly W
  * watcher fires, the graph refetches, and a picture the user was reading
  * rearranges itself for no visible reason. Never re-running leaves new nodes
  * unplaced and therefore undrawn (`renderGraph` drops a node with no
- * position), so a note created in Obsidian would never appear.
+ * position), so a note created outside this application would never appear.
  *
  * The shape key is exactly the line between those: it changes iff a node or an
  * edge was added or removed, which is precisely when the existing positions

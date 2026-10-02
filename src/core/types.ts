@@ -29,7 +29,7 @@ export interface NoteMeta {
  * This is how pi-weave keeps front matter **lossless**. `NoteMeta` names the
  * five fields the engine understands; a vault is a directory of files a human
  * also edits, so real notes carry keys the engine has never heard of —
- * Obsidian's `aliases`, `cssclass`, `publish`, whatever the user invented last
+ * `aliases`, `cssclass`, `publish`, whatever the user invented last
  * Tuesday. Modelling those as parsed values would mean re-emitting them, and
  * re-emitting a value the parser only half-understands is how formatting (and
  * then content) gets destroyed.
