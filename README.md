@@ -270,8 +270,7 @@ The vault format, repository index, and skills are intentionally harness-agnosti
 ## Development
 
 The OpenCode V1/V2 bindings share tool schemas, core actions, and one command/scan workflow. Zod is the only direct runtime dependency,
-required by V1's tool-schema protocol; OpenCode SDKs and host binaries are development-only. See [the OpenCode E2E
-checklist](docs/opencode-e2e.md) to test this branch in isolated V1 and V2 profiles.
+required by V1's tool-schema protocol; OpenCode SDKs are development-only.
 
 ```bash
 npm install
@@ -285,7 +284,6 @@ npm run typecheck
 npm test
 npm run coverage
 npm run build:web
-npm run smoke:opencode
 ```
 
 Coverage must remain at or above **95%** for lines, branches, functions, and statements. If browser source changes, rebuild and commit
