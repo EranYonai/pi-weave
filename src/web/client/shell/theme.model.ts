@@ -32,7 +32,7 @@
  * ## Tier rules (§2)
  *
  * `src/web/client/**`. Storage arrives as the two-method port
- * `selection.storage.ts` uses, so a fake is an object literal and quota
+ * the graph position cache uses, so a fake is an object literal and quota
  * failures stay the caller's problem — a theme the user could not persist is
  * the same cosmetic cost as a selection.
  */
@@ -76,7 +76,7 @@ export function loadTheme(storage: ThemeStorage): ThemeChoice | null {
   }
 }
 
-/** Persist the choice. Reports failure as `false`, like `saveSelection`. */
+/** Persist the choice. Reports failure as `false`. */
 export function saveTheme(storage: ThemeStorage, choice: ThemeChoice): boolean {
   try {
     storage.setItem(THEME_STORAGE_KEY, choice);

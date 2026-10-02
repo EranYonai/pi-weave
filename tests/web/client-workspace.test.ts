@@ -1,6 +1,6 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import type { FetchLike, HttpResponse } from "../../src/web/client/api";
-import { POLL_MS, addedNodeIds, startWorkspace } from "../../src/web/client/workspace";
+import { POLL_MS, addedNodeIds, startWorkspace, watchNote } from "../../src/web/client/workspace";
 import { initialWorkspaceState } from "../../src/web/client/state";
 import type { WorkspaceState } from "../../src/web/client/state";
 import type { GraphPayload, NotePayload } from "../../src/web/shared/wire";
@@ -111,5 +111,49 @@ describe("startWorkspace", () => {
     const workspace = startWorkspace({ fetch: fetchWith(GRAPH), state, setState: (next) => { state = next; }, repeat: () => () => { cancelled = true; } });
     workspace.stop();
     expect(cancelled).toBe(true);
+  });
+});
+
+
+describe("tab document loading", () => {
+  it("retries a failed load independently of cached graph polls", async () => {
+    const calls: unknown[] = [];
+    let retry!: () => void;
+    const cancel = vi.fn();
+    const fetch = vi.fn<FetchLike>().mockResolvedValueOnce({ ok: false, status: 503, json: async () => ({ error: "offline" }) }).mockResolvedValue({ ok: true, status: 200, json: async () => NOTE });
+    const stop = watchNote(fetch, "one", result => calls.push(result), (fn, ms) => { expect(ms).toBe(POLL_MS); retry = fn; return cancel; });
+    await vi.waitFor(() => expect(calls).toHaveLength(1));
+    retry();
+    await vi.waitFor(() => expect(calls).toHaveLength(2));
+    stop();
+    expect(cancel).toHaveBeenCalled();
+    expect(calls[1]).toMatchObject({ ok: true, data: NOTE });
+    retry();
+    expect(fetch).toHaveBeenCalledTimes(2);
+    expect(calls).toHaveLength(2);
+  });
+
+  it("cancels the real retry timer after a tab leaves", async () => {
+    vi.useFakeTimers();
+    try {
+      const notify = vi.fn();
+      const stop = watchNote(async () => ({ ok: false, status: 503, json: async () => ({}) }), "one", notify);
+      await vi.advanceTimersByTimeAsync(0);
+      await vi.advanceTimersByTimeAsync(POLL_MS);
+      expect(notify).toHaveBeenCalledTimes(2);
+      stop();
+      await vi.advanceTimersByTimeAsync(POLL_MS);
+      expect(notify).toHaveBeenCalledTimes(2);
+    } finally { vi.useRealTimers(); }
+  });
+
+  it("drops a response completed after a document unmounts", async () => {
+    let resolve!: (value: { ok: boolean; status: number; json(): Promise<unknown> }) => void;
+    const notify = vi.fn();
+    const stop = watchNote(() => new Promise(done => { resolve = done; }), "one", notify);
+    stop();
+    resolve({ ok: false, status: 503, json: async () => ({ error: "offline" }) });
+    await Promise.resolve(); await Promise.resolve(); await Promise.resolve();
+    expect(notify).not.toHaveBeenCalled();
   });
 });

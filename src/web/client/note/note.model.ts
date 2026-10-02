@@ -847,32 +847,6 @@ export const SAVING_LABEL = "Saving…";
 export const EDITOR_ARIA_LABEL = "Note body";
 export const DISCARD_PROMPT = "Discard unsaved changes to this note?";
 
-/**
- * Whether the draft differs from the note as last loaded. Trailing whitespace
- * counts: the save trims, so calling such a draft clean would skip the prompt
- * on the one edit that gets silently reverted.
- */
-export function draftDirty(draft: string, body: string): boolean {
-  return draft !== body;
-}
-
-/**
- * Whether a save's reply still belongs to the editor that issued it. A
- * counter, not the slug: reopening the same note is a new session too.
- */
-export function saveLanded(issued: number, current: number): boolean {
-  return issued === current;
-}
-
-/**
- * Whether the draft moved since the bytes a save sent — keystrokes made
- * during the request were never in it, so a success must not close over them.
- * Unlike {@link saveLanded}, this is about the *text*, not the session.
- */
-export function draftMoved(sent: string, current: string | null): boolean {
-  return current !== null && current !== sent;
-}
-
 /** The note header: title, provenance badge, relative time, tags. */
 export interface NoteHeaderView {
   readonly title: string;
@@ -959,13 +933,7 @@ export const PREVIEW_GAP = 8;
 /** The card's kind line for a link nothing in the vault answers to. */
 export const GHOST_KIND = "no note";
 
-/**
- * The card's DOM id, shared by the element and the `aria-describedby` it is
- * announced through. A constant rather than an inline literal on both sides
- * because the link is a *string* of rendered HTML — see
- * `Note.tsx`'s layout effect — and the pair cannot be typed into agreement.
- */
-export const PREVIEW_ID = "weave-preview";
+
 
 /** A `PreviewElement` the preview's delegated handlers may land on. */
 export interface PreviewAnchor {

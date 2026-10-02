@@ -9,12 +9,12 @@ import type { SearchState } from "./search.model";
 
 export interface SearchPaletteProps {
   graph: GraphPayload | null;
-  onSelect: (id: string) => void;
+  onSelect: (id: string, newTab?: boolean) => void;
   onClose: () => void;
   ports: { fetch: FetchLike };
 }
 
-function Row({ row, onPick, onHover }: { row: SearchRowView; onPick: () => void; onHover: () => void }) {
+function Row({ row, onPick, onHover }: { row: SearchRowView; onPick: (newTab: boolean) => void; onHover: () => void }) {
   return (
     <li
       id={row.domId}
@@ -22,7 +22,7 @@ function Row({ row, onPick, onHover }: { row: SearchRowView; onPick: () => void;
       aria-selected={row.active}
       class={`weave-hit weave-hit-${row.kind}${row.active ? " weave-hit-on" : ""}`}
       onMouseMove={onHover}
-      onClick={onPick}
+      onClick={(event) => onPick(event.metaKey || event.ctrlKey)}
     >
       <span class="weave-hit-badge">{row.badge}</span>
       <span class="weave-hit-label">{row.label}</span>
@@ -70,9 +70,9 @@ export function SearchPalette(props: SearchPaletteProps) {
   }, [state.query, props.ports.fetch]);
 
   const model = paletteModel(state, props.graph);
-  const pick = (index: number | null): void => {
+  const pick = (index: number | null, newTab = false): void => {
     const id = resultIdAt(model.rows, index);
-    if (id !== null) props.onSelect(id);
+    if (id !== null) props.onSelect(id, newTab);
     props.onClose();
   };
 
@@ -92,7 +92,7 @@ export function SearchPalette(props: SearchPaletteProps) {
           if (!next.handled) return;
           event.preventDefault();
           setState((current) => ({ ...current, cursor: next.cursor }));
-          if (next.dismiss) pick(next.activate);
+          if (next.dismiss) pick(next.activate, event.metaKey || event.ctrlKey);
         }}
       >
         <input
@@ -108,14 +108,15 @@ export function SearchPalette(props: SearchPaletteProps) {
         />
         {model.status === null ? (
           <ul id="weave-search-results" class="weave-hits" role="listbox" aria-label={PALETTE_TITLE}>
-            {model.rows.map((row, index) => <Row key={row.id} row={row} onPick={() => pick(index)} onHover={() => setState((current) => ({ ...current, cursor: index }))} />)}
+            {model.rows.map((row, index) => <Row key={row.id} row={row} onPick={(newTab) => pick(index, newTab)} onHover={() => setState((current) => ({ ...current, cursor: index }))} />)}
           </ul>
         ) : (
           <p class="weave-palette-status" role="status">{model.status}</p>
         )}
         <p class="weave-palette-foot">
           <span>{model.countLabel}</span>
-          <span class="weave-palette-hint">{PALETTE_HINT}</span>
+          <button type="button" class="weave-chip" disabled={model.count === 0} onClick={() => pick(state.cursor, true)}>Open in new tab</button>
+          <span class="weave-palette-hint">{PALETTE_HINT} · ⌘/Ctrl ↵ new tab</span>
         </p>
       </div>
     </div>

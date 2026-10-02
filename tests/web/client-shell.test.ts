@@ -16,7 +16,6 @@ import {
   EMPTY_SUMMARY,
   NO_VALUE,
   SEARCH_PLACEHOLDER,
-  emptyStateFor,
   looksApple,
   repoLabel,
   searchHint,
@@ -109,13 +108,6 @@ describe("summaryParts", () => {
 // --- empty states -------------------------------------------------------------------
 
 describe("empty states", () => {
-  it("names every column", () => {
-    for (const id of COLUMNS) {
-      const copy = emptyStateFor(id);
-      expect(copy.title).not.toBe("");
-    }
-  });
-
   it("gives the context rail its own copy", () => {
     expect(CONTEXT_EMPTY.title).toBe("Context");
   });

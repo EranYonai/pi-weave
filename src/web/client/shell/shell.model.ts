@@ -15,9 +15,8 @@
  */
 
 import type { GraphPayload, WireNodeKind, WireStalenessState } from "../../shared/wire";
-import { COLUMNS, type ColumnId } from "./layout.model";
-export { COLUMNS };
-export type { ColumnId };
+export type ColumnId = "tree" | "note" | "graph";
+export const COLUMNS: readonly ColumnId[] = ["tree", "note", "graph"];
 
 // --- the header summary --------------------------------------------------------
 
@@ -82,23 +81,6 @@ export function summaryParts(summary: HeaderSummary): readonly string[] {
 /** The title used by a column heading and its `aria-label`. */
 export interface EmptyStateCopy {
   readonly title: string;
-}
-
-const EMPTY_STATES: Readonly<Record<ColumnId, EmptyStateCopy>> = {
-  tree: {
-    title: "Tree",
-  },
-  note: {
-    title: "Note",
-  },
-  graph: {
-    title: "Graph",
-  },
-};
-
-/** The empty-state copy for a column. */
-export function emptyStateFor(column: ColumnId): EmptyStateCopy {
-  return EMPTY_STATES[column];
 }
 
 /** The context rail's heading and `aria-label`. */

@@ -19,6 +19,7 @@ import { WorkspaceCache } from "../../core/cache/workspace";
 import { resolveVaultRoot } from "../../core/paths";
 import { handleRequest, type RouteDeps } from "./routes";
 import { createSecurityPolicy, type SecurityPolicy } from "./security";
+import { createWorkspaceStateStore, defaultWorkspaceStateDir } from "./workspace-state";
 
 /**
  * The committed bundle, resolved relative to this module rather than to
@@ -41,6 +42,8 @@ export interface StartWorkspaceServerOptions {
   cookieName?: string | undefined;
   /** Absolute path to the client bundle. Defaults to the committed one. */
   bundlePath?: string | undefined;
+  /** Presentation snapshot directory. Defaults to the user's pi-weave config directory. */
+  presentationStateDir?: string | undefined;
   /** Test seam for `POST /api/open`. */
   openNote?: ((slug: string) => Promise<boolean>) | undefined;
 }
@@ -61,6 +64,7 @@ export interface WorkspaceServer {
 export async function startWorkspaceServer(opts: StartWorkspaceServerOptions): Promise<WorkspaceServer> {
   const vaultRoot = opts.vaultRoot ?? resolveVaultRoot();
   const cache = opts.cache ?? new WorkspaceCache({ cwd: opts.cwd, vaultRoot });
+  const workspaceState = await createWorkspaceStateStore(opts.cwd, vaultRoot, opts.presentationStateDir ?? defaultWorkspaceStateDir());
   // `deps` is assembled before `listen` because the request handler closes
   // over it, but the security policy needs the bound port — so the policy
   // slot is filled after binding and the handler reads it through the
@@ -104,6 +108,7 @@ export async function startWorkspaceServer(opts: StartWorkspaceServerOptions): P
     security,
     bundlePath: opts.bundlePath ?? defaultBundlePath(),
     ...(opts.openNote !== undefined ? { openNote: opts.openNote } : {}),
+    workspaceState,
   };
 
   return {

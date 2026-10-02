@@ -11,8 +11,8 @@
  * The explicit Edit control swaps the body for a `<textarea>`; `draft` is
  * `null` in read mode, so text and mode cannot disagree. No reducer — the 686-line one that
  * stood here resolved conflicts against a revision the server no longer
- * issues. Being component state, the draft is out of the 2 s poll's reach;
- * the shell guards it through the `editor` slot below.
+ * issues. Drafts are keyed by note identity in the shared in-memory store, out of the
+ * 2 s poll's reach; the shell guards removal of their final visible tab.
  *
  * `dangerouslySetInnerHTML` is used deliberately for sanitized note HTML. The
  * alternative is parsing marked's output into a Preact tree, which means a
@@ -39,7 +39,7 @@
  */
 
 import DOMPurify from "dompurify";
-import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "preact/hooks";
+import { useEffect, useId, useLayoutEffect, useMemo, useRef, useState } from "preact/hooks";
 import type { GraphPayload, NotePayload } from "../../shared/wire";
 import {
   CREATED_WORD,
@@ -50,15 +50,11 @@ import {
   EDITED_WORD,
   EDITOR_ARIA_LABEL,
   EMPTY_PREVIEW,
-  PREVIEW_ID,
   SAVE_LABEL,
   SAVING_LABEL,
   TASK_CHECKBOX_ATTR,
   WIKILINK_ATTR,
-  draftDirty,
-  draftMoved,
   hasTextSelection,
-  saveLanded,
   noteEmptyMessage,
   noteHeader,
   previewAnchorOf,
@@ -75,6 +71,8 @@ import {
   wikilinkTargetOf,
 } from "./note.model";
 import type { NoteHeaderView, PreviewElement, PreviewEvent } from "./note.model";
+import { createDraftStore } from "./drafts";
+import type { DraftStore } from "./drafts";
 
 /**
  * The custom properties the preview card is placed with, written by the
@@ -90,7 +88,7 @@ export interface NoteProps {
   loadFailed: boolean;
   graph: GraphPayload | null;
   selectedId: string | null;
-  onSelect: (id: string) => void;
+  onSelect: (id: string, newTab?: boolean) => void;
   onOpen: (slug: string) => void;
   /**
    * Save the note's body. Resolves `true` when the write landed; a `false`
@@ -98,12 +96,10 @@ export interface NoteProps {
    * error-reporting gesture the client has.
    */
   onSave: (slug: string, body: string) => Promise<boolean>;
-  /**
-   * The shell's handle on the open editor — the `fit` pattern again. Guards
-   * both *ask* (navigate, unload) and *close* (a tree rename of this note).
-   * Functions, not values, or a mount-time guard answers "clean" forever.
-   */
-  editor: { current: { dirty(): boolean; discard(): void } | null };
+  /** Shared across Note instances so duplicate tabs edit one in-memory body. */
+  drafts?: DraftStore;
+  /** Stable per view; distinct when the same note is mounted more than once. */
+  idPrefix?: string;
   /** Epoch ms for relative times. Injected so the render is deterministic. */
   now: number;
 }
@@ -168,6 +164,12 @@ function Header({
 }
 
 export function Note(props: NoteProps) {
+  const localDrafts = useRef(createDraftStore());
+  const drafts = props.drafts ?? localDrafts.current;
+  const generatedId = useId();
+  const previewId = `${props.idPrefix ?? generatedId}-weave-preview`;
+  const [, setDraftVersion] = useState(0);
+  useEffect(() => drafts.subscribe(() => setDraftVersion((version) => version + 1)), [drafts]);
   const note = props.note?.note ?? null;
   const artifactPath = selectedArtifactPath(props.graph, props.selectedId);
   const empty = noteEmptyMessage(props.selectedId, note, props.loadFailed);
@@ -199,47 +201,9 @@ export function Note(props: NoteProps) {
     taskSource.current = { slug: note.slug, serverBody: note.body, body: note.body };
   }
 
-  const [draft, setDraft] = useState<string | null>(null);
-  const [saving, setSaving] = useState(false);
-  const dirty = note !== null && draft !== null && draftDirty(draft, note.body);
-  // Bumped on open and close, so a late reply knows it is late (`saveLanded`).
-  const session = useRef(0);
-  // The draft *now*: `save` outlives the render that captured its own copy.
-  const draftRef = useRef(draft);
-  draftRef.current = draft;
-
-  // During render, not in an effect: an effect runs after paint, leaving a
-  // window where the slot is still clean and a click slips the guard.
-  props.editor.current = { dirty: () => dirty, discard: () => close() };
-  useEffect(() => () => {
-    props.editor.current = null;
-  }, [props.editor]);
-
-  const close = (): void => {
-    session.current += 1;
-    setDraft(null);
-    setSaving(false);
-  };
-
-  const open = (body: string): void => {
-    session.current += 1;
-    setDraft(body);
-  };
-
+  const draft = note === null ? null : drafts.get(note.slug);
   const save = async (): Promise<void> => {
-    if (note === null || draft === null || saving) return;
-    const issued = session.current;
-    // The textarea stays enabled through the request, so the draft can move
-    // underneath it; the reply is only ever about these bytes.
-    const sent = draft;
-    setSaving(true);
-    const ok = await props.onSave(note.slug, sent);
-    // A reply for an editor that is gone must not close the one now open.
-    if (!saveLanded(issued, session.current)) return;
-    // Stay open on failure, and on success the user typed through: both hold
-    // text the server does not have, and closing would discard it.
-    if (!ok || draftMoved(sent, draftRef.current)) setSaving(false);
-    else close();
+    if (note !== null) await drafts.save(note.slug, props.onSave);
   };
 
   const saveTask = async (checkbox: HTMLInputElement, taskIndex: number): Promise<void> => {
@@ -271,8 +235,8 @@ export function Note(props: NoteProps) {
 
   const toggleEdit = (): void => {
     if (note === null) return;
-    if (draft === null) open(note.body);
-    else if (!dirty || window.confirm(DISCARD_PROMPT)) close();
+    if (drafts.get(note.slug) === null) drafts.open(note.slug, note.body);
+    else if (!drafts.isDirty(note.slug) || window.confirm(DISCARD_PROMPT)) drafts.discard(note.slug);
   };
   const card = preview.anchor === null ? null : previewCard(props.graph, preview.anchor);
 
@@ -284,10 +248,8 @@ export function Note(props: NoteProps) {
   // slug changes as rarely as navigation happens.
   useLayoutEffect(() => {
     dispatch({ type: "hide" });
-    // A different note is a different document: an open editor holding the
-    // previous one's text would save it over this one. The shell's guard is
-    // what asks before a dirty draft gets here.
-    close();
+    // Drafts belong to note identity and survive this Note instance changing
+    // documents or unmounting.
   }, [note === null ? null : note.slug]);
 
   // Wired after the card mounts, because both jobs depend on the live DOM:
@@ -302,7 +264,7 @@ export function Note(props: NoteProps) {
     if (body !== null) {
       const slug = preview.anchor?.slug ?? null;
       for (const link of body.querySelectorAll(`a[${WIKILINK_ATTR}]`)) {
-        if (slug !== null && link.getAttribute(WIKILINK_ATTR) === slug) link.setAttribute("aria-describedby", PREVIEW_ID);
+        if (slug !== null && link.getAttribute(WIKILINK_ATTR) === slug) link.setAttribute("aria-describedby", previewId);
         else link.removeAttribute("aria-describedby");
       }
     }
@@ -322,7 +284,7 @@ export function Note(props: NoteProps) {
     // `setProperty` is the path it has no hook on.
     element.style.setProperty(`--${PREVIEW_X}`, `${spot.x}px`);
     element.style.setProperty(`--${PREVIEW_Y}`, `${spot.y}px`);
-  }, [preview, card]);
+  }, [preview, card, previewId]);
 
   if (artifactPath !== null) {
     const artifact = props.graph?.model.nodes.find((node) => node.id === props.selectedId);
@@ -360,7 +322,7 @@ export function Note(props: NoteProps) {
         view={header}
         open={() => props.onOpen(note.slug)}
         editing={draft !== null}
-        saving={saving}
+        saving={draft?.saving ?? false}
         onToggle={toggleEdit}
         onSave={() => void save()}
       />
@@ -369,8 +331,8 @@ export function Note(props: NoteProps) {
           class="weave-note-editor"
           aria-label={EDITOR_ARIA_LABEL}
           spellcheck
-          value={draft}
-          onInput={(event) => setDraft((event.target as HTMLTextAreaElement).value)}
+          value={draft.body}
+          onInput={(event) => drafts.edit(note.slug, (event.target as HTMLTextAreaElement).value)}
           onKeyDown={(event) => {
             // Bound here, not in `keys.model.ts`: a global binding is a
             // workspace-wide claim, and Escape must not reach the shell.
@@ -429,7 +391,7 @@ export function Note(props: NoteProps) {
             if (hasTextSelection(selection)) return;
             const target = wikilinkTargetOf(event.target as unknown as Parameters<typeof wikilinkTargetOf>[0]);
             // A wikilink carries no href, so route it onto the context bus.
-            if (target !== null) props.onSelect(target);
+            if (target !== null) props.onSelect(target, event.metaKey || event.ctrlKey || event.shiftKey);
           }}
           onKeyDown={(event) => {
             // Escape is first so the card closes on the gesture a keyboard
@@ -446,7 +408,7 @@ export function Note(props: NoteProps) {
             const target = wikilinkTargetOf(event.target as unknown as Parameters<typeof wikilinkTargetOf>[0]);
             if (target === null) return;
             event.preventDefault();
-            props.onSelect(target);
+            props.onSelect(target, event.metaKey || event.ctrlKey || event.shiftKey);
           }}
           // Sanitised by `renderNote`'s three layers — see note.model.ts.
           dangerouslySetInnerHTML={{ __html: html }}
@@ -455,7 +417,7 @@ export function Note(props: NoteProps) {
       {card === null ? null : (
         <div
           ref={cardRef}
-          id={PREVIEW_ID}
+          id={previewId}
           role="tooltip"
           class={`weave-preview${card.ghost ? " weave-preview-ghost" : ""}`}
         >

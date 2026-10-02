@@ -1,3 +1,5 @@
+import { WORKSPACE_CSS } from "./workspace.css";
+
 /**
  * The workspace stylesheet, and how it gets past the CSP
  * (weave-workspace §1.2, §5.2).
@@ -243,39 +245,6 @@ body{font-size:var(--weave-px-base)}
   border:0;padding:3px 6px;border-radius:var(--weave-radius);cursor:pointer;
 }
 .weave-theme:hover{color:var(--weave-fg);background:var(--weave-line)}
-
-/* the grid -------------------------------------------------------------- */
-/* Widths arrive as custom properties from layout.model.ts. Shell/layout.model
-   selects the breakpoint; CSS consumes the resulting data-columns shape. */
-.weave-grid{display:grid;min-height:0;overflow:hidden;background:var(--weave-line)}
-.weave-grid[data-columns="3"]{grid-template-columns:var(--weave-col-tree,22%) 1px var(--weave-col-note,46%) 1px var(--weave-col-graph,32%)}
-.weave-grid[data-columns="2"]{grid-template-columns:var(--weave-col-tree,32%) 1px var(--weave-col-note,68%)}
-.weave-grid[data-columns="1"]{grid-template-columns:1fr}
-
-/* dividers -------------------------------------------------------------- */
-.weave-divider{
-  width:1px;cursor:col-resize;touch-action:none;background:var(--weave-line);position:relative;z-index:2;
-}
-.weave-divider::after{content:"";position:absolute;inset:0 -4px}
-.weave-divider:hover{background:var(--weave-faint)}
-.weave-divider:focus-visible{outline:2px solid var(--weave-accent);outline-offset:-1px}
-
-.weave-col{
-  display:flex;flex-direction:column;min-width:0;min-height:0;overflow:hidden;
-  background:var(--weave-bg);
-}
-.weave-col-title{
-  margin:0;padding:5px var(--weave-gutter) 4px;font-size:var(--weave-px-caption);font-weight:600;
-  letter-spacing:.09em;text-transform:uppercase;color:var(--weave-faint);
-  border-bottom:1px solid var(--weave-line);
-}
-/* Title, then the graph (which takes the slack), then the context rail. The
-   1fr is what gives .weave-graph-canvas a definite height to measure, and the
-   rail's row is a fixed fraction of the column — not content-sized — so
-   moving the selection between a sparsely-connected note and a richly
-   connected one never repartitions the right-hand column: the rail scrolls
-   inside the same region instead of squeezing the graph. */
-.weave-col-graph{display:grid;grid-template-rows:auto minmax(0,1fr) minmax(96px,40%);background:var(--weave-bg)}
 
 /* tree column ----------------------------------------------------------- */
 /* --weave-depth is written per row by \`depthVar\`, through CSSOM
@@ -826,7 +795,7 @@ export function findNonce(host: ThemeHost): string | null {
  * report in the console is a far better diagnostic than a stylesheet that was
  * never created.
  */
-export function installTheme(host: ThemeHost, css: string = THEME_CSS): boolean {
+export function installTheme(host: ThemeHost, css: string = THEME_CSS + WORKSPACE_CSS): boolean {
   const element = host.createElement("style");
   const nonce = findNonce(host);
   if (nonce !== null) element.nonce = nonce;

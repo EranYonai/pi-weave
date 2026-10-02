@@ -44,7 +44,7 @@ export interface TreeProps {
   graph: GraphPayload | null;
   selectedId: string | null;
   recentIds: ReadonlySet<string>;
-  onSelect: (id: string) => void;
+  onSelect: (id: string, newTab?: boolean) => void;
   /**
    * Ask before a mutation that would invalidate an open draft. `false` means
    * keep editing: the mutation must not run.
@@ -74,7 +74,7 @@ export function Icon({ name, class: className }: { name: IconName; class?: strin
   );
 }
 
-function Row({ view, recentIds, edit, onEdit, onRename, onSelect, onToggle, onMenu, onDrop }: { view: ReturnType<typeof rowViews>[number]; recentIds: ReadonlySet<string>; edit: string | null; onEdit: (value: string) => void; onRename: (value: string | null) => void; onSelect: () => void; onToggle: () => void; onMenu: (x: number, y: number) => void; onDrop: (id: string) => void }) {
+function Row({ view, recentIds, edit, onEdit, onRename, onSelect, onToggle, onMenu, onDrop }: { view: ReturnType<typeof rowViews>[number]; recentIds: ReadonlySet<string>; edit: string | null; onEdit: (value: string) => void; onRename: (value: string | null) => void; onSelect: (newTab: boolean) => void; onToggle: () => void; onMenu: (x: number, y: number) => void; onDrop: (id: string) => void }) {
   const folder = dropFolder(view.id);
   return (
     <li
@@ -88,7 +88,7 @@ function Row({ view, recentIds, edit, onEdit, onRename, onSelect, onToggle, onMe
       aria-selected={view.selected}
       aria-expanded={view.hasKids ? view.expanded : undefined}
       style={depthVar(view.depth)}
-      onClick={onSelect}
+      onClick={(event) => onSelect(event.metaKey || event.ctrlKey)}
       draggable={view.id.startsWith("note:")}
       aria-label={view.id === DRAFT_FOLDER_ID ? "New folder" : undefined}
       onDragStart={(event) => event.dataTransfer?.setData("text/plain", view.id)}
@@ -278,7 +278,7 @@ export function Tree(props: TreeProps) {
             setMenu({ id: "vault", label: "Vault", x: event.clientX, y: event.clientY });
           }}
         >
-          {rowViews(rows, props.selectedId, props.now).map((view) => <Row key={view.id} view={view} recentIds={props.recentIds} edit={editing?.id === view.id ? editing.value : null} onEdit={(value) => setEditing((current) => current === null ? null : { ...current, value })} onRename={commitEdit} onSelect={() => { props.onSelect(view.id); if (view.hasKids) setState((current) => toggleExpanded(current, view.id)); }} onToggle={() => setState(toggleExpanded(state, view.id))} onMenu={(x, y) => setMenu({ id: view.id, label: view.label, x, y })} onDrop={(dragged) => { const folder = dropFolder(view.id); if (dragged.startsWith("note:") && folder !== undefined) { if (dragged === props.selectedId && !props.onMutate()) return; void run(moveNote(fetchJson, dragged.slice("note:".length), folder)); } }} />)}
+          {rowViews(rows, props.selectedId, props.now).map((view) => <Row key={view.id} view={view} recentIds={props.recentIds} edit={editing?.id === view.id ? editing.value : null} onEdit={(value) => setEditing((current) => current === null ? null : { ...current, value })} onRename={commitEdit} onSelect={(newTab) => { props.onSelect(view.id, newTab); if (view.hasKids) setState((current) => toggleExpanded(current, view.id)); }} onToggle={() => setState(toggleExpanded(state, view.id))} onMenu={(x, y) => setMenu({ id: view.id, label: view.label, x, y })} onDrop={(dragged) => { const folder = dropFolder(view.id); if (dragged.startsWith("note:") && folder !== undefined) { if (dragged === props.selectedId && !props.onMutate()) return; void run(moveNote(fetchJson, dragged.slice("note:".length), folder)); } }} />)}
         </ul>
       ) : <p class="weave-tree-empty">{empty}</p>}
       <p class="weave-tree-count">{rowCountLabel(rows)}</p>

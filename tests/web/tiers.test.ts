@@ -67,6 +67,7 @@
 
 import { promises as fs } from "node:fs";
 import { join } from "node:path";
+import * as ts from "typescript";
 import { describe, expect, it } from "vitest";
 
 import {
@@ -86,6 +87,17 @@ import {
   tierOf,
   walk,
 } from "./importGraph";
+
+function globalIdentifiers(source: string): string[] {
+  const file = ts.createSourceFile("tier-check.ts", source, ts.ScriptTarget.Latest, true);
+  const identifiers: string[] = [];
+  const visit = (node: ts.Node): void => {
+    if (ts.isIdentifier(node)) identifiers.push(node.text);
+    ts.forEachChild(node, visit);
+  };
+  visit(file);
+  return identifiers;
+}
 
 // --- the table ---------------------------------------------------------------
 
@@ -241,6 +253,11 @@ function exceptionPathFor(from: string, spec: string): string {
 // --- the checks ---------------------------------------------------------------
 
 describe("tier import rules (weave-workspace §2)", () => {
+  it("distinguishes DOM global references from the same word in strings", () => {
+    const identifiers = globalIdentifiers('const kind = "document"; document.title = kind;');
+    expect(identifiers.filter((name) => DOM_GLOBALS.includes(name))).toEqual(["document"]);
+  });
+
   it("every source file belongs to a declared tier", async () => {
     // The guard against a new tier appearing with no rules attached to it.
     const all = await walk(SRC, [".ts", ".tsx"]);
@@ -348,9 +365,7 @@ describe("tier import rules (weave-workspace §2)", () => {
         if (tier.domGlobals) return;
         const offenders: string[] = [];
         for (const mod of await modulesOf(tier)) {
-          for (const g of DOM_GLOBALS) {
-            if (new RegExp(`\\b${g}\\b`).test(code(mod.text))) offenders.push(`${mod.rel} → ${g}`);
-          }
+          for (const id of globalIdentifiers(mod.text)) if (DOM_GLOBALS.includes(id)) offenders.push(`${mod.rel} → ${id}`);
         }
         expect(offenders).toEqual([]);
       });

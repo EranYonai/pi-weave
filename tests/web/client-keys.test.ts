@@ -445,7 +445,8 @@ describe("focusable and focusSelector", () => {
     // leave the arrow keys pointing at nothing.
     for (const column of COLUMNS) {
       const selector = COLUMN_FOCUS_SELECTORS[column];
-      expect(selector, column).toContain(`.weave-col-${column} `);
+      expect(selector, column).not.toContain(".weave-col-");
+      expect(selector, column).toContain(" ");
     }
     expect(TREE_FILTER_SELECTOR).toContain(".weave-filter");
   });
@@ -537,7 +538,7 @@ describe("keyHelp", () => {
   });
 
   it("groups by surface, so the sheet reads as a map of the workspace", () => {
-    expect(groups.map((g) => g.title)).toEqual(["Global", "Tree", "Graph", "Search"]);
+    expect(groups.map((g) => g.title)).toEqual(["Global", "Tree", "Tabs and panes", "Graph", "Search"]);
     for (const group of groups) expect(group.entries.length, group.title).toBeGreaterThan(0);
   });
 

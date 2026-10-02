@@ -102,7 +102,6 @@ export function ContextRail(props: ContextRailProps) {
   const tags = railTagsView(model.tags, toggles);
   return (
     <div class="weave-rail" aria-label={CONTEXT_EMPTY.title}>
-      <h2 class="weave-col-title">{CONTEXT_EMPTY.title}</h2>
       {model.empty === null ? null : <p class="weave-ctx-empty">{model.empty}</p>}
       {model.groups.map((group) => {
         const view = railSectionView(group, toggles);
