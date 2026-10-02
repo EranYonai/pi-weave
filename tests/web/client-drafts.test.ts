@@ -124,3 +124,33 @@ describe("dirty view removal", () => {
     expect(drafts.get("other")?.body).toBe("still open");
   });
 });
+
+describe("clean edit-mode draft removal", () => {
+  it("releases a clean draft on final-view close so reopening starts with the current body", () => {
+    const drafts = createDraftStore();
+    drafts.open("one", "original");
+    const current = openDocument(initialLayout(), "note:one");
+    const next = closeTab(current, current.activePane, "tab-1");
+    const confirm = vi.fn(() => false);
+    expect(mayRemoveDrafts(drafts, current, next, confirm)).toBe(true);
+    expect(confirm).not.toHaveBeenCalled();
+    expect(drafts.get("one")).toBeNull();
+    drafts.open("one", "changed externally");
+    expect(drafts.get("one")?.body).toBe("changed externally");
+  });
+
+  it("preserves clean edit mode in another view, but clears it when its final view is replaced", () => {
+    const drafts = createDraftStore();
+    drafts.open("one", "original");
+    const one = openDocument(initialLayout(), "note:one");
+    const two = splitPane(one, "right");
+    const remaining = closeTab(two, two.activePane, two.panes[1]!.activeTab);
+    const confirm = vi.fn(() => false);
+    expect(mayRemoveDrafts(drafts, two, remaining, confirm)).toBe(true);
+    expect(drafts.get("one")?.body).toBe("original");
+    const replacement = openDocument(remaining, "note:replacement", { paneId: "pane-1" });
+    expect(mayRemoveDrafts(drafts, remaining, replacement, confirm)).toBe(true);
+    expect(drafts.get("one")).toBeNull();
+    expect(confirm).not.toHaveBeenCalled();
+  });
+});

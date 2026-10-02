@@ -77,8 +77,9 @@ export function createDraftStore(): DraftStore {
 export function mayRemoveDrafts(drafts: DraftStore, current: WorkspaceLayout, next: WorkspaceLayout, confirm: () => boolean): boolean {
   const before = new Set(current.panes.flatMap((pane) => pane.tabs.map(tabSelection)));
   const after = new Set(next.panes.flatMap((pane) => pane.tabs.map(tabSelection)));
-  const removed = drafts.dirtySlugs().filter((slug) => before.has(`note:${slug}`) && !after.has(`note:${slug}`));
-  if (removed.length && !confirm()) return false;
+  const removed = [...before].filter((id): id is string => id !== null && id.startsWith("note:") && !after.has(id))
+    .map((id) => id.slice(5)).filter((slug) => drafts.get(slug) !== null);
+  if (removed.some((slug) => drafts.isDirty(slug)) && !confirm()) return false;
   removed.forEach((slug) => drafts.discard(slug));
   return true;
 }

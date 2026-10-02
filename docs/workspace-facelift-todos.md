@@ -25,6 +25,7 @@ Branch: `codex/weave-workspace-facelift`. Browser first; dedicated macOS hosting
 - [x] Main: rebuild browser bundle and pass `npm run check` without reducing coverage.
 - [x] Main: browser smoke against a disposable vault, screenshots, user handoff.
 - [x] Main: review diff, update docs, commit/push branch and open draft PR.
+- [x] Luna / tabs: independent self-review; fix and regression-test the confirmed stale clean-draft finding.
 
 ## Verification
 
@@ -32,7 +33,7 @@ Unit checks cover history, tab/pane moves, draft/save races, persisted input val
 
 ## Results
 
-- `npm run check`: typechecks, committed bundle check, and 2,116 tests pass (76 files).
+- `npm run check`: typechecks, committed bundle check, and 2,118 tests pass (76 files).
 - Coverage: 98.89% statements/lines, 95.33% branches, 98.81% functions; thresholds unchanged.
 - Bundle: 397.3 KiB raw, 120.5 KiB gzip (150 KiB gzip budget); no dependency changes.
 - Disposable-vault browser checks at 1280×800 and 700×720: tab/new-tab search, wiki-link history,
@@ -45,5 +46,8 @@ Unit checks cover history, tab/pane moves, draft/save races, persisted input val
 - Draft cancellation/accepted discard are regression-tested through the same guard the shell calls.
   The in-app browser stalled on its native confirmation during the live final-tab-close check;
   cancellation and reload prompts remain a manual user check.
+- Independent Luna review found stale clean edit-mode drafts surviving final-view removal. The
+  shared guard now clears those drafts without prompting, while preserving drafts in another view;
+  two regression tests failed before the fix and pass afterward.
 - Graph renderer, layout physics, position caching, core knowledge code, and package dependencies
   are unchanged. Dedicated macOS hosting remains Stage B after browser review.
