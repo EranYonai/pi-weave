@@ -24,6 +24,7 @@ import {
   PROVENANCE_CYCLE,
   TREE_LABEL,
   DRAFT_FOLDER_ID,
+  affectedNoteSlugs,
   collapse,
   cycleProvenance,
   deletesSelection,
@@ -253,6 +254,21 @@ describe("expand and collapse", () => {
 });
 
 describe("tree mutations", () => {
+  it("finds every note affected by note and folder mutations", () => {
+    const graph = payloadOf([
+      node("note:plans/a", "note", "A"),
+      node("note:plans/nested/b", "note", "B"),
+      node("note:plans-old/c", "note", "C"),
+      node("note:elsewhere", "note", "D"),
+      node("module:plans/code", "module", "Code"),
+    ], []);
+    expect(affectedNoteSlugs(graph, { type: "note", path: "elsewhere" })).toEqual(["elsewhere"]);
+    expect(affectedNoteSlugs(graph, { type: "folder", path: "plans" })).toEqual(["plans/a", "plans/nested/b"]);
+    expect(affectedNoteSlugs(null, { type: "note", path: "elsewhere" })).toEqual(["elsewhere"]);
+    expect(affectedNoteSlugs(null, { type: "folder", path: "plans" })).toEqual([]);
+    expect(affectedNoteSlugs(graph, { type: "vault", path: "" })).toEqual([]);
+  });
+
   it("recognises note and folder rows without making repository rows mutable", () => {
     expect(mutableTreeRow("vault")).toEqual({ type: "vault", path: "" });
     expect(mutableTreeRow("note:plans/a")).toEqual({ type: "note", path: "plans/a" });

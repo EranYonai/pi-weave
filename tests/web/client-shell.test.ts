@@ -18,6 +18,7 @@ import {
   SEARCH_PLACEHOLDER,
   looksApple,
   repoLabel,
+  recordVisit,
   searchHint,
   searchShortcut,
   shortStamp,
@@ -29,6 +30,16 @@ import { COLUMNS } from "../../src/web/client/shell/shell.model";
 import type { GraphPayload, WireGraphNode, WireStalenessState } from "../../src/web/shared/wire";
 
 // --- fixtures ---------------------------------------------------------------------
+
+it("records recent visits in last-visit order without depending on open tabs", () => {
+  let visits: readonly string[] = [];
+  for (const id of ["note:a", "note:b", "note:c", "note:a"]) visits = recordVisit(visits, id);
+  expect(visits).toEqual(["note:a", "note:c", "note:b"]);
+  expect(recordVisit(visits, null)).toBe(visits);
+  for (let index = 0; index < 110; index++) visits = recordVisit(visits, `note:${index}`);
+  expect(visits).toHaveLength(100);
+  expect(visits[0]).toBe("note:109");
+});
 
 function node(id: string, kind: WireGraphNode["kind"]): WireGraphNode {
   return { id, kind, label: id, provenance: null, detail: {} };

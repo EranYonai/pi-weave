@@ -12,6 +12,7 @@ export interface Pane {
   readonly id: string;
   readonly tabs: readonly WorkspaceTab[];
   readonly activeTab: string;
+  readonly lastDocumentTab?: string;
 }
 
 export interface WorkspaceLayout {
@@ -73,9 +74,28 @@ function setActive(layout: WorkspaceLayout, pane: Pane, tab: WorkspaceTab): Work
     ...layout,
     activePane: pane.id,
     panes: layout.panes.map((item) => item.id === pane.id
-      ? { ...pane, activeTab: tab.id, tabs: pane.tabs.map((current) => current.id === tab.id ? tab : current) }
+      ? rememberDocument({ ...pane, activeTab: tab.id, tabs: pane.tabs.map((current) => current.id === tab.id ? tab : current) })
       : item),
   };
+}
+
+function documentTab(pane: Pane): WorkspaceTab | undefined {
+  return pane.tabs.find((tab) => tab.id === pane.lastDocumentTab && tab.kind === "document")
+    ?? [...pane.tabs].reverse().find((tab) => tab.kind === "document");
+}
+
+function rememberDocument(pane: Pane): Pane {
+  const { lastDocumentTab: _previous, ...rest } = pane;
+  const tab = pane.tabs.find((tab) => tab.id === pane.activeTab && tab.kind === "document") ?? documentTab(pane);
+  return tab ? { ...rest, lastDocumentTab: tab.id } : rest;
+}
+
+/** Focus reading/editing without navigating away from the active document. */
+export function focusDocument(layout: WorkspaceLayout): WorkspaceLayout {
+  if (activeTab(layout).kind === "document") return layout;
+  const pane = activePane(layout);
+  const tab = documentTab(pane);
+  return tab ? setActive(layout, pane, tab) : openDocument(layout, null, { newTab: true });
 }
 
 function findTab(layout: WorkspaceLayout, paneId: string, tabId: string): { pane: Pane; tab: WorkspaceTab } | null {
@@ -103,7 +123,7 @@ export function openDocument(layout: WorkspaceLayout, id: string | null, options
   const activeTabId = pane.activeTab;
   let tab = pane.tabs.find((item) => item.id === activeTabId);
   if (tab?.kind === "graph") {
-    tab = [...pane.tabs].reverse().find((item) => item.kind === "document");
+    tab = documentTab(pane);
     if (tab) pane = { ...pane, activeTab: tab.id };
     else if (!options.newTab) options = { ...options, newTab: true };
   }
@@ -127,7 +147,7 @@ export function activateTab(layout: WorkspaceLayout, paneId: string, tabId: stri
   const found = findTab(layout, paneId, tabId);
   return !found || (layout.activePane === paneId && found.pane.activeTab === tabId)
     ? layout
-    : { ...layout, activePane: paneId, panes: layout.panes.map((pane) => pane.id === paneId ? { ...pane, activeTab: tabId } : pane) };
+    : setActive(layout, found.pane, found.tab);
 }
 
 export function closeTab(layout: WorkspaceLayout, paneId: string, tabId: string): WorkspaceLayout {
@@ -141,7 +161,7 @@ export function closeTab(layout: WorkspaceLayout, paneId: string, tabId: string)
   const tabs = pane.tabs.filter((tab) => tab.id !== tabId);
   const wasActive = pane.activeTab === tabId;
   const neighbor = tabs[Math.max(0, pane.tabs.findIndex((tab) => tab.id === tabId) - 1)]!;
-  const updated = { ...pane, tabs, activeTab: wasActive ? neighbor.id : pane.activeTab };
+  const updated = rememberDocument({ ...pane, tabs, activeTab: wasActive ? neighbor.id : pane.activeTab });
   return { ...layout, activePane: wasActive ? paneId : layout.activePane, panes: layout.panes.map((item) => item.id === paneId ? updated : item) };
 }
 
@@ -180,8 +200,8 @@ export function moveTab(layout: WorkspaceLayout, paneId: string, tabId: string):
   const moved = found.tab;
   const placeholder = sourceTabs.length ? null : emptyDocument(nextId(layout, "tab"));
   const remaining = sourceTabs.length ? sourceTabs : [placeholder!];
-  const source = { ...found.pane, tabs: remaining, activeTab: found.pane.activeTab === tabId ? remaining[Math.max(0, found.pane.tabs.findIndex((tab) => tab.id === tabId) - 1)]!.id : found.pane.activeTab };
-  const destination = { ...target, tabs: [...target.tabs, moved], activeTab: moved.id };
+  const source = rememberDocument({ ...found.pane, tabs: remaining, activeTab: found.pane.activeTab === tabId ? remaining[Math.max(0, found.pane.tabs.findIndex((tab) => tab.id === tabId) - 1)]!.id : found.pane.activeTab });
+  const destination = rememberDocument({ ...target, tabs: [...target.tabs, moved], activeTab: moved.id });
   return { ...layout, activePane: target.id, panes: layout.panes.length === 1
     ? [source, destination]
     : layout.panes.map((pane) => pane.id === source.id ? source : destination) };
@@ -215,7 +235,7 @@ export function parseWorkspaceLayout(value: unknown): WorkspaceLayout | null {
   let graphs = 0;
   const panes: Pane[] = [];
   for (const rawPane of value["panes"]) {
-    if (!record(rawPane) || !exactKeys(rawPane, ["id", "tabs", "activeTab"]) || !boundedId(rawPane["id"], "pane") || !Array.isArray(rawPane["tabs"]) || rawPane["tabs"].length < 1 || !boundedId(rawPane["activeTab"], "tab") || ids.has(rawPane["id"])) return null;
+    if (!record(rawPane) || !exactKeys(rawPane, Object.hasOwn(rawPane, "lastDocumentTab") ? ["id", "tabs", "activeTab", "lastDocumentTab"] : ["id", "tabs", "activeTab"]) || !boundedId(rawPane["id"], "pane") || !Array.isArray(rawPane["tabs"]) || rawPane["tabs"].length < 1 || !boundedId(rawPane["activeTab"], "tab") || ids.has(rawPane["id"])) return null;
     ids.add(rawPane["id"]);
     const tabs: WorkspaceTab[] = [];
     let activeFound = false;
@@ -233,7 +253,9 @@ export function parseWorkspaceLayout(value: unknown): WorkspaceLayout | null {
       tabs.push({ id: rawTab["id"], kind, history: rawTab["history"] as (string | null)[], cursor: rawTab["cursor"] as number, scroll: rawTab["scroll"] });
     }
     if (!activeFound) return null;
-    panes.push({ id: rawPane["id"], tabs, activeTab: rawPane["activeTab"] });
+    const lastDocumentTab = rawPane["lastDocumentTab"];
+    if (Object.hasOwn(rawPane, "lastDocumentTab") && (!boundedId(lastDocumentTab, "tab") || !tabs.some((tab) => tab.id === lastDocumentTab && tab.kind === "document"))) return null;
+    panes.push({ id: rawPane["id"], tabs, activeTab: rawPane["activeTab"], ...(typeof lastDocumentTab === "string" ? { lastDocumentTab } : {}) });
   }
   if (count > MAX_TABS || graphs > 1 || !panes.some((pane) => pane.id === value["activePane"])) return null;
   return { version: 1, panes, activePane: value["activePane"], split: value["split"], ratio: value["ratio"], treeVisible: value["treeVisible"], contextVisible: value["contextVisible"], treeWidth: value["treeWidth"], contextWidth: value["contextWidth"], theme: value["theme"] };

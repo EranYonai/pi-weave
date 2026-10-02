@@ -57,7 +57,8 @@ function RefreshButton({ onRefresh }: { onRefresh: () => void }) {
         setSpinning(true);
       }}
       onAnimationEnd={() => setSpinning(false)}
-      title="Refetch everything"
+      title="Refresh workspace"
+      aria-label="Refresh workspace"
       aria-busy={spinning ? "true" : undefined}
     >
       <svg

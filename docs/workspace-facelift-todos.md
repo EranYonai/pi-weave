@@ -26,6 +26,8 @@ Branch: `codex/weave-workspace-facelift`. Browser first; dedicated macOS hosting
 - [x] Main: browser smoke against a disposable vault, screenshots, user handoff.
 - [x] Main: review diff, update docs, commit/push branch and open draft PR.
 - [x] Luna / tabs: independent self-review; fix and regression-test the confirmed stale clean-draft finding.
+- [x] Sol 6.1: independent self-review and re-review; correct data-safety and navigation findings.
+- [x] Main: second Obsidian pass and control-by-control user-flow review in `workspace-usability-review.md`.
 
 ## Verification
 
@@ -33,9 +35,9 @@ Unit checks cover history, tab/pane moves, draft/save races, persisted input val
 
 ## Results
 
-- `npm run check`: typechecks, committed bundle check, and 2,118 tests pass (76 files).
-- Coverage: 98.89% statements/lines, 95.33% branches, 98.81% functions; thresholds unchanged.
-- Bundle: 397.3 KiB raw, 120.5 KiB gzip (150 KiB gzip budget); no dependency changes.
+- `npm run check`: typechecks, committed bundle check, and 2,129 tests pass (76 files).
+- Coverage: 98.90% statements/lines, 95.32% branches, 98.82% functions; thresholds unchanged.
+- Bundle: 400.3 KiB raw, 121.3 KiB gzip (150 KiB gzip budget); no dependency changes.
 - Disposable-vault browser checks at 1280×800 and 700×720: tab/new-tab search, wiki-link history,
   shared drafts across two views, save refresh, graph/note split, pane merge, sidebars, keyboard
   focus, narrow-pane switching, and scroll restoration. A 1440-pixel reading position survived tab
@@ -49,5 +51,10 @@ Unit checks cover history, tab/pane moves, draft/save races, persisted input val
 - Independent Luna review found stale clean edit-mode drafts surviving final-view removal. The
   shared guard now clears those drafts without prompting, while preserving drafts in another view;
   two regression tests failed before the fix and pass afterward.
+- Sol 6.1 review corrected background/affected draft guards, duplicate-view checkbox writes,
+  last-active document routing, keyboard focus, narrow tree browsing, context-link modifiers,
+  and recent visits. Live checks additionally covered menu Escape/outside-click dismissal,
+  active-tab visibility, synchronized task/editor bodies, external restores, and a fresh-port
+  layout reload. Sol re-reviewed the fixes with no remaining confirmed blockers.
 - Graph renderer, layout physics, position caching, core knowledge code, and package dependencies
   are unchanged. Dedicated macOS hosting remains Stage B after browser review.

@@ -100,6 +100,8 @@ export interface NoteProps {
   drafts?: DraftStore;
   /** Stable per view; distinct when the same note is mounted more than once. */
   idPrefix?: string;
+  /** Monotonic identity of the document load that produced `note`. */
+  loadVersion: number;
   /** Epoch ms for relative times. Injected so the render is deterministic. */
   now: number;
 }
@@ -117,6 +119,7 @@ function Header({
   open,
   editing,
   saving,
+  taskSaving,
   onToggle,
   onSave,
 }: {
@@ -124,6 +127,7 @@ function Header({
   open: () => void;
   editing: boolean;
   saving: boolean;
+  taskSaving: boolean;
   onToggle: () => void;
   onSave: () => void;
 }) {
@@ -133,12 +137,12 @@ function Header({
       <p class="weave-note-meta">
         {editing ? (
           <>
-            <button type="button" class="weave-note-save" disabled={saving} onClick={onSave}>
+            <button type="button" class="weave-note-save" disabled={saving || taskSaving} onClick={onSave}>
               {saving ? SAVING_LABEL : SAVE_LABEL}
             </button>
-            <button type="button" class="weave-note-edit" onClick={onToggle}>{DONE_LABEL}</button>
+            <button type="button" class="weave-note-edit" disabled={taskSaving} onClick={onToggle}>{DONE_LABEL}</button>
           </>
-        ) : <button type="button" class="weave-note-edit" onClick={onToggle}>{EDIT_LABEL}</button>}
+        ) : <button type="button" class="weave-note-edit" disabled={taskSaving} onClick={onToggle}>{EDIT_LABEL}</button>}
         <button type="button" class="weave-note-open" title="Open in $EDITOR" aria-label="Open in $EDITOR" onClick={open}>
           <span class="weave-note-open-mark" aria-hidden="true">↗</span>
         </button>
@@ -168,9 +172,10 @@ export function Note(props: NoteProps) {
   const drafts = props.drafts ?? localDrafts.current;
   const generatedId = useId();
   const previewId = `${props.idPrefix ?? generatedId}-weave-preview`;
-  const [, setDraftVersion] = useState(0);
+  const [storeVersion, setDraftVersion] = useState(0);
   useEffect(() => drafts.subscribe(() => setDraftVersion((version) => version + 1)), [drafts]);
   const note = props.note?.note ?? null;
+  const body = note === null ? "" : drafts.getTaskBody(note.slug, note.body);
   const artifactPath = selectedArtifactPath(props.graph, props.selectedId);
   const empty = noteEmptyMessage(props.selectedId, note, props.loadFailed);
 
@@ -182,8 +187,8 @@ export function Note(props: NoteProps) {
   // only the *result* is memoized.
   const index = useMemo(() => (note === null ? null : wikiIndex(props.graph, note.slug)), [note, props.graph]);
   const html = useMemo(
-    () => (note === null || index === null ? "" : renderNote(DOMPurify, note.body, index)),
-    [note, index],
+    () => (note === null || index === null ? "" : renderNote(DOMPurify, body, index)),
+    [note, body, index],
   );
 
   // The hover card. The reducer lives in `note.model.ts`; this is its
@@ -194,51 +199,50 @@ export function Note(props: NoteProps) {
   const dispatch = (event: PreviewEvent): void => void sendPreview((state) => reducePreview(state, event));
   const bodyRef = useRef<HTMLDivElement | null>(null);
   const cardRef = useRef<HTMLDivElement | null>(null);
-  const taskSaving = useRef(false);
-  const taskSource = useRef<{ slug: string; serverBody: string; body: string } | null>(null);
-  if (note === null) taskSource.current = null;
-  else if (taskSource.current === null || taskSource.current.slug !== note.slug || taskSource.current.serverBody !== note.body) {
-    taskSource.current = { slug: note.slug, serverBody: note.body, body: note.body };
-  }
-
   const draft = note === null ? null : drafts.get(note.slug);
+  const taskSaving = note !== null && drafts.isTaskSaving(note.slug);
   const save = async (): Promise<void> => {
-    if (note !== null) await drafts.save(note.slug, props.onSave);
+    if (note !== null && !drafts.isTaskSaving(note.slug)) await drafts.save(note.slug, props.onSave);
   };
 
   const saveTask = async (checkbox: HTMLInputElement, taskIndex: number): Promise<void> => {
-    const source = taskSource.current;
     const restore = (): void => {
       checkbox.checked = !checkbox.checked;
       checkbox.setAttribute("aria-label", taskCheckboxLabel(checkbox.checked));
     };
-    if (source === null || taskSaving.current) {
+    if (note === null || drafts.isTaskSaving(note.slug)) {
       restore();
       return;
     }
-    const body = toggleTaskCheckbox(source.body, taskIndex);
-    if (body === null) {
+    const nextBody = toggleTaskCheckbox(drafts.getTaskBody(note.slug, note.body), taskIndex);
+    if (nextBody === null) {
       restore();
       return;
     }
 
     const inputs = [...(bodyRef.current?.querySelectorAll<HTMLInputElement>(`input[${TASK_CHECKBOX_ATTR}]`) ?? [])];
-    taskSaving.current = true;
     checkbox.setAttribute("aria-label", taskCheckboxLabel(checkbox.checked));
     for (const input of inputs) input.disabled = true;
-    const ok = await props.onSave(source.slug, body);
-    if (ok) source.body = body;
-    else restore();
-    for (const input of inputs) input.disabled = false;
-    taskSaving.current = false;
+    try {
+      if (!await drafts.saveTask(note.slug, nextBody, props.onSave)) restore();
+    } catch (error) {
+      restore();
+      throw error;
+    } finally {
+      for (const input of inputs) input.disabled = drafts.isTaskSaving(note.slug);
+    }
   };
 
   const toggleEdit = (): void => {
-    if (note === null) return;
-    if (drafts.get(note.slug) === null) drafts.open(note.slug, note.body);
+    if (note === null || drafts.isTaskSaving(note.slug)) return;
+    if (drafts.get(note.slug) === null) drafts.open(note.slug, body);
     else if (!drafts.isDirty(note.slug) || window.confirm(DISCARD_PROMPT)) drafts.discard(note.slug);
   };
   const card = preview.anchor === null ? null : previewCard(props.graph, preview.anchor);
+
+  useLayoutEffect(() => {
+    if (note !== null) drafts.taskBody(note.slug, note.body, props.loadVersion);
+  }, [drafts, note === null ? null : note.slug, note?.body, props.loadVersion]);
 
   // A card whose target note left the screen is a claim about a document that
   // is gone. Navigating (or an SSE swap of the open note, which is what
@@ -251,6 +255,14 @@ export function Note(props: NoteProps) {
     // Drafts belong to note identity and survive this Note instance changing
     // documents or unmounting.
   }, [note === null ? null : note.slug]);
+
+  useLayoutEffect(() => {
+    if (note === null) return;
+    const saving = drafts.isTaskSaving(note.slug);
+    for (const input of bodyRef.current?.querySelectorAll<HTMLInputElement>(`input[${TASK_CHECKBOX_ATTR}]`) ?? []) {
+      input.disabled = saving;
+    }
+  }, [note === null ? null : note.slug, storeVersion, html]);
 
   // Wired after the card mounts, because both jobs depend on the live DOM:
   // the card's size (the placement decision needs measured dimensions, which
@@ -323,6 +335,7 @@ export function Note(props: NoteProps) {
         open={() => props.onOpen(note.slug)}
         editing={draft !== null}
         saving={draft?.saving ?? false}
+        taskSaving={taskSaving}
         onToggle={toggleEdit}
         onSave={() => void save()}
       />

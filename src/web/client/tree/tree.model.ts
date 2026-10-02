@@ -224,6 +224,14 @@ export function mutableTreeRow(id: string): { type: "note" | "folder" | "vault";
   return null;
 }
 
+/** Note slugs a note or folder mutation can invalidate. */
+export function affectedNoteSlugs(graph: GraphPayload | null, target: { type: "note" | "folder" | "vault"; path: string }): string[] {
+  if (target.type === "note") return [target.path];
+  if (target.type !== "folder" || graph === null) return [];
+  const prefix = `note:${target.path}/`;
+  return graph.model.nodes.filter((node) => node.kind === "note" && node.id.startsWith(prefix)).map((node) => node.id.slice(5));
+}
+
 export function deletesSelection(selectedId: string | null, target: { type: "note" | "folder" | "vault"; path: string }): boolean {
   if (selectedId === null) return false;
   if (target.type === "note") return selectedId === `note:${target.path}`;

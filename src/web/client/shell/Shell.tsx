@@ -1,7 +1,7 @@
 /** Shared browser/desktop workspace: one data source, two optional tab groups. */
 import { useEffect, useLayoutEffect, useRef, useState } from "preact/hooks";
 import type { GraphPayload, NotePayload } from "../../shared/wire";
-import { activePane, activeTab, activateTab, closePane, closeTab, initialLayout, moveTab, navigateTab, openDocument, openGraph, parseWorkspaceLayout, splitPane, tabSelection } from "../../shared/workspace";
+import { activePane, activeTab, activateTab, closePane, closeTab, focusDocument, initialLayout, moveTab, navigateTab, openDocument, openGraph, parseWorkspaceLayout, splitPane, tabSelection } from "../../shared/workspace";
 import type { Pane, WorkspaceLayout, WorkspaceTab } from "../../shared/workspace";
 import { fetchJson } from "../api.dom";
 import { openNote, saveNote } from "../api";
@@ -9,7 +9,7 @@ import { Graph } from "../graph/Graph";
 import { schemeOf, watchScheme } from "../graph/scheme";
 import { createSigmaRenderer } from "../graph/renderer.dom";
 import { Note } from "../note/Note";
-import { createDraftStore, mayRemoveDrafts } from "../note/drafts";
+import { createDraftStore, mayMutateDrafts, mayRemoveDrafts } from "../note/drafts";
 import type { DraftStore } from "../note/drafts";
 import { DISCARD_PROMPT } from "../note/note.model";
 import { SearchPalette } from "../search/SearchPalette";
@@ -25,7 +25,7 @@ import { watchKeys } from "./keys";
 import { COLUMN_FOCUS_SELECTORS, TREE_FILTER_SELECTOR, focusSelector, runShellAction } from "./keys.model";
 import { StatusBar } from "./StatusBar";
 import type { OverlayId } from "./shell.model";
-import { TICK_MS, looksApple, searchShortcut, statusBarModel, summarize } from "./shell.model";
+import { TICK_MS, looksApple, recordVisit, searchShortcut, statusBarModel, summarize } from "./shell.model";
 import { cycleTheme, effectiveScheme, loadTheme, saveTheme, themeAttr, themeButton } from "./theme.model";
 
 export interface ShellProps { cwd: string; initialWidth: number; platform: string; tuner?: boolean }
@@ -44,13 +44,14 @@ function DocumentView(props: {
 }) {
   const id = tabSelection(props.tab);
   const slug = id?.startsWith("note:") ? id.slice(5) : null;
-  const [loaded, setLoaded] = useState<{ slug: string; note: NotePayload | null; failed: boolean } | null>(null);
+  const [loaded, setLoaded] = useState<{ slug: string; note: NotePayload | null; failed: boolean; version: number } | null>(null);
   const element = useRef<HTMLDivElement | null>(null);
   const savedScroll = useRef(props.tab.scroll);
   useEffect(() => {
     if (slug === null) return;
+    const version = props.drafts.nextLoadVersion();
     return watchNote(fetchJson, slug, (result) => {
-      setLoaded({ slug, note: result.ok ? result.data : null, failed: !result.ok });
+      setLoaded({ slug, note: result.ok ? result.data : null, failed: !result.ok, version });
     });
   }, [slug, props.graph?.stamp, props.revision]);
   const payload = loaded?.slug === slug ? loaded : null;
@@ -78,7 +79,7 @@ function DocumentView(props: {
   return <div class="weave-document" ref={element} onScrollCapture={(event) => {
     const target = event.target as HTMLElement;
     if (target.classList.contains("weave-note")) { savedScroll.current = target.scrollTop; props.onScroll(target.scrollTop); }
-  }}><Note note={payload?.note ?? null} loadFailed={payload?.failed ?? false} graph={props.graph} selectedId={id}
+  }}><Note note={payload?.note ?? null} loadFailed={payload?.failed ?? false} loadVersion={payload?.version ?? 0} graph={props.graph} selectedId={id}
     onSelect={props.onSelect} onOpen={(noteSlug) => void openNote(fetchJson, noteSlug).then((result) => {
       if (!result.ok) window.alert(result.message); else if (!result.data.opened) window.alert("Could not open the note in an editor.");
     })} onSave={props.onSave} drafts={props.drafts} idPrefix={props.tab.id} now={props.now} /></div>;
@@ -115,6 +116,7 @@ export function Shell(props: ShellProps) {
   const [, setDraftRevision] = useState(0);
   const [graphSelection, setGraphSelection] = useState<string | null>(null);
   const [recentMode, setRecentMode] = useState(false);
+  const [visits, setVisits] = useState<readonly string[]>([]);
   const [compactContext, setCompactContext] = useState(false);
   const [drafts] = useState(createDraftStore);
   const workspace = useRef<WorkspaceHandle | null>(null);
@@ -136,9 +138,9 @@ export function Shell(props: ShellProps) {
   const change = (next: WorkspaceLayout): void => {
     if (mayRemoveDrafts(drafts, layout, next, () => window.confirm(DISCARD_PROMPT))) setLayout(next);
   };
-  const select = (id: string | null, newTab = false, paneId = layout.activePane): void => {
+  const select = (id: string | null, newTab = false, paneId = layout.activePane, keepSidebar = false): void => {
     const next = openDocument(layout, id, { newTab, paneId });
-    change(width < 850 ? { ...next, treeVisible: false } : next);
+    change(width < 850 && !keepSidebar ? { ...next, treeVisible: false } : next);
     setCompactContext(false);
   };
   const showGraph = (): void => setLayout((current) => ({ ...openGraph(current), ...(width < 850 ? { treeVisible: false } : {}) }));
@@ -149,12 +151,7 @@ export function Shell(props: ShellProps) {
     select(id, false, other?.id ?? graphPane?.id ?? layout.activePane);
   };
   live.current = { layout, overlay, selectedId, select };
-  const mayMutate = (): boolean => {
-    const dirty = drafts.dirtySlugs();
-    if (dirty.length && !window.confirm(`Discard all ${dirty.length} unsaved note draft${dirty.length === 1 ? "" : "s"} before changing files?`)) return false;
-    dirty.forEach((slug) => drafts.discard(slug));
-    return true;
-  };
+  const mayMutate = (slugs: readonly string[]): boolean => mayMutateDrafts(drafts, slugs, () => window.confirm("Discard unsaved changes to the affected notes before changing files?"));
   const save = async (slug: string, body: string): Promise<boolean> => {
     const result = await saveNote(fetchJson, slug, body);
     if (!result.ok) { window.alert(result.message); return false; }
@@ -175,7 +172,10 @@ export function Shell(props: ShellProps) {
         if (response.ok && typeof value.viewId === "string") {
           viewId.current = value.viewId;
           const restored = parseWorkspaceLayout(value.layout);
-          if (restored) setLayout(restored);
+          if (restored) {
+            setLayout(restored);
+            setVisits(restored.panes.flatMap((pane) => pane.tabs.flatMap((tab) => tab.history)).reduce<readonly string[]>(recordVisit, []));
+          }
         } else setPersistError(true);
       } catch { if (current) setPersistError(true); }
       finally { if (current) setReady(true); }
@@ -188,6 +188,7 @@ export function Shell(props: ShellProps) {
     const id = deeplinkSelection(bootHash.current, data.graph);
     if (id !== null) setLayout((current) => openDocument(current, id));
   }, [ready, data.graph]);
+  useEffect(() => { if (ready) setVisits((previous) => recordVisit(previous, selectedId)); }, [ready, selectedId]);
   useEffect(() => {
     if (!ready) return;
     history.replaceState(null, "", formatHash(selectedId));
@@ -215,6 +216,12 @@ export function Shell(props: ShellProps) {
     const resize = (): void => setWidth(window.innerWidth);
     window.addEventListener("resize", resize);
     const stopScheme = watchScheme(window, setScheme);
+    const dismissMenus = (event: PointerEvent): void => {
+      for (const menu of document.querySelectorAll<HTMLDetailsElement>(".weave-pane-menu[open]")) {
+        if (!menu.contains(event.target as Node)) menu.open = false;
+      }
+    };
+    document.addEventListener("pointerdown", dismissMenus);
     const unload = (event: BeforeUnloadEvent): void => {
       if (!drafts.dirtySlugs().length) return;
       event.preventDefault(); event.returnValue = "";
@@ -224,7 +231,7 @@ export function Shell(props: ShellProps) {
     };
     window.addEventListener("pagehide", persist);
     window.addEventListener("beforeunload", unload);
-    return () => { window.clearInterval(tick); window.removeEventListener("resize", resize); window.removeEventListener("beforeunload", unload); window.removeEventListener("pagehide", persist); stopScheme(); };
+    return () => { window.clearInterval(tick); window.removeEventListener("resize", resize); window.removeEventListener("beforeunload", unload); window.removeEventListener("pagehide", persist); document.removeEventListener("pointerdown", dismissMenus); stopScheme(); };
   }, []);
   useEffect(() => watchKeys(document, {
     context: () => ({ overlay: live.current.overlay, hasSelection: live.current.selectedId !== null }),
@@ -236,16 +243,21 @@ export function Shell(props: ShellProps) {
       focusSelector: (selector) => {
         if (selector === COLUMN_FOCUS_SELECTORS.graph) setLayout((current) => ({ ...openGraph(current), ...(window.innerWidth < 850 ? { treeVisible: false } : {}) }));
         else if (selector === COLUMN_FOCUS_SELECTORS.tree || selector === TREE_FILTER_SELECTOR) setLayout((current) => ({ ...current, treeVisible: true }));
-        else setLayout((current) => {
-          const group = activePane(current);
-          const noteTab = [...group.tabs].reverse().find((entry) => entry.kind === "document");
-          return noteTab ? activateTab(current, group.id, noteTab.id) : openDocument(current, null);
+        else setLayout(focusDocument);
+        requestAnimationFrame(() => {
+          if (selector === COLUMN_FOCUS_SELECTORS.note && focusSelector(document, ".weave-pane-active .weave-note-editor")) return;
+          if (!focusSelector(document, selector) && selector === COLUMN_FOCUS_SELECTORS.note) focusSelector(document, ".weave-pane-active .weave-pane-content");
         });
-        requestAnimationFrame(() => focusSelector(document, selector));
         return true;
       },
     }),
   }), []);
+  useLayoutEffect(() => {
+    for (const group of layout.panes) {
+      document.getElementById(`tab-${group.activeTab}`)?.scrollIntoView({ block: "nearest", inline: "nearest" });
+    }
+  }, [layout.panes.map((group) => group.activeTab).join(","), layout.activePane, width, ready, data.graph?.stamp,
+    layout.treeVisible, layout.treeWidth, layout.contextVisible, layout.contextWidth, layout.ratio, layout.split]);
   useLayoutEffect(() => {
     const slot = graphSlot.current;
     const parent = root.current;
@@ -270,7 +282,7 @@ export function Shell(props: ShellProps) {
       onPointerDown={() => { if (!isActive) setLayout((value) => ({ ...value, activePane: group.id })); }}>
       <div class="weave-tabs" role="tablist" aria-label="Open documents">
         {group.tabs.map((entry) => <div key={entry.id} class={`weave-tab${entry.id === current.id ? " weave-tab-active" : ""}`}>
-          <button type="button" role="tab" id={`tab-${entry.id}`} aria-selected={entry.id === current.id} aria-controls={`panel-${group.id}`} tabIndex={entry.id === current.id ? 0 : -1}
+          <button type="button" role="tab" title={titleOf(entry, data.graph)} id={`tab-${entry.id}`} aria-selected={entry.id === current.id} aria-controls={`panel-${group.id}`} tabIndex={entry.id === current.id ? 0 : -1}
             onClick={() => setLayout(activateTab(layout, group.id, entry.id))}
             onKeyDown={(event) => {
               const offset = event.key === "ArrowRight" ? 1 : event.key === "ArrowLeft" ? -1 : 0;
@@ -289,13 +301,17 @@ export function Shell(props: ShellProps) {
         <button type="button" aria-label="Navigate back" disabled={current.kind === "graph" || current.cursor === 0} onClick={() => change(navigateTab({ ...layout, activePane: group.id }, group.id, -1))}>←</button>
         <button type="button" aria-label="Navigate forward" disabled={current.kind === "graph" || current.cursor >= current.history.length - 1} onClick={() => change(navigateTab({ ...layout, activePane: group.id }, group.id, 1))}>→</button>
         <span class="weave-breadcrumb">{titleOf(current, data.graph)}</span>
-        <details class="weave-pane-menu"><summary aria-label="Pane options">···</summary><div onClick={(event) => { const details = event.currentTarget.closest("details"); if (details) details.open = false; }}>
-          <button type="button" onClick={() => setLayout(splitPane({ ...layout, activePane: group.id }, "right"))}>Split right</button>
-          <button type="button" onClick={() => setLayout(splitPane({ ...layout, activePane: group.id }, "down"))}>Split down</button>
-          {layout.panes.length > 1 ? <><button type="button" onClick={() => setLayout(moveTab(layout, group.id, current.id))}>Move tab to other pane</button><button type="button" onClick={() => setLayout(closePane(layout, group.id))}>Close pane</button></> : null}
+        <details class="weave-pane-menu" onKeyDown={(event) => {
+          if (event.key !== "Escape") return;
+          event.preventDefault(); event.stopPropagation(); event.currentTarget.open = false;
+          event.currentTarget.querySelector("summary")?.focus();
+        }}><summary aria-label="Pane options" title="Pane options">···</summary><div onClick={(event) => { const details = event.currentTarget.closest("details"); if (details) details.open = false; }}>
+          <button type="button" onClick={() => setLayout(splitPane({ ...layout, activePane: group.id }, "right"))}>{layout.panes.length > 1 ? "Arrange side by side" : "Split right"}</button>
+          <button type="button" onClick={() => setLayout(splitPane({ ...layout, activePane: group.id }, "down"))}>{layout.panes.length > 1 ? "Stack panes" : "Split down"}</button>
+          {layout.panes.length > 1 ? <><button type="button" onClick={() => setLayout(moveTab(layout, group.id, current.id))}>Move tab to other pane</button><button type="button" title="Move all tabs to the other pane and close this pane" onClick={() => setLayout(closePane(layout, group.id))}>Close pane</button></> : null}
         </div></details>
       </div>
-      <div class="weave-pane-content" role="tabpanel" id={`panel-${group.id}`} aria-labelledby={`tab-${current.id}`} {...(current.kind === "graph" ? { ref: graphSlot } : {})}>
+      <div class="weave-pane-content" role="tabpanel" tabIndex={-1} id={`panel-${group.id}`} aria-labelledby={`tab-${current.id}`} {...(current.kind === "graph" ? { ref: graphSlot } : {})}>
         {current.kind === "document" ? <DocumentView key={`${current.id}:${current.cursor}:${tabSelection(current)}`} tab={current} graph={data.graph} drafts={drafts} revision={revision} now={now}
           onSelect={(id, newTab) => select(id, newTab, group.id)} onSave={save} onScroll={(value) => rememberScroll(current.id, value)}
           onSearch={() => setOverlay("search")} onGraph={showGraph} /> : null}
@@ -310,14 +326,13 @@ export function Shell(props: ShellProps) {
       <nav class="weave-ribbon" aria-label="Workspace tools">
         <button type="button" aria-label="Toggle notes sidebar" aria-pressed={layout.treeVisible} title="Notes" onClick={() => setLayout({ ...layout, treeVisible: !layout.treeVisible })}>▤</button>
         <button type="button" aria-label="Open graph view" title="Graph view" onClick={showGraph}>◌</button>
-        <button type="button" aria-label="Search workspace" title="Search" onClick={() => setOverlay("search")}>⌕</button>
         <span class="weave-ribbon-space" />
         <button type="button" aria-label="Toggle context sidebar" aria-pressed={width < 1050 ? compactContext : layout.contextVisible} title="Context" onClick={() => width < 1050 ? setCompactContext(!compactContext) : setLayout({ ...layout, contextVisible: !layout.contextVisible })}>☷</button>
         <button type="button" aria-label="Keyboard shortcuts" onClick={() => setOverlay("help")}>?</button>
       </nav>
       {layout.treeVisible ? <><aside class="weave-sidebar weave-sidebar-notes" aria-label="Notes sidebar" style={{ width: Math.min(layout.treeWidth, width - 90) }}>
         <div class="weave-sidebar-heading"><button type="button" aria-pressed={!recentMode} onClick={() => setRecentMode(false)}>Files</button><button type="button" aria-pressed={recentMode} onClick={() => setRecentMode(true)}>Recent</button><button type="button" aria-label="Hide notes sidebar" onClick={() => setLayout({ ...layout, treeVisible: false })}>«</button></div>
-        {recentMode ? <div class="weave-recents">{[...new Set(layout.panes.flatMap((group) => group.tabs.flatMap((entry) => entry.history)).filter((id): id is string => id !== null))].reverse().map((id) => <button type="button" key={id} onClick={(event) => select(id, event.metaKey || event.ctrlKey)}>{data.graph?.model.nodes.find((node) => node.id === id)?.label ?? id}</button>)}</div> : <Tree graph={data.graph} selectedId={selectedId} recentIds={data.recentIds} onSelect={select} onMutate={mayMutate} onRefresh={() => workspace.current?.refresh()} now={now} />}
+        {recentMode ? <div class="weave-recents">{visits.map((id) => <button type="button" key={id} onClick={(event) => select(id, event.metaKey || event.ctrlKey)}>{data.graph?.model.nodes.find((node) => node.id === id)?.label ?? id}</button>)}</div> : <Tree graph={data.graph} selectedId={selectedId} recentIds={data.recentIds} onSelect={(id, newTab, keepSidebar) => select(id, newTab, layout.activePane, keepSidebar)} onMutate={mayMutate} onRefresh={() => workspace.current?.refresh()} now={now} />}
         <div class="weave-vault-label"><span>Workspace</span><strong title={props.cwd}>{props.cwd.split(/[\\/]/).filter(Boolean).pop() ?? "Weave"}</strong></div>
       </aside><ResizeHandle label="Resize notes sidebar" min={180} max={420} value={layout.treeWidth} onChange={(delta) => setLayout((value) => ({ ...value, treeWidth: Math.max(180, Math.min(420, value.treeWidth + delta)) }))} /></> : null}
       <main class={`weave-panes weave-split-${layout.split}`} style={layout.panes.length === 2 && width >= 850 ? { [layout.split === "right" ? "gridTemplateColumns" : "gridTemplateRows"]: `minmax(0, ${layout.ratio}fr) 4px minmax(0, ${1 - layout.ratio}fr)` } : {}}>

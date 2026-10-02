@@ -33,6 +33,7 @@ import {
   rowCountLabel,
   rowViews,
   rowsFor,
+  affectedNoteSlugs,
   setQuery,
   toggleExpanded,
   toggleInternals,
@@ -44,12 +45,12 @@ export interface TreeProps {
   graph: GraphPayload | null;
   selectedId: string | null;
   recentIds: ReadonlySet<string>;
-  onSelect: (id: string, newTab?: boolean) => void;
+  onSelect: (id: string, newTab?: boolean, keepSidebar?: boolean) => void;
   /**
    * Ask before a mutation that would invalidate an open draft. `false` means
    * keep editing: the mutation must not run.
    */
-  onMutate: () => boolean;
+  onMutate: (slugs: readonly string[]) => boolean;
   onRefresh: () => void;
   now: number;
 }
@@ -198,7 +199,7 @@ export function Tree(props: TreeProps) {
     } else if (target.type !== "vault") {
       // Before the request: asking after a delete is asking about a file that
       // is already gone, and "keep editing" would strand the draft on a 404.
-      if (deletesSelection(props.selectedId, target) && !props.onMutate()) return;
+      if (!props.onMutate(affectedNoteSlugs(props.graph, target))) return;
       await run(target.type === "note" ? deleteNote(fetchJson, target.path) : deleteFolder(fetchJson, target.path), deletesSelection(props.selectedId, target) ? "vault" : undefined);
     }
   };
@@ -247,7 +248,7 @@ export function Tree(props: TreeProps) {
     // is the least useful moment to ask. Renaming back is one more rename.
     // An open draft is a different question; `onMutate` asks that one.
     if (target !== null && name && name !== current.label) {
-      if (deletesSelection(props.selectedId, target) && !props.onMutate()) return;
+      if (!props.onMutate(affectedNoteSlugs(props.graph, target))) return;
       void run(target.type === "note" ? renameNote(fetchJson, target.path, name) : renameFolder(fetchJson, target.path, name));
     }
   };
@@ -259,7 +260,7 @@ export function Tree(props: TreeProps) {
       if (!next.handled) return;
       event.preventDefault();
       setState(next.state);
-      if (next.selectedId !== null) props.onSelect(next.selectedId);
+      if (next.selectedId !== null) props.onSelect(next.selectedId, false, true);
     }}>
       <div class="weave-tree-controls">
         <input type="search" class="weave-filter" value={state.query} placeholder={FILTER_PLACEHOLDER} aria-label={FILTER_LABEL} title={FILTER_HINT} onInput={(event) => setState(setQuery(state, event.currentTarget.value))} />
@@ -278,7 +279,7 @@ export function Tree(props: TreeProps) {
             setMenu({ id: "vault", label: "Vault", x: event.clientX, y: event.clientY });
           }}
         >
-          {rowViews(rows, props.selectedId, props.now).map((view) => <Row key={view.id} view={view} recentIds={props.recentIds} edit={editing?.id === view.id ? editing.value : null} onEdit={(value) => setEditing((current) => current === null ? null : { ...current, value })} onRename={commitEdit} onSelect={(newTab) => { props.onSelect(view.id, newTab); if (view.hasKids) setState((current) => toggleExpanded(current, view.id)); }} onToggle={() => setState(toggleExpanded(state, view.id))} onMenu={(x, y) => setMenu({ id: view.id, label: view.label, x, y })} onDrop={(dragged) => { const folder = dropFolder(view.id); if (dragged.startsWith("note:") && folder !== undefined) { if (dragged === props.selectedId && !props.onMutate()) return; void run(moveNote(fetchJson, dragged.slice("note:".length), folder)); } }} />)}
+          {rowViews(rows, props.selectedId, props.now).map((view) => <Row key={view.id} view={view} recentIds={props.recentIds} edit={editing?.id === view.id ? editing.value : null} onEdit={(value) => setEditing((current) => current === null ? null : { ...current, value })} onRename={commitEdit} onSelect={(newTab) => { props.onSelect(view.id, newTab); if (view.hasKids) setState((current) => toggleExpanded(current, view.id)); }} onToggle={() => setState(toggleExpanded(state, view.id))} onMenu={(x, y) => setMenu({ id: view.id, label: view.label, x, y })} onDrop={(dragged) => { const folder = dropFolder(view.id); if (dragged.startsWith("note:") && folder !== undefined) { const target = mutableTreeRow(dragged); if (target !== null && !props.onMutate(affectedNoteSlugs(props.graph, target))) return; void run(moveNote(fetchJson, dragged.slice("note:".length), folder)); } }} />)}
         </ul>
       ) : <p class="weave-tree-empty">{empty}</p>}
       <p class="weave-tree-count">{rowCountLabel(rows)}</p>

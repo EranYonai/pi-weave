@@ -1,5 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
-import { createDraftStore, mayRemoveDrafts } from "../../src/web/client/note/drafts";
+import { createDraftStore, mayMutateDrafts, mayRemoveDrafts } from "../../src/web/client/note/drafts";
+import { toggleTaskCheckbox } from "../../src/web/client/note/note.model";
 
 import { initialLayout, openDocument, closeTab, splitPane, closePane } from "../../src/web/shared/workspace";
 
@@ -152,5 +153,152 @@ describe("clean edit-mode draft removal", () => {
     expect(mayRemoveDrafts(drafts, remaining, replacement, confirm)).toBe(true);
     expect(drafts.get("one")).toBeNull();
     expect(confirm).not.toHaveBeenCalled();
+  });
+});
+
+describe("shared task checkbox writes", () => {
+  it("blocks competing pane writes and uses the successful body before refresh", async () => {
+    const drafts = createDraftStore();
+    const original = "- [ ] first\n- [ ] second\n";
+    const view1 = drafts.nextLoadVersion();
+    const view2 = drafts.nextLoadVersion();
+    const firstBody = toggleTaskCheckbox(drafts.taskBody("one", original, view1), 0)!;
+    expect(drafts.getTaskBody("one", "fallback")).toBe(original);
+    let resolveFirst!: (ok: boolean) => void;
+    const saveFirst = vi.fn(() => new Promise<boolean>((resolve) => { resolveFirst = resolve; }));
+    const first = drafts.saveTask("one", firstBody, saveFirst);
+
+    expect(drafts.isTaskSaving("one")).toBe(true);
+    const secondFromOtherPane = toggleTaskCheckbox(drafts.taskBody("one", original, view2), 1)!;
+    const saveSecond = vi.fn(async () => true);
+    expect(await drafts.saveTask("one", secondFromOtherPane, saveSecond)).toBe(false);
+    expect(saveFirst).toHaveBeenCalledTimes(1);
+    expect(saveSecond).not.toHaveBeenCalled();
+
+    resolveFirst(true);
+    expect(await first).toBe(true);
+    expect(drafts.isTaskSaving("one")).toBe(false);
+    expect(drafts.taskBody("one", original, view2)).toBe(firstBody);
+    expect(drafts.getTaskBody("one", original)).toBe(firstBody);
+
+    const secondBody = toggleTaskCheckbox(drafts.taskBody("one", original, view2), 1)!;
+    expect(await drafts.saveTask("one", secondBody, async () => true)).toBe(true);
+    expect(drafts.taskBody("one", original, view2)).toBe(secondBody);
+    expect(secondBody).toBe("- [x] first\n- [x] second\n");
+    expect(drafts.taskBody("one", secondBody, view2)).toBe(secondBody);
+    const external = "- [ ] first\n- [ ] second\n- [ ] external\n";
+    expect(drafts.taskBody("one", external, drafts.nextLoadVersion())).toBe(external);
+    expect(drafts.taskBody("one", original, view1)).toBe(external);
+  });
+
+  it("keeps failed writes unchanged and ignores completions after source cleanup", async () => {
+    const drafts = createDraftStore();
+    const original = "- [ ] first\n";
+    const firstLoad = drafts.nextLoadVersion();
+    const checked = toggleTaskCheckbox(drafts.taskBody("one", original, firstLoad), 0)!;
+    expect(await drafts.saveTask("one", checked, async () => false)).toBe(false);
+    expect(drafts.taskBody("one", original, firstLoad)).toBe(original);
+    expect(await drafts.saveTask("missing", checked, async () => true)).toBe(false);
+
+    let resolveSave!: (ok: boolean) => void;
+    const saving = drafts.saveTask("one", checked, () => new Promise<boolean>((resolve) => { resolveSave = resolve; }));
+    drafts.clearTaskSources(["one"]);
+    expect(drafts.isTaskSaving("one")).toBe(false);
+    const replacementLoad = drafts.nextLoadVersion();
+    drafts.taskBody("one", "replacement", replacementLoad);
+    resolveSave(true);
+    expect(await saving).toBe(true);
+    expect(drafts.taskBody("one", "replacement", replacementLoad)).toBe("replacement");
+  });
+
+  it("rejects delayed loads, but accepts a fresh external restore of an older body", async () => {
+    const drafts = createDraftStore();
+    const oldLoad = drafts.nextLoadVersion();
+    const newLoad = drafts.nextLoadVersion();
+    const original = "- [ ] task\n";
+    const external = "- [x] task\n";
+    expect(drafts.taskBody("one", external, newLoad)).toBe(external);
+    expect(drafts.taskBody("one", original, oldLoad)).toBe(external);
+
+    const changed = toggleTaskCheckbox(drafts.taskBody("one", external, newLoad), 0)!;
+    expect(await drafts.saveTask("one", changed, async () => true)).toBe(true);
+    // A payload from a load that began before the save cannot undo the task write.
+    expect(drafts.taskBody("one", original, newLoad)).toBe(changed);
+    // A later successful load may legitimately restore the earlier text.
+    const restoreLoad = drafts.nextLoadVersion();
+    expect(drafts.taskBody("one", original, restoreLoad)).toBe(original);
+  });
+
+  it("applies the newest load held during a failed save", async () => {
+    const drafts = createDraftStore();
+    const initialLoad = drafts.nextLoadVersion();
+    const initial = "- [ ] task\n";
+    drafts.taskBody("one", initial, initialLoad);
+    const checked = toggleTaskCheckbox(initial, 0)!;
+    const savingLoad = drafts.nextLoadVersion();
+    let finish!: (ok: boolean) => void;
+    const save = drafts.saveTask("one", checked, () => new Promise<boolean>((resolve) => { finish = resolve; }));
+    const external = "- [x] task\n";
+    const externalLoad = drafts.nextLoadVersion();
+    expect(drafts.taskBody("one", external, externalLoad)).toBe(initial);
+    finish(false);
+    expect(await save).toBe(false);
+    expect(drafts.taskBody("one", initial, savingLoad)).toBe(external);
+  });
+
+  it("serializes editor and task writes and keeps the editor save as shared task state", async () => {
+    const drafts = createDraftStore();
+    const load = drafts.nextLoadVersion();
+    const original = "- [ ] task\n";
+    drafts.taskBody("one", original, load);
+    drafts.open("one", original);
+    drafts.edit("one", "- [x] edited task\n");
+
+    let finishTask!: (ok: boolean) => void;
+    const taskSave = drafts.saveTask("one", "- [x] task\n", () => new Promise<boolean>((resolve) => { finishTask = resolve; }));
+    const editorWrite = vi.fn(async () => true);
+    await drafts.save("one", editorWrite);
+    expect(editorWrite).not.toHaveBeenCalled();
+    finishTask(true);
+    await taskSave;
+
+    let finishEditor!: (ok: boolean) => void;
+    const editorSave = drafts.save("one", () => new Promise<boolean>((resolve) => { finishEditor = resolve; }));
+    expect(await drafts.saveTask("one", original, vi.fn(async () => true))).toBe(false);
+    finishEditor(true);
+    await editorSave;
+    expect(drafts.taskBody("one", original, load)).toBe("- [x] edited task\n");
+  });
+});
+
+describe("tree mutation draft guard", () => {
+  it("asks only about affected dirty drafts, then clears only affected state", () => {
+    const drafts = createDraftStore();
+    drafts.open("one", "a"); drafts.edit("one", "changed");
+    drafts.open("clean", "same");
+    drafts.open("other", "a"); drafts.edit("other", "untouched");
+    drafts.taskBody("one", "task body", drafts.nextLoadVersion());
+    drafts.taskBody("clean", "clean task body", drafts.nextLoadVersion());
+    const cancel = vi.fn(() => false);
+    expect(mayMutateDrafts(drafts, ["one", "clean"], cancel)).toBe(false);
+    expect(cancel).toHaveBeenCalledTimes(1);
+    expect(drafts.get("one")?.body).toBe("changed");
+    expect(drafts.get("clean")?.body).toBe("same");
+
+    expect(mayMutateDrafts(drafts, ["one", "clean"], () => true)).toBe(true);
+    expect(drafts.get("one")).toBeNull();
+    expect(drafts.get("clean")).toBeNull();
+    expect(drafts.get("other")?.body).toBe("untouched");
+    expect(drafts.taskBody("one", "new source", drafts.nextLoadVersion())).toBe("new source");
+    expect(drafts.taskBody("clean", "new source", drafts.nextLoadVersion())).toBe("new source");
+  });
+
+  it("clears clean affected drafts without prompting", () => {
+    const drafts = createDraftStore();
+    drafts.open("clean", "same");
+    const confirm = vi.fn(() => false);
+    expect(mayMutateDrafts(drafts, ["clean", "absent"], confirm)).toBe(true);
+    expect(confirm).not.toHaveBeenCalled();
+    expect(drafts.get("clean")).toBeNull();
   });
 });

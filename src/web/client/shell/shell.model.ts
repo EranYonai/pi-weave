@@ -18,6 +18,11 @@ import type { GraphPayload, WireNodeKind, WireStalenessState } from "../../share
 export type ColumnId = "tree" | "note" | "graph";
 export const COLUMNS: readonly ColumnId[] = ["tree", "note", "graph"];
 
+/** Most recent selections in this window, independent of whether their tabs stay open. */
+export function recordVisit(previous: readonly string[], id: string | null): readonly string[] {
+  return id === null ? previous : [id, ...previous.filter((item) => item !== id)].slice(0, 100);
+}
+
 // --- the header summary --------------------------------------------------------
 
 /**

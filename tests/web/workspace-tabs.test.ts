@@ -5,6 +5,7 @@ import {
   activeTab,
   closePane,
   closeTab,
+  focusDocument,
   initialLayout,
   moveTab,
   navigateTab,
@@ -16,6 +17,35 @@ import {
 } from "../../src/web/shared/workspace";
 
 describe("workspace tab model", () => {
+  it("returns from graph to the last active document rather than the last tab in the strip", () => {
+    let layout = openDocument(initialLayout(), "note:a");
+    const a = activeTab(layout).id;
+    layout = openDocument(layout, "note:b", { newTab: true });
+    const b = activeTab(layout).id;
+    layout = activateTab(layout, layout.activePane, a);
+    expect(focusDocument(layout)).toBe(layout);
+    layout = openGraph(layout);
+    expect(activeTab(focusDocument(layout)).id).toBe(a);
+    layout = openDocument(layout, "note:c");
+    expect(activeTab(layout).id).toBe(a);
+    expect(activePane(layout).tabs.find((tab) => tab.id === b)?.history).toEqual([null, "note:b"]);
+    expect(parseWorkspaceLayout(layout)).toEqual(layout);
+  });
+
+  it("keeps remembered document references valid when closing or moving tabs", () => {
+    let layout = openDocument(initialLayout(), "note:a");
+    const a = activeTab(layout).id;
+    layout = openDocument(layout, "note:b", { newTab: true });
+    layout = activateTab(layout, layout.activePane, a);
+    layout = openGraph(layout);
+    const closed = closeTab(layout, layout.activePane, a);
+    expect(tabSelection(activeTab(focusDocument(closed)))).toBe("note:b");
+    expect(parseWorkspaceLayout(closed)).toEqual(closed);
+    const moved = moveTab(layout, layout.activePane, a);
+    expect(parseWorkspaceLayout(moved)).toEqual(moved);
+    const source = moved.panes.find((pane) => pane.id !== moved.activePane)!;
+    expect(tabSelection(activeTab(focusDocument({ ...moved, activePane: source.id })))).toBe("note:b");
+  });
   it("starts with one empty document tab and preserves identical no-ops", () => {
     const layout = initialLayout();
     expect(layout.panes).toHaveLength(1);
@@ -201,6 +231,11 @@ describe("workspace layout validation", () => {
     expect(parseWorkspaceLayout({ ...layout, ratio: Number.NaN })).toBeNull();
     expect(parseWorkspaceLayout({ ...layout, treeWidth: 801 })).toBeNull();
     expect(parseWorkspaceLayout({ ...layout, panes: [{ ...layout.panes[0], tabs: [{ ...layout.panes[0]?.tabs[0], history: ["../secret"] }] }] })).not.toBeNull();
+    const graphLayout = openGraph(openDocument(layout, "note:a"));
+    expect(parseWorkspaceLayout(graphLayout)).toEqual(graphLayout);
+    for (const lastDocumentTab of [null, "tab-0", "tab-999", activeTab(graphLayout).id]) {
+      expect(parseWorkspaceLayout({ ...graphLayout, panes: [{ ...graphLayout.panes[0], lastDocumentTab }] })).toBeNull();
+    }
   });
 
   it("rejects duplicate IDs, invalid history cursors, excessive panes, and duplicate graph tabs", () => {
