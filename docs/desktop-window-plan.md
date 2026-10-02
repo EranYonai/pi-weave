@@ -1,6 +1,6 @@
 # Weave workspace — browser facelift first, dedicated window second
 
-Date: 2026-10-02. Status: revised proposal following the user's clarification to start with the browser facelift, then add the dedicated window; implementation has not started.
+Date: 2026-10-02; updated 2026-10-03. Status: Stage A browser workspace is implemented in PR #62 and ready for a user pass. Stage B dedicated macOS hosting remains proposed below.
 
 ## 1. Decision and scope
 
