@@ -1,5 +1,6 @@
 /** The vault and repository tree column. */
 
+import { NOTE_DRAG_TYPE } from "../shell/shell.model";
 import { useLayoutEffect, useRef, useState } from "preact/hooks";
 import { createFolder, deleteFolder, deleteNote, moveNote, renameFolder, renameNote } from "../api";
 import { fetchJson } from "../api.dom";
@@ -92,7 +93,7 @@ function Row({ view, recentIds, edit, onEdit, onRename, onSelect, onToggle, onMe
       onClick={(event) => onSelect(event.metaKey || event.ctrlKey)}
       draggable={view.id.startsWith("note:")}
       aria-label={view.id === DRAFT_FOLDER_ID ? "New folder" : undefined}
-      onDragStart={(event) => event.dataTransfer?.setData("text/plain", view.id)}
+      onDragStart={(event) => { event.dataTransfer?.setData("text/plain", view.id); event.dataTransfer?.setData(NOTE_DRAG_TYPE, view.id); if (event.dataTransfer) event.dataTransfer.effectAllowed = "copyMove"; }}
       onDragOver={folder === undefined ? undefined : (event) => event.preventDefault()}
       onDrop={folder === undefined ? undefined : (event) => { event.preventDefault(); onDrop(event.dataTransfer?.getData("text/plain") ?? ""); }}
       onContextMenu={(event) => { event.preventDefault(); event.stopPropagation(); onMenu(event.clientX, event.clientY); }}

@@ -174,11 +174,26 @@ describe("workspace tab model", () => {
     const forty = { ...thirtyNine, panes: [{ ...pane, tabs: [...tabs, { ...tabs[0]!, id: "tab-40" }], activeTab: "tab-1" }] };
     expect(splitPane(forty, "right")).toBe(forty);
     expect(openDocument(forty, "note:extra", { newTab: true })).toBe(forty);
-    // Moving the last tab would need a new empty source tab, exceeding the cap.
-    expect(moveTab(split, split.activePane, activeTab(split).id)).toBe(split);
+    // Moving the last tab collapses its split without adding a placeholder.
+    expect(moveTab(split, split.activePane, activeTab(split).id).panes).toHaveLength(1);
     const moved = moveTab(split, split.panes[0]!.id, "tab-1");
     expect(moved.panes.flatMap(group => group.tabs)).toHaveLength(40);
     expect(parseWorkspaceLayout(moved)).not.toBeNull();
+  });
+
+  it("closes an emptied split and retains the final workspace with a New tab", () => {
+    const single = openDocument(initialLayout(), "note:a");
+    const split = splitPane(single, "right");
+    for (const closing of split.panes) {
+      const kept = split.panes.find((pane) => pane.id !== closing.id)!;
+      const closed = closeTab(split, closing.id, closing.activeTab);
+      expect(closed.panes).toEqual([kept]);
+      expect(closed.activePane).toBe(kept.id);
+      expect(parseWorkspaceLayout(closed)).not.toBeNull();
+      const empty = closeTab(closed, kept.id, kept.activeTab);
+      expect(empty.panes).toHaveLength(1);
+      expect(tabSelection(activeTab(empty))).toBeNull();
+    }
   });
 
   it("closes tabs without leaving a pane empty", () => {
@@ -211,7 +226,8 @@ describe("workspace tab model", () => {
     expect(layout.activePane).toBe(original.id);
     layout = activateTab(layout, other.id, other.activeTab);
     layout = closeTab(layout, other.id, other.activeTab);
-    expect(activePane(layout).id).toBe(other.id);
+    expect(activePane(layout).id).toBe(original.id);
+    expect(layout.panes).toHaveLength(1);
   });
 
   it("keeps graph history inert and preserves split direction no-ops", () => {

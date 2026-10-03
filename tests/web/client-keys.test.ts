@@ -55,6 +55,17 @@ const IDLE: KeyContext = { overlay: null, hasSelection: false };
 // --- the map ------------------------------------------------------------------------
 
 describe("shellKey — the claimed shortcuts", () => {
+  it("closes the active tab on Option W including macOS symbol keys", () => {
+    expect(shellKey(key({ key: "w", alt: true, typing: true }), IDLE)).toEqual({ type: "closeTab" });
+    expect(shellKey(key({ key: "W", alt: true }), IDLE)).toEqual({ type: "closeTab" });
+    expect(shellKey(key({ key: "w", alt: true, shift: true }), IDLE)).toBeNull();
+    expect(shellKey(key({ key: "w", alt: true, ctrl: true }), IDLE)).toBeNull();
+    expect(shellKey(key({ key: "w", alt: true, meta: true }), IDLE)).toBeNull();
+    expect(shellKey(key({ key: "w", alt: true }), { overlay: "search", hasSelection: true })).toBeNull();
+    const descriptor = describeKey({ key: "∑", code: "KeyW", altKey: true, ctrlKey: false, metaKey: false, shiftKey: false, target: null, defaultPrevented: false, preventDefault() {} });
+    expect(shellKey(descriptor, IDLE)).toEqual({ type: "closeTab" });
+  });
+
   it("opens search on ⌘K and on Ctrl K, so one map serves both platforms", () => {
     expect(shellKey(key({ key: "k", meta: true }), IDLE)).toEqual({ type: "openSearch" });
     expect(shellKey(key({ key: "k", ctrl: true }), IDLE)).toEqual({ type: "openSearch" });
@@ -358,6 +369,7 @@ describe("runShellAction", () => {
       fitGraph: () => void log.push("fit"),
       clearSelection: () => void log.push("clear"),
       cycleTheme: () => void log.push("cycleTheme"),
+      closeTab: () => void log.push("closeTab"),
     };
   }
 
@@ -377,6 +389,7 @@ describe("runShellAction", () => {
       [{ type: "fitGraph" }, "fit"],
       [{ type: "clearSelection" }, "clear"],
       [{ type: "cycleTheme" }, "cycleTheme"],
+      [{ type: "closeTab" }, "closeTab"],
     ];
     for (const [action, expected] of cases) {
       const fx = effects();
@@ -406,6 +419,7 @@ describe("every action is reachable from a key", () => {
       ...Object.keys(COLUMN_DIGITS).map((digit) => key({ key: digit, meta: true })),
       ...Object.keys(BARE_KEYS).map((k) => key({ key: k })),
       key({ key: "Escape" }),
+      key({ key: "w", alt: true }),
     ];
     for (const ctx of contexts) {
       for (const descriptor of candidates) {
@@ -417,6 +431,7 @@ describe("every action is reachable from a key", () => {
       [
         "clearSelection",
         "closeOverlay",
+        "closeTab",
         "cycleTheme",
         "filterTree",
         "fitGraph",

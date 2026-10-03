@@ -24,7 +24,7 @@ import { watchKeys } from "./keys";
 import { COLUMN_FOCUS_SELECTORS, TREE_FILTER_SELECTOR, focusSelector, runShellAction } from "./keys.model";
 import { StatusBar } from "./StatusBar";
 import type { OverlayId } from "./shell.model";
-import { TICK_MS, graphClickOpensTab, looksApple, recentEntries, recordVisit, searchHint, searchShortcut, statusBarModel } from "./shell.model";
+import { NOTE_DRAG_TYPE, noteDropId, TICK_MS, graphClickOpensTab, looksApple, recentEntries, recordVisit, searchHint, searchShortcut, statusBarModel } from "./shell.model";
 import { cycleTheme, effectiveScheme, loadTheme, saveTheme, themeAttr, themeButton } from "./theme.model";
 
 export interface ShellProps { cwd: string; initialWidth: number; platform: string; tuner?: boolean }
@@ -153,7 +153,7 @@ export function Shell(props: ShellProps) {
   useEffect(() => { if (!graphVisible) previewGraphNode(null); }, [graphVisible]);
 
   const change = (next: WorkspaceLayout): void => {
-    if (mayRemoveDrafts(drafts, layout, next, () => window.confirm(DISCARD_PROMPT))) setLayout(next);
+    if (mayRemoveDrafts(drafts, live.current.layout, next, () => window.confirm(DISCARD_PROMPT))) setLayout(next);
   };
   const select = (id: string | null, newTab = false, paneId = layout.activePane, keepSidebar = false): void => {
     const next = openDocument(layout, id, { newTab, paneId });
@@ -263,6 +263,7 @@ export function Shell(props: ShellProps) {
         if (activeTab(live.current.layout).kind === "graph") { setGraphSelection(null); previewGraphNode(null); }
         else live.current.select(null);
       },
+      closeTab: () => { const current = live.current.layout; change(closeTab(current, current.activePane, activeTab(current).id)); },
       cycleTheme: () => setLayout((current) => ({ ...current, theme: cycleTheme(current.theme) })),
       focusSelector: (selector) => {
         if (selector === COLUMN_FOCUS_SELECTORS.graph) setLayout((current) => ({ ...openGraph(current), ...(window.innerWidth < 850 ? { treeVisible: false } : {}) }));
@@ -299,12 +300,14 @@ export function Shell(props: ShellProps) {
     panes: current.panes.map((group) => ({ ...group, tabs: group.tabs.map((entry) => entry.id === tabId ? { ...entry, scroll } : entry) })),
   }));
   const tabDragOver = (paneId: string, event: DragEvent): void => {
-    if (tabDropSource(layout, paneId, draggedTab.current) === null) return;
+    if (tabDropSource(layout, paneId, draggedTab.current) === null && !event.dataTransfer?.types.includes(NOTE_DRAG_TYPE)) return;
     event.preventDefault();
-    if (event.dataTransfer) event.dataTransfer.dropEffect = "move";
+    if (event.dataTransfer) event.dataTransfer.dropEffect = draggedTab.current === null ? "copy" : "move";
     setDropPane(paneId);
   };
   const tabDrop = (paneId: string, event: DragEvent): void => {
+    const noteId = noteDropId(data.graph, event.dataTransfer?.getData(NOTE_DRAG_TYPE) ?? "");
+    if (noteId !== null) { event.preventDefault(); select(noteId, true, paneId); setDropPane(null); return; }
     const id = draggedTab.current;
     if (tabDropSource(layout, paneId, id) === null) return;
     event.preventDefault();
@@ -318,7 +321,7 @@ export function Shell(props: ShellProps) {
   const renderPane = (group: Pane) => {
     const current = group.tabs.find((entry) => entry.id === group.activeTab)!;
     const isActive = group.id === layout.activePane;
-    return <section key={group.id} class={`weave-pane${isActive ? " weave-pane-active" : ""}${dropPane === group.id ? " weave-pane-drop" : ""}`} aria-label={`Workspace pane ${layout.panes.indexOf(group) + 1}`}
+    return <section key={group.id} class={`weave-pane${isActive ? " weave-pane-active" : ""}${dropPane === group.id ? " weave-pane-drop" : ""}`} data-drop-label={draggedTab.current === null ? "Open note here" : "Move tab here"} aria-label={`Workspace pane ${layout.panes.indexOf(group) + 1}`}
       onDragOver={(event) => tabDragOver(group.id, event)} onDrop={(event) => tabDrop(group.id, event)}
       onDragLeave={(event) => { if (!event.currentTarget.contains(event.relatedTarget as Node | null)) setDropPane(null); }}
       hidden={width < 850 && !isActive} onFocusCapture={() => { if (!isActive) setLayout((value) => ({ ...value, activePane: group.id })); }}
@@ -328,7 +331,6 @@ export function Shell(props: ShellProps) {
           <button type="button" role="tab" title={titleOf(entry, data.graph)} id={`tab-${entry.id}`} aria-selected={entry.id === current.id} aria-controls={`panel-${group.id}`} tabIndex={entry.id === current.id ? 0 : -1}
             draggable={layout.panes.length === 2}
             onDragStart={(event) => { draggedTab.current = entry.id; event.dataTransfer!.effectAllowed = "move"; event.dataTransfer!.setData("application/x-weave-tab", entry.id); }}
-            onDragEnd={() => { draggedTab.current = null; setDropPane(null); }}
             onClick={() => setLayout(activateTab(layout, group.id, entry.id))}
             onKeyDown={(event) => {
               const offset = event.key === "ArrowRight" ? 1 : event.key === "ArrowLeft" ? -1 : 0;
@@ -366,7 +368,7 @@ export function Shell(props: ShellProps) {
   };
 
   return <>
-    <div class="weave-workbench" ref={root}>
+    <div class="weave-workbench" ref={root} onDragEnd={() => { draggedTab.current = null; setDropPane(null); }}>
       <nav class="weave-ribbon" aria-label="Workspace tools">
         <button type="button" aria-label="Toggle notes sidebar" aria-pressed={layout.treeVisible} title="Notes" onClick={() => setLayout({ ...layout, treeVisible: !layout.treeVisible })}>▤</button>
         <button type="button" aria-label="Open graph view" title="Graph view" onClick={showGraph}>◌</button>

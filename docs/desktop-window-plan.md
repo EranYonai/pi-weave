@@ -88,7 +88,7 @@ This is a behavior sketch; refine spacing and visual hierarchy against the obser
 
 - The left sidebar shows clearly separated vault and repository scopes, folders, readable titles, and a compact recents view. Reuse current traversal, filtering, and mutations. Keep one visible unified search; the local tree filter remains a list filter, not a competing retrieval mode.
 - Clicking a note, wikilink, or search result opens it in the active note tab. An explicit new-tab action or modifier opens another tab. If the active tab is Graph, opening a note uses the last active note tab in that group, or creates one, preserving the Graph tab.
-- Tabs have titles, active state, close controls, and unsaved indicators. Support explicit New tab, open in new tab, keyboard switching, and close. Support dragging tab titles between existing panes; start without pinning, preview-tab modes, or arbitrary docking.
+- Tabs have titles, active state, close controls, and unsaved indicators. Support explicit New tab, open in new tab, keyboard switching, and close. Support dragging tab titles between existing panes and dropping Files notes into either pane as new tabs; start without pinning, preview-tab modes, or arbitrary docking.
 - Each document tab owns back/forward history and reading position. Back/forward traverses notes within that tab rather than navigating away from the app. New navigation after Back drops the forward tail; deleted targets get a useful missing-note state.
 - Switching tabs preserves an unsaved draft. Replacing a tab's document, navigating its history, or closing its last view prompts before discarding a draft. Keep one draft per note identity across panes/tabs so opening the same note twice cannot create competing in-memory edits. External writes retain the existing last-writer-wins contract; do not overwrite an in-memory draft during a poll.
 - Keep explicit Edit/Save and existing Markdown rendering. This change does not introduce inline preview editing or a new editor engine.
@@ -99,7 +99,7 @@ This is a behavior sketch; refine spacing and visual hierarchy against the obser
 
 - Provide a visible Graph action that opens or focuses one Graph tab per workspace. The existing graph fills that tab's available area.
 - Selecting a graph node first previews its title/type without leaving Graph. A second click or Open in new tab creates a document tab in the other pane when split, or the same group otherwise. The Graph tab remains available to return to, retaining camera and positions. Non-note repository nodes continue to use existing detail rendering.
-- Support **Split right** and **Split down** through visible tab/menu actions. Use at most two tab groups initially, a resizable divider, and explicit Move to other pane / Close pane actions. A split can duplicate the current note view while sharing its draft. Closing a pane moves its tabs into the remaining group rather than discarding work.
+- Support **Split right** and **Split down** through visible tab/menu actions. Use at most two tab groups initially, a resizable divider, and explicit Move to other pane / Close pane actions. A split can duplicate the current note view while sharing its draft. Closing a pane moves its tabs into the remaining group rather than discarding work. Closing or moving its last tab removes the empty split; the final workspace retains New tab.
 - Clicking or focusing a pane makes it the destination for subsequent navigation. Context follows the active pane and selection, not whichever asynchronous request finished last.
 - Keep one graph renderer instance per workspace. Do not run multiple force simulations because the user opened tabs. Preserve its state when inactive and notify it of container resizing when shown or moved; verify that hidden-container sizing cannot reset its camera or positions.
 - Leave graph drawing, layout forces, colors, clustering, fit behavior, and position algorithms unchanged. Adapt only mounting, resizing, and selection routing needed by the new shell.
@@ -108,7 +108,7 @@ This is a behavior sketch; refine spacing and visual hierarchy against the obser
 
 The notes sidebar and context sidebar are independently collapsible, with visible buttons, accessible labels, and keyboard access. Context reuses current links/backlinks/tags/provenance views. Keep the reader usable when either sidebar is hidden; do not bury navigation behind hover-only controls.
 
-During Stage A, `/weave-view` continues opening the browser exactly as today. Use visible tab-close controls and a browser-compatible workspace shortcut; do not promise to intercept browser-reserved `Cmd+W` or `Cmd+T`. Browser reload/close retains the existing unload protection. Native menu and window shortcuts belong to Stage B. No desktop-specific bridge is required to deliver the facelift.
+During Stage A, `/weave-view` continues opening the browser exactly as today. Use visible tab-close controls and Option W / Alt W for the guarded workspace close action. Codex’s in-app browser independently claims that shortcut and still closes its outer tab; do not promise to intercept browser-reserved `Cmd+W` or `Cmd+T`. Browser reload/close retains the existing unload protection. Native menu and window shortcuts belong to Stage B. No desktop-specific bridge is required to deliver the facelift.
 
 ## 5. Stage B — dedicated macOS window
 

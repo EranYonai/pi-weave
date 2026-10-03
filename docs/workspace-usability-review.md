@@ -116,8 +116,8 @@ Native discard/reload confirmation handling remains a manual check where the in-
 browser cannot expose its dialog. Dedicated-window lifecycle is not implemented here.
 
 Sol 6.1 re-reviewed the corrections and found no remaining confirmed blockers. The full
-gate passes 2,132 tests in 76 files, with 98.90% statements/lines, 95.35% branches, and
-98.83% functions. The browser bundle is 117.8 KiB gzip, below its 150 KiB budget.
+gate passes 2,135 tests in 76 files, with 98.90% statements/lines, 95.35% branches, and
+98.83% functions. The browser bundle is 118.1 KiB gzip, below its 150 KiB budget.
 
 ## Check locally
 
@@ -164,3 +164,11 @@ checks covered both directions, a sole source tab, an unsaved draft, a drop onto
 Graph moving between tab strips. Sol 6.1 reviewed source and the highlight containment fix.
 For the manual pass, repeat tab moves in stacked panes: those gestures did not complete in
 the in-app browser automation. No browser errors were recorded.
+
+Empty splits now disappear after their last tab is closed or moved into the other pane; the
+final workspace retains a New tab. Live testing verified split collapse and native Files-note
+drops into both left and right panes, opening new tabs while retaining the existing document.
+Option W / Alt W invokes the existing guarded close action. In Codex’s in-app browser it closed
+the Weave tab, then the host also closed its browser tab despite preventDefault. Check this
+shortcut in a regular browser, including cancelling an unsaved-draft prompt; no controlled
+regular browser was available for this pass.

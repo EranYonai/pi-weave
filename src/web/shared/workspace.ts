@@ -155,6 +155,8 @@ export function closeTab(layout: WorkspaceLayout, paneId: string, tabId: string)
   if (!found) return layout;
   const { pane } = found;
   if (pane.tabs.length === 1) {
+    const kept = layout.panes.find((item) => item.id !== paneId);
+    if (kept) return { ...layout, panes: [kept], activePane: kept.id };
     const tab = emptyDocument(nextId(layout, "tab"));
     return setActive(layout, { ...pane, tabs: [tab] }, tab);
   }
@@ -202,12 +204,12 @@ export function moveTab(layout: WorkspaceLayout, paneId: string, tabId: string):
   if (!found) return layout;
   const target = layout.panes.find((pane) => pane.id !== paneId) ?? { id: nextId(layout, "pane"), tabs: [], activeTab: "" };
   const sourceTabs = found.pane.tabs.filter((tab) => tab.id !== tabId);
+  const destination = rememberDocument({ ...target, tabs: [...target.tabs, found.tab], activeTab: found.tab.id });
+  if (!sourceTabs.length && layout.panes.length === 2) return { ...layout, panes: [destination], activePane: target.id };
   if (!sourceTabs.length && layout.panes.reduce((count, pane) => count + pane.tabs.length, 0) >= MAX_TABS) return layout;
-  const moved = found.tab;
   const placeholder = sourceTabs.length ? null : emptyDocument(nextId(layout, "tab"));
   const remaining = sourceTabs.length ? sourceTabs : [placeholder!];
   const source = rememberDocument({ ...found.pane, tabs: remaining, activeTab: found.pane.activeTab === tabId ? remaining[Math.max(0, found.pane.tabs.findIndex((tab) => tab.id === tabId) - 1)]!.id : found.pane.activeTab });
-  const destination = rememberDocument({ ...target, tabs: [...target.tabs, moved], activeTab: moved.id });
   return { ...layout, activePane: target.id, panes: layout.panes.length === 1
     ? [source, destination]
     : layout.panes.map((pane) => pane.id === source.id ? source : destination) };

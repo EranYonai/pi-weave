@@ -16,6 +16,7 @@ import {
   NO_VALUE,
   looksApple,
   graphClickOpensTab,
+  noteDropId,
   recentEntries,
   recordVisit,
   searchHint,
@@ -34,6 +35,16 @@ it("opens a graph node only after selecting the same preview, never on first cli
   expect(graphClickOpensTab("note:a", "note:a")).toBe(true);
   expect(graphClickOpensTab("note:a", null)).toBe(false);
   expect(graphClickOpensTab(null, null)).toBe(false);
+});
+
+it("accepts pane drops only for existing workspace notes", () => {
+  const graph = payload([node("note:a", "note"), node("artifact:a", "file"), node("note:wrong-kind", "module")]);
+  expect(noteDropId(graph, "note:a")).toBe("note:a");
+  expect(noteDropId(graph, "note:missing")).toBeNull();
+  expect(noteDropId(graph, "artifact:a")).toBeNull();
+  expect(noteDropId(graph, "note:wrong-kind")).toBeNull();
+  expect(noteDropId(null, "note:a")).toBeNull();
+  expect(noteDropId(graph, "")).toBeNull();
 });
 
 it("records recent visits in last-visit order without depending on open tabs", () => {

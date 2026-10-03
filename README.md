@@ -165,7 +165,9 @@ Open **Graph view** from the left ribbon. Click a node to preview its title and 
 or choose **Open in new tab** to open its content; in a split layout, the new tab opens in the other pane. Dragging does not open content.
 Use **Pane options (···)** to split right or down, move the current tab to the other pane, or close a pane while retaining its tabs.
 In a split workspace, drag a tab title into the other pane to move it. History, reading position, and unsaved drafts stay with it. On small windows, **Switch pane** reaches the
-other group. Both sidebars can be shown or hidden from the ribbon.
+other group. Drag a note from Files into either pane to open it in a new tab. Closing or moving the last tab out of a split removes that pane;
+closing the final workspace tab leaves a New tab. `Option W` / `Alt W` closes the active Weave tab using the same unsaved-draft guard.
+Some browser hosts also claim this shortcut: Codex’s in-app browser still closes its outer tab. Both sidebars can be shown or hidden from the ribbon.
 
 Click **Edit** to change a note's Markdown; `⌘S` / `Ctrl S` saves, and **Done** closes the editor. Drafts survive tab and pane switching,
 and duplicate views of a note share one draft. Closing or replacing the last view of an unsaved note asks before discarding it. A save

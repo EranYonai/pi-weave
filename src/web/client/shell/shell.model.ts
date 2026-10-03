@@ -17,6 +17,13 @@
 import type { GraphPayload, WireNodeKind } from "../../shared/wire";
 import { kindIcon } from "../tree/tree.model";
 import type { IconName } from "./icons.model";
+export const NOTE_DRAG_TYPE = "application/x-weave-note";
+
+/** Pane drops open only note IDs that still exist in this workspace. */
+export function noteDropId(graph: GraphPayload | null, id: string): string | null {
+  return id.startsWith("note:") && graph?.model.nodes.some((node) => node.id === id && node.kind === "note") ? id : null;
+}
+
 export type ColumnId = "tree" | "note" | "graph";
 export const COLUMNS: readonly ColumnId[] = ["tree", "note", "graph"];
 

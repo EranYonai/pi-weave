@@ -35,9 +35,9 @@ Unit checks cover history, tab/pane moves, draft/save races, persisted input val
 
 ## Results
 
-- `npm run check`: typechecks, committed bundle check, and 2,132 tests pass (76 files).
+- `npm run check`: typechecks, committed bundle check, and 2,135 tests pass (76 files).
 - Coverage: 98.90% statements/lines, 95.35% branches, 98.83% functions; thresholds unchanged.
-- Bundle: 397.1 KiB raw, 117.8 KiB gzip (150 KiB gzip budget); no dependency changes.
+- Bundle: 398.0 KiB raw, 118.1 KiB gzip (150 KiB gzip budget); no dependency changes.
 - Disposable-vault browser checks at 1280×800 and 700×720: tab/new-tab search, wiki-link history,
   shared drafts across two views, save refresh, graph/note split, pane merge, sidebars, keyboard
   focus, narrow-pane switching, and scroll restoration. A 1440-pixel reading position survived tab
@@ -75,8 +75,16 @@ Unit checks cover history, tab/pane moves, draft/save races, persisted input val
   refresh, narrow-window access, and Graph sizing. Palette Escape no longer clears the note:
   the shared shortcut listener ignores keys already handled by a local control.
 - Native tab-title dragging uses the existing move operation and highlights the other pane.
-  Live side-by-side checks verified moves in both directions, the only tab leaving a placeholder,
+  Live side-by-side checks verified moves in both directions, the sole source tab,
   an unsaved draft surviving the move, dropping onto Graph, and Graph moving between tab strips.
   Sol 6.1 reviewed the implementation; the reported graph drop-highlight flicker is fixed.
   Stacked-pane drag gestures did not complete in the in-app browser automation and remain
   a manual check; both layouts use the same drop/move implementation.
+
+- Follow-up: closing or moving the last tab out of an existing split removes its empty pane.
+  The final workspace tab still becomes New tab. Files note drops open new tabs in the target
+  pane without moving files; live native drags passed into both left and right panes.
+  Option W / Alt W uses the same draft-safe close path, including macOS’s alternate key character.
+  Native testing closed the Weave tab, then Codex’s browser also closed its outer tab despite
+  preventDefault. A regular-browser pass remains manual because no controlled regular browser
+  was available. Root reviewed these follow-ups; the subagent follow-up was blocked by the agent limit.

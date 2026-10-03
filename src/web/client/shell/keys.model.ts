@@ -90,6 +90,7 @@ export type ShellAction =
   | { readonly type: "filterTree" }
   | { readonly type: "fitGraph" }
   | { readonly type: "clearSelection" }
+  | { readonly type: "closeTab" }
   /** `t` — cycle the colour theme: system → light → dark → system. */
   | { readonly type: "cycleTheme" };
 
@@ -158,6 +159,8 @@ export const BARE_KEYS: Readonly<Record<string, ShellAction>> = {
 export function shellKey(event: KeyDescriptor, ctx: KeyContext): ShellAction | null {
   if (ctx.overlay !== null) return event.key === "Escape" ? { type: "closeOverlay" } : null;
 
+  if (event.alt && !event.meta && !event.ctrl && !event.shift && event.key.toLowerCase() === "w") return { type: "closeTab" };
+
   if (isCommand(event)) {
     // Lower-cased because ⌘K with caps lock on reports `"K"`, and a shortcut
     // that stops working under caps lock is a bug report nobody can reproduce.
@@ -221,6 +224,7 @@ export interface KeyTarget {
  * use, for the same reason: there is no DOM test environment (§10).
  */
 export interface KeyboardEventLike {
+  readonly code?: string;
   readonly defaultPrevented: boolean;
   readonly key: string;
   readonly ctrlKey: boolean;
@@ -234,7 +238,7 @@ export interface KeyboardEventLike {
 /** Reduce a platform event to a {@link KeyDescriptor}. */
 export function describeKey(event: KeyboardEventLike): KeyDescriptor {
   return {
-    key: event.key,
+    key: event.altKey && event.code === "KeyW" ? "w" : event.key,
     ctrl: event.ctrlKey,
     meta: event.metaKey,
     shift: event.shiftKey,
@@ -315,6 +319,7 @@ export interface ShellEffects {
   fitGraph(): void;
   /** Write `null` to §1.3's `selectedId`. */
   clearSelection(): void;
+  closeTab(): void;
   /** `t` — advance the user's theme choice by one step in its cycle. */
   cycleTheme(): void;
 }
@@ -337,6 +342,8 @@ export function runShellAction(action: ShellAction, fx: ShellEffects): void {
       return fx.fitGraph();
     case "clearSelection":
       return fx.clearSelection();
+    case "closeTab":
+      return fx.closeTab();
     case "cycleTheme":
       return fx.cycleTheme();
   }
@@ -375,6 +382,7 @@ export function keyHelp(cmd: string): readonly KeyHelpGroup[] {
     {
       title: "Global",
       entries: [
+        { combo: "⌥W / Alt W", what: "Close the active tab" },
         { combo: `${cmd}K`, what: "Search notes and the repository" },
         ...Object.entries(COLUMN_DIGITS).map(([digit, column]) => ({
           combo: `${cmd}${digit}`,

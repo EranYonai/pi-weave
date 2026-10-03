@@ -34,7 +34,7 @@ export const WORKSPACE_CSS = `
 .weave-pane{min-width:0;min-height:0;display:grid;grid-template-rows:42px 36px minmax(0,1fr);overflow:hidden;background:var(--weave-page)}
 .weave-pane[hidden]{display:none}
 .weave-pane-drop{position:relative}
-.weave-pane-drop::after{content:"Move tab here";position:absolute;inset:4px;z-index:20;display:grid;place-items:center;pointer-events:none;border:2px dashed var(--weave-accent);border-radius:var(--weave-radius);color:var(--weave-accent);background:var(--weave-new)}
+.weave-pane-drop::after{content:attr(data-drop-label);position:absolute;inset:4px;z-index:20;display:grid;place-items:center;pointer-events:none;border:2px dashed var(--weave-accent);border-radius:var(--weave-radius);color:var(--weave-accent);background:var(--weave-new)}
 .weave-tabs{display:flex;align-items:stretch;min-width:0;overflow-x:auto;background:var(--weave-panel);gap:3px;padding:5px 6px 0;border-bottom:1px solid var(--weave-line);scrollbar-width:thin}
 .weave-tab{display:flex;align-items:center;min-width:90px;max-width:210px;border-radius:var(--weave-radius) var(--weave-radius) 0 0;color:var(--weave-dim);flex-shrink:0;border-bottom:2px solid transparent}
 .weave-tab-active{background:var(--weave-page);color:var(--weave-fg)}
