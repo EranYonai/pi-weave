@@ -1,6 +1,6 @@
 /** Validated preferences, stored alongside the workspace's existing snapshots. */
-import { FORCE_DEFAULTS } from "./layout";
-import type { ForceConstants } from "./layout";
+import { FORCE_DEFAULTS } from "./forces";
+import type { ForceConstants } from "./forces";
 import { ACCENTS, THEMES, isThemeChoice } from "./themes";
 import type { AccentChoice, PaletteChoice } from "./themes";
 
