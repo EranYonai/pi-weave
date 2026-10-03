@@ -49,6 +49,7 @@ export interface KeyOptions {
  */
 export function watchKeys(host: KeyHost, opts: KeyOptions): () => void {
   const listener = (event: KeyboardEventLike): void => {
+    if (event.defaultPrevented) return;
     const action = shellKey(describeKey(event), opts.context());
     if (action === null) return;
     event.preventDefault();

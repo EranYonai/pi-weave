@@ -1,5 +1,5 @@
 /**
- * Obsidian-compatible [[wiki-link]] extraction from note bodies.
+ * Wiki-link extraction from note bodies.
  * Pure module used by graph construction and viewer view-models.
  */
 

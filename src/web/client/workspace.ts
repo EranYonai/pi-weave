@@ -1,6 +1,6 @@
 /** Fetching and polling for the browser workspace. */
 
-import type { GraphPayload } from "../shared/wire";
+import type { GraphPayload, NotePayload } from "../shared/wire";
 import type { ApiResult, FetchLike } from "./api";
 import { fetchGraph, fetchNote } from "./api";
 import type { WorkspaceState } from "./state";
@@ -114,4 +114,22 @@ export function startWorkspace(opts: WorkspaceOptions): WorkspaceHandle {
       cancelRecentExpiry = null;
     },
   };
+}
+
+/** Per-document loading: retry failures, and drop completions after a tab leaves. */
+export function watchNote(fetch: FetchLike, slug: string, notify: (result: ApiResult<NotePayload>) => void,
+  defer: (fn: () => void, ms: number) => () => void = (fn, ms) => {
+    const timer = setTimeout(fn, ms); return () => clearTimeout(timer);
+  }): () => void {
+  let stopped = false;
+  let cancel: (() => void) | null = null;
+  const load = async (): Promise<void> => {
+    if (stopped) return;
+    const result = await fetchNote(fetch, slug);
+    if (stopped) return;
+    notify(result);
+    if (!result.ok) cancel = defer(() => void load(), POLL_MS);
+  };
+  void load();
+  return () => { stopped = true; cancel?.(); };
 }

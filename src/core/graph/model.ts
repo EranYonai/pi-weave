@@ -64,8 +64,8 @@ export interface GraphModel {
    * slug → wiki-link targets that resolved to no note in the graph
    * (weave-workspace §4.2).
    *
-   * A `[[target]]` that matches nothing is not an error — it is Obsidian's
-   * ghost node, the affordance that offers to create the missing note. The
+   * A `[[target]]` that matches nothing is not an error — it is a ghost node,
+   * the affordance that offers to create the missing note. The
    * builder used to count these and throw the names away, leaving
    * `detail["dangling links"] = "3"` as the only trace; a display string is
    * not something a UI can navigate.

@@ -1,3 +1,5 @@
+import { WORKSPACE_CSS } from "./workspace.css";
+
 /**
  * The workspace stylesheet, and how it gets past the CSP
  * (weave-workspace §1.2, §5.2).
@@ -162,7 +164,7 @@ export const THEME_CSS = `
        row      12    list rows, text inputs, inline code
        base     13    body copy, h3-h6, preview-card text
        body     13.5  the note column's prose
-       subhead  14    palette input, note-body h2, header icon buttons
+       subhead  14    palette input, note-body h2, ribbon icon buttons
        title    15    note-body h1
        display  20    the note's page title
      Two earlier sizes were merged into neighbours: 9px glyphs to prov, and
@@ -196,86 +198,7 @@ export const THEME_CSS = `
   ${LIGHT_TOKENS}
 }
 body{font-size:var(--weave-px-base)}
-#app{height:100%;display:grid;grid-template-rows:auto 1fr auto;background:var(--weave-bg)}
-
-/* header --------------------------------------------------------------- */
-.weave-header{
-  display:flex;align-items:center;gap:14px;padding:0 var(--weave-gutter);
-  height:34px;border-bottom:1px solid var(--weave-line);background:var(--weave-panel);
-}
-.weave-brand{display:inline-flex;align-items:center;gap:6px;font-size:var(--weave-px-subhead);font-weight:600;letter-spacing:.01em;white-space:nowrap}
-.weave-brand-mark{height:20px;width:20px;border-radius:var(--weave-radius)}
-/* A button styled as a search field: the palette owns the only text input,
-   so this opens it rather than pretending to accept a query. */
-.weave-search{
-  display:flex;align-items:center;gap:6px;flex:0 1 260px;min-width:0;
-  height:22px;padding:0 7px;font:inherit;font-size:var(--weave-px-row);text-align:left;cursor:pointer;
-  color:var(--weave-dim);background:var(--weave-bg);
-  border:1px solid var(--weave-line-strong);border-radius:var(--weave-radius);
-}
-.weave-search:hover{color:var(--weave-fg);border-color:var(--weave-accent)}
-.weave-search-text{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-.weave-search kbd{
-  font-family:var(--weave-mono);font-size:var(--weave-px-caption);color:var(--weave-faint);
-  padding:1px 5px;border:1px solid var(--weave-line-strong);border-radius:var(--weave-radius);white-space:nowrap;
-}
-.weave-summary{
-  margin-left:auto;display:flex;gap:9px;font-family:var(--weave-mono);
-  font-size:var(--weave-px-ui);color:var(--weave-dim);white-space:nowrap;
-}
-.weave-summary-part+.weave-summary-part::before{content:"·";margin-right:9px;color:var(--weave-faint)}
-.weave-refresh{
-  font:inherit;font-size:var(--weave-px-subhead);line-height:1;color:var(--weave-dim);background:none;
-  border:0;padding:3px 5px;border-radius:var(--weave-radius);cursor:pointer;
-  display:inline-flex;align-items:center;
-}
-.weave-refresh:hover{color:var(--weave-fg);background:var(--weave-line)}
-/* One full 600 ms turn per click ("the request left"), not a loop: the
-   refetch is fire-and-forget and a 304 may never fire a completion signal
-   for a spinner to wait on. Reduced-motion restores the static stroke. */
-.weave-refresh-spinning{animation:weave-refresh-turn 600ms ease-out}
-@keyframes weave-refresh-turn{from{transform:rotate(0)}to{transform:rotate(360deg)}}
-/* The theme cycle (shell/theme.model.ts). Same shape as the refresh button:
-   an icon-size control in a 34 px bar, glyph-only because the filled/half/
-   hollow family already means something in this workspace. */
-.weave-theme{
-  font:inherit;font-size:var(--weave-px-base);line-height:1;color:var(--weave-dim);background:none;
-  border:0;padding:3px 6px;border-radius:var(--weave-radius);cursor:pointer;
-}
-.weave-theme:hover{color:var(--weave-fg);background:var(--weave-line)}
-
-/* the grid -------------------------------------------------------------- */
-/* Widths arrive as custom properties from layout.model.ts. Shell/layout.model
-   selects the breakpoint; CSS consumes the resulting data-columns shape. */
-.weave-grid{display:grid;min-height:0;overflow:hidden;background:var(--weave-line)}
-.weave-grid[data-columns="3"]{grid-template-columns:var(--weave-col-tree,22%) 1px var(--weave-col-note,46%) 1px var(--weave-col-graph,32%)}
-.weave-grid[data-columns="2"]{grid-template-columns:var(--weave-col-tree,32%) 1px var(--weave-col-note,68%)}
-.weave-grid[data-columns="1"]{grid-template-columns:1fr}
-
-/* dividers -------------------------------------------------------------- */
-.weave-divider{
-  width:1px;cursor:col-resize;touch-action:none;background:var(--weave-line);position:relative;z-index:2;
-}
-.weave-divider::after{content:"";position:absolute;inset:0 -4px}
-.weave-divider:hover{background:var(--weave-faint)}
-.weave-divider:focus-visible{outline:2px solid var(--weave-accent);outline-offset:-1px}
-
-.weave-col{
-  display:flex;flex-direction:column;min-width:0;min-height:0;overflow:hidden;
-  background:var(--weave-bg);
-}
-.weave-col-title{
-  margin:0;padding:5px var(--weave-gutter) 4px;font-size:var(--weave-px-caption);font-weight:600;
-  letter-spacing:.09em;text-transform:uppercase;color:var(--weave-faint);
-  border-bottom:1px solid var(--weave-line);
-}
-/* Title, then the graph (which takes the slack), then the context rail. The
-   1fr is what gives .weave-graph-canvas a definite height to measure, and the
-   rail's row is a fixed fraction of the column — not content-sized — so
-   moving the selection between a sparsely-connected note and a richly
-   connected one never repartitions the right-hand column: the rail scrolls
-   inside the same region instead of squeezing the graph. */
-.weave-col-graph{display:grid;grid-template-rows:auto minmax(0,1fr) minmax(96px,40%);background:var(--weave-bg)}
+#app{height:100%;display:grid;grid-template-rows:minmax(0,1fr) auto;background:var(--weave-bg)}
 
 /* tree column ----------------------------------------------------------- */
 /* --weave-depth is written per row by \`depthVar\`, through CSSOM
@@ -487,8 +410,8 @@ body{font-size:var(--weave-px-base)}
   text-decoration-thickness:1px;text-underline-offset:2px;
 }
 .weave-note-body a:hover{text-decoration-color:var(--weave-accent)}
-/* A ghost is a name with no note behind it: Obsidian's dashed, dimmed
-   affordance to create one. */
+/* A ghost is a name with no note behind it: a dashed, dimmed affordance to
+   create one. */
 .weave-wiki{cursor:pointer;color:var(--weave-accent);text-decoration:none}
 .weave-wiki:hover{text-decoration:underline}
 .weave-wiki-ghost{
@@ -633,9 +556,8 @@ body{font-size:var(--weave-px-base)}
   text-align:left;background:none;border:0;cursor:pointer;
 }
 .weave-ctx-heading:hover{color:var(--weave-fg)}
-/* The count is a mono voice, like every other number in the chrome: the
-   header summary and the status bar count in mono, so a rail that says
-   "BACKLINKS 4" in the text face would be the one thing off-key. */
+/* The count is a mono voice like the other status numbers, so a rail that
+   says "BACKLINKS 4" in the text face would be the one thing off-key. */
 .weave-ctx-count{
   margin-left:auto;font-family:var(--weave-mono);font-size:var(--weave-px-caption);
   letter-spacing:0;color:var(--weave-faint);font-weight:400;
@@ -662,11 +584,8 @@ body{font-size:var(--weave-px-base)}
 .weave-ctx-tag{margin:0 0 3px}
 .weave-ctx-tag .weave-ctx-rows{padding-left:12px}
 
-/* status bar ------------------------------------------------------------ */
-/* One separator vocabulary, shared with the header summary: every run of
-   status items after the first opens with the same mid-dot, in the same
-   --weave-faint. cwd · selection · stamp reads as one grammar,
-   the same way the header's three-part summary does. */
+/* workspace footer ------------------------------------------------------ */
+/* The status items share one mid-dot separator in --weave-faint. */
 .weave-status{
   display:flex;align-items:center;gap:8px;height:22px;padding:0 var(--weave-gutter);
   font-family:var(--weave-mono);font-size:var(--weave-px-ui);color:var(--weave-dim);
@@ -760,7 +679,7 @@ body{font-size:var(--weave-px-base)}
    would need delay-unmount plumbing far past polish. Compositor-safe
    properties only — colour, border, opacity, transform; height and padding
    snap. */
-.weave-row,.weave-ctx-link,.weave-chip,.weave-search,.weave-refresh,.weave-theme,
+.weave-row,.weave-ctx-link,.weave-chip,.weave-ribbon button,
 .weave-hit,.weave-note-open{
   transition:background-color 120ms ease,border-color 120ms ease,color 120ms ease;
 }
@@ -826,7 +745,7 @@ export function findNonce(host: ThemeHost): string | null {
  * report in the console is a far better diagnostic than a stylesheet that was
  * never created.
  */
-export function installTheme(host: ThemeHost, css: string = THEME_CSS): boolean {
+export function installTheme(host: ThemeHost, css: string = THEME_CSS + WORKSPACE_CSS): boolean {
   const element = host.createElement("style");
   const nonce = findNonce(host);
   if (nonce !== null) element.nonce = nonce;

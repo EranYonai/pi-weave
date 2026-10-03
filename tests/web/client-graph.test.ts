@@ -881,7 +881,7 @@ describe("the hover label (§7.4)", () => {
   const hovered: HoverLabelNode = { x: 40, y: 60, size: 9, label: "◆ a note" };
 
   it("floats the name centred under the node", () => {
-    // Obsidian's placement, and the reason sigma's own hover painter is
+    // The reference placement, and the reason sigma's own hover painter is
     // replaced: it puts a white box to the node's *right*.
     const fake = fakeContext();
     hoverLabelPainter("dark")(fake.context, hovered, settings);
@@ -1083,6 +1083,7 @@ function fakeSigma() {
   let edges: ((key: string, data: RenderEdge) => EdgeDisplayOverride) | null = null;
   const handlers: {
     node?: (payload: { node: string }) => void;
+    doubleNode?: (payload: { node: string; preventSigmaDefault(): void }) => void;
     stage?: () => void;
     downNode?: (payload: { node: string }) => void;
     enterNode?: (payload: { node: string }) => void;
@@ -1102,6 +1103,7 @@ function fakeSigma() {
     on(event: string, handler: unknown) {
       calls.push(`on:${event}`);
       if (event === "clickNode") handlers.node = handler as (payload: { node: string }) => void;
+      if (event === "doubleClickNode") handlers.doubleNode = handler as (payload: { node: string; preventSigmaDefault(): void }) => void;
       if (event === "clickStage") handlers.stage = handler as () => void;
       if (event === "downNode") handlers.downNode = handler as (payload: { node: string }) => void;
       if (event === "enterNode") handlers.enterNode = handler as (payload: { node: string }) => void;
@@ -1167,6 +1169,7 @@ function fakeSigma() {
     nodeReducer: () => nodes,
     edgeReducer: () => edges,
     clickNode: (id: string) => handlers.node?.({ node: id }),
+    doubleClickNode: (id: string) => handlers.doubleNode?.({ node: id, preventSigmaDefault: () => { prevented++; } }),
     clickStage: () => handlers.stage?.(),
     downNode: (id: string) => handlers.downNode?.({ node: id }),
     enterNode: (id: string) => handlers.enterNode?.({ node: id }),
@@ -1304,6 +1307,39 @@ describe("sigmaRenderer over the injected constructor (§7.5)", () => {
     expect(seen).toEqual(["b", null]);
   });
 
+  it("routes a fast second node click to activation while preventing automatic zoom", () => {
+    const fake = fakeSigma();
+    const renderer = sigmaRenderer(fake.factory, "dark");
+    const seen: Array<string | null> = [];
+    renderer.onSelect((id) => seen.push(id));
+    renderer.setGraph(model);
+    renderer.mount(container);
+    fake.clickNode("b");
+    fake.doubleClickNode("b");
+    expect(seen).toEqual(["b", "b"]);
+    expect(fake.prevented()).toBe(1);
+  });
+
+  it("does not activate a dragged node even inside the double-click interval", () => {
+    const fake = fakeSigma();
+    const renderer = sigmaRenderer(fake.factory, "dark");
+    const seen: Array<string | null> = [];
+    renderer.onSelect((id) => seen.push(id));
+    renderer.setGraph(model);
+    renderer.mount(container);
+    fake.clickNode("b");
+    fake.downNode("b");
+    fake.moveBody("b", 10, 20);
+    fake.upNode();
+    fake.doubleClickNode("b");
+    fake.clickNode("b");
+    expect(seen).toEqual(["b"]);
+    fake.downNode("b");
+    fake.upNode();
+    fake.clickNode("b");
+    expect(seen).toEqual(["b", "b"]);
+  });
+
   it("survives a click or a hover before any handler is registered", () => {
     // The default handler is a no-op rather than `null`, so the mount path has
     // no ordering requirement against `onSelect` or `onHover`.
@@ -1355,7 +1391,7 @@ describe("sigmaRenderer over the injected constructor (§7.5)", () => {
     // A node drag is a pin, not a pan: if sigma's captor moved the camera on
     // the same gesture that is moving the node, the node would slide away
     // from the cursor. Panning is disabled on `downNode` and restored on
-    // release — the Obsidian feel of a node staying under your pointer.
+    // release — keeping the node under your pointer.
     const fake = fakeSigma();
     const renderer = sigmaRenderer(fake.factory, "dark");
     renderer.setGraph(model);

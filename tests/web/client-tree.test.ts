@@ -24,6 +24,7 @@ import {
   PROVENANCE_CYCLE,
   TREE_LABEL,
   DRAFT_FOLDER_ID,
+  affectedNoteSlugs,
   collapse,
   cycleProvenance,
   deletesSelection,
@@ -53,6 +54,7 @@ import {
   rowView,
   rowViews,
   rowsFor,
+  revealFolder,
   setQuery,
   toggleExpanded,
   toggleInternals,
@@ -253,6 +255,21 @@ describe("expand and collapse", () => {
 });
 
 describe("tree mutations", () => {
+  it("finds every note affected by note and folder mutations", () => {
+    const graph = payloadOf([
+      node("note:plans/a", "note", "A"),
+      node("note:plans/nested/b", "note", "B"),
+      node("note:plans-old/c", "note", "C"),
+      node("note:elsewhere", "note", "D"),
+      node("module:plans/code", "module", "Code"),
+    ], []);
+    expect(affectedNoteSlugs(graph, { type: "note", path: "elsewhere" })).toEqual(["elsewhere"]);
+    expect(affectedNoteSlugs(graph, { type: "folder", path: "plans" })).toEqual(["plans/a", "plans/nested/b"]);
+    expect(affectedNoteSlugs(null, { type: "note", path: "elsewhere" })).toEqual(["elsewhere"]);
+    expect(affectedNoteSlugs(null, { type: "folder", path: "plans" })).toEqual([]);
+    expect(affectedNoteSlugs(graph, { type: "vault", path: "" })).toEqual([]);
+  });
+
   it("recognises note and folder rows without making repository rows mutable", () => {
     expect(mutableTreeRow("vault")).toEqual({ type: "vault", path: "" });
     expect(mutableTreeRow("note:plans/a")).toEqual({ type: "note", path: "plans/a" });
@@ -871,6 +888,16 @@ describe("creating a folder inline, not through a prompt", () => {
   ]);
   const open = { ...initialTreeView(), expanded: new Set(["vault", "vfolder:docs", "vfolder:docs/deep"]) };
   const rows = rowsFor(folderModel, open);
+
+  it("reveals inline operations through collapsed ancestors and excluding filters", () => {
+    const hidden = { ...initialTreeView([]), query: "excluded", provFilter: "generated" as const };
+    expect(rowsFor(folderModel, hidden).some((row) => row.id === "note:docs/deep/two")).toBe(false);
+    const visible = revealFolder(hidden, "docs/deep");
+    expect(rowsFor(folderModel, visible).some((row) => row.id === "note:docs/deep/two")).toBe(true);
+    expect(visible.expanded).toEqual(new Set(["vault", "vfolder:docs", "vfolder:docs/deep"]));
+    expect(hidden.expanded.size).toBe(0);
+    expect(revealFolder(hidden, "").expanded).toEqual(new Set(["vault"]));
+  });
 
   it("puts a new folder where the gesture pointed", () => {
     // Right-clicking a *note* means "next to this", not "inside this" — a

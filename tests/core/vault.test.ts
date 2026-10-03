@@ -270,7 +270,7 @@ describe("finalizeNote", () => {
 
 /**
  * The browser editor's write path. The claim is not "the body changed" but
- * that **nothing else** did — the Obsidian case is the real test, since every
+ * that **nothing else** did — an externally edited note is the real test, since every
  * line of it is one the engine's front-matter subset cannot represent.
  */
 describe("setNoteBody", () => {
@@ -295,9 +295,9 @@ describe("setNoteBody", () => {
     expect(saved?.source).toBe("human");
   });
 
-  it("leaves an Obsidian-shaped front-matter block byte-identical except `updated`", async () => {
+  it("leaves an unfamiliar front-matter block byte-identical except `updated`", async () => {
     // Written by hand rather than through addNote: the point is a block this
-    // engine cannot author, arriving from Obsidian and leaving unharmed.
+    // engine cannot author, arriving from another editor and leaving unharmed.
     const frontMatter = [
       "---",
       "title: Imported",

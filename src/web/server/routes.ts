@@ -43,7 +43,7 @@
  * `resolveNotePath` (via `getNote`) rejects unsafe slugs.
  */
 
-import { createHash } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
 import { readFile } from "node:fs/promises";
 import type { IncomingMessage, ServerResponse } from "node:http";
 import type { WorkspaceSnapshot } from "../../core/cache/workspace";
@@ -65,6 +65,8 @@ import type {
 } from "../shared/wire";
 import { WIRE_MODEL_OMITTED_KEYS } from "../shared/wire";
 import { renderPage } from "./page";
+import { isWorkspaceViewId, type WorkspaceStateStore } from "./workspace-state";
+import { parseWorkspaceLayout } from "../shared/workspace";
 import type { RequestFacts, SecurityPolicy } from "./security";
 import { requestFacts } from "./security";
 
@@ -78,6 +80,7 @@ export interface RouteDeps {
   bundlePath: string;
   /** Test seam for `POST /api/open`; defaults to the real editor shell-out. */
   openNote?: ((slug: string) => Promise<boolean>) | undefined;
+  workspaceState: WorkspaceStateStore;
 }
 
 const JSON_TYPE = "application/json; charset=utf-8";
@@ -160,8 +163,9 @@ export function parseTarget(url: string): Target {
  * the caller has exactly one failure branch.
  */
 export const MAX_BODY_BYTES = 64 * 1024;
+const MAX_WORKSPACE_STATE_BODY_BYTES = 256 * 1024;
 
-export async function readJsonBody(req: IncomingMessage): Promise<unknown | null> {
+export async function readJsonBody(req: IncomingMessage, maxBytes = MAX_BODY_BYTES): Promise<unknown | null> {
   const chunks: Buffer[] = [];
   let size = 0;
   // `IncomingMessage` yields Buffers unless `setEncoding` was called, and we
@@ -169,7 +173,7 @@ export async function readJsonBody(req: IncomingMessage): Promise<unknown | null
   // pretending to be defensive.
   for await (const chunk of req as AsyncIterable<Buffer>) {
     size += chunk.length;
-    if (size > MAX_BODY_BYTES) return null;
+    if (size > maxBytes) return null;
     chunks.push(chunk);
   }
   if (chunks.length === 0) return null;
@@ -375,6 +379,10 @@ async function route(
   if (method === "GET" && path === "/") return sendShell(deps, res);
   if (method === "GET" && path === "/app.js") return sendBundle(deps, res);
   if (method === "GET" && path === "/api/graph") return sendGraph(deps, req, res);
+  if (method === "GET" && path === "/api/workspace-state") {
+    return sendJson(res, 200, { viewId: randomUUID(), layout: await deps.workspaceState.readLatest() }, { "cache-control": "no-store" });
+  }
+  if (method === "POST" && path === "/api/workspace-state") return saveWorkspaceState(deps, req, res);
   if (path.startsWith("/api/folder/")) {
     const handled = await routeFolder(deps, method, path.slice("/api/folder/".length), req, res);
     if (handled) return;
@@ -395,6 +403,29 @@ async function route(
 }
 
 // --- handlers ----------------------------------------------------------------
+
+async function saveWorkspaceState(deps: RouteDeps, req: IncomingMessage, res: ServerResponse): Promise<void> {
+  const body = await readJsonBody(req, MAX_WORKSPACE_STATE_BODY_BYTES);
+  if (!body || typeof body !== "object" || Array.isArray(body)) {
+    sendJson(res, 400, { error: "Expected a workspace state object" });
+    return;
+  }
+  const record = body as Record<string, unknown>;
+  if (
+    Object.keys(record).length !== 2 || !Object.hasOwn(record, "viewId") || !Object.hasOwn(record, "layout") ||
+    !isWorkspaceViewId(record.viewId)
+  ) {
+    sendJson(res, 400, { error: "Expected a UUID viewId and a valid layout" });
+    return;
+  }
+  const layout = parseWorkspaceLayout(record.layout);
+  if (layout === null) {
+    sendJson(res, 400, { error: "Invalid workspace layout" });
+    return;
+  }
+  await deps.workspaceState.write(record.viewId, layout);
+  sendJson(res, 200, { ok: true }, { "cache-control": "no-store" });
+}
 
 function sendShell(deps: RouteDeps, res: ServerResponse): void {
   const page = renderPage({

@@ -443,7 +443,7 @@ export const HOVER_LABEL_SHADOW = 6;
 /**
  * Sigma's `defaultDrawNodeHover`, as a scheme-bound pure function (§7.4).
  *
- * Obsidian's gesture, which is the reference: the hovered node's name floats
+ * The reference gesture: the hovered node's name floats
  * **centred underneath it**, in the theme's own text colour, with no
  * container. The alternative shipped by sigma is a white rounded box with the
  * text to the node's *right* — wrong colour in both schemes, and wrong place

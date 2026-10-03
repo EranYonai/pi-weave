@@ -55,6 +55,17 @@ const IDLE: KeyContext = { overlay: null, hasSelection: false };
 // --- the map ------------------------------------------------------------------------
 
 describe("shellKey — the claimed shortcuts", () => {
+  it("closes the active tab on Option W including macOS symbol keys", () => {
+    expect(shellKey(key({ key: "w", alt: true, typing: true }), IDLE)).toEqual({ type: "closeTab" });
+    expect(shellKey(key({ key: "W", alt: true }), IDLE)).toEqual({ type: "closeTab" });
+    expect(shellKey(key({ key: "w", alt: true, shift: true }), IDLE)).toBeNull();
+    expect(shellKey(key({ key: "w", alt: true, ctrl: true }), IDLE)).toBeNull();
+    expect(shellKey(key({ key: "w", alt: true, meta: true }), IDLE)).toBeNull();
+    expect(shellKey(key({ key: "w", alt: true }), { overlay: "search", hasSelection: true })).toBeNull();
+    const descriptor = describeKey({ key: "∑", code: "KeyW", altKey: true, ctrlKey: false, metaKey: false, shiftKey: false, target: null, defaultPrevented: false, preventDefault() {} });
+    expect(shellKey(descriptor, IDLE)).toEqual({ type: "closeTab" });
+  });
+
   it("opens search on ⌘K and on Ctrl K, so one map serves both platforms", () => {
     expect(shellKey(key({ key: "k", meta: true }), IDLE)).toEqual({ type: "openSearch" });
     expect(shellKey(key({ key: "k", ctrl: true }), IDLE)).toEqual({ type: "openSearch" });
@@ -228,7 +239,7 @@ describe("isTextEntry", () => {
 
 describe("describeKey", () => {
   function event(partial: Partial<KeyboardEventLike> & { key: string }): KeyboardEventLike {
-    return { ctrlKey: false, metaKey: false, shiftKey: false, altKey: false, target: null, preventDefault: () => {}, ...partial };
+    return { defaultPrevented: false, ctrlKey: false, metaKey: false, shiftKey: false, altKey: false, target: null, preventDefault: () => {}, ...partial };
   }
 
   it("reduces a platform event to the five booleans a decision needs", () => {
@@ -272,6 +283,7 @@ describe("watchKeys", () => {
 
   function event(partial: Partial<KeyboardEventLike> & { key: string }): KeyboardEventLike & { prevented: boolean } {
     const self = {
+      defaultPrevented: false,
       ctrlKey: false,
       metaKey: false,
       shiftKey: false,
@@ -293,6 +305,16 @@ describe("watchKeys", () => {
     document.fire(e);
     expect(ran).toEqual([{ type: "openSearch" }]);
     expect(e.prevented).toBe(true);
+  });
+
+  it("does not clear a note after the palette already handled Escape", () => {
+    const document = host();
+    const ran: ShellAction[] = [];
+    watchKeys(document, { context: () => ({ overlay: null, hasSelection: true }), run: (action) => void ran.push(action) });
+    document.fire(event({ key: "Escape", defaultPrevented: true }));
+    expect(ran).toEqual([]);
+    document.fire(event({ key: "Escape" }));
+    expect(ran).toEqual([{ type: "clearSelection" }]);
   });
 
   it("leaves an unclaimed key entirely alone", () => {
@@ -347,6 +369,7 @@ describe("runShellAction", () => {
       fitGraph: () => void log.push("fit"),
       clearSelection: () => void log.push("clear"),
       cycleTheme: () => void log.push("cycleTheme"),
+      closeTab: () => void log.push("closeTab"),
     };
   }
 
@@ -366,6 +389,7 @@ describe("runShellAction", () => {
       [{ type: "fitGraph" }, "fit"],
       [{ type: "clearSelection" }, "clear"],
       [{ type: "cycleTheme" }, "cycleTheme"],
+      [{ type: "closeTab" }, "closeTab"],
     ];
     for (const [action, expected] of cases) {
       const fx = effects();
@@ -395,6 +419,7 @@ describe("every action is reachable from a key", () => {
       ...Object.keys(COLUMN_DIGITS).map((digit) => key({ key: digit, meta: true })),
       ...Object.keys(BARE_KEYS).map((k) => key({ key: k })),
       key({ key: "Escape" }),
+      key({ key: "w", alt: true }),
     ];
     for (const ctx of contexts) {
       for (const descriptor of candidates) {
@@ -406,6 +431,7 @@ describe("every action is reachable from a key", () => {
       [
         "clearSelection",
         "closeOverlay",
+        "closeTab",
         "cycleTheme",
         "filterTree",
         "fitGraph",
@@ -445,7 +471,8 @@ describe("focusable and focusSelector", () => {
     // leave the arrow keys pointing at nothing.
     for (const column of COLUMNS) {
       const selector = COLUMN_FOCUS_SELECTORS[column];
-      expect(selector, column).toContain(`.weave-col-${column} `);
+      expect(selector, column).not.toContain(".weave-col-");
+      expect(selector, column).toContain(" ");
     }
     expect(TREE_FILTER_SELECTOR).toContain(".weave-filter");
   });
@@ -537,7 +564,7 @@ describe("keyHelp", () => {
   });
 
   it("groups by surface, so the sheet reads as a map of the workspace", () => {
-    expect(groups.map((g) => g.title)).toEqual(["Global", "Tree", "Graph", "Search"]);
+    expect(groups.map((g) => g.title)).toEqual(["Global", "Tree", "Tabs and panes", "Graph", "Search"]);
     for (const group of groups) expect(group.entries.length, group.title).toBeGreaterThan(0);
   });
 

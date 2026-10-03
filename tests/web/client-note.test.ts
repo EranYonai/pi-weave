@@ -41,8 +41,6 @@ import {
   WIKILINK_ATTR,
   hasTextSelection,
   CREATED_WORD,
-  draftDirty,
-  draftMoved,
   escapeHtml,
   excerptOf,
   isGhost,
@@ -53,7 +51,6 @@ import {
   previewCard,
   previewPlacement,
   reducePreview,
-  saveLanded,
   renderMarkdown,
   resolveMarkdownLink,
   renderNote,
@@ -470,8 +467,8 @@ describe("renderWikilink", () => {
 
   it("renders an unresolved link as a ghost span, not a broken anchor", () => {
     // A link that refuses to work is worse than no link: it is not focusable,
-    // not announced as a link, and the dashed underline is Obsidian's offer to
-    // create the missing note.
+    // not announced as a link, and the dashed underline offers to create the
+    // missing note.
     const html = renderWikilink(index, "Ghost Note", "");
     expect(html).toContain("weave-wiki-ghost");
     expect(html).toContain("<span");
@@ -1263,61 +1260,5 @@ describe("reducePreview", () => {
   it("dismiss closes the card on Escape by the same route", () => {
     const open: PreviewState = { anchor: ANCHOR, pointerX: 1, pointerY: 2 };
     expect(reducePreview(open, { type: "dismiss" })).toBe(EMPTY_PREVIEW);
-  });
-});
-
-/**
- * What the discard prompt and the unload guard are gated on — the rest of the
- * editor is a `<textarea>` and two state fields.
- */
-describe("draftDirty", () => {
-  it("is false only for an exact match", () => {
-    expect(draftDirty("same", "same")).toBe(false);
-    expect(draftDirty("edited", "original")).toBe(true);
-    expect(draftDirty("", "original")).toBe(true);
-    // An emptied note is a real edit, not an absent one.
-    expect(draftDirty("", "")).toBe(false);
-  });
-
-  it("counts trailing whitespace as dirty, because a save would change it", () => {
-    // The save path trims, so calling this pair clean would let the one edit
-    // that gets silently reverted slip past the discard prompt.
-    expect(draftDirty("body\n", "body")).toBe(true);
-    expect(draftDirty("body ", "body")).toBe(true);
-  });
-});
-
-/**
- * The stale-save guard: a reply must close the editor that issued it, not
- * whichever one happens to be open when it lands.
- */
-describe("saveLanded", () => {
-  it("accepts a reply from the session that is still open", () => {
-    expect(saveLanded(3, 3)).toBe(true);
-  });
-
-  it("drops a reply from a session that has since closed or moved on", () => {
-    // Navigated away mid-save, or reopened the same note: both bump it.
-    expect(saveLanded(3, 4)).toBe(false);
-  });
-});
-
-/**
- * The other half of the save race: `saveLanded` asks whether the *editor* is
- * still the one that issued the request, this asks whether the *text* is.
- * Both hold at once when a fast typist keeps going through the round trip.
- */
-describe("draftMoved", () => {
-  it("is false when the box still holds exactly what was sent", () => {
-    expect(draftMoved("saved text", "saved text")).toBe(false);
-  });
-
-  it("is true when the user kept typing through the request", () => {
-    // These bytes never reached the server; closing over them loses them.
-    expect(draftMoved("saved text", "saved text plus more")).toBe(true);
-  });
-
-  it("is false once the editor has closed, which has nothing left to protect", () => {
-    expect(draftMoved("saved text", null)).toBe(false);
   });
 });

@@ -14,7 +14,7 @@ export function StatusBar({ model }: { model: StatusBarModel }) {
       <span class="weave-status-cwd" title={model.cwd}>
         {model.cwd}
       </span>
-      <span class="weave-status-sel" title="the §1.3 context bus — one signal, every column">
+      <span class="weave-status-sel" title="Current item">
         {model.selection}
       </span>
       <span class="weave-status-stamp" title="data as of">

@@ -90,6 +90,7 @@ export type ShellAction =
   | { readonly type: "filterTree" }
   | { readonly type: "fitGraph" }
   | { readonly type: "clearSelection" }
+  | { readonly type: "closeTab" }
   /** `t` — cycle the colour theme: system → light → dark → system. */
   | { readonly type: "cycleTheme" };
 
@@ -111,16 +112,6 @@ export const COMMAND_KEYS: Readonly<Record<string, ShellAction>> = {
  * `COLUMNS` rather than three hand-written cases.
  */
 export const COLUMN_DIGITS: Readonly<Record<string, ColumnId>> = { "1": "tree", "2": "note", "3": "graph" };
-
-/**
- * The columns a breakpoint can put off screen — the graph at `"medium"`, the
- * tree too at `"narrow"`, never the note. The help sheet's derived rows use it
- * to stay honest about `⌘1`/`⌘3`: at 900 px the `⌘3` command is a documented
- * no-op, and a help line that hides that is the same lie the `disabled`
- * search button once was. Derived from `columnsAt`, not listed, so the caveat
- * cannot drift from the breakpoints the sheet is attached to.
- */
-const COLLAPSIBLE_COLUMNS: ReadonlySet<ColumnId> = new Set(["tree", "graph"]);
 
 /**
  * Whether a modifier combination counts as "the platform's command key".
@@ -167,6 +158,8 @@ export const BARE_KEYS: Readonly<Record<string, ShellAction>> = {
  */
 export function shellKey(event: KeyDescriptor, ctx: KeyContext): ShellAction | null {
   if (ctx.overlay !== null) return event.key === "Escape" ? { type: "closeOverlay" } : null;
+
+  if (event.alt && !event.meta && !event.ctrl && !event.shift && event.key.toLowerCase() === "w") return { type: "closeTab" };
 
   if (isCommand(event)) {
     // Lower-cased because ⌘K with caps lock on reports `"K"`, and a shortcut
@@ -231,6 +224,8 @@ export interface KeyTarget {
  * use, for the same reason: there is no DOM test environment (§10).
  */
 export interface KeyboardEventLike {
+  readonly code?: string;
+  readonly defaultPrevented: boolean;
   readonly key: string;
   readonly ctrlKey: boolean;
   readonly metaKey: boolean;
@@ -243,7 +238,7 @@ export interface KeyboardEventLike {
 /** Reduce a platform event to a {@link KeyDescriptor}. */
 export function describeKey(event: KeyboardEventLike): KeyDescriptor {
   return {
-    key: event.key,
+    key: event.altKey && event.code === "KeyW" ? "w" : event.key,
     ctrl: event.ctrlKey,
     meta: event.metaKey,
     shift: event.shiftKey,
@@ -254,27 +249,15 @@ export function describeKey(event: KeyboardEventLike): KeyDescriptor {
 
 // --- where an action points ---------------------------------------------------------
 
-/**
- * `⌘1/2/3` → the element to focus in that column.
- *
- * Selectors rather than refs, and the reason is the breakpoint: below 1100 px
- * the graph column does not exist and below 800 px the tree does not either,
- * so a ref would be `null` for a column that is legitimately absent and the
- * shell would need a branch per column to cope. A `querySelector` that finds
- * nothing is already the same answer, expressed once.
- *
- * Each target is the column's *content*, not its `<section>`: focusing the
- * section would put the ring around the whole pane and leave the arrow keys
- * pointing at nothing.
- */
+/** Content focus targets; the shell opens hidden sidebars/tabs before focusing. */
 export const COLUMN_FOCUS_SELECTORS: Readonly<Record<ColumnId, string>> = {
-  tree: ".weave-col-tree .weave-rows",
-  note: ".weave-col-note .weave-note-body",
-  graph: ".weave-col-graph .weave-graph-canvas",
+  tree: ".weave-sidebar-notes .weave-rows",
+  note: ".weave-pane-active .weave-note-body",
+  graph: ".weave-graph-host .weave-graph-canvas",
 };
 
 /** `/` → the tree's filter box. */
-export const TREE_FILTER_SELECTOR = ".weave-col-tree .weave-filter";
+export const TREE_FILTER_SELECTOR = ".weave-sidebar-notes .weave-filter";
 
 /** The slice of an element {@link focusable} produces. */
 export interface Focusable {
@@ -336,6 +319,7 @@ export interface ShellEffects {
   fitGraph(): void;
   /** Write `null` to §1.3's `selectedId`. */
   clearSelection(): void;
+  closeTab(): void;
   /** `t` — advance the user's theme choice by one step in its cycle. */
   cycleTheme(): void;
 }
@@ -350,8 +334,7 @@ export function runShellAction(action: ShellAction, fx: ShellEffects): void {
     case "closeOverlay":
       return fx.setOverlay(null);
     case "focusColumn":
-      // The boolean is deliberately dropped: a column that is not on screen
-      // at this breakpoint is a miss with nothing to report to.
+      // The shell reveals the target before focusing it.
       return void fx.focusSelector(COLUMN_FOCUS_SELECTORS[action.column]);
     case "filterTree":
       return void fx.focusSelector(TREE_FILTER_SELECTOR);
@@ -359,6 +342,8 @@ export function runShellAction(action: ShellAction, fx: ShellEffects): void {
       return fx.fitGraph();
     case "clearSelection":
       return fx.clearSelection();
+    case "closeTab":
+      return fx.closeTab();
     case "cycleTheme":
       return fx.cycleTheme();
   }
@@ -397,10 +382,11 @@ export function keyHelp(cmd: string): readonly KeyHelpGroup[] {
     {
       title: "Global",
       entries: [
+        { combo: "⌥W / Alt W", what: "Close the active tab" },
         { combo: `${cmd}K`, what: "Search notes and the repository" },
         ...Object.entries(COLUMN_DIGITS).map(([digit, column]) => ({
           combo: `${cmd}${digit}`,
-          what: `Focus the ${column} column${COLLAPSIBLE_COLUMNS.has(column) ? " (when on screen)" : ""}`,
+          what: column === "tree" ? "Open and focus the notes sidebar" : column === "graph" ? "Open and focus Graph view" : "Focus the note",
         })),
         { combo: "?", what: "This help" },
         { combo: "t", what: "Cycle the colour theme (system / light / dark)" },
@@ -419,6 +405,14 @@ export function keyHelp(cmd: string): readonly KeyHelpGroup[] {
       ],
     },
     {
+      title: "Tabs and panes",
+      entries: [
+        { combo: "← / → / Home / End", what: "Select a tab when the tab strip is focused" },
+        { combo: `${cmd}click`, what: "Open a note or search result in a new tab" },
+        { combo: "Pane options (···)", what: "Split right or down, move a tab, or close a pane" },
+      ],
+    },
+    {
       title: "Graph",
       entries: [{ combo: "g", what: "Fit the whole graph" }],
     },
@@ -427,6 +421,7 @@ export function keyHelp(cmd: string): readonly KeyHelpGroup[] {
       entries: [
         { combo: "↑ / ↓", what: "Move through results" },
         { combo: "↵", what: "Open the highlighted result" },
+        { combo: `${cmd}↵`, what: "Open the highlighted result in a new tab" },
         { combo: "Esc", what: "Close the palette" },
       ],
     },

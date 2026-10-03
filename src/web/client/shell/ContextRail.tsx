@@ -22,13 +22,13 @@ import { Icon } from "../tree/Tree";
 export interface ContextRailProps {
   graph: GraphPayload | null;
   selectedId: string | null;
-  onSelect: (id: string) => void;
+  onSelect: (id: string, newTab?: boolean) => void;
 }
 
-function Row({ row, onSelect }: { row: ContextRow; onSelect: () => void }) {
+function Row({ row, onSelect }: { row: ContextRow; onSelect: (newTab: boolean) => void }) {
   return (
     <li class={`weave-ctx-row${row.selected ? " weave-row-on" : ""}`}>
-      <button type="button" class="weave-ctx-link" onClick={onSelect}>
+      <button type="button" class="weave-ctx-link" onClick={(event) => onSelect(event.metaKey || event.ctrlKey)}>
         <span class="weave-kind" aria-hidden="true">
           <Icon name={row.kindIcon} class="weave-icon" />
         </span>
@@ -64,26 +64,26 @@ function Heading({ view, onToggle }: { view: RailSectionView; onToggle: () => vo
   );
 }
 
-function Group({ view, onSelect, onToggle }: { view: RailSectionView; onSelect: (id: string) => void; onToggle: () => void }) {
+function Group({ view, onSelect, onToggle }: { view: RailSectionView; onSelect: (id: string, newTab?: boolean) => void; onToggle: () => void }) {
   return (
     <section class="weave-ctx-group">
       <Heading view={view} onToggle={onToggle} />
       <ul class="weave-ctx-rows" id={railPanelId(view.heading)} hidden={view.collapsed}>
         {view.rows.map((row) => (
-          <Row key={row.id} row={row} onSelect={() => onSelect(row.target)} />
+          <Row key={row.id} row={row} onSelect={(newTab) => onSelect(row.target, newTab)} />
         ))}
       </ul>
     </section>
   );
 }
 
-function Tag({ tag, onSelect }: { tag: TagGroupRow; onSelect: (id: string) => void }) {
+function Tag({ tag, onSelect }: { tag: TagGroupRow; onSelect: (id: string, newTab?: boolean) => void }) {
   return (
     <li class="weave-ctx-tag">
       <span class="weave-tag">#{tag.tag}</span>
       <ul class="weave-ctx-rows">
         {tag.siblings.map((row) => (
-          <Row key={row.id} row={row} onSelect={() => onSelect(row.target)} />
+          <Row key={row.id} row={row} onSelect={(newTab) => onSelect(row.target, newTab)} />
         ))}
       </ul>
     </li>
@@ -102,7 +102,6 @@ export function ContextRail(props: ContextRailProps) {
   const tags = railTagsView(model.tags, toggles);
   return (
     <div class="weave-rail" aria-label={CONTEXT_EMPTY.title}>
-      <h2 class="weave-col-title">{CONTEXT_EMPTY.title}</h2>
       {model.empty === null ? null : <p class="weave-ctx-empty">{model.empty}</p>}
       {model.groups.map((group) => {
         const view = railSectionView(group, toggles);

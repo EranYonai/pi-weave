@@ -18,6 +18,7 @@
 
 import { describe, expect, it } from "vitest";
 import { fetchJson } from "../../src/web/client/api.dom";
+import { WORKSPACE_CSS } from "../../src/web/client/shell/workspace.css";
 import { NONCE_SOURCES, THEME_CSS, findNonce, installTheme } from "../../src/web/client/shell/theme";
 import type { StyleElement, ThemeHost } from "../../src/web/client/shell/theme";
 import {
@@ -55,6 +56,16 @@ function nonced(nonce: string): StyleElement {
 // --- the stylesheet ---------------------------------------------------------------
 
 describe("THEME_CSS", () => {
+  it("starts with the tabs workspace and footer, without the retired header", () => {
+    expect(THEME_CSS).toContain("#app{height:100%;display:grid;grid-template-rows:minmax(0,1fr) auto;");
+    expect(THEME_CSS).not.toContain(".weave-header");
+    expect(THEME_CSS).not.toContain(".weave-summary");
+    expect(WORKSPACE_CSS).not.toContain(".weave-header");
+    for (const selector of [".weave-brand", ".weave-search", ".weave-refresh", ".weave-theme"]) {
+      expect(THEME_CSS).not.toContain(selector);
+    }
+  });
+
   it("defines the palette the components reference", () => {
     for (const name of [
       "--weave-bg",
@@ -96,17 +107,6 @@ describe("THEME_CSS", () => {
 
   it("has a rule for every class the components emit", () => {
     const classes = [
-      "weave-header",
-      "weave-brand",
-      "weave-brand-mark",
-      "weave-search",
-      "weave-summary",
-      "weave-summary-part",
-      "weave-refresh",
-      "weave-theme",
-      "weave-grid",
-      "weave-col",
-      "weave-col-title",
       // `weave-empty` / `-body` / `-phase` went with `EmptyState.tsx` in P3.
       // Every column now renders its own empty state as a plain paragraph
       // (`treeEmptyMessage`, `noteEmptyMessage`, `graphEmptyMessage`,
@@ -150,7 +150,7 @@ describe("THEME_CSS", () => {
       "weave-wiki",
       "weave-wiki-ghost",
       // The P6.3 wikilink hover card: `Note.tsx` mounts it with a fixed id
-      // (`PREVIEW_ID`), so it is classed and asserted here like any other.
+      // (unique per document view), so it is classed and asserted here like any other.
       // Ghost links add `weave-preview-ghost`, which carries the no-note
       // offer's dashed frame.
       "weave-preview",
@@ -185,7 +185,6 @@ describe("THEME_CSS", () => {
       "weave-legend-dim",
       "weave-graph-count",
       // The ⌘K palette and the help overlay (P4).
-      "weave-search-text",
       "weave-scrim",
       "weave-palette",
       "weave-palette-input",
@@ -209,15 +208,6 @@ describe("THEME_CSS", () => {
       "weave-key-what",
     ];
     for (const name of classes) expect(THEME_CSS).toContain(`.${name}`);
-  });
-
-  it("uses layout custom properties for the responsive grid", () => {
-    expect(THEME_CSS).toContain("var(--weave-col-tree,22%)");
-    expect(THEME_CSS).toContain("var(--weave-col-note,46%)");
-    expect(THEME_CSS).toContain("var(--weave-col-graph,32%)");
-    expect(THEME_CSS).toContain('.weave-grid[data-columns="2"]');
-    expect(THEME_CSS).toContain('.weave-grid[data-columns="1"]');
-    expect(THEME_CSS).toContain(".weave-divider");
   });
 
   it("stays dense: no card shadows, no oversized gutters", () => {
@@ -323,7 +313,7 @@ describe("installTheme", () => {
 
     expect(document.appended).toHaveLength(1);
     expect(document.appended[0]?.nonce).toBe("abc123");
-    expect(document.appended[0]?.textContent).toBe(THEME_CSS);
+    expect(document.appended[0]?.textContent).toBe(THEME_CSS + WORKSPACE_CSS);
   });
 
   it("accepts injected CSS, so a test need not assert against the whole sheet", () => {
