@@ -37,7 +37,7 @@ Unit checks cover history, tab/pane moves, draft/save races, persisted input val
 
 - `npm run check`: typechecks, committed bundle check, and 2,135 tests pass (76 files).
 - Coverage: 98.90% statements/lines, 95.35% branches, 98.83% functions; thresholds unchanged.
-- Bundle: 398.9 KiB raw, 118.3 KiB gzip (150 KiB gzip budget); no dependency changes.
+- Bundle: 399.2 KiB raw, 118.4 KiB gzip (150 KiB gzip budget); no dependency changes.
 - Disposable-vault browser checks at 1280×800 and 700×720: tab/new-tab search, wiki-link history,
   shared drafts across two views, save refresh, graph/note split, pane merge, sidebars, keyboard
   focus, narrow-pane switching, and scroll restoration. A 1440-pixel reading position survived tab

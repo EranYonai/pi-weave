@@ -9,10 +9,11 @@ export const WORKSPACE_CSS = `
 .weave-ribbon button:hover,.weave-ribbon button[aria-pressed=true]{color:var(--weave-accent);background:var(--weave-new)}
 .weave-ribbon-space{flex:1}
 .weave-sidebar{flex:none;min-width:0;display:flex;flex-direction:column;background:var(--weave-panel);overflow:hidden}
-.weave-notes-dock{display:flex;flex:none;min-width:0;width:calc(var(--weave-notes-width) + 4px);overflow:hidden;opacity:1;visibility:visible;transition:width 200ms ease,opacity 160ms ease,visibility 0s}
-.weave-notes-dock[data-open=false]{width:0;opacity:0;visibility:hidden;transition:width 200ms ease,opacity 160ms ease,visibility 0s 200ms}
-.weave-sidebar-notes{width:var(--weave-notes-width);transition:transform 200ms ease}
-.weave-notes-dock[data-open=false] .weave-sidebar-notes{transform:translateX(-16px)}
+.weave-sidebar-dock{display:flex;flex:none;min-width:0;width:calc(var(--weave-sidebar-width) + 4px);overflow:hidden;opacity:1;visibility:visible;transition:width 200ms ease,opacity 160ms ease,visibility 0s}
+.weave-sidebar-dock[data-open=false]{width:0;opacity:0;visibility:hidden;transition:width 200ms ease,opacity 160ms ease,visibility 0s 200ms}
+.weave-sidebar-dock>.weave-sidebar{width:var(--weave-sidebar-width);transition:transform 200ms ease}
+.weave-sidebar-dock[data-open=false]>.weave-sidebar{transform:translateX(-16px)}
+.weave-context-dock[data-open=false]>.weave-sidebar{transform:translateX(16px)}
 .weave-sidebar-heading{display:flex;align-items:center;gap:8px;height:46px;flex:none;padding:0 12px;color:var(--weave-dim);font-size:var(--weave-px-row)}
 .weave-sidebar-heading button{border:0;background:none;padding:7px 6px;border-radius:var(--weave-radius);color:var(--weave-dim)}
 .weave-sidebar-heading button[aria-pressed=true]{color:var(--weave-fg);background:var(--weave-raise)}
@@ -97,11 +98,12 @@ export const WORKSPACE_CSS = `
 .weave-footer>span{padding:4px 10px;white-space:nowrap}
 .weave-footer>button{font:inherit;color:var(--weave-fg);background:none;border:0;padding:7px 12px;cursor:pointer}
 @media(max-width:1049px){
-  .weave-sidebar-context{position:absolute;right:0;top:0;bottom:0;z-index:10;border-left:1px solid var(--weave-line-strong)}
-  .weave-workbench> .weave-workspace-divider[aria-label="Resize context sidebar"]{display:none}
+  .weave-context-dock{position:absolute;right:0;top:0;bottom:0;z-index:10;width:var(--weave-sidebar-width)}
+  .weave-sidebar-context{border-left:1px solid var(--weave-line-strong)}
+  .weave-context-dock>.weave-workspace-divider{display:none}
 }
 @media(max-width:849px){
-  .weave-notes-dock{position:absolute;left:44px;top:0;bottom:0;z-index:10;width:var(--weave-notes-width);box-shadow:8px 0 24px #0002}
+  .weave-notes-dock{position:absolute;left:44px;top:0;bottom:0;z-index:10;width:var(--weave-sidebar-width);box-shadow:8px 0 24px #0002}
   .weave-sidebar-notes{border-right:1px solid var(--weave-line-strong)}
   .weave-notes-dock>.weave-workspace-divider{display:none}
   .weave-workbench>.weave-workspace-divider{display:none}
@@ -110,6 +112,6 @@ export const WORKSPACE_CSS = `
   .weave-document .weave-note-body{padding:10px 20px 40px}
 }
 @media(prefers-reduced-motion:reduce){
-  .weave-notes-dock,.weave-notes-dock[data-open=false],.weave-sidebar-notes{transition:none}
+  .weave-sidebar-dock,.weave-sidebar-dock[data-open=false],.weave-sidebar-dock>.weave-sidebar{transition:none}
 }
 `;
