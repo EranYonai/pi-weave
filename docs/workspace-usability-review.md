@@ -117,7 +117,7 @@ browser cannot expose its dialog. Dedicated-window lifecycle is not implemented 
 
 Sol 6.1 re-reviewed the corrections and found no remaining confirmed blockers. The full
 gate passes 2,135 tests in 76 files, with 98.90% statements/lines, 95.35% branches, and
-98.83% functions. The browser bundle is 118.1 KiB gzip, below its 150 KiB budget.
+98.83% functions. The browser bundle is 118.3 KiB gzip, below its 150 KiB budget.
 
 ## Check locally
 

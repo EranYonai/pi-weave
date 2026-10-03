@@ -9,6 +9,10 @@ export const WORKSPACE_CSS = `
 .weave-ribbon button:hover,.weave-ribbon button[aria-pressed=true]{color:var(--weave-accent);background:var(--weave-new)}
 .weave-ribbon-space{flex:1}
 .weave-sidebar{flex:none;min-width:0;display:flex;flex-direction:column;background:var(--weave-panel);overflow:hidden}
+.weave-notes-dock{display:flex;flex:none;min-width:0;width:calc(var(--weave-notes-width) + 4px);overflow:hidden;opacity:1;visibility:visible;transition:width 200ms ease,opacity 160ms ease,visibility 0s}
+.weave-notes-dock[data-open=false]{width:0;opacity:0;visibility:hidden;transition:width 200ms ease,opacity 160ms ease,visibility 0s 200ms}
+.weave-sidebar-notes{width:var(--weave-notes-width);transition:transform 200ms ease}
+.weave-notes-dock[data-open=false] .weave-sidebar-notes{transform:translateX(-16px)}
 .weave-sidebar-heading{display:flex;align-items:center;gap:8px;height:46px;flex:none;padding:0 12px;color:var(--weave-dim);font-size:var(--weave-px-row)}
 .weave-sidebar-heading button{border:0;background:none;padding:7px 6px;border-radius:var(--weave-radius);color:var(--weave-dim)}
 .weave-sidebar-heading button[aria-pressed=true]{color:var(--weave-fg);background:var(--weave-raise)}
@@ -97,10 +101,15 @@ export const WORKSPACE_CSS = `
   .weave-workbench> .weave-workspace-divider[aria-label="Resize context sidebar"]{display:none}
 }
 @media(max-width:849px){
-  .weave-sidebar-notes{position:absolute;left:44px;top:0;bottom:0;z-index:10;border-right:1px solid var(--weave-line-strong);box-shadow:8px 0 24px #0002}
+  .weave-notes-dock{position:absolute;left:44px;top:0;bottom:0;z-index:10;width:var(--weave-notes-width);box-shadow:8px 0 24px #0002}
+  .weave-sidebar-notes{border-right:1px solid var(--weave-line-strong)}
+  .weave-notes-dock>.weave-workspace-divider{display:none}
   .weave-workbench>.weave-workspace-divider{display:none}
   .weave-panes{grid-template-columns:minmax(0,1fr)!important;grid-template-rows:minmax(0,1fr)!important}
   .weave-document .weave-note-head{padding:20px}
   .weave-document .weave-note-body{padding:10px 20px 40px}
+}
+@media(prefers-reduced-motion:reduce){
+  .weave-notes-dock,.weave-notes-dock[data-open=false],.weave-sidebar-notes{transition:none}
 }
 `;
