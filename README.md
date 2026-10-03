@@ -154,48 +154,14 @@ Renaming or moving a note rewrites its inbound links automatically, so its backl
 /weave-view tui          # Pi only: terminal UI for SSH or browser-free use
 ```
 
-The browser workspace puts notes at the center, with a collapsible notes sidebar, document tabs, and optional context for links,
-backlinks, tags, and code mentions. Open a note to replace the current document; `⌘` / `Ctrl` click a note or wiki-link to open a new tab.
-Drag a tab title within its tab strip to reorder tabs, or use `Alt ←` / `Alt →` while the tab is focused.
-Each document tab has its own Back/Forward history and reading position. The tab strip sits at the top of the workspace.
-Use the ribbon search button or `⌘K` / `Ctrl K`; `⌘` / `Ctrl Enter` opens a result
-in a new tab. **Recent** keeps its order while you browse; returning to it refreshes the visit order. Its rows show the same item icons
-as Files. Press `?` for shortcuts.
+Browse and search your notes, follow links, or explore the graph. Use tabs and split panes to keep related notes side by side.
+Notes update within a couple of seconds as your agent writes them.
 
-Open **Graph view** from the left ribbon. Click a node to preview its title and type while staying in Graph. Click the same node again
-or choose **Open in new tab** to open its content; in a split layout, the new tab opens in the other pane. Dragging does not open content.
-Use **Pane options (···)** to split right or down, move the current tab to the other pane, or close a pane while retaining its tabs.
-In a split workspace, drag a tab title into the other pane to move it. History, reading position, and unsaved drafts stay with it. On small windows, **Switch pane** reaches the
-other group. Drag a note from Files into either pane to open it in a new tab. Closing or moving the last tab out of a split removes that pane;
-closing the final workspace tab leaves a New tab. `Option W` / `Alt W` closes the active Weave tab using the same unsaved-draft guard.
-Some browser hosts also claim this shortcut: Codex’s in-app browser still closes its outer tab. Both sidebars can be shown or hidden from the ribbon.
+Click **Edit** to change Markdown and `⌘S` / `Ctrl S` to save. Your original words in `## Raw` stay intact.
+Tabs, layout, and appearance restore when you return; unsaved drafts last only while the browser stays open.
 
-Click **Edit** to change a note's Markdown; `⌘S` / `Ctrl S` saves, and **Done** closes the editor. Drafts survive tab and pane switching,
-and duplicate views of a note share one draft. Closing or replacing the last view of an unsaved note asks before discarding it. A save
-rewrites only the body: unknown front-matter fields, key order, and the append-only `## Raw` tail survive untouched. Outside edits appear
-within a couple of seconds; the last writer wins.
-
-Tabs, pane sizes, sidebars, theme, and reading positions restore for the same vault and repository, even when the local server port
-changes. Presentation snapshots live under `$XDG_CONFIG_HOME/pi-weave/presentation` (or `~/.config/pi-weave/presentation`), separate from
-the knowledge files. Unsaved text stays in memory and is guarded on reload/close; it is not restored after closing the browser. Missing
-notes do not prevent the other tabs from restoring. The workspace follows the system theme unless you choose a palette in Settings.
-
-Open **Settings** with the gear button or `⌘,` / `Ctrl ,`. General includes workspace locations, refresh, documentation, and
-keyboard shortcuts. Appearance offers six Catppuccin palettes and three additional light/dark pairs, an independent accent selector,
-and note font size. Choose a light theme and a dark theme; the ribbon button and `t` switch between those two. System mode follows
-your device using the selected pair. Interface holds sidebar visibility, group colors, and the live graph layout sliders. Editor controls spellcheck,
-readable line length, and whether newly opened notes start in editing mode. Files controls startup tabs and whether new tabs take focus.
-These preferences are stored with the workspace snapshots.
-
-**Settings → Backup → Download vault ZIP** exports saved vault files, including attachments, hidden metadata, empty folders, and linked
-content. Save unsaved drafts before downloading. Backups are manual; there is no scheduled backup or sync. Restore by extracting the ZIP
-into a vault directory. Symbolic-link cycles, unreadable files, and entries outside ZIP format limits produce an error instead of a partial
-archive. Presentation snapshots and the separate repository index are not part of the vault download.
-
-This browser facelift is the first stage toward a dedicated macOS window. `/weave-view` still launches the browser, and the agent owns
-the local server's lifetime.
-
-`/weave-view tui` is the smaller, read-only terminal explorer: tree, focused neighborhood, details, and link health over the same graph.
+Use **Settings** for themes, fonts, layout, and a manual vault ZIP backup. Press `?` for keyboard shortcuts.
+`/weave-view tui` opens a smaller, read-only terminal explorer in Pi.
 
 ## Remember sessions
 
