@@ -19,6 +19,7 @@ import { describe, expect, it } from "vitest";
 import {
   classifyStatus,
   createFolder,
+  createNote,
   deleteFolder,
   deleteNote,
   fetchGraph,
@@ -113,6 +114,16 @@ describe("vault mutations", () => {
     expect(call?.init?.method).toBe("POST");
     expect(call?.init?.headers).toEqual({ "content-type": "application/json" });
     expect(JSON.parse(call?.init?.body ?? "")).toEqual({ body: "new body" });
+  });
+
+  it("creates a note through the collection endpoint and validates the returned note", async () => {
+    const fetch = respondsWith({ note: NOTE });
+    const result = await createNote(fetch, "A new note");
+    expect(result.ok).toBe(true);
+    expect(fetch.calls[0]?.url).toBe("/api/notes");
+    expect(fetch.calls[0]?.init?.method).toBe("POST");
+    expect(JSON.parse(fetch.calls[0]?.init?.body ?? "")).toEqual({ title: "A new note" });
+    expect((await createNote(respondsWith({ ok: true }), "A new note")).ok).toBe(false);
   });
 
   it("uses the narrow mutation routes", async () => {

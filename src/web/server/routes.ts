@@ -8,6 +8,7 @@
  * | GET    | `/api/graph`             | {@link GraphPayload}, ETag'd on `stamp`      |
  * | GET    | `/api/note/:slug`        | {@link NotePayload}                          |
  * | POST   | `/api/note/:slug`        | save a note's Markdown body                  |
+ * | POST   | `/api/notes`            | create an empty human-authored vault note    |
  * | POST   | `/api/note/:slug/rename` | rename a vault note                          |
  * | POST   | `/api/note/:slug/move`   | move a vault note                            |
  * | DELETE | `/api/note/:slug`        | delete a vault note                          |
@@ -56,7 +57,7 @@ import type { GraphModel as CoreGraphModel } from "../../core/graph/model";
 import { openNoteInEditor } from "../../core/openInEditor";
 import type { Note } from "../../core/types";
 import type { VaultMutationResult } from "../../core/vault";
-import { createFolder, deleteFolder, deleteNote, getNote, moveNote, renameFolder, renameNote, resolveHtmlPath, searchNotes, setNoteBody } from "../../core/vault";
+import { addNote, createFolder, deleteFolder, deleteNote, getNote, moveNote, renameFolder, renameNote, resolveHtmlPath, searchNotes, setNoteBody } from "../../core/vault";
 import { deriveTagIndex, type TaggedNote } from "../../core/view/links";
 import type {
   GraphPayload,
@@ -394,6 +395,16 @@ async function route(
     return sendJson(res, 200, { viewId: randomUUID(), layout: await deps.workspaceState.readLatest(), info: { vaultRoot: deps.vaultRoot, version: (JSON.parse(await readFile(new URL("../../../package.json", import.meta.url), "utf8")) as { version: string }).version } }, { "cache-control": "no-store" });
   }
   if (method === "POST" && path === "/api/workspace-state") return saveWorkspaceState(deps, req, res);
+  if (method === "POST" && path === "/api/notes") {
+    const body = await readJsonBody(req);
+    const title = body !== null && typeof body === "object" && !Array.isArray(body) ? (body as { title?: unknown }).title : null;
+    if (typeof title !== "string" || !title.trim() || /[\r\n]/.test(title)) {
+      sendJson(res, 400, { error: "expected a non-empty, single-line title" });
+      return;
+    }
+    const note = await addNote(deps.vaultRoot, { title: title.trim(), body: "", source: "human" });
+    return sendJson(res, 201, notePayload(note), { "cache-control": "no-store" });
+  }
   if (path.startsWith("/api/folder/")) {
     const handled = await routeFolder(deps, method, path.slice("/api/folder/".length), req, res);
     if (handled) return;

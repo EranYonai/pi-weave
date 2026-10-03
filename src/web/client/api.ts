@@ -313,6 +313,13 @@ export function openNote(fetchImpl: FetchLike, slug: string): Promise<ApiResult<
   });
 }
 
+/** Create a human-authored vault note with an empty body. */
+export function createNote(fetchImpl: FetchLike, title: string): Promise<ApiResult<NotePayload>> {
+  return request(fetchImpl, "/api/notes", isNotePayload, {
+    method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ title }),
+  });
+}
+
 function mutation(fetchImpl: FetchLike, url: string, method: string, body?: unknown): Promise<ApiResult<MutationResult>> {
   return request(fetchImpl, url, isMutationResult, {
     method,

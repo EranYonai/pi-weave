@@ -50,14 +50,15 @@ describe("workspace presentation state", () => {
     expect(id).toMatch(/^[0-9a-f-]{36}$/i);
     const empty = await (await authenticated(first, "/api/workspace-state")).json() as { layout: unknown };
     expect(empty.layout).toBeNull();
-    expect((await save(first, id, initialLayout())).status).toBe(200);
+    const layout = { ...initialLayout(), theme: "dark" as const, preferences: { ...initialLayout().preferences, accent: "rose" as const, fontSize: 18, spellcheck: false } };
+    expect((await save(first, id, layout)).status).toBe(200);
     await first.close();
     running.splice(running.indexOf(first), 1);
 
     const second = await serverFor(cwd, vaultRoot, stateDir);
     const restored = await (await authenticated(second, "/api/workspace-state")).json() as { viewId: string; layout: unknown };
     expect(restored.viewId).not.toBe(id);
-    expect(restored.layout).toEqual(initialLayout());
+    expect(restored.layout).toEqual(layout);
     expect((await fetch(second.url + "/api/workspace-state")).status).toBe(403);
   });
 
