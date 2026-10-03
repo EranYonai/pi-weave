@@ -18,6 +18,7 @@ export function Settings(props: {
   onChange: (layout: WorkspaceLayout) => void; onRefresh: () => void; onClose: () => void;
 }) {
   const [category, setCategory] = useState<typeof CATEGORIES[number]>("General");
+  const [refreshCount, setRefreshCount] = useState(0);
   const trap = useFocusTrap();
   const p = props.layout.preferences;
   const update = (values: Partial<Preferences>): void => props.onChange({ ...props.layout, preferences: { ...p, ...values } });
@@ -30,8 +31,8 @@ export function Settings(props: {
       <section aria-label={`${category} settings`}><h3>{category}</h3>
         {category === "General" ? <>
           <p>Pi Weave {props.info.version}</p>
-          <dl class="weave-settings-locations"><dt>Vault</dt><dd>{props.info.vaultRoot || "Loading…"}</dd><dt>Repository</dt><dd>{props.cwd}</dd></dl>
-          <div class="weave-settings-actions"><button type="button" onClick={props.onRefresh}>Refresh workspace</button><a href="https://github.com/EranYonai/pi-weave#readme" target="_blank" rel="noreferrer">Documentation ↗</a></div>
+          <dl class="weave-settings-locations"><dt>Vault</dt><dd><code>{props.info.vaultRoot || "Loading…"}</code></dd><dt>Repository</dt><dd><code>{props.cwd}</code></dd></dl>
+          <div class="weave-settings-actions"><button type="button" onClick={() => { setRefreshCount((value) => value + 1); props.onRefresh(); }}><span key={refreshCount} class={refreshCount ? "weave-refresh-spin" : ""} aria-hidden="true">↻</span> Refresh workspace</button><a href="https://github.com/EranYonai/pi-weave#readme" target="_blank" rel="noreferrer">Documentation ↗</a></div>
           <details><summary tabIndex={0}>Keyboard shortcuts</summary>{keyHelp(props.shortcut.slice(0, -1)).map((group) => <div key={group.title}><h4>{group.title}</h4>{group.entries.map((entry) => <div class="weave-key-row" key={entry.combo}><kbd>{entry.combo}</kbd><span>{entry.what}</span></div>)}</div>)}</details>
         </> : null}
         {category === "Appearance" ? <>

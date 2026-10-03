@@ -74,7 +74,9 @@ export const WORKSPACE_CSS = `
 .weave-document .weave-note-body h2{font-size:var(--weave-px-title);margin-top:28px}
 .weave-document .weave-note-editor{padding:14px max(24px,calc((100% - var(--weave-reading-width,760px))/2));min-height:220px;flex:1;font-size:var(--weave-note-size,var(--weave-px-subhead))}
 .weave-document .weave-note-tags{margin-top:12px}
-.weave-document .weave-note-edit,.weave-document .weave-note-save{padding:5px 10px;border-radius:var(--weave-radius)}
+.weave-document .weave-note-edit,.weave-document .weave-note-save{padding:5px 10px;border-radius:var(--weave-radius);font-size:var(--weave-px-caption)}
+.weave-document .weave-note-edit{color:var(--weave-dim);background:transparent;border-color:transparent}
+.weave-document .weave-note-edit:hover{color:var(--weave-accent);background:var(--weave-new);border-color:transparent}
 .weave-welcome{align-self:center;margin:auto;padding:35px;max-width:560px;color:var(--weave-dim);line-height:1.7}
 .weave-welcome-mark{font-size:var(--weave-px-display);color:var(--weave-accent)}
 .weave-welcome h1{font-size:var(--weave-px-display);line-height:1.4;letter-spacing:-.025em;color:var(--weave-fg);font-weight:550}
@@ -83,6 +85,10 @@ export const WORKSPACE_CSS = `
 .weave-welcome button{border:1px solid var(--weave-line-strong);background:var(--weave-panel);padding:9px 13px;border-radius:var(--weave-radius);font-size:var(--weave-px-row)}
 .weave-welcome button:hover{border-color:var(--weave-accent)}
 .weave-welcome kbd{color:var(--weave-faint);padding-left:16px}
+.weave-new-note{display:flex;flex-direction:column;gap:10px;margin-top:24px}
+.weave-new-note input{font:inherit;color:var(--weave-fg);background:var(--weave-panel);border:1px solid var(--weave-line-strong);border-radius:var(--weave-radius);padding:9px 13px;min-width:0}
+.weave-new-note input:focus-visible{outline:2px solid var(--weave-accent);outline-offset:2px}
+.weave-new-note>div{display:flex;gap:12px}
 .weave-sidebar-context .weave-rail{flex:1;border:0;overflow:auto;padding:6px 12px}
 .weave-sidebar-context .weave-ctx-link{padding-top:7px;padding-bottom:7px}
 .weave-graph-host{position:absolute;z-index:2;display:flex;background:var(--weave-bg)}
@@ -134,7 +140,15 @@ export const WORKSPACE_CSS = `
 .weave-setting-range{display:flex;align-items:center;gap:12px;width:190px}.weave-setting-range input{width:130px;min-width:0}.weave-setting-range output{min-width:42px;text-align:right;color:var(--weave-accent);font-variant-numeric:tabular-nums}
 .weave-settings button:focus-visible,.weave-settings a:focus-visible,.weave-settings summary:focus-visible{outline:2px solid var(--weave-accent);outline-offset:2px}
 .weave-settings-actions{display:flex;gap:16px;align-items:center;flex-wrap:wrap;margin:24px 0}.weave-settings-actions button,.weave-settings-download,.weave-settings-forces>button{display:inline-block;padding:9px 14px;border:1px solid var(--weave-line-strong);border-radius:6px;color:var(--weave-accent);background:var(--weave-raise);text-decoration:none}
-.weave-settings-forces>button{margin-top:20px}.weave-settings-forces>button:disabled{opacity:.5}.weave-settings-locations dd{margin:6px 0 18px;overflow-wrap:anywhere;color:var(--weave-dim);font-family:var(--weave-font-mono)}
+.weave-settings-actions button{transition:transform 100ms ease,background 100ms ease}
+.weave-settings-actions button:hover{background:var(--weave-new);border-color:var(--weave-accent)}
+.weave-settings-actions button:active{transform:scale(.97)}
+.weave-settings-actions button>span{display:inline-block}
+.weave-refresh-spin{animation:weave-refresh-spin 500ms ease}
+@keyframes weave-refresh-spin{to{transform:rotate(360deg)}}
+.weave-settings-forces>button{margin-top:20px}.weave-settings-forces>button:disabled{opacity:.5}.weave-settings-locations dd{margin:6px 0 18px;overflow-wrap:anywhere;color:var(--weave-dim);font-family:var(--weave-mono)}
+.weave-settings-locations code{display:block;padding:10px 12px;background:var(--weave-bg);border:1px solid var(--weave-line);border-radius:var(--weave-radius);font-family:var(--weave-mono);white-space:pre-wrap}
+@media(prefers-reduced-motion:reduce){.weave-settings-actions button{transition:none}.weave-settings-actions button:active{transform:none}.weave-refresh-spin{animation:none}}
 .weave-settings details summary{cursor:pointer;padding:12px 0}.weave-settings .weave-key-row{gap:16px;align-items:baseline}.weave-settings .weave-key-row kbd{min-width:150px;color:var(--weave-accent)}
 @media(max-width:650px){.weave-settings{grid-template-columns:1fr;grid-template-rows:auto auto minmax(0,1fr)}.weave-settings nav{border-right:0;border-bottom:1px solid var(--weave-line);padding:8px 16px}.weave-settings nav select{width:100%;max-width:none}.weave-settings section{padding:20px}.weave-setting-row{align-items:flex-start;gap:12px}.weave-settings select{max-width:170px}.weave-setting-range{width:140px}.weave-setting-range input{width:90px}}
 `;

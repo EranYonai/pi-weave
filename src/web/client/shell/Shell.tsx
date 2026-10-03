@@ -4,7 +4,7 @@ import type { GraphPayload, NotePayload } from "../../shared/wire";
 import { activePane, activeTab, activateTab, closePane, closeTab, focusDocument, initialLayout, reorderTab, moveTab, navigateTab, openDocument, openWithPreferences, restoreWorkspace, openGraph, parseWorkspaceLayout, splitPane, tabDropSource, tabSelection } from "../../shared/workspace";
 import type { Pane, WorkspaceLayout, WorkspaceTab } from "../../shared/workspace";
 import { fetchJson } from "../api.dom";
-import { openNote, saveNote } from "../api";
+import { createNote, fetchGraph, openNote, saveNote } from "../api";
 import { Graph } from "../graph/Graph";
 import { schemeOf, watchScheme } from "../graph/scheme";
 import { createSigmaRenderer } from "../graph/renderer.dom";
@@ -51,13 +51,18 @@ function RecentList(props: { visits: readonly string[]; graph: GraphPayload | nu
 function DocumentView(props: {
   preferences: Preferences; tab: WorkspaceTab; graph: GraphPayload | null; drafts: DraftStore; revision: number;
   onSelect: (id: string, newTab?: boolean) => void; onSave: (slug: string, body: string) => Promise<boolean>;
-  now: number; onScroll: (value: number) => void; onSearch: () => void; onGraph: () => void;
+  now: number; onScroll: (value: number) => void; onSearch: () => void; onGraph: () => void; onCreate: (title: string) => Promise<boolean>;
 }) {
   const id = tabSelection(props.tab);
   const slug = id?.startsWith("note:") ? id.slice(5) : null;
   const [loaded, setLoaded] = useState<{ slug: string; note: NotePayload | null; failed: boolean; version: number } | null>(null);
   const element = useRef<HTMLDivElement | null>(null);
   const savedScroll = useRef(props.tab.scroll);
+  const [newNote, setNewNote] = useState(false);
+  const [title, setTitle] = useState("");
+  const [creating, setCreating] = useState(false);
+  const titleInput = useRef<HTMLInputElement | null>(null);
+  useLayoutEffect(() => { if (newNote) titleInput.current?.focus(); }, [newNote]);
   useEffect(() => {
     if (slug === null) return;
     const version = props.drafts.nextLoadVersion();
@@ -69,11 +74,22 @@ function DocumentView(props: {
   useLayoutEffect(() => {
     const note = element.current?.querySelector<HTMLElement>(".weave-note");
     if (note !== null && note !== undefined) note.scrollTop = savedScroll.current;
+    if (slug !== null && props.drafts.get(slug) !== null) element.current?.querySelector<HTMLTextAreaElement>(".weave-note-editor")?.focus();
   }, [id, payload?.note?.note.slug]);
   if (id === null) return <div class="weave-welcome">
     <span class="weave-welcome-mark" aria-hidden="true">✳</span><h1>Your knowledge, connected.</h1>
-    <p>Open a note from the sidebar, find something you remember, or follow a connection.</p>
-    <div><button type="button" onClick={props.onSearch}>Search workspace <kbd>⌘K</kbd></button><button type="button" onClick={props.onGraph}>Explore graph</button></div>
+    <p>Ask your agent to write, organize, and connect your notes. Browse that knowledge here, or start a note yourself.</p>
+    <div><button type="button" onClick={props.onSearch}>Search workspace <kbd>⌘K</kbd></button><button type="button" onClick={props.onGraph}>Explore graph</button><button type="button" onClick={() => setNewNote(true)}>New note</button></div>
+    {newNote ? <form class="weave-new-note" onSubmit={(event) => {
+      event.preventDefault();
+      if (creating || !title.trim()) return;
+      setCreating(true);
+      void props.onCreate(title.trim()).finally(() => setCreating(false));
+    }} onKeyDown={(event) => { if (event.key === "Escape") { event.stopPropagation(); if (!creating) setNewNote(false); } }}>
+      <label for={`new-note-${props.tab.id}`}>Note title</label>
+      <input id={`new-note-${props.tab.id}`} ref={titleInput} required value={title} disabled={creating} onInput={(event) => setTitle(event.currentTarget.value)} />
+      <div><button type="submit" disabled={creating || !title.trim()}>{creating ? "Creating…" : "Create note"}</button><button type="button" disabled={creating} onClick={() => setNewNote(false)}>Cancel</button></div>
+    </form> : null}
   </div>;
   const missing = props.graph !== null && !props.graph.model.nodes.some((node) => node.id === id);
   if (missing || (payload?.failed && props.drafts.isDirty(slug ?? ""))) {
@@ -185,6 +201,16 @@ export function Shell(props: ShellProps) {
     const result = await saveNote(fetchJson, slug, body);
     if (!result.ok) { window.alert(result.message); return false; }
     setRevision((value) => value + 1); workspace.current?.refresh(); return true;
+  };
+  const create = async (title: string, paneId: string): Promise<boolean> => {
+    const result = await createNote(fetchJson, title);
+    if (!result.ok) { window.alert(result.message); return false; }
+    const graph = await fetchGraph(fetchJson);
+    setData((current) => ({ ...current, graph: graph.ok ? graph.data : null, graphFailed: !graph.ok }));
+    drafts.open(result.data.note.slug, result.data.note.body);
+    change(openDocument(live.current.layout, `note:${result.data.note.slug}`, { paneId }));
+    workspace.current?.refresh();
+    return true;
   };
   useEffect(() => drafts.subscribe(() => setDraftRevision((value) => value + 1)), [drafts]);
   useEffect(() => {
@@ -399,7 +425,7 @@ export function Shell(props: ShellProps) {
       <div class="weave-pane-content" role="tabpanel" tabIndex={-1} id={`panel-${group.id}`} aria-labelledby={`tab-${current.id}`} {...(current.kind === "graph" ? { ref: graphSlot } : {})}>
         {current.kind === "document" ? <DocumentView key={`${current.id}:${current.cursor}:${tabSelection(current)}`} preferences={layout.preferences} tab={current} graph={data.graph} drafts={drafts} revision={revision} now={now}
           onSelect={(id, newTab) => select(id, newTab, group.id)} onSave={save} onScroll={(value) => rememberScroll(current.id, value)}
-          onSearch={() => setOverlay("search")} onGraph={showGraph} /> : null}
+          onSearch={() => setOverlay("search")} onGraph={showGraph} onCreate={(title) => create(title, group.id)} /> : null}
       </div>
     </section>;
   };

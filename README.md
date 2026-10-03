@@ -157,8 +157,10 @@ Renaming or moving a note rewrites its inbound links automatically, so its backl
 Browse and search your notes, follow links, or explore the graph. Use tabs and split panes to keep related notes side by side.
 Notes update within a couple of seconds as your agent writes them.
 
+Ask your agent to write, organize, and connect notes, or click **New note** on an empty tab to start one yourself.
 Click **Edit** to change Markdown and `⌘S` / `Ctrl S` to save. Your original words in `## Raw` stay intact.
-Tabs, layout, and appearance restore when you return; unsaved drafts last only while the browser stays open.
+Tabs, layout, and settings restore when you return and survive package updates for the same vault and repository;
+unsaved drafts last only while the browser stays open.
 
 Use **Settings** for themes, fonts, layout, and a manual vault ZIP backup. Press `?` for keyboard shortcuts.
 `/weave-view tui` opens a smaller, read-only terminal explorer in Pi.

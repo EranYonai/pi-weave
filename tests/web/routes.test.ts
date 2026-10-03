@@ -844,6 +844,29 @@ describe("GET /api/note/:slug", () => {
 });
 
 describe("vault tree mutations", () => {
+  it("creates empty human-authored notes without overwriting a matching title", async () => {
+    const { server } = await bootFresh();
+    for (const slug of ["alpha-note-2", "alpha-note-3"]) {
+      const response = await post(server, "/api/notes", { title: " Alpha Note " });
+      expect(response.status).toBe(201);
+      const { note } = await response.json() as NotePayload;
+      expect(note).toMatchObject({ slug, title: "Alpha Note", body: "", source: "human", tags: [] });
+      expect((await get(server, `/api/note/${slug}`)).status).toBe(200);
+    }
+    const original = await (await get(server, "/api/note/alpha-note")).json() as NotePayload;
+    expect(original.note.body).toBe("the body of alpha");
+    const graph = await (await get(server, "/api/graph")).json() as GraphPayload;
+    expect(graph.model.nodes.some((node) => node.id === "note:alpha-note-2")).toBe(true);
+  });
+
+  it("rejects invalid new note titles before writing to the vault", async () => {
+    const { server, vaultRoot } = await bootFresh();
+    for (const body of [null, [], 1, {}, { title: 1 }, { title: "" }, { title: "  " }, { title: "Title\nsource: agent" }, { title: "Title\rnext" }]) {
+      expect((await post(server, "/api/notes", body)).status).toBe(400);
+    }
+    expect(await fs.readdir(join(vaultRoot, "notes"))).toHaveLength(2);
+  });
+
   it("renames, moves, and deletes notes and folders", async () => {
     const { server, vaultRoot } = await bootFresh();
     const createRes = await post(server, "/api/folder/new-folder", {});
