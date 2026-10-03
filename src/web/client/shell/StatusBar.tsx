@@ -1,12 +1,11 @@
 /**
  * The status bar (weave-workspace §1.2).
  *
- * Working directory, current selection, and data-as-of stamp. The
+ * Working directory and current selection. The
  * model is built by `statusBarModel`; this renders it.
  */
 
 import type { StatusBarModel } from "./shell.model";
-import { shortStamp } from "./shell.model";
 
 export function StatusBar({ model }: { model: StatusBarModel }) {
   return (
@@ -16,9 +15,6 @@ export function StatusBar({ model }: { model: StatusBarModel }) {
       </span>
       <span class="weave-status-sel" title="Current item">
         {model.selection}
-      </span>
-      <span class="weave-status-stamp" title="data as of">
-        {shortStamp(model.stamp)}
       </span>
     </footer>
   );

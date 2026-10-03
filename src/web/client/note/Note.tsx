@@ -84,6 +84,8 @@ const PREVIEW_X = "weave-preview-x";
 const PREVIEW_Y = "weave-preview-y";
 
 export interface NoteProps {
+  spellcheck?: boolean;
+  defaultEdit?: boolean;
   note: NotePayload | null;
   loadFailed: boolean;
   graph: GraphPayload | null;
@@ -233,6 +235,14 @@ export function Note(props: NoteProps) {
     }
   };
 
+  const defaultOpened = useRef<string | null>(null);
+  useEffect(() => {
+    if (note !== null && defaultOpened.current !== note.slug) {
+      defaultOpened.current = note.slug;
+      if (props.defaultEdit && drafts.get(note.slug) === null) drafts.open(note.slug, body);
+    }
+  }, [note?.slug, props.defaultEdit]);
+
   const toggleEdit = (): void => {
     if (note === null || drafts.isTaskSaving(note.slug)) return;
     if (drafts.get(note.slug) === null) drafts.open(note.slug, body);
@@ -343,7 +353,7 @@ export function Note(props: NoteProps) {
         <textarea
           class="weave-note-editor"
           aria-label={EDITOR_ARIA_LABEL}
-          spellcheck
+          spellcheck={props.spellcheck ?? true}
           value={draft.body}
           onInput={(event) => drafts.edit(note.slug, (event.target as HTMLTextAreaElement).value)}
           onKeyDown={(event) => {

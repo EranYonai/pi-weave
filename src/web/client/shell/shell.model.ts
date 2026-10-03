@@ -79,8 +79,6 @@ export const CONTEXT_EMPTY: EmptyStateCopy = {
 export interface StatusBarModel {
   readonly cwd: string;
   readonly selection: string;
-  /** `null` before the first successful graph fetch. */
-  readonly stamp: string | null;
 }
 
 /** The `—` shown where a value is genuinely absent, not zero. */
@@ -90,29 +88,11 @@ export const NO_VALUE = "—";
 export function statusBarModel(
   cwd: string,
   selectedId: string | null,
-  stamp: string | null,
 ): StatusBarModel {
   return {
     cwd: cwd === "" ? NO_VALUE : cwd,
     selection: selectedId ?? "nothing selected",
-    stamp,
   };
-}
-
-/**
- * A `generatedAt` stamp, shortened for the status bar.
- *
- * Just the `HH:MM:SS`, because the date is almost always today and the whole
- * ISO string is 24 characters of mostly-constant noise in a bar that has
- * three other things to say. A stamp that does not look like an ISO timestamp
- * is passed through untouched rather than sliced blindly — the server derives
- * it from input timestamps and is free to change that derivation, and a
- * mangled substring would be a worse lie than the full value.
- */
-export function shortStamp(stamp: string | null): string {
-  if (stamp === null) return NO_VALUE;
-  const match = /T(\d{2}:\d{2}:\d{2})/.exec(stamp);
-  return match?.[1] ?? stamp;
 }
 
 /**
@@ -151,7 +131,7 @@ export function searchHint(shortcut: string): string {
  * other. Making that unrepresentable costs nothing here and removes a whole
  * class of bug from the keyboard layer, which is the thing that opens them.
  */
-export type OverlayId = "search" | "help" | null;
+export type OverlayId = "search" | "help" | "settings" | null;
 
 /**
  * Whether a platform string looks like an Apple one.

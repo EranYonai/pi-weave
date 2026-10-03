@@ -34,7 +34,7 @@
  * the root `tsconfig.json` project compiles the tests.
  */
 
-import { computeLayout } from "../../shared/layout";
+import { computeLayout, FORCES } from "../../shared/layout";
 import type { LayoutOptions, Point } from "../../shared/layout";
 import type { WireGraphEdge, WireGraphNode } from "../../shared/wire";
 
@@ -164,7 +164,7 @@ export function graphShapeKey(nodes: readonly WireGraphNode[], edges: readonly W
     sum = (sum + h) >>> 0;
   }
   const parts = [nodes.length, edges.length, xor >>> 0, sum].map((n) => n.toString(16));
-  return parts.join("-");
+  return [...parts, hashId(JSON.stringify(FORCES)).toString(16)].join("-");
 }
 
 /**

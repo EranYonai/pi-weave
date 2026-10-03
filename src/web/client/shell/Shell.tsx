@@ -1,7 +1,7 @@
 /** Shared browser/desktop workspace: one data source, two optional tab groups. */
-import { useEffect, useLayoutEffect, useRef, useState } from "preact/hooks";
+import { useEffect, useLayoutEffect, useRef, useState, useMemo } from "preact/hooks";
 import type { GraphPayload, NotePayload } from "../../shared/wire";
-import { activePane, activeTab, activateTab, closePane, closeTab, focusDocument, initialLayout, moveTab, navigateTab, openDocument, openGraph, parseWorkspaceLayout, splitPane, tabDropSource, tabSelection } from "../../shared/workspace";
+import { activePane, activeTab, activateTab, closePane, closeTab, focusDocument, initialLayout, reorderTab, moveTab, navigateTab, openDocument, openWithPreferences, restoreWorkspace, openGraph, parseWorkspaceLayout, splitPane, tabDropSource, tabSelection } from "../../shared/workspace";
 import type { Pane, WorkspaceLayout, WorkspaceTab } from "../../shared/workspace";
 import { fetchJson } from "../api.dom";
 import { openNote, saveNote } from "../api";
@@ -19,15 +19,18 @@ import { startWorkspace, watchNote } from "../workspace";
 import type { WorkspaceHandle } from "../workspace";
 import { ContextRail } from "./ContextRail";
 import { deeplinkSelection, formatHash } from "./deeplink.model";
+import { Settings } from "./Settings";
+import type { Preferences } from "../../shared/preferences";
+import { THEMES } from "../../shared/themes";
 import { HelpOverlay } from "./HelpOverlay";
 import { watchKeys } from "./keys";
 import { COLUMN_FOCUS_SELECTORS, TREE_FILTER_SELECTOR, focusSelector, runShellAction } from "./keys.model";
 import { StatusBar } from "./StatusBar";
 import type { OverlayId } from "./shell.model";
 import { NOTE_DRAG_TYPE, noteDropId, TICK_MS, graphClickOpensTab, looksApple, recentEntries, recordVisit, searchHint, searchShortcut, statusBarModel } from "./shell.model";
-import { cycleTheme, effectiveScheme, loadTheme, saveTheme, themeAttr, themeButton } from "./theme.model";
+import { toggleTheme, effectiveScheme, loadTheme, saveTheme, themeButton } from "./theme.model";
 
-export interface ShellProps { cwd: string; initialWidth: number; platform: string; tuner?: boolean }
+export interface ShellProps { cwd: string; initialWidth: number; platform: string }
 
 function titleOf(tab: WorkspaceTab, graph: GraphPayload | null): string {
   if (tab.kind === "graph") return "Graph view";
@@ -46,7 +49,7 @@ function RecentList(props: { visits: readonly string[]; graph: GraphPayload | nu
 
 /** A tab view can unmount; the shared draft store outlives it. */
 function DocumentView(props: {
-  tab: WorkspaceTab; graph: GraphPayload | null; drafts: DraftStore; revision: number;
+  preferences: Preferences; tab: WorkspaceTab; graph: GraphPayload | null; drafts: DraftStore; revision: number;
   onSelect: (id: string, newTab?: boolean) => void; onSave: (slug: string, body: string) => Promise<boolean>;
   now: number; onScroll: (value: number) => void; onSearch: () => void; onGraph: () => void;
 }) {
@@ -87,7 +90,7 @@ function DocumentView(props: {
   return <div class="weave-document" ref={element} onScrollCapture={(event) => {
     const target = event.target as HTMLElement;
     if (target.classList.contains("weave-note")) { savedScroll.current = target.scrollTop; props.onScroll(target.scrollTop); }
-  }}><Note note={payload?.note ?? null} loadFailed={payload?.failed ?? false} loadVersion={payload?.version ?? 0} graph={props.graph} selectedId={id}
+  }}><Note spellcheck={props.preferences.spellcheck} defaultEdit={props.preferences.defaultEdit} note={payload?.note ?? null} loadFailed={payload?.failed ?? false} loadVersion={payload?.version ?? 0} graph={props.graph} selectedId={id}
     onSelect={props.onSelect} onOpen={(noteSlug) => void openNote(fetchJson, noteSlug).then((result) => {
       if (!result.ok) window.alert(result.message); else if (!result.data.opened) window.alert("Could not open the note in an editor.");
     })} onSave={props.onSave} drafts={props.drafts} idPrefix={props.tab.id} now={props.now} /></div>;
@@ -119,12 +122,14 @@ export function Shell(props: ShellProps) {
   const [width, setWidth] = useState(props.initialWidth);
   const [scheme, setScheme] = useState(() => schemeOf(window));
   const [ready, setReady] = useState(false);
+  const [info, setInfo] = useState({ version: "", vaultRoot: "" });
   const [persistError, setPersistError] = useState(false);
   const [revision, setRevision] = useState(0);
   const [, setDraftRevision] = useState(0);
   const [graphSelection, setGraphSelection] = useState<string | null>(null);
   const [graphPreviewId, setGraphPreviewId] = useState<string | null>(null);
   const draggedTab = useRef<string | null>(null);
+  const [dropTab, setDropTab] = useState<{ paneId: string; before: string | null } | null>(null);
   const [dropPane, setDropPane] = useState<string | null>(null);
   const [recentMode, setRecentMode] = useState(false);
   const [visits, setVisits] = useState<readonly string[]>([]);
@@ -140,7 +145,9 @@ export function Shell(props: ShellProps) {
   const [graphBox, setGraphBox] = useState({ left: 0, top: 0, width: 600, height: 500 });
   const pane = activePane(layout);
   const tab = activeTab(layout);
-  const theme = themeButton(layout.theme);
+  const theme = themeButton(layout.theme, scheme, layout.preferences);
+  const palette = effectiveScheme(layout.theme, scheme, layout.preferences);
+  const graphTheme = useMemo(() => ({ theme: palette, accent: layout.preferences.accent }), [palette, layout.preferences.accent]);
   const selectedId = tab.kind === "graph" ? graphSelection : tabSelection(tab);
   const graphPane = layout.panes.find((group) => group.tabs.some((entry) => entry.id === group.activeTab && entry.kind === "graph"));
   const graphVisible = graphPane !== undefined && (width >= 850 || graphPane.id === layout.activePane);
@@ -157,7 +164,7 @@ export function Shell(props: ShellProps) {
     if (mayRemoveDrafts(drafts, live.current.layout, next, () => window.confirm(DISCARD_PROMPT))) setLayout(next);
   };
   const select = (id: string | null, newTab = false, paneId = layout.activePane, keepSidebar = false): void => {
-    const next = openDocument(layout, id, { newTab, paneId });
+    const next = (id === null ? openDocument : openWithPreferences)(layout, id, { newTab, paneId });
     change(width < 850 && !keepSidebar ? { ...next, treeVisible: false } : next);
     setCompactContext(false);
   };
@@ -189,13 +196,14 @@ export function Shell(props: ShellProps) {
     void (async () => {
       try {
         const response = await fetchJson("/api/workspace-state");
-        const value = await response.json() as { viewId?: unknown; layout?: unknown };
+        const value = await response.json() as { viewId?: unknown; layout?: unknown; info?: { version: string; vaultRoot: string } };
         if (!current) return;
         if (response.ok && typeof value.viewId === "string") {
           viewId.current = value.viewId;
+          if (value.info) setInfo(value.info);
           const restored = parseWorkspaceLayout(value.layout);
           if (restored) {
-            setLayout(restored);
+            setLayout(restoreWorkspace(restored));
             setVisits(restored.panes.flatMap((pane) => pane.tabs.flatMap((tab) => tab.history)).reduce<readonly string[]>(recordVisit, []));
           }
         } else setPersistError(true);
@@ -214,11 +222,11 @@ export function Shell(props: ShellProps) {
   useEffect(() => {
     if (!ready) return;
     history.replaceState(null, "", formatHash(selectedId));
-    const attr = themeAttr(layout.theme);
-    if (attr === null) delete document.documentElement.dataset.weaveTheme;
-    else document.documentElement.dataset.weaveTheme = attr;
+    document.documentElement.dataset.weaveTheme = palette;
+    document.documentElement.dataset.weaveScheme = THEMES[palette].scheme;
+    document.documentElement.dataset.weaveAccent = layout.preferences.accent;
     saveTheme(localStorage, layout.theme);
-  }, [ready, selectedId, layout.theme]);
+  }, [ready, selectedId, layout.theme, palette, layout.preferences.accent]);
   const pendingSave = useRef(Promise.resolve());
   useEffect(() => {
     if (!ready || !viewId.current) return;
@@ -265,7 +273,7 @@ export function Shell(props: ShellProps) {
         else live.current.select(null);
       },
       closeTab: () => { const current = live.current.layout; change(closeTab(current, current.activePane, activeTab(current).id)); },
-      cycleTheme: () => setLayout((current) => ({ ...current, theme: cycleTheme(current.theme) })),
+      toggleTheme: () => setLayout((current) => ({ ...current, theme: toggleTheme(current.theme, schemeOf(window), current.preferences) })),
       focusSelector: (selector) => {
         if (selector === COLUMN_FOCUS_SELECTORS.graph) setLayout((current) => ({ ...openGraph(current), ...(window.innerWidth < 850 ? { treeVisible: false } : {}) }));
         else if (selector === COLUMN_FOCUS_SELECTORS.tree || selector === TREE_FILTER_SELECTOR) setLayout((current) => ({ ...current, treeVisible: true }));
@@ -304,6 +312,7 @@ export function Shell(props: ShellProps) {
     if (tabDropSource(layout, paneId, draggedTab.current) === null && !event.dataTransfer?.types.includes(NOTE_DRAG_TYPE)) return;
     event.preventDefault();
     if (event.dataTransfer) event.dataTransfer.dropEffect = draggedTab.current === null ? "copy" : "move";
+    setDropTab(null);
     setDropPane(paneId);
   };
   const tabDrop = (paneId: string, event: DragEvent): void => {
@@ -318,6 +327,20 @@ export function Shell(props: ShellProps) {
     });
     draggedTab.current = null;
     setDropPane(null);
+    setDropTab(null);
+  };
+  const reorderDragOver = (pane: Pane, before: string | null, event: DragEvent): void => {
+    if (!pane.tabs.some((tab) => tab.id === draggedTab.current)) return;
+    event.preventDefault(); event.stopPropagation();
+    event.dataTransfer!.dropEffect = "move";
+    setDropPane(null); setDropTab({ paneId: pane.id, before });
+  };
+  const reorderDrop = (pane: Pane, event: DragEvent): void => {
+    const id = draggedTab.current;
+    if (id === null || !pane.tabs.some((tab) => tab.id === id)) return;
+    event.preventDefault(); event.stopPropagation();
+    setLayout((current) => reorderTab(current, pane.id, id, dropTab?.paneId === pane.id ? dropTab.before : null));
+    draggedTab.current = null; setDropTab(null); setDropPane(null);
   };
   const renderPane = (group: Pane) => {
     const current = group.tabs.find((entry) => entry.id === group.activeTab)!;
@@ -327,14 +350,27 @@ export function Shell(props: ShellProps) {
       onDragLeave={(event) => { if (!event.currentTarget.contains(event.relatedTarget as Node | null)) setDropPane(null); }}
       hidden={width < 850 && !isActive} onFocusCapture={() => { if (!isActive) setLayout((value) => ({ ...value, activePane: group.id })); }}
       onPointerDown={() => { if (!isActive) setLayout((value) => ({ ...value, activePane: group.id })); }}>
-      <div class="weave-tabs" role="tablist" aria-label="Open documents">
-        {group.tabs.map((entry) => <div key={entry.id} class={`weave-tab${entry.id === current.id ? " weave-tab-active" : ""}`}>
+      <div class="weave-tabs" role="tablist" aria-label="Open documents" onDragOver={(event) => reorderDragOver(group, null, event)} onDrop={(event) => reorderDrop(group, event)}>
+        {group.tabs.map((entry) => <div key={entry.id} class={`weave-tab${entry.id === current.id ? " weave-tab-active" : ""}${dropTab?.paneId === group.id && dropTab.before === entry.id ? " weave-tab-drop-before" : ""}${dropTab?.paneId === group.id && dropTab.before === null && entry === group.tabs.at(-1) ? " weave-tab-drop-after" : ""}`}
+          onDragOver={(event) => {
+            const bounds = event.currentTarget.getBoundingClientRect();
+            const before = event.clientX < bounds.left + bounds.width / 2 ? entry.id : group.tabs[group.tabs.indexOf(entry) + 1]?.id ?? null;
+            reorderDragOver(group, before, event);
+          }} onDrop={(event) => reorderDrop(group, event)}>
           <button type="button" role="tab" title={titleOf(entry, data.graph)} id={`tab-${entry.id}`} aria-selected={entry.id === current.id} aria-controls={`panel-${group.id}`} tabIndex={entry.id === current.id ? 0 : -1}
-            draggable={layout.panes.length === 2}
+            draggable
             onDragStart={(event) => { draggedTab.current = entry.id; event.dataTransfer!.effectAllowed = "move"; event.dataTransfer!.setData("application/x-weave-tab", entry.id); }}
             onClick={() => setLayout(activateTab(layout, group.id, entry.id))}
             onKeyDown={(event) => {
               const offset = event.key === "ArrowRight" ? 1 : event.key === "ArrowLeft" ? -1 : 0;
+              if (offset && event.altKey && !event.ctrlKey && !event.metaKey) {
+                event.preventDefault(); event.stopPropagation();
+                const index = group.tabs.indexOf(entry);
+                const before = offset < 0 ? group.tabs[Math.max(0, index - 1)]!.id : group.tabs[index + 2]?.id ?? null;
+                setLayout(reorderTab(layout, group.id, entry.id, before));
+                requestAnimationFrame(() => document.getElementById(`tab-${entry.id}`)?.focus());
+                return;
+              }
               if (!offset && event.key !== "Home" && event.key !== "End") return;
               event.preventDefault();
               const index = event.key === "Home" ? 0 : event.key === "End" ? group.tabs.length - 1 : (group.tabs.indexOf(entry) + offset + group.tabs.length) % group.tabs.length;
@@ -361,7 +397,7 @@ export function Shell(props: ShellProps) {
         </div></details>
       </div>
       <div class="weave-pane-content" role="tabpanel" tabIndex={-1} id={`panel-${group.id}`} aria-labelledby={`tab-${current.id}`} {...(current.kind === "graph" ? { ref: graphSlot } : {})}>
-        {current.kind === "document" ? <DocumentView key={`${current.id}:${current.cursor}:${tabSelection(current)}`} tab={current} graph={data.graph} drafts={drafts} revision={revision} now={now}
+        {current.kind === "document" ? <DocumentView key={`${current.id}:${current.cursor}:${tabSelection(current)}`} preferences={layout.preferences} tab={current} graph={data.graph} drafts={drafts} revision={revision} now={now}
           onSelect={(id, newTab) => select(id, newTab, group.id)} onSave={save} onScroll={(value) => rememberScroll(current.id, value)}
           onSearch={() => setOverlay("search")} onGraph={showGraph} /> : null}
       </div>
@@ -369,7 +405,7 @@ export function Shell(props: ShellProps) {
   };
 
   return <>
-    <div class="weave-workbench" ref={root} onDragEnd={() => { draggedTab.current = null; setDropPane(null); }}>
+    <div class="weave-workbench" style={{ "--weave-note-size": `${layout.preferences.fontSize}px`, "--weave-reading-width": layout.preferences.readable ? "760px" : "100%" }} ref={root} onDragEnd={() => { draggedTab.current = null; setDropPane(null); setDropTab(null); }}>
       <nav class="weave-ribbon" aria-label="Workspace tools">
         <button type="button" aria-label="Toggle notes sidebar" aria-pressed={layout.treeVisible} title="Notes" onClick={() => setLayout({ ...layout, treeVisible: !layout.treeVisible })}>▤</button>
         <button type="button" aria-label="Open graph view" title="Graph view" onClick={showGraph}>◌</button>
@@ -379,8 +415,8 @@ export function Shell(props: ShellProps) {
         <span class="weave-ribbon-space" />
         <button type="button" aria-label="Toggle context sidebar" aria-pressed={contextVisible} title="Context" onClick={() => width < 1050 ? setCompactContext(!compactContext) : setLayout({ ...layout, contextVisible: !layout.contextVisible })}>☷</button>
         <button type="button" aria-label="Refresh workspace" title="Refresh workspace" onClick={() => { workspace.current?.refresh(); setRevision((value) => value + 1); }}>↻</button>
-        <button type="button" aria-label={theme.hint} title={theme.hint} onClick={() => setLayout({ ...layout, theme: cycleTheme(layout.theme) })}>{theme.glyph}</button>
-        <button type="button" aria-label="Keyboard shortcuts" onClick={() => setOverlay("help")}>?</button>
+        <button type="button" aria-label={theme.hint} title={theme.hint} onClick={() => setLayout({ ...layout, theme: toggleTheme(layout.theme, scheme, layout.preferences) })}>{theme.glyph}</button>
+        <button type="button" aria-label="Settings" title="Settings" onClick={() => setOverlay("settings")}>⚙</button>
       </nav>
       <div class="weave-sidebar-dock weave-notes-dock" data-open={layout.treeVisible} inert={!layout.treeVisible} aria-hidden={!layout.treeVisible} style={{ "--weave-sidebar-width": `${Math.min(layout.treeWidth, width - 90)}px` }}><aside class="weave-sidebar weave-sidebar-notes" aria-label="Notes sidebar">
         <div class="weave-sidebar-heading"><button type="button" aria-pressed={!recentMode} onClick={() => setRecentMode(false)}>Files</button><button type="button" aria-pressed={recentMode} onClick={() => setRecentMode(true)}>Recent</button><button type="button" aria-label="Hide notes sidebar" onClick={() => { root.current?.querySelector<HTMLButtonElement>('[aria-label="Toggle notes sidebar"]')?.focus(); setLayout({ ...layout, treeVisible: false }); }}>«</button></div>
@@ -395,15 +431,16 @@ export function Shell(props: ShellProps) {
       </main>
       <div class="weave-sidebar-dock weave-context-dock" data-open={contextVisible} inert={!contextVisible} aria-hidden={!contextVisible} style={{ "--weave-sidebar-width": `${layout.contextWidth}px` }}><ResizeHandle label="Resize context sidebar" min={180} max={400} value={layout.contextWidth} onChange={(delta) => setLayout((value) => ({ ...value, contextWidth: Math.max(180, Math.min(400, value.contextWidth - delta)) }))} /><aside class="weave-sidebar weave-sidebar-context" aria-label="Context sidebar"><div class="weave-sidebar-heading"><strong>Context</strong><button type="button" aria-label="Hide context sidebar" onClick={() => { root.current?.querySelector<HTMLButtonElement>('[aria-label="Toggle context sidebar"]')?.focus(); setCompactContext(false); setLayout({ ...layout, contextVisible: false }); }}>»</button></div><ContextRail graph={data.graph} selectedId={selectedId} onSelect={select} /></aside></div>
       {hasGraph ? <div class="weave-graph-host" onDragOver={(event) => { if (graphPane) tabDragOver(graphPane.id, event); }} onDrop={(event) => { if (graphPane) tabDrop(graphPane.id, event); }} onDragLeave={(event) => { if (!event.currentTarget.contains(event.relatedTarget as Node | null)) setDropPane(null); }} onPointerDown={() => { if (graphPane) setLayout((current) => ({ ...current, activePane: graphPane.id })); }} onFocusCapture={() => { if (graphPane) setLayout((current) => ({ ...current, activePane: graphPane.id })); }} aria-hidden={!graphVisible} style={{ ...graphBox, visibility: graphVisible ? "visible" : "hidden", pointerEvents: graphVisible ? "auto" : "none" }}>
-        <Graph graph={data.graph} selectedId={selectedId} previewId={graphPreviewId} onSelect={selectGraph} onOpen={openGraphNode} renderer={createSigmaRenderer} storage={localStorage} host={window} scheme={effectiveScheme(layout.theme, scheme)} bootFailed={data.graphFailed} fit={fit} tuner={props.tuner === true} />
+        <Graph graph={data.graph} selectedId={selectedId} previewId={graphPreviewId} onSelect={selectGraph} onOpen={openGraphNode} renderer={createSigmaRenderer} storage={localStorage} host={window} scheme={graphTheme} forces={layout.preferences.forces} groupColors={layout.preferences.groupColors} bootFailed={data.graphFailed} fit={fit} />
       </div> : null}
     </div>
-    <div class="weave-footer"><StatusBar model={statusBarModel(props.cwd, selectedId, data.graph?.model.generatedAt ?? null)} />
+    <div class="weave-footer"><StatusBar model={statusBarModel(props.cwd, selectedId)} />
       {persistError ? <span role="status">Workspace restoration unavailable</span> : null}
       {drafts.dirtySlugs().length ? <span>{drafts.dirtySlugs().length} unsaved</span> : null}
       {width < 850 && layout.panes.length > 1 ? <button type="button" onClick={() => setLayout({ ...layout, activePane: layout.panes.find((group) => group.id !== pane.id)!.id })}>Switch pane</button> : null}
     </div>
     {overlay === "search" ? <SearchPalette graph={data.graph} onSelect={select} onClose={() => setOverlay(null)} ports={{ fetch: fetchJson }} /> : null}
+    {overlay === "settings" ? <Settings compact={width <= 650} layout={layout} info={info} cwd={props.cwd} shortcut={searchShortcut(looksApple(props.platform))} onChange={(next) => { change(next); setCompactContext(next.contextVisible); }} onRefresh={() => { workspace.current?.refresh(); setRevision((value) => value + 1); }} onClose={() => setOverlay(null)} /> : null}
     {overlay === "help" ? <HelpOverlay shortcut={searchShortcut(looksApple(props.platform))} onClose={() => setOverlay(null)} /> : null}
   </>;
 }

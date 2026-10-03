@@ -183,7 +183,7 @@ describe("graphShapeKey (§11 P3)", () => {
     // It goes into a JSON value and is compared as a string, so it must not
     // pick up a separator or grow with the graph.
     const key = graphShapeKey(repoLikeGraph().nodes, repoLikeGraph().edges);
-    expect(key).toMatch(/^[0-9a-f]+(-[0-9a-f]+){3}$/);
+    expect(key).toMatch(/^[0-9a-f]+(-[0-9a-f]+){4}$/);
     expect(key.length).toBeLessThan(48);
   });
 });

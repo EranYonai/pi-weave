@@ -95,8 +95,8 @@ describe("shellKey — the claimed shortcuts", () => {
     // Cycling colour is reversible and cheap, so it earns a bare key. Shift
     // stays exempt — the same `KeyboardEvent.key` resolution `?` relies on —
     // but the real modifiers must leave it alone.
-    expect(shellKey(key({ key: "t" }), IDLE)).toEqual({ type: "cycleTheme" });
-    expect(shellKey(key({ key: "t", shift: true }), IDLE)).toEqual({ type: "cycleTheme" });
+    expect(shellKey(key({ key: "t" }), IDLE)).toEqual({ type: "toggleTheme" });
+    expect(shellKey(key({ key: "t", shift: true }), IDLE)).toEqual({ type: "toggleTheme" });
     for (const mod of ["meta", "ctrl", "alt"] as const) {
       expect(shellKey(key({ key: "t", [mod]: true }), IDLE), mod).toBeNull();
     }
@@ -368,7 +368,7 @@ describe("runShellAction", () => {
       },
       fitGraph: () => void log.push("fit"),
       clearSelection: () => void log.push("clear"),
-      cycleTheme: () => void log.push("cycleTheme"),
+      toggleTheme: () => void log.push("toggleTheme"),
       closeTab: () => void log.push("closeTab"),
     };
   }
@@ -388,7 +388,7 @@ describe("runShellAction", () => {
       [{ type: "filterTree" }, `focus:${TREE_FILTER_SELECTOR}`],
       [{ type: "fitGraph" }, "fit"],
       [{ type: "clearSelection" }, "clear"],
-      [{ type: "cycleTheme" }, "cycleTheme"],
+      [{ type: "toggleTheme" }, "toggleTheme"],
       [{ type: "closeTab" }, "closeTab"],
     ];
     for (const [action, expected] of cases) {
@@ -432,12 +432,13 @@ describe("every action is reachable from a key", () => {
         "clearSelection",
         "closeOverlay",
         "closeTab",
-        "cycleTheme",
+        "toggleTheme",
         "filterTree",
         "fitGraph",
         "focusColumn",
         "openHelp",
         "openSearch",
+        "openSettings",
       ].sort(),
     );
   });
