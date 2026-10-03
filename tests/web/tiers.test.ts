@@ -176,8 +176,8 @@ const TIERS: readonly Tier[] = [
   },
   {
     id: "src/web/server",
-    // Node builtins and first-party code only. No harness, no npm.
-    npm: new Set(),
+    // Portable ZIP export is the sole server npm dependency.
+    npm: new Set(["fflate"]),
     imports: ["src/web/server", "src/web/shared", "src/core"],
     typeOnly: [],
     moduleExceptions: NO_EXCEPTIONS,

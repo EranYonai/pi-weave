@@ -1,4 +1,8 @@
 /** Serializable tab and pane state shared by the browser and persistence API. */
+import { isThemeChoice, THEMES } from "./themes";
+import type { ThemeChoice } from "./themes";
+import { DEFAULT_PREFERENCES, parsePreferences } from "./preferences";
+import type { Preferences } from "./preferences";
 
 export interface WorkspaceTab {
   readonly id: string;
@@ -25,7 +29,8 @@ export interface WorkspaceLayout {
   readonly contextVisible: boolean;
   readonly treeWidth: number;
   readonly contextWidth: number;
-  readonly theme: "system" | "light" | "dark";
+  readonly theme: ThemeChoice;
+  readonly preferences: Preferences;
 }
 
 const MAX_TABS = 40;
@@ -46,6 +51,7 @@ export function initialLayout(): WorkspaceLayout {
     treeWidth: 240,
     contextWidth: 240,
     theme: "system",
+    preferences: DEFAULT_PREFERENCES,
   };
 }
 
@@ -193,6 +199,16 @@ export function closePane(layout: WorkspaceLayout, paneId: string): WorkspaceLay
   return { ...layout, panes: [{ ...kept, tabs: [...kept.tabs, ...closed.tabs] }], activePane: kept.id };
 }
 
+/** Move a tab before another tab, or to the end, without changing its identity or selection. */
+export function reorderTab(layout: WorkspaceLayout, paneId: string, tabId: string, before: string | null): WorkspaceLayout {
+  const found = findTab(layout, paneId, tabId);
+  if (!found || before === tabId || before !== null && !found.pane.tabs.some((tab) => tab.id === before)) return layout;
+  const tabs = found.pane.tabs.filter((tab) => tab.id !== tabId);
+  tabs.splice(before === null ? tabs.length : tabs.findIndex((tab) => tab.id === before), 0, found.tab);
+  if (tabs.every((tab, index) => tab === found.pane.tabs[index])) return layout;
+  return { ...layout, panes: layout.panes.map((pane) => pane.id === paneId ? { ...pane, tabs } : pane) };
+}
+
 /** Accept a tab drop only in another existing pane. */
 export function tabDropSource(layout: WorkspaceLayout, targetPane: string, tabId: string | null): string | null {
   if (!layout.panes.some((pane) => pane.id === targetPane)) return null;
@@ -230,14 +246,20 @@ function boundedId(value: unknown, prefix?: "pane" | "tab"): value is string {
 }
 
 export function parseWorkspaceLayout(value: unknown): WorkspaceLayout | null {
-  if (!record(value) || !exactKeys(value, ["version", "panes", "activePane", "split", "ratio", "treeVisible", "contextVisible", "treeWidth", "contextWidth", "theme"])) return null;
+  if (!record(value) || !exactKeys(value, ["version", "panes", "activePane", "split", "ratio", "treeVisible", "contextVisible", "treeWidth", "contextWidth", "theme", ...(Object.hasOwn(value, "preferences") ? ["preferences"] : [])])) return null;
   if (value["version"] !== 1 || !Array.isArray(value["panes"]) || value["panes"].length < 1 || value["panes"].length > 2 || !boundedId(value["activePane"], "pane")) return null;
   if (value["split"] !== "right" && value["split"] !== "down") return null;
   if (typeof value["ratio"] !== "number" || !Number.isFinite(value["ratio"]) || value["ratio"] < 0.1 || value["ratio"] > 0.9) return null;
   if (typeof value["treeVisible"] !== "boolean" || typeof value["contextVisible"] !== "boolean") return null;
   if (typeof value["treeWidth"] !== "number" || !Number.isFinite(value["treeWidth"]) || value["treeWidth"] < 120 || value["treeWidth"] > 800) return null;
   if (typeof value["contextWidth"] !== "number" || !Number.isFinite(value["contextWidth"]) || value["contextWidth"] < 120 || value["contextWidth"] > 800) return null;
-  if (value["theme"] !== "system" && value["theme"] !== "light" && value["theme"] !== "dark") return null;
+  if (!isThemeChoice(value["theme"])) return null;
+  let preferences = Object.hasOwn(value, "preferences") ? parsePreferences(value["preferences"]) : DEFAULT_PREFERENCES;
+  if (preferences === null) return null;
+  const previousPreferences = value["preferences"];
+  if (value["theme"] !== "system" && (!record(previousPreferences) || !Object.hasOwn(previousPreferences, "lightTheme"))) {
+    preferences = { ...preferences, [`${THEMES[value["theme"]].scheme}Theme`]: value["theme"] };
+  }
   const ids = new Set<string>();
   let count = 0;
   let graphs = 0;
@@ -266,5 +288,23 @@ export function parseWorkspaceLayout(value: unknown): WorkspaceLayout | null {
     panes.push({ id: rawPane["id"], tabs, activeTab: rawPane["activeTab"], ...(typeof lastDocumentTab === "string" ? { lastDocumentTab } : {}) });
   }
   if (count > MAX_TABS || graphs > 1 || !panes.some((pane) => pane.id === value["activePane"])) return null;
-  return { version: 1, panes, activePane: value["activePane"], split: value["split"], ratio: value["ratio"], treeVisible: value["treeVisible"], contextVisible: value["contextVisible"], treeWidth: value["treeWidth"], contextWidth: value["contextWidth"], theme: value["theme"] };
+  return { version: 1, panes, activePane: value["activePane"], split: value["split"], ratio: value["ratio"], treeVisible: value["treeVisible"], contextVisible: value["contextVisible"], treeWidth: value["treeWidth"], contextWidth: value["contextWidth"], theme: value["theme"], preferences };
+}
+
+/** Startup choice resets navigation only; appearance and sidebar preferences survive. */
+export function restoreWorkspace(layout: WorkspaceLayout): WorkspaceLayout {
+  if (layout.preferences.startup === "restore") return layout;
+  const fresh = initialLayout();
+  return { ...layout, panes: fresh.panes, activePane: fresh.activePane };
+}
+
+/** Opening in the background preserves the active pane and tab, including from Graph. */
+export function openWithPreferences(layout: WorkspaceLayout, id: string | null, options: { newTab?: boolean; paneId?: string } = {}): WorkspaceLayout {
+  const next = openDocument(layout, id, options);
+  if (!options.newTab || layout.preferences.focusNewTabs) return next;
+  return { ...next, activePane: layout.activePane, panes: next.panes.map((pane) => {
+    const previous = layout.panes.find((item) => item.id === pane.id)!;
+    const { lastDocumentTab: _remembered, ...rest } = pane;
+    return { ...rest, activeTab: previous.activeTab, ...(previous.lastDocumentTab ? { lastDocumentTab: previous.lastDocumentTab } : {}) };
+  }) };
 }

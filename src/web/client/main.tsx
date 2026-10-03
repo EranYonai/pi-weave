@@ -13,7 +13,6 @@
 import { render } from "preact";
 import { BOOTSTRAP_ELEMENT_ID } from "../shared/wire";
 import { readBootstrap } from "./bootstrap";
-import { slidersFlag } from "./graph/tuner.model";
 import { Shell } from "./shell/Shell";
 import { installTheme } from "./shell/theme";
 import { loadTheme, themeAttr } from "./shell/theme.model";
@@ -34,9 +33,7 @@ if (host !== null) {
       cwd={boot.cwd}
       initialWidth={window.innerWidth}
       platform={navigator.platform}
-      // The fourth DOM read that cannot be injected further up. `slidersFlag`
-      // owns the parsing, so this stays a read and the decision stays tested.
-      tuner={slidersFlag(window.location.search)}
+
     />,
     host,
   );

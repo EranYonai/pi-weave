@@ -1,3 +1,5 @@
+import { THEMES, ACCENTS } from "../../shared/themes";
+import type { PaletteChoice } from "../../shared/themes";
 import { WORKSPACE_CSS } from "./workspace.css";
 
 /**
@@ -45,96 +47,19 @@ import { WORKSPACE_CSS } from "./workspace.css";
  * real `document` satisfies it structurally.
  */
 
-/**
- * The theme.
- *
- * Dark-first, per the task's brief and against `page.ts`'s light-first
- * fallback. That inversion is intentional and safe: this sheet is installed
- * *after* the server's, so its `:root` wins on equal specificity, and the
- * light branch is re-stated under `prefers-color-scheme: light`. The server
- * block keeps doing its real job — painting a correct background before this
- * bundle has parsed — while the palette a user actually looks at is decided
- * here.
- *
- * And since `shell/theme.model.ts`, the palette a user looks at is a
- * *choice*: `:root` carries dark, the light tokens sit in
- * {@link LIGHT_TOKENS} and are applied by a `data-weave-theme` attribute
- * (a manual selection) and by the media query narrowed with
- * `:root:not([data-weave-theme="dark"])` (the system default). Clearing the
- * attribute returns the workspace to following the OS with no client-side
- * listener involved. The graph follows the same resolution through
- * `theme.model.ts`'s `effectiveScheme`, because its WebGL palette cannot
- * read any of this.
- *
- * ## "Dense but calm" (§1.2)
- *
- * The sketch is an information-dense IDE surface, not a marketing page, so
- * the rules below deliberately avoid the defaults that produce the opposite:
- * no card shadows, no 24 px gutters, no rounded panels floating on a
- * contrasting background. Density comes from a 13 px base, 4–10 px padding
- * and 1 px hairline rules; calm comes from a **single** accent colour used
- * only for focus and selection, three greys doing all the structural work,
- * and no borders where a background change already separates two regions.
- *
- * ## Where the hexes come from
- *
- * Both schemes are Catppuccin (the user's call): dark is **Macchiato**, light
- * is **Latte**, mapped onto the desk-and-page split with one structural rule
- * shared by both — the note page is the `crust` ground, rails and bars are
- * `mantle`, the desk and graph canvas are `base`, raised controls and
- * hairlines are `surface0` with `surface1` for the strong hairline. Light's
- * topology is therefore an exact mirror of dark's (a darker sheet on a lighter
- * desk), so a token means the same thing in either scheme:
- *
- * - **Dark, Macchiato** — every value a stock Catppuccin label: `base #24273A`
- *   desk, `mantle #1E2030` panel, `crust #181926` page, `surface0 #363A4F`
- *   raise/hairline, `surface1 #494D64` strong hairline; text `#CAD3F5`,
- *   dims `#A5ADCB`/`#939AB7`, and **Mauve `#C6A0F6` as the single accent
- *   voice** (7.5:1 on panel) with Green/Yellow/Red as status.
- *
- * - **Light, Latte** — grounds are stock labels again (`base #EFF1F5` desk,
- *   `mantle #E6E9EF` panel, `crust #DCE0E8` page, `surface0 #CCD0DA`,
- *   `surface1 #BCC0CC`), and text/status hue-preservingly *deepened* to hold
- *   4.5:1 on the darkest grounds Latte owns: `dim #56586A` (from Subtext0,
- *   same hue 233°), `faint #606274` (Overlay2), `accent #7113EC` (Mauve),
- *   `ok #28641B`, `warn #7C4F10`, `bad #B20D30`. Text `#4C4F69` is stock
- *   Text. The hue-preserving deepening keeps the palette recognisably
- *   Catppuccin where blending toward neutral would grey it away.
- *
- * Measured ratios (WCAG, on the darkest grounds — `raise`/`surface0` for
- * light text tokens, `panel`/`mantle` for dark): light fg 4.5, dim 4.5,
- * accent 4.5, ok 4.6, warn 4.6, bad 4.5, each also ≥ 4.5 on the brighter
- * grounds; dark faint 4.6 on `surface0` and 5.8 on panel, dim 5.0 on
- * `surface0`, fg 7.6. The one below-4.5 site is `faint` *on* `raise`
- * (light 3.9) — every use is non-text there (scrollbar thumb, ghost
- * borders, icon glyphs), where WCAG asks 3:1.
- *
- * Status colours keep each scheme's temperature at ≥ 4.5:1 text contrast —
- * measured, not eyeballed (dark `#a6da95`/`#1e2030` 10.0, `#eed49f` 11.2,
- * `#ed8796` 6.5; light values are the deepened derivatives above).
- *
- * The graph cannot read these variables (WebGL — `graph.model.ts`), so
- * `GRAPH_PALETTE` mirrors the eight palette slots as literals; the test that makes
- * that copy safe asserts every mirrored hex appears in this string.
- */
-/**
- * The light-block tokens, interpolated into both selectors that need them —
- * see the {@link THEME_CSS} branch rules.
- */
-const LIGHT_TOKENS = `
-    --weave-bg:#eff1f5;--weave-panel:#e6e9ef;--weave-raise:#ccd0da;--weave-fg:#4c4f69;--weave-dim:#56586a;
-    --weave-faint:#606274;--weave-line:#ccd0da;--weave-line-strong:#bcc0cc;
-    --weave-accent:#7113ec;--weave-ok:#28641b;--weave-warn:#7c4f10;--weave-bad:#b20d30;
-    --weave-new:rgba(113,19,236,.10);
-    --weave-page:#dce0e8;
-  `;
+/** Palette declarations are shared with the WebGL graph. */
+function paletteTokens(id: PaletteChoice): string {
+  const { scheme, colors } = THEMES[id];
+  return Object.entries(colors).map(([key, value]) => `--weave-${key}:${value};`).join("")
+    + `--weave-new:color-mix(in srgb,var(--weave-accent) ${scheme === "light" ? 10 : 16}%,transparent);`
+    + `color-scheme:${scheme};`
+    + `--weave-vignette:radial-gradient(ellipse at center,transparent 55%,${scheme === "light" ? "rgba(0,0,0,.10)" : "rgba(0,0,0,.22)"} 100%);`
+    + `--weave-scrim:rgba(0,0,0,${scheme === "light" ? ".30" : ".45"});`;
+}
 
 export const THEME_CSS = `
 :root{
-  --weave-bg:#24273a;--weave-panel:#1e2030;--weave-raise:#363a4f;--weave-fg:#cad3f5;--weave-dim:#a5adcb;
-  --weave-faint:#939ab7;--weave-line:#363a4f;--weave-line-strong:#494d64;
-  --weave-accent:#c6a0f6;--weave-ok:#a6da95;--weave-warn:#eed49f;--weave-bad:#ed8796;
-  --weave-new:rgba(198,160,246,.16);
+  ${paletteTokens("dark")}
   --weave-row:26px;--weave-gutter:10px;
   /* The reading gutter is note-only: prose wants a wider margin than chrome.
      Rails, rows and bars keep --weave-gutter, so density is a property of the
@@ -148,7 +73,7 @@ export const THEME_CSS = `
      third face was tried (serif prose) and withdrawn at the user's call; two
      voices read calmer than three. The CSP allows nothing fetched, and both
      are system stacks. */
-  --weave-page:#181926;
+
   /* Two radii, per the plan: hairline-sharp for controls (a 4 px corner is
      the difference between a control and a card), one softer corner for the
      two overlays that float above the grid. Tag pills are 999px — a capsule
@@ -183,20 +108,13 @@ export const THEME_CSS = `
   --weave-px-row:12px;--weave-px-base:13px;--weave-px-body:13.5px;
   --weave-px-subhead:14px;--weave-px-title:15px;--weave-px-display:20px;
 }
-/* The light tokens, shared verbatim by the attribute branch and the media
-   query below — one const interpolated twice is the only way CSS gets
-   "these are the same colours" without a preprocessor. Which branch wins is
-   theme.model.ts's business: the attribute carries a *manual* choice, the
-   media query the system default, and the :not() is what lets the two coexist
-   without a manual "dark" being dragged back into light by the OS. */
 @media (prefers-color-scheme: light){
-  :root:not([data-weave-theme="dark"]){
-    ${LIGHT_TOKENS}
-  }
+  :root:not([data-weave-theme]){${paletteTokens("light")}}
 }
-:root[data-weave-theme="light"]{
-  ${LIGHT_TOKENS}
-}
+${(Object.keys(THEMES) as PaletteChoice[]).map((id) => `:root[data-weave-theme="${id}"]{${paletteTokens(id)}}`).join("\n")}
+${Object.entries(ACCENTS).map(([id, colors]) => ["light", "dark"].map((scheme) =>
+  `:root[data-weave-scheme="${scheme}"][data-weave-accent="${id}"]{--weave-accent:${colors[scheme as "light" | "dark"]};}`
+).join("\n")).join("\n")}
 body{font-size:var(--weave-px-base)}
 #app{height:100%;display:grid;grid-template-rows:minmax(0,1fr) auto;background:var(--weave-bg)}
 
@@ -473,15 +391,7 @@ body{font-size:var(--weave-px-base)}
    faster than a dark one under a black veil. */
 .weave-graph-canvas::after{
   content:"";position:absolute;inset:0;pointer-events:none;
-  background:radial-gradient(ellipse at center,transparent 55%,rgba(0,0,0,.22) 100%);
-}
-:root[data-weave-theme="light"] .weave-graph-canvas::after{
-  background:radial-gradient(ellipse at center,transparent 55%,rgba(76,79,105,.10) 100%);
-}
-@media (prefers-color-scheme: light){
-  :root:not([data-weave-theme="dark"]) .weave-graph-canvas::after{
-    background:radial-gradient(ellipse at center,transparent 55%,rgba(76,79,105,.10) 100%);
-  }
+  background:var(--weave-vignette);
 }
 .weave-graph-empty{
   margin:0;padding:14px var(--weave-gutter);color:var(--weave-dim);
@@ -505,32 +415,6 @@ body{font-size:var(--weave-px-base)}
 .weave-graph-count{
   margin:0;padding:3px var(--weave-gutter);font-size:var(--weave-px-caption);color:var(--weave-faint);
   border-top:1px solid var(--weave-line);
-}
-
-/* the hidden force tuner (?sliders=1, docs/weave-workspace.md 15.7) --------- */
-/* Absolutely positioned over the canvas rather than given a grid row: the
-   panel is a debug overlay and must not change the layout the graph is being
-   judged in — moving the canvas while tuning it would falsify the very thing
-   being looked at. */
-.weave-tuner{
-  position:absolute;top:8px;right:8px;z-index:3;width:232px;max-height:calc(100% - 16px);
-  overflow:auto;display:flex;flex-direction:column;gap:6px;padding:9px 10px;
-  font-size:var(--weave-px-caption);color:var(--weave-fg);
-  background:var(--weave-panel);border:1px solid var(--weave-line-strong);
-  border-radius:var(--weave-radius);
-}
-.weave-tuner-title{margin:0;color:var(--weave-faint);letter-spacing:.04em;text-transform:uppercase}
-.weave-tuner-row{display:flex;flex-direction:column;gap:2px;cursor:pointer}
-.weave-tuner-label{display:flex;justify-content:space-between;gap:8px;color:var(--weave-dim)}
-.weave-tuner-label b{color:var(--weave-accent);font-weight:600;font-variant-numeric:tabular-nums}
-.weave-tuner-row input{width:100%;margin:0;accent-color:var(--weave-accent)}
-.weave-tuner-toggle{display:flex;align-items:center;gap:6px;cursor:pointer;color:var(--weave-dim)}
-.weave-tuner-toggle input{margin:0;accent-color:var(--weave-accent)}
-.weave-tuner-actions{display:flex;gap:6px;margin-top:2px;flex-wrap:wrap}
-.weave-tuner-snippet{
-  margin:0;padding:6px;overflow:auto;white-space:pre;color:var(--weave-faint);
-  background:var(--weave-bg);border:1px solid var(--weave-line);border-radius:var(--weave-radius);
-  font-size:var(--weave-px-prov);line-height:1.45;
 }
 
 /* context rail ---------------------------------------------------------- */
@@ -595,7 +479,6 @@ body{font-size:var(--weave-px-base)}
 .weave-status-cwd,.weave-status-sel{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .weave-status-cwd{max-width:38%;color:var(--weave-faint)}
 .weave-status-sel{color:var(--weave-fg)}
-.weave-status-stamp{margin-left:auto;color:var(--weave-faint)}
 
 /* overlays: the ⌘K palette and the ? help sheet (P4) --------------------- */
 /* The scrim is a click target that closes, and the reason both overlays sit
@@ -604,15 +487,7 @@ body{font-size:var(--weave-px-base)}
    the wrong breakpoint. */
 .weave-scrim{
   position:fixed;inset:0;z-index:10;display:flex;justify-content:center;
-  align-items:flex-start;padding:9vh 16px 16px;background:rgba(0,0,0,.45);
-}
-/* The scrim above is tuned for the dark ground, where a neutral black veil
-   reads as depth. On the linen ground the same veil reads as a power cut, so
-   the light scheme gets its own — a plum-tinted veil at reduced strength,
-   drawn from the foreground ramp rather than from grey. */
-:root[data-weave-theme="light"] .weave-scrim{background:rgba(76,79,105,.30)}
-@media (prefers-color-scheme: light){
-  :root:not([data-weave-theme="dark"]) .weave-scrim{background:rgba(76,79,105,.30)}
+  align-items:flex-start;padding:9vh 16px 16px;background:var(--weave-scrim);
 }
 .weave-palette,.weave-help{
   display:flex;flex-direction:column;width:100%;max-width:560px;max-height:72vh;

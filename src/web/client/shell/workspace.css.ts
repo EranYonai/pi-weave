@@ -41,7 +41,9 @@ export const WORKSPACE_CSS = `
 .weave-pane-drop{position:relative}
 .weave-pane-drop::after{content:attr(data-drop-label);position:absolute;inset:4px;z-index:20;display:grid;place-items:center;pointer-events:none;border:2px dashed var(--weave-accent);border-radius:var(--weave-radius);color:var(--weave-accent);background:var(--weave-new)}
 .weave-tabs{display:flex;align-items:stretch;min-width:0;overflow-x:auto;background:var(--weave-panel);gap:3px;padding:5px 6px 0;border-bottom:1px solid var(--weave-line);scrollbar-width:thin}
-.weave-tab{display:flex;align-items:center;min-width:90px;max-width:210px;border-radius:var(--weave-radius) var(--weave-radius) 0 0;color:var(--weave-dim);flex-shrink:0;border-bottom:2px solid transparent}
+.weave-tab{position:relative;display:flex;align-items:center;min-width:90px;max-width:210px;border-radius:var(--weave-radius) var(--weave-radius) 0 0;color:var(--weave-dim);flex-shrink:0;border-bottom:2px solid transparent}
+.weave-tab-drop-before::before,.weave-tab-drop-after::after{content:"";position:absolute;top:2px;bottom:2px;width:3px;background:var(--weave-accent);pointer-events:none}
+.weave-tab-drop-before::before{left:-3px}.weave-tab-drop-after::after{right:-3px}
 .weave-tab-active{background:var(--weave-page);color:var(--weave-fg)}
 .weave-pane-active .weave-tab-active{border-bottom-color:var(--weave-accent)}
 .weave-tab button{border:0;background:none}
@@ -65,12 +67,12 @@ export const WORKSPACE_CSS = `
 .weave-pane-content{min-width:0;min-height:0;display:flex;overflow:hidden;position:relative}
 .weave-document{display:flex;min-width:0;min-height:0;flex:1}
 .weave-document .weave-note{width:100%;border-left:0}
-.weave-document .weave-note-head{position:static;padding:28px max(24px,calc((100% - 760px)/2)) 18px;border:0}
+.weave-document .weave-note-head{position:static;padding:28px max(24px,calc((100% - var(--weave-reading-width,760px))/2)) 18px;border:0}
 .weave-document .weave-note-title{font-size:var(--weave-px-display);letter-spacing:-.03em;margin-bottom:12px}
-.weave-document .weave-note-body{padding:10px max(24px,calc((100% - 760px)/2)) 64px;font-size:var(--weave-px-subhead);line-height:1.8}
+.weave-document .weave-note-body{padding:10px max(24px,calc((100% - var(--weave-reading-width,760px))/2)) 64px;font-size:var(--weave-note-size,var(--weave-px-subhead));line-height:1.8}
 .weave-document .weave-note-body h1{font-size:var(--weave-px-display);line-height:1.4;margin-bottom:18px}
 .weave-document .weave-note-body h2{font-size:var(--weave-px-title);margin-top:28px}
-.weave-document .weave-note-editor{padding:14px 28px;min-height:220px;flex:1}
+.weave-document .weave-note-editor{padding:14px max(24px,calc((100% - var(--weave-reading-width,760px))/2));min-height:220px;flex:1;font-size:var(--weave-note-size,var(--weave-px-subhead))}
 .weave-document .weave-note-tags{margin-top:12px}
 .weave-document .weave-note-edit,.weave-document .weave-note-save{padding:5px 10px;border-radius:var(--weave-radius)}
 .weave-welcome{align-self:center;margin:auto;padding:35px;max-width:560px;color:var(--weave-dim);line-height:1.7}
@@ -114,4 +116,25 @@ export const WORKSPACE_CSS = `
 @media(prefers-reduced-motion:reduce){
   .weave-sidebar-dock,.weave-sidebar-dock[data-open=false],.weave-sidebar-dock>.weave-sidebar{transition:none}
 }
+
+.weave-settings-scrim{align-items:center;padding:24px 16px}
+.weave-settings button{font:inherit;color:inherit;cursor:pointer;border:0;background:transparent}
+.weave-settings a{color:var(--weave-accent)}
+.weave-settings{display:grid;grid-template-columns:180px minmax(0,1fr);grid-template-rows:auto minmax(0,1fr);width:min(900px,calc(100vw - 32px));height:min(680px,calc(100dvh - 48px));background:var(--weave-panel);border:1px solid var(--weave-line-strong);border-radius:12px;box-shadow:0 24px 80px var(--weave-scrim);overflow:hidden}
+.weave-settings header{grid-column:1/-1;display:flex;justify-content:space-between;align-items:center;padding:16px 24px;border-bottom:1px solid var(--weave-line)}
+.weave-settings h2,.weave-settings h3{margin:0}.weave-settings h3{font-size:20px;margin-bottom:24px}
+.weave-settings header button{font-size:24px}.weave-settings nav{padding:16px 12px;background:var(--weave-bg);overflow:auto;border-right:1px solid var(--weave-line)}
+.weave-settings nav button{display:block;width:100%;text-align:left;padding:10px 12px;border-radius:6px;color:var(--weave-dim)}
+.weave-settings nav button[aria-current]{color:var(--weave-accent);background:var(--weave-new)}
+.weave-settings section{padding:28px;overflow:auto;min-width:0}.weave-settings p{line-height:1.6;color:var(--weave-dim)}
+.weave-setting-row{display:flex;justify-content:space-between;align-items:center;gap:24px;padding:16px 0;border-bottom:1px solid var(--weave-line)}
+.weave-setting-row>span:first-child{min-width:0;flex:1}.weave-setting-row strong{display:block;font-weight:500}.weave-setting-row small{display:block;color:var(--weave-dim);margin-top:6px;line-height:1.5}
+.weave-settings select{background:var(--weave-raise);border:1px solid var(--weave-line-strong);border-radius:6px;padding:7px;color:var(--weave-fg);max-width:230px;font:inherit}
+.weave-settings input{accent-color:var(--weave-accent)}.weave-settings input[type=checkbox]{width:18px;height:18px;flex-shrink:0}
+.weave-setting-range{display:flex;align-items:center;gap:12px;width:190px}.weave-setting-range input{width:130px;min-width:0}.weave-setting-range output{min-width:42px;text-align:right;color:var(--weave-accent);font-variant-numeric:tabular-nums}
+.weave-settings button:focus-visible,.weave-settings a:focus-visible,.weave-settings summary:focus-visible{outline:2px solid var(--weave-accent);outline-offset:2px}
+.weave-settings-actions{display:flex;gap:16px;align-items:center;flex-wrap:wrap;margin:24px 0}.weave-settings-actions button,.weave-settings-download,.weave-settings-forces>button{display:inline-block;padding:9px 14px;border:1px solid var(--weave-line-strong);border-radius:6px;color:var(--weave-accent);background:var(--weave-raise);text-decoration:none}
+.weave-settings-forces>button{margin-top:20px}.weave-settings-forces>button:disabled{opacity:.5}.weave-settings-locations dd{margin:6px 0 18px;overflow-wrap:anywhere;color:var(--weave-dim);font-family:var(--weave-font-mono)}
+.weave-settings details summary{cursor:pointer;padding:12px 0}.weave-settings .weave-key-row{gap:16px;align-items:baseline}.weave-settings .weave-key-row kbd{min-width:150px;color:var(--weave-accent)}
+@media(max-width:650px){.weave-settings{grid-template-columns:1fr;grid-template-rows:auto auto minmax(0,1fr)}.weave-settings nav{border-right:0;border-bottom:1px solid var(--weave-line);padding:8px 16px}.weave-settings nav select{width:100%;max-width:none}.weave-settings section{padding:20px}.weave-setting-row{align-items:flex-start;gap:12px}.weave-settings select{max-width:170px}.weave-setting-range{width:140px}.weave-setting-range input{width:90px}}
 `;

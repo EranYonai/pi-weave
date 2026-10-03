@@ -1,5 +1,6 @@
+import type { GraphTheme } from "../../shared/themes";
 import type { Point } from "../../shared/layout";
-import type { ColorScheme, EdgeDisplayOverride, GraphSettings, NodeDisplayOverride, RenderEdge, RenderGraph, RenderNode, ViewBox } from "./graph.model";
+import type { EdgeDisplayOverride, GraphSettings, NodeDisplayOverride, RenderEdge, RenderGraph, RenderNode, ViewBox } from "./graph.model";
 import { edgeReducer, fadeStep, frameBox, graphSettings, nodeReducer } from "./graph.model";
 import type { ProjectedGraph } from "./project";
 import { positionsOf, project, syncPositions } from "./project";
@@ -25,7 +26,7 @@ export interface RenderContainer {
  * driven by a recording fake in a test and by `createSigmaRenderer` in the
  * browser — the same port-shaped injection `api.ts` uses for `fetch`.
  */
-export type RendererFactory = (scheme: ColorScheme) => GraphRenderer;
+export type RendererFactory = (scheme: GraphTheme) => GraphRenderer;
 
 // --- the sigma port -----------------------------------------------------------------
 
@@ -53,7 +54,7 @@ export interface SigmaLike {
   on(event: "upNode" | "upStage", handler: () => void): unknown;
   viewportToGraph(position: { x: number; y: number }): Point;
   setSetting(key: "nodeReducer", value: (id: string, data: RenderNode) => NodeDisplayOverride): unknown;
-  setSetting(key: "edgeReducer", value: (key: string, data: RenderEdge, scheme: ColorScheme) => EdgeDisplayOverride): unknown;
+  setSetting(key: "edgeReducer", value: (key: string, data: RenderEdge, scheme: GraphTheme) => EdgeDisplayOverride): unknown;
   setSetting(key: "enableCameraPanning", value: boolean): unknown;
   setGraph(graph: ProjectedGraph): unknown;
   /**
@@ -115,7 +116,7 @@ export const rafClock = (host: {
 
 export function sigmaRenderer(
   create: (graph: ProjectedGraph, container: RenderContainer, settings: GraphSettings) => SigmaLike,
-  scheme: ColorScheme,
+  scheme: GraphTheme,
   /**
    * The fade clock, or omitted for no animation at all — in which case every
    * highlight change lands at full strength on the next frame, which is the

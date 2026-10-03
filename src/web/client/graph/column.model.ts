@@ -1,3 +1,4 @@
+import type { GraphTheme } from "../../shared/themes";
 /**
  * The graph column's own state: what is expanded, what is highlighted, and
  * what the control strip says (weave-workspace §1.2, §1.3, §7.4, §10, P3).
@@ -45,7 +46,7 @@ import { clusterAggregate, focusNeighborhood } from "../../shared/view";
 import type { GraphPayload, WireGraphEdge } from "../../shared/wire";
 import { kindIcon, viewModel } from "../tree/tree.model";
 import type { IconName } from "../shell/icons.model";
-import type { ColorScheme, RenderGraph } from "./graph.model";
+import type { RenderGraph } from "./graph.model";
 import { EMPTY_RENDER_GRAPH, renderGraph } from "./graph.model";
 import { groupNodeColors } from "./groups";
 import type { PositionStorage } from "./positions";
@@ -214,17 +215,6 @@ export const FIT_LABEL = "fit";
 export const FIT_HINT = "frame the whole graph";
 
 /**
- * The `[sliders]` control, which shows and hides the tuner panel (§15.7).
- *
- * Labelled for what the button *opens* rather than for what the panel edits:
- * "forces" names the physics, which is the one thing a reader who has not read
- * `layout.ts` has no word for. The constants keep the `FORCES_` prefix because
- * the module they drive is still the force layout.
- */
-export const FORCES_LABEL = "sliders";
-export const FORCES_HINT = "tune the layout physics and colours";
-
-/**
  * The legend under the canvas, from the §1.2 mock:
  * `◉ selected  ● neighborhood`.
  */
@@ -324,7 +314,7 @@ export function graphColumnModel(
   selectedId: string | null,
   state: GraphViewState,
   storage: PositionStorage,
-  scheme: ColorScheme,
+  scheme: GraphTheme,
   // Optional so every existing caller and test keeps its shape; only the
   // shell's boot-failure signal has a reason to pass it.
   bootFailed = false,

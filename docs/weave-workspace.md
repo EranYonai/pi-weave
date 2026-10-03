@@ -744,7 +744,7 @@ server-computed one: it settles instantly **and** it is the arrangement the user
 
 Four decisions in that file are worth stating, because each has a wrong-looking alternative:
 
-- **The cache key is a digest of the graph's *shape* only.** `graphShapeKey(nodes, edges)` hashes which nodes and edges exist — never
+- **The cache key digests the graph's *shape* and force preferences.** `graphShapeKey(nodes, edges)` hashes which nodes and edges exist — never
   titles, tags, or `generatedAt`. Keying on the payload's `stamp` would invalidate on every edit, which is the same as not caching. The
   per-element hashes are combined by **XOR and sum** with the counts mixed in, so the key is order-independent (a reorder in core is not a
   layout change) while still able to see a duplicate, which XOR alone cannot (`x ^ x = 0`).
@@ -1429,13 +1429,10 @@ or any invalidation landing mid-build all force a real rebuild.
 status bar labelled "data as of" showing `a3f9c2…` would be a regression. And the ETag is now strong, which it has earned: the digest is
 taken over the exact bytes written to the socket.
 
-### 15.7 The graph force tuner — `[sliders]` / `?sliders=1` — **open**
+### 15.7 The graph force tuner — Settings → Interface — **built**
 
-There is a slider panel over the graph column. Open it with the `[sliders]` chip, or arrive with it open via the URL:
-
-```text
-http://127.0.0.1:PORT/?sliders=1
-```
+The seven graph sliders and group-color toggle now live in **Settings → Interface**. Preferences apply live and persist with the
+workspace snapshot. Reset graph layout restores the shipped forces. The graph no longer has a sliders chip or URL gate.
 
 **Why it exists.** The graph's arrangement is decided by seven numbers in `src/web/shared/layout.ts`, and the difference between "one
 hairball" and "legible groups" is a *ratio* between them that is far easier to see than to derive. Issue #40 is the case in point: the
@@ -1445,8 +1442,8 @@ gap between the three big branches' bounding boxes was **−312** — the branch
 
 **How it works.** The constants live in one exported mutable record, `FORCES`, with the shipped values kept alongside in `FORCE_DEFAULTS`.
 `createForceSimulation` reads `FORCES` at construction, and a simulation is built fresh per layout run and per live mount, so a write lands
-on the next run. The panel writes, drops the cached layout (which is keyed by graph *shape* — a force change does not touch it, so a hit
-would make the sliders appear dead), and re-runs. Determinism is untouched: nothing else ever writes the record, so `computeLayout(model, {
+on the next run. The settings write the preferences and re-run the layout. The geometry cache key includes the force values, so an old arrangement
+cannot mask a slider change. Determinism is untouched: nothing else ever writes the record, so `computeLayout(model, {
 seed })` stays byte-identical for every caller and test.
 
 | Constant | What moving it does |
@@ -1458,14 +1455,6 @@ seed })` stays byte-identical for every caller and test.
 | `charge` | Node-to-node repulsion (`forceManyBody`). More negative pushes harder. |
 | `chargeMax` | Distance past which repulsion stops. A cap is what keeps a strong charge from inflating the picture uniformly. |
 | `center` | `forceX`/`forceY` pull toward the origin — the no-escape guarantee. Too much and everything is one blob. |
-
-The **before** button loads `HAIRBALL` from `tuner.model.ts` — the pre-tuner constants, one click away, so the next person to open the panel
-can see what it is for without reading a changelog. **copy values** puts the current record on the clipboard as the literal that belongs in
-`layout.ts`, because transcribing seven floats by eye is where a digit gets dropped.
-
-**How it opens.** The `[sliders]` chip in the control strip, beside `[fit]`. `?sliders=1` seeds the chip's initial state — it was the only
-way in while the panel was a half-built instrument, which was the right gate then and the wrong one for a finished control. A build-time
-`define` was rejected: it breaks the byte-reproducible `build:web:check` contract for a panel that costs a few hundred bytes.
 
 ### 15.8 Group colour and the selection's three tiers — ✅ **built**
 
@@ -1486,8 +1475,7 @@ and a mirror test would be theatre. The guarantee asserted instead is contrast: 
 non-text minimum on its ground. That test earns its keep — it caught stock Latte mauve at 2.98 under the `external` shade, and the whole
 light row is deepened as a result (stock Latte accents sit at 2.3–3.0 on `#eff1f5`, invisible as a 6-pixel disc).
 
-Toggle it with **colour by group** in the tuner panel; the choice persists under its own storage key, deliberately separate from the
-position cache so tuning the physics cannot reset the palette.
+Toggle **Color graph by group** in Settings → Interface. It persists in the workspace preferences, independently of the position cache.
 
 **The selection now has three tiers, not two.** `focusNeighborhood` returns the selection *plus* its neighbours, and painting those
 identically lost the one fact the click was about. Now: the selected node grows 1.45× and lifts clear of everything; a connected node grows
@@ -1511,8 +1499,8 @@ frames of a real drag would be dead.
 **The constants are frozen (§15.7 closed).** Found through the sliders and written into `FORCES`: `containsStrength 0.12`, `containsRest
 55`, `relationStrength 0.07`, `relationDistance 50`, `charge -200`, `chargeMax 800`, `center 0.05`. Worst branch gap on `siblingBlobsGraph`
 **−312 → +39**, on `repoLikeGraph` **−274 → +133**. `POSITIONS_STORAGE_KEY` went to `v4`, because a stored layout describes the old physics
-and the shape key digests nodes and edges, neither of which a force change touches. The tuner stays, behind the `[sliders]` chip; its
-**before** button loads the pre-tuner constants (`HAIRBALL`) for comparison.
+and originally the shape key did not include forces. The key now includes force preferences, and Settings → Interface offers the sliders
+and a reset to the shipped values. The pre-tuner constants remain in tests for comparison.
 
 ### 15.10 The `[collapse]` control is gone — ✅ **removed**
 

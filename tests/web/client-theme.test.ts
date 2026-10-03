@@ -16,6 +16,10 @@
  * `document`, no DOM required (§10).
  */
 
+import { THEMES } from "../../src/web/shared/themes";
+import { initialLayout, parseWorkspaceLayout } from "../../src/web/shared/workspace";
+import { GROUP_HUES, shadeFor } from "../../src/web/client/graph/groups";
+import { GRAPH_PALETTE, graphSettings, kindColor } from "../../src/web/client/graph/graph.model";
 import { describe, expect, it } from "vitest";
 import { fetchJson } from "../../src/web/client/api.dom";
 import { WORKSPACE_CSS } from "../../src/web/client/shell/workspace.css";
@@ -24,7 +28,7 @@ import type { StyleElement, ThemeHost } from "../../src/web/client/shell/theme";
 import {
   THEME_CHOICES,
   THEME_STORAGE_KEY,
-  cycleTheme,
+  toggleTheme,
   effectiveScheme,
   isThemeChoice,
   loadTheme,
@@ -93,16 +97,8 @@ describe("THEME_CSS", () => {
   });
 
   it("answers the manual override through the data attribute", () => {
-    // `theme.model.ts`'s header explains the pair of selectors: an explicit
-    // light branch (must beat the media query) plus the media query narrowed
-    // by `:not([data-weave-theme="dark"])` (so a dark *choice* wins when the
-    // OS says light, and system mode still answers a live OS flip). There is
-    // deliberately no `:root[data-weave-theme="dark"]` — the dark tokens sit
-    // in the base `:root` and every light rule is guarded, so dark is what
-    // remains when the guards all fail to match. No selector here may depend
-    // on inline styles — CSP forbids them.
-    expect(THEME_CSS).toContain(':root[data-weave-theme="light"]');
-    expect(THEME_CSS).toContain(':root:not([data-weave-theme="dark"])');
+    for (const id of Object.keys(THEMES)) expect(THEME_CSS).toContain(`:root[data-weave-theme="${id}"]`);
+    expect(THEME_CSS).toContain(':root:not([data-weave-theme])');
   });
 
   it("has a rule for every class the components emit", () => {
@@ -173,7 +169,6 @@ describe("THEME_CSS", () => {
       "weave-status",
       "weave-status-cwd",
       "weave-status-sel",
-      "weave-status-stamp",
       // The graph column (P3).
       "weave-graph",
       "weave-graph-canvas",
@@ -457,10 +452,26 @@ describe("theme.model", () => {
     expect(saveTheme(broken, "light")).toBe(false);
   });
 
-  it("cycles system → light → dark → system", () => {
-    expect(cycleTheme("system")).toBe("light");
-    expect(cycleTheme("light")).toBe("dark");
-    expect(cycleTheme("dark")).toBe("system");
+  it("toggles only the selected light/dark pair, including from system mode", () => {
+    const pair = { lightTheme: "paper-blue", darkTheme: "mocha-lavender" } as const;
+    expect(toggleTheme("paper-blue", "dark", pair)).toBe("mocha-lavender");
+    expect(toggleTheme("mocha-lavender", "light", pair)).toBe("paper-blue");
+    expect(toggleTheme("system", "dark", pair)).toBe("paper-blue");
+    expect(toggleTheme("system", "light", pair)).toBe("mocha-lavender");
+    expect(effectiveScheme("system", "dark", pair)).toBe("mocha-lavender");
+    expect(effectiveScheme("system", "light", pair)).toBe("paper-blue");
+    expect(toggleTheme("light", "dark")).toBe("dark");
+  });
+
+  it("restores every candidate through workspace persistence and rejects unknown choices", () => {
+    for (const theme of THEME_CHOICES) {
+      const layout = { ...initialLayout(), theme };
+      expect(parseWorkspaceLayout(JSON.parse(JSON.stringify(layout)))).toEqual(layout);
+      expect(effectiveScheme(theme, "light")).toBe(theme === "system" ? "light" : theme);
+      expect(themeAttr(theme)).toBe(theme === "system" ? null : theme);
+    }
+    expect(parseWorkspaceLayout({ ...initialLayout(), theme: "foreign" })).toBeNull();
+    for (const value of [null, undefined, 42, {}, "foreign"]) expect(isThemeChoice(value)).toBe(false);
   });
 
   it("resolves system mode through the OS, and a choice over it", () => {
@@ -480,17 +491,86 @@ describe("theme.model", () => {
 });
 
 describe("themeButton", () => {
-  it("gives every choice a distinct glyph from the provenance family", () => {
-    const glyphs = THEME_CHOICES.map((choice) => themeButton(choice).glyph);
-    for (const [choice, glyph] of THEME_CHOICES.map((c, i) => [c, glyphs[i]] as const)) {
-      expect(["●", "◐", "○"], choice).toContain(glyph);
+  it("names the current palette and opposite chosen palette with a scheme glyph", () => {
+    for (const choice of THEME_CHOICES) {
+      const view = themeButton(choice);
+      expect(view.hint).toContain(view.label);
+      expect(view.hint).toContain(themeButton(toggleTheme(choice, "dark")).label);
+      expect(view.glyph).toBe(choice === "system" ? "◐" : THEMES[choice].scheme === "light" ? "○" : "●");
     }
-    expect(new Set(glyphs).size).toBe(THEME_CHOICES.length);
+  });
+});
+
+function contrast(a: string, b: string): number {
+  const luminance = (hex: string): number => {
+    const channels = [1, 3, 5].map((offset) => {
+      const c = Number.parseInt(hex.slice(offset, offset + 2), 16) / 255;
+      return c <= 0.04045 ? c / 12.92 : ((c + 0.055) / 1.055) ** 2.4;
+    });
+    return channels[0]! * .2126 + channels[1]! * .7152 + channels[2]! * .0722;
+  };
+  const hi = Math.max(luminance(a), luminance(b));
+  const lo = Math.min(luminance(a), luminance(b));
+  return (hi + .05) / (lo + .05);
+}
+
+describe("theme candidates", () => {
+  it("offers six Catppuccin themes and three custom light/dark pairs", () => {
+    const themes = Object.values(THEMES);
+    expect(themes.filter((theme) => theme.name.startsWith("Catppuccin"))).toHaveLength(6);
+    const custom = themes.filter((theme) => !theme.name.startsWith("Catppuccin"));
+    expect(custom.filter((theme) => theme.scheme === "light")).toHaveLength(3);
+    expect(custom.filter((theme) => theme.scheme === "dark")).toHaveLength(3);
   });
 
-  it("hints where the choice is and what clicking does", () => {
-    const view = themeButton("system");
-    expect(view.hint).toContain("system");
-    expect(view.hint).toContain("light");
+  it("keeps text and accent readable on workspace surfaces and shares colors with WebGL", () => {
+    for (const id of THEME_CHOICES) {
+      if (id === "system") continue;
+      const { colors } = THEMES[id];
+      for (const token of ["fg", "dim", "accent", "ok", "warn", "bad"] as const) {
+        for (const surface of ["bg", "panel", "page", "raise"] as const) {
+          expect(contrast(colors[token], colors[surface]), `${id} ${token}/${surface}`).toBeGreaterThanOrEqual(4.5);
+        }
+      }
+      for (const surface of ["bg", "panel", "page"] as const) {
+        expect(contrast(colors.faint, colors[surface]), `${id} faint/${surface}`).toBeGreaterThanOrEqual(4.5);
+      }
+      expect(contrast(colors.faint, colors.raise), `${id} faint/raise`).toBeGreaterThanOrEqual(3);
+      for (const hue of GROUP_HUES[THEMES[id].scheme]) {
+        expect(contrast(shadeFor(hue, 10, id), colors.bg), `${id} group hue ${hue}`).toBeGreaterThanOrEqual(3);
+      }
+      expect(GRAPH_PALETTE[id].ground).toBe(colors.bg);
+      expect(kindColor("vault", id)).toBe(colors.accent);
+      expect(graphSettings(id).labelColor).toEqual({ color: colors.fg });
+      for (const [key, value] of Object.entries(colors)) expect(THEME_CSS).toContain(`--weave-${key}:${value};`);
+    }
   });
+});
+
+it("keeps every independent accent readable and passes it into the graph palette", async () => {
+  const { ACCENTS, accentColor, themeId } = await import("../../src/web/shared/themes");
+  const { graphPalette } = await import("../../src/web/client/graph/graph.model");
+  for (const id of THEME_CHOICES) {
+    if (id === "system") continue;
+    expect(accentColor(id, "theme")).toBe(THEMES[id].colors.accent);
+    expect(themeId(id)).toBe(id);
+    for (const accent of Object.keys(ACCENTS) as (keyof typeof ACCENTS)[]) {
+      const theme = { theme: id, accent };
+      expect(themeId(theme)).toBe(id);
+      expect(kindColor("vault", theme)).toBe(accentColor(id, accent));
+      expect(graphPalette(theme).ground).toBe(THEMES[id].colors.bg);
+      for (const surface of ["bg", "panel", "page", "raise"] as const) {
+        expect(contrast(accentColor(id, accent), THEMES[id].colors[surface]), `${id} ${accent}/${surface}`).toBeGreaterThanOrEqual(4.5);
+      }
+      expect(THEME_CSS).toContain(`--weave-accent:${accentColor(id, accent)}`);
+    }
+  }
+});
+
+it("names the user's chosen destination rather than the next preview palette", () => {
+  const pair = { lightTheme: "mist-teal", darkTheme: "frappe-teal" } as const;
+  expect(themeButton("frappe-teal", "dark", pair).hint).toContain("click for Mist · Teal");
+  expect(themeButton("mist-teal", "light", pair).hint).toContain("click for Catppuccin Frappé · Teal");
+  expect(themeButton("system", "dark", pair).hint).toContain("click for Mist · Teal");
+  expect(themeButton("system", "light", pair).hint).toContain("click for Catppuccin Frappé · Teal");
 });

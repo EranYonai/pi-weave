@@ -35,8 +35,6 @@ import type { GraphViewState } from "./column.model";
 import {
   FIT_HINT,
   FIT_LABEL,
-  FORCES_HINT,
-  FORCES_LABEL,
   LEGEND,
   effectiveView,
   graphClick,
@@ -49,12 +47,10 @@ import type { PositionStorage } from "./positions";
 import type { GraphRenderer, RendererFactory } from "./renderer";
 import { schemeOf } from "./scheme";
 import type { SchemeHost } from "./scheme";
-import type { ColorScheme } from "./graph.model";
+import type { GraphTheme } from "../../shared/themes";
+import { setForces, type ForceConstants } from "../../shared/layout";
 import { createGraphSimulation } from "./dynamics";
 import type { GraphSimulation } from "./dynamics";
-import { ForceTuner } from "./ForceTuner";
-import { POSITIONS_STORAGE_KEY } from "./positions";
-import { loadGroupColors, saveGroupColors } from "./tuner.model";
 import { Icon } from "../tree/Tree";
 
 export interface GraphProps {
@@ -76,7 +72,9 @@ export interface GraphProps {
    * palette change `renderer.ts` calls honest — because a WebGL palette is
    * fixed at construction.
    */
-  scheme: ColorScheme | null;
+  scheme: GraphTheme | null;
+  forces: ForceConstants;
+  groupColors: boolean;
   /**
    * Whether the boot graph fetch failed (`state.ts`'s `graphFailed`). The
    * empty column's sentence switches from "Loading…" to a named recovery:
@@ -94,14 +92,7 @@ export interface GraphProps {
    * keeps the ownership where it is and costs one line at each end.
    */
   fit: { current: (() => void) | null };
-  /**
-   * Show the hidden force tuner (`?sliders=1`, docs/weave-workspace.md §15.7).
-   *
-   * A prop rather than a `location.search` read here, for the same reason
-   * `cwd` and `platform` are props: the decision is `slidersFlag`'s, and it is
-   * testable where a `location` read is not.
-   */
-  tuner?: boolean;
+
 }
 
 export function Graph(props: GraphProps) {
@@ -134,30 +125,8 @@ export function Graph(props: GraphProps) {
   // `null` means "the user has not touched the expansion" — not "nothing is
   // expanded". `effectiveView` resolves the difference; see its doc comment.
   const [state, setState] = useState<GraphViewState | null>(null);
-  /**
-   * Bumped by the tuner after each write to `FORCES`. It enters the model memo
-   * below purely as a cache-buster: the graph's *shape* has not changed, so
-   * nothing else would recompute, and the whole point is that the same shape
-   * now lays out differently.
-   */
-  const [forceRev, setForceRev] = useState(0);
-  /**
-   * Colour nodes by group hue (§15.8). Persisted, because it is a taste the
-   * user holds across sessions rather than a per-visit mode, and read through
-   * the same `PositionStorage` port the layout cache uses so the column still
-   * names no browser global.
-   */
-  const [groupColors, setGroupColors] = useState(() => loadGroupColors(props.storage));
-  /**
-   * Whether the tuner panel is open.
-   *
-   * Seeded from the `?sliders=1` flag, then owned by the `[sliders]` chip — so
-   * the URL is still the way to arrive with it open, and the button is the way
-   * to get at it once you are here. The chip is always present: the panel was
-   * unreachable without knowing a query string, which is the right gate for a
-   * half-built instrument and the wrong one for a finished control.
-   */
-  const [tunerOpen, setTunerOpen] = useState(props.tuner === true);
+  const forceKey = useMemo(() => { setForces(props.forces); return JSON.stringify(props.forces); }, [props.forces]);
+  const groupColors = props.groupColors;
 
   // The shell's decision wins; `schemeOf` stays for a host-driven default.
   const scheme = props.scheme ?? schemeOf(props.host);
@@ -172,7 +141,7 @@ export function Graph(props: GraphProps) {
   // comparing set contents, the memo makes comparison unnecessary.
   const model = useMemo(
     () => graphColumnModel(props.graph, props.selectedId, view, props.storage, scheme, props.bootFailed, groupColors),
-    [props.graph, props.selectedId, view, props.storage, scheme, props.bootFailed, forceRev, groupColors],
+    [props.graph, props.selectedId, view, props.storage, scheme, props.bootFailed, forceKey, groupColors],
   );
   const preview = graphPreview(props.graph, props.previewId);
 
@@ -238,7 +207,7 @@ export function Graph(props: GraphProps) {
 
   useEffect(() => {
     renderer.current?.setGraph(model.graph);
-  }, [model.key, forceRev, groupColors]);
+  }, [model.key, forceKey, groupColors]);
 
   // Live layout, in two effects so pause/resume and re-layout are independent.
   //
@@ -254,7 +223,7 @@ export function Graph(props: GraphProps) {
     return () => {
       dynamics.current = null;
     };
-  }, [model.key, armClock, forceRev]);
+  }, [model.key, armClock, forceKey]);
 
   // Effect 2 owns the clock's unmount cleanup: the engine's own lifecycle is
   // effect 1's, and the step self-terminates whenever the engine settles, so
@@ -294,41 +263,9 @@ export function Graph(props: GraphProps) {
           <button type="button" class="weave-chip" onClick={() => props.onOpen(preview.id)}>Open in new tab</button>
         </aside>
       )}
-      {tunerOpen ? (
-        <ForceTuner
-          groupColors={groupColors}
-          onGroupColors={(next) => {
-            saveGroupColors(props.storage, next);
-            setGroupColors(next);
-          }}
-          onChange={() => {
-            // Poison the stored layout rather than reading it: the cache is
-            // keyed by graph *shape*, which a force change does not touch, so
-            // a hit would hand back the arrangement of the previous constants
-            // and the sliders would appear to do nothing. An unparseable entry
-            // is a miss by `deserializePositions`' contract, and the two-method
-            // `PositionStorage` port has no `removeItem` to call instead.
-            try {
-              props.storage.setItem(POSITIONS_STORAGE_KEY, "");
-            } catch {
-              // A storage that refuses writes still lays out; see `savePositions`.
-            }
-            setForceRev((n) => n + 1);
-          }}
-        />
-      ) : null}
       <div class="weave-graph-controls">
         <button type="button" class="weave-chip" title={FIT_HINT} onClick={() => renderer.current?.fit()}>
           {FIT_LABEL}
-        </button>
-        <button
-          type="button"
-          class={tunerOpen ? "weave-chip weave-chip-on" : "weave-chip"}
-          title={FORCES_HINT}
-          aria-pressed={tunerOpen}
-          onClick={() => setTunerOpen(!tunerOpen)}
-        >
-          {FORCES_LABEL}
         </button>
         <span class="weave-graph-legend">
           <span class="weave-legend-on">◉ {LEGEND.selected}</span>

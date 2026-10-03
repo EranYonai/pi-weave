@@ -56,8 +56,10 @@
  */
 
 import type { WireEdgeKind, WireGraphEdge, WireGraphNode } from "../../shared/wire";
+import type { GraphTheme } from "../../shared/themes";
+import { THEMES, themeId } from "../../shared/themes";
 import type { ColorScheme } from "./graph.model";
-import { GRAPH_PALETTE, blendHex } from "./graph.model";
+import { graphPalette, blendHex } from "./graph.model";
 
 function isContainment(kind: WireEdgeKind): boolean {
   return kind === "contains" || kind === "anchored-at";
@@ -219,8 +221,8 @@ export const HUE_STRIDE = 3;
  * is honest: at eleven simultaneous groups the colour channel is saturated and
  * position is doing the work anyway.
  */
-export function groupColors(keys: ReadonlyMap<string, string>, scheme: ColorScheme): Map<string, string> {
-  const ring = GROUP_HUES[scheme];
+export function groupColors(keys: ReadonlyMap<string, string>, scheme: GraphTheme): Map<string, string> {
+  const ring = GROUP_HUES[THEMES[themeId(scheme)].scheme];
   const sizes = groupSizes(keys);
   const ordered = [...sizes.entries()].sort((a, b) => b[1] - a[1] || (a[0] < b[0] ? -1 : a[0] > b[0] ? 1 : 0));
   const out = new Map<string, string>();
@@ -249,9 +251,9 @@ export const DEPTH_SHADE = 0.11;
 export const MAX_SHADE = 0.34;
 
 /** A member's fill: its group's one hue, stepped back by its depth. */
-export function shadeFor(hue: string, depth: number, scheme: ColorScheme): string {
+export function shadeFor(hue: string, depth: number, scheme: GraphTheme): string {
   const steps = Number.isFinite(depth) && depth > 0 ? depth : 0;
-  return blendHex(hue, GRAPH_PALETTE[scheme].ground, Math.min(MAX_SHADE, steps * DEPTH_SHADE));
+  return blendHex(hue, graphPalette(scheme).ground, Math.min(MAX_SHADE, steps * DEPTH_SHADE));
 }
 
 // --- bridges between groups ----------------------------------------------------------
@@ -279,7 +281,7 @@ export const MAX_BRIDGE = 0.55;
  * promiscuously-linked hub does not end up painted entirely in other people's
  * colours.
  */
-export function bridgeBlend(own: string, foreign: readonly string[], scheme: ColorScheme): string {
+export function bridgeBlend(own: string, foreign: readonly string[], scheme: GraphTheme): string {
   if (foreign.length === 0) return own;
   let out = own;
   let spent = 0;
@@ -307,7 +309,7 @@ export function bridgeBlend(own: string, foreign: readonly string[], scheme: Col
 export function groupNodeColors(
   nodes: readonly WireGraphNode[],
   edges: readonly WireGraphEdge[],
-  scheme: ColorScheme,
+  scheme: GraphTheme,
 ): Map<string, string> {
   const places = groupPlaces(nodes, edges);
   const keys = new Map<string, string>();

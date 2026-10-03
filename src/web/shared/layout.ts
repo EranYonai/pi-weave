@@ -41,14 +41,13 @@ const ALPHA_MIN = 0.001;
  * Mutable because picking these numbers is an act of taste, not of
  * derivation: the difference between "one hairball" and "legible groups" is a
  * ratio between containment cohesion, charge and centre gravity that is far
- * easier to *see* than to reason about. The hidden tuner (`?sliders=1`, see
- * `client/graph/tuner.model.ts` and docs/weave-workspace.md §15.7) writes here
- * and re-lays out live, so a human can find the values by eye and they then
+ * easier to *see* than to reason about. The settings sliders (see
+ * `client/graph/tuner.model.ts` and docs/weave-workspace.md §15.7) update this record
+ * and re-run the layout live, so a human can find the values by eye and they then
  * get frozen back into {@link FORCE_DEFAULTS}.
  *
- * Determinism is untouched: every production and test path only ever *reads*
- * this, so `computeLayout(model, { seed })` stays byte-identical. The tuner is
- * the one writer, and it is unreachable without the query flag.
+ * `computeLayout(model, { seed })` stays deterministic for a given set of forces.
+ * Settings are the production writer of this record.
  *
  * ponytail: module-level mutable state, fine at one graph per page — thread it
  * as a `LayoutOptions` field if a second concurrent consumer ever appears.

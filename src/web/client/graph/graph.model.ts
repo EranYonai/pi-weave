@@ -27,21 +27,12 @@
  * graphology — so it compiles under the root `tsconfig.json` (which has no
  * `DOM` lib) whenever a test imports it.
  *
- * ## Why the palette is duplicated from the stylesheet
- *
- * WebGL cannot read a CSS custom property. `sigma` needs a concrete `#rrggbb`
- * per node, and `getComputedStyle` is both a DOM global and an untestable
- * read. So {@link GRAPH_PALETTE} restates the six theme colours the graph
- * uses, and {@link KIND_SLOT} maps a node kind onto the *same slot vocabulary*
- * the TUI already uses (`src/pi/viewer/tui/theme.ts`'s `kindStyle`) rather
- * than inventing a second one.
- *
- * A copy drifts, so drift is a failing test: `tests/web/client-graph.test.ts`
- * asserts every hex in {@link GRAPH_PALETTE} literally appears in
- * `shell/theme.ts`'s `THEME_CSS`. Change a swatch in the stylesheet and the
- * graph's copy goes red on the same commit.
+ * CSS and WebGL use the shared theme table, so a candidate changes the
+ * canvas and workspace together without copying hex values.
  */
 
+import { THEMES, accentColor, themeId } from "../../shared/themes";
+import type { PaletteChoice, GraphTheme } from "../../shared/themes";
 import { COLLIDE_RADIUS, MAX_NODE_SIZE, MIN_NODE_SIZE, nodeSize } from "../../shared/layout";
 import type { Point } from "../../shared/layout";
 /* Re-exported for the renderer and the tests, under the render model's name.
@@ -65,40 +56,17 @@ export type ColorSlot = "accent" | "success" | "warning" | "dim" | "text" | "mut
 /** Dark or light. Chosen by the shell from `prefers-color-scheme`, never read here. */
 export type ColorScheme = "dark" | "light";
 
-/**
- * Slot → hex, per scheme.
- *
- * Every value is copied from `shell/theme.ts`'s `THEME_CSS`:
- * `accent`→`--weave-accent`, `success`→`--weave-ok`, `warning`→`--weave-warn`,
- * `dim`→`--weave-dim`, `text`→`--weave-fg`, `muted`→`--weave-faint`,
- * `line`→`--weave-line-strong`, `ground`→`--weave-bg` (the canvas the WebGL
- * floats on, which no slot previously named because nothing painted it — the
- * recession blend below needs it as a *value*, not as a contrast judgement).
- * The dark block is `:root`; the light block is the
- * `prefers-color-scheme: light` override.
- */
-export const GRAPH_PALETTE: Readonly<Record<ColorScheme, Readonly<Record<ColorSlot, string>>>> = {
-  dark: {
-    accent: "#c6a0f6",
-    success: "#a6da95",
-    warning: "#eed49f",
-    dim: "#a5adcb",
-    text: "#cad3f5",
-    muted: "#939ab7",
-    line: "#494d64",
-    ground: "#24273a",
-  },
-  light: {
-    accent: "#7113ec",
-    success: "#28641b",
-    warning: "#7c4f10",
-    dim: "#56586a",
-    text: "#4c4f69",
-    muted: "#606274",
-    line: "#bcc0cc",
-    ground: "#eff1f5",
-  },
-};
+/** Graph slots come from the same colors as the stylesheet. */
+export const GRAPH_PALETTE = Object.fromEntries(Object.entries(THEMES).map(([id, { colors }]) => [id, {
+  accent: colors.accent, success: colors.ok, warning: colors.warn, dim: colors.dim,
+  text: colors.fg, muted: colors.faint, line: colors["line-strong"], ground: colors.bg,
+}])) as Readonly<Record<PaletteChoice, Readonly<Record<ColorSlot, string>>>>;
+
+/** Resolve independent accents for every WebGL drawing path. */
+export function graphPalette(theme: GraphTheme): Readonly<Record<ColorSlot, string>> {
+  const palette = GRAPH_PALETTE[themeId(theme)];
+  return typeof theme === "string" ? palette : { ...palette, accent: accentColor(theme.theme, theme.accent) };
+}
 
 /**
  * Node kind → colour slot.
@@ -156,13 +124,13 @@ export const EDGE_SLOT: Readonly<Record<WireEdgeKind, ColorSlot>> = {
 };
 
 /** The colour a node kind is drawn in. */
-export function kindColor(kind: WireNodeKind, scheme: ColorScheme): string {
-  return GRAPH_PALETTE[scheme][KIND_SLOT[kind]];
+export function kindColor(kind: WireNodeKind, scheme: GraphTheme): string {
+  return graphPalette(scheme)[KIND_SLOT[kind]];
 }
 
 /** The colour an edge kind is drawn in. */
-export function edgeColor(kind: WireEdgeKind, scheme: ColorScheme): string {
-  return GRAPH_PALETTE[scheme][EDGE_SLOT[kind]];
+export function edgeColor(kind: WireEdgeKind, scheme: GraphTheme): string {
+  return graphPalette(scheme)[EDGE_SLOT[kind]];
 }
 
 /**
@@ -178,7 +146,7 @@ export function edgeColor(kind: WireEdgeKind, scheme: ColorScheme): string {
  * exact slot colour — the accent is the only chroma voice the sheet has, and
  * a wikilink is what the eye is here to find.
  */
-export function edgeDrawColor(kind: WireEdgeKind, scheme: ColorScheme): string {
+export function edgeDrawColor(kind: WireEdgeKind, scheme: GraphTheme): string {
   return isStructuralEdge(kind) ? recessColor(edgeColor(kind, scheme), scheme, EDGE_RECESS_STRENGTH) : edgeColor(kind, scheme);
 }
 
@@ -253,8 +221,8 @@ export function blendHex(color: string, toward: string, t: number): string {
  * *palette* fact, and the palette-mirror test already ties this module's hexes
  * to the stylesheet's.
  */
-export function recessColor(color: string, scheme: ColorScheme, t: number = RECESS_STRENGTH): string {
-  return blendHex(color, GRAPH_PALETTE[scheme].ground, t);
+export function recessColor(color: string, scheme: GraphTheme, t: number = RECESS_STRENGTH): string {
+  return blendHex(color, graphPalette(scheme).ground, t);
 }
 
 // --- sizes ------------------------------------------------------------------------
@@ -460,13 +428,13 @@ export const HOVER_LABEL_SHADOW = 6;
  * re-align them all.
  */
 export function hoverLabelPainter(
-  scheme: ColorScheme,
+  scheme: GraphTheme,
 ): (context: HoverLabelContext, data: HoverLabelNode, settings: HoverLabelSettings) => void {
   return (context, data, settings) => {
     // `nodeReducer` blanks the label of everything outside the highlight, and
     // a node with no name has nothing to float.
     if (data.label === null || data.label === "") return;
-    const palette = GRAPH_PALETTE[scheme];
+    const palette = graphPalette(scheme);
     context.save();
     context.font = `${settings.labelSize}px ${settings.labelFont}`;
     context.textAlign = "center";
@@ -629,7 +597,7 @@ export function renderGraph(
   nodes: readonly WireGraphNode[],
   edges: readonly WireGraphEdge[],
   positions: ReadonlyMap<string, Point>,
-  scheme: ColorScheme,
+  scheme: GraphTheme,
   /**
    * Per-node fills that override the kind palette — `groups.ts`'s
    * group-hue assignment, or absent for the kind-only colouring.
@@ -747,7 +715,7 @@ export function nodeReducer(
    * about the clock.
    */
   progress: number = 1,
-): (id: string, data: RenderNode, scheme: ColorScheme) => NodeDisplayOverride {
+): (id: string, data: RenderNode, scheme: GraphTheme) => NodeDisplayOverride {
   return (id, data, scheme) => {
     // `progress` at zero is indistinguishable from no highlight, and saying so
     // here is what lets the fade end by *returning* to the unhighlighted graph
@@ -888,7 +856,7 @@ export function edgeReducer(
   selectedId?: string | null,
   /** The fade's progress — see {@link nodeReducer}'s. */
   progress: number = 1,
-): (key: string, data: RenderEdge, scheme: ColorScheme) => EdgeDisplayOverride {
+): (key: string, data: RenderEdge, scheme: GraphTheme) => EdgeDisplayOverride {
   return (_key, data, scheme) => {
     if (highlight === null || progress <= 0) return {};
     if (!highlight.has(data.source) || !highlight.has(data.target)) {
@@ -905,7 +873,7 @@ export function edgeReducer(
         size: data.size * growth(EDGE_PRESENCE * 1.35, progress),
         // Blended rather than switched, so the link arrives *as* the accent
         // instead of flicking to it a frame before the rest of the fade.
-        color: blendHex(data.color, GRAPH_PALETTE[scheme].accent, progress),
+        color: blendHex(data.color, graphPalette(scheme).accent, progress),
       };
     }
     // Between two neighbours, but not touching the selection: real context,
@@ -975,8 +943,8 @@ export const LABEL_GRID_CELL_SIZE = COLLIDE_RADIUS * 4;
 export const LABEL_DENSITY = 1;
 
 /** The settings for a scheme. */
-export function graphSettings(scheme: ColorScheme): GraphSettings {
-  const palette = GRAPH_PALETTE[scheme];
+export function graphSettings(scheme: GraphTheme): GraphSettings {
+  const palette = graphPalette(scheme);
   return {
     // §7.4. A pan over a few thousand edges is the one interaction that drops
     // frames, and the edges are the part nobody is reading mid-gesture.

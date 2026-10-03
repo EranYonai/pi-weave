@@ -12,12 +12,56 @@ import {
   openDocument,
   openGraph,
   parseWorkspaceLayout,
+  reorderTab,
   splitPane,
   tabDropSource,
   tabSelection,
 } from "../../src/web/shared/workspace";
 
 describe("workspace tab model", () => {
+  it("reorders four tabs while preserving each view and active selection", () => {
+    let layout = openDocument(initialLayout(), "note:a");
+    layout = openDocument(layout, "note:history");
+    for (const note of ["b", "c", "d"]) layout = openDocument(layout, `note:${note}`, { newTab: true });
+    const pane = activePane(layout);
+    const [a, b, c, d] = pane.tabs;
+    const reordered = reorderTab(layout, pane.id, d!.id, a!.id);
+    expect(activePane(reordered).tabs).toEqual([d, a, b, c]);
+    expect(activeTab(reordered)).toBe(d);
+    expect(activePane(reordered).lastDocumentTab).toBe(pane.lastDocumentTab);
+    expect(reordered.activePane).toBe(layout.activePane);
+    for (const tab of pane.tabs) expect(activePane(reordered).tabs.find(entry => entry.id === tab.id)).toBe(tab);
+    const appended = reorderTab(reordered, pane.id, d!.id, null);
+    expect(activePane(appended).tabs).toEqual(pane.tabs);
+    const middle = reorderTab(appended, pane.id, a!.id, c!.id);
+    expect(activePane(middle).tabs).toEqual([b, a, c, d]);
+    expect(activePane(reorderTab(middle, pane.id, c!.id, a!.id)).tabs).toEqual([b, c, a, d]);
+    expect(parseWorkspaceLayout(JSON.parse(JSON.stringify(middle)))).toEqual(middle);
+  });
+
+  it("reorders graph tabs in a background pane without changing pane focus", () => {
+    const layout = splitPane(openGraph(openDocument(initialLayout(), "note:a")), "right");
+    const pane = layout.panes[0]!;
+    const graph = pane.tabs.find(tab => tab.kind === "graph")!;
+    const reordered = reorderTab(layout, pane.id, graph.id, pane.tabs[0]!.id);
+    expect(reordered.activePane).toBe(layout.activePane);
+    expect(reordered.panes[1]).toBe(layout.panes[1]);
+    expect(reordered.panes[0]!.tabs[0]).toBe(graph);
+    expect(reordered.panes[0]!.activeTab).toBe(pane.activeTab);
+  });
+
+  it("ignores unchanged orders and invalid reorder targets", () => {
+    const layout = openDocument(initialLayout(), "note:a", { newTab: true });
+    const pane = activePane(layout);
+    const [a, b] = pane.tabs;
+    expect(reorderTab(layout, pane.id, a!.id, a!.id)).toBe(layout);
+    expect(reorderTab(layout, pane.id, a!.id, b!.id)).toBe(layout);
+    expect(reorderTab(layout, pane.id, b!.id, null)).toBe(layout);
+    expect(reorderTab(layout, "missing", a!.id, null)).toBe(layout);
+    expect(reorderTab(layout, pane.id, "missing", null)).toBe(layout);
+    expect(reorderTab(layout, pane.id, a!.id, "missing")).toBe(layout);
+  });
+
   it("accepts drops only from a known tab in the other pane", () => {
     const single = openDocument(initialLayout(), "note:first");
     const layout = splitPane(single, "right");

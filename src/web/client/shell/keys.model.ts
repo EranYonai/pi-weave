@@ -84,6 +84,7 @@ export interface KeyContext {
 export type ShellAction =
   | { readonly type: "openSearch" }
   | { readonly type: "openHelp" }
+  | { readonly type: "openSettings" }
   | { readonly type: "closeOverlay" }
   | { readonly type: "focusColumn"; readonly column: ColumnId }
   /** Focus the tree's filter box — `/`. */
@@ -91,8 +92,8 @@ export type ShellAction =
   | { readonly type: "fitGraph" }
   | { readonly type: "clearSelection" }
   | { readonly type: "closeTab" }
-  /** `t` — cycle the colour theme: system → light → dark → system. */
-  | { readonly type: "cycleTheme" };
+  /** `t` — switch between the selected light and dark themes. */
+  | { readonly type: "toggleTheme" };
 
 /**
  * The command-key letters, as data.
@@ -102,6 +103,7 @@ export type ShellAction =
  */
 export const COMMAND_KEYS: Readonly<Record<string, ShellAction>> = {
   k: { type: "openSearch" },
+  ",": { type: "openSettings" },
 };
 
 /**
@@ -146,7 +148,7 @@ export const BARE_KEYS: Readonly<Record<string, ShellAction>> = {
   "/": { type: "filterTree" },
   g: { type: "fitGraph" },
   "?": { type: "openHelp" },
-  t: { type: "cycleTheme" },
+  t: { type: "toggleTheme" },
 };
 
 /**
@@ -320,8 +322,8 @@ export interface ShellEffects {
   /** Write `null` to §1.3's `selectedId`. */
   clearSelection(): void;
   closeTab(): void;
-  /** `t` — advance the user's theme choice by one step in its cycle. */
-  cycleTheme(): void;
+  /** `t` — switch between the user's selected light and dark themes. */
+  toggleTheme(): void;
 }
 
 /** Perform an action. Total over {@link ShellAction}. */
@@ -329,6 +331,8 @@ export function runShellAction(action: ShellAction, fx: ShellEffects): void {
   switch (action.type) {
     case "openSearch":
       return fx.setOverlay("search");
+    case "openSettings":
+      return fx.setOverlay("settings");
     case "openHelp":
       return fx.setOverlay("help");
     case "closeOverlay":
@@ -344,8 +348,8 @@ export function runShellAction(action: ShellAction, fx: ShellEffects): void {
       return fx.clearSelection();
     case "closeTab":
       return fx.closeTab();
-    case "cycleTheme":
-      return fx.cycleTheme();
+    case "toggleTheme":
+      return fx.toggleTheme();
   }
 }
 
@@ -383,13 +387,14 @@ export function keyHelp(cmd: string): readonly KeyHelpGroup[] {
       title: "Global",
       entries: [
         { combo: "⌥W / Alt W", what: "Close the active tab" },
+        { combo: `${cmd},`, what: "Open settings" },
         { combo: `${cmd}K`, what: "Search notes and the repository" },
         ...Object.entries(COLUMN_DIGITS).map(([digit, column]) => ({
           combo: `${cmd}${digit}`,
           what: column === "tree" ? "Open and focus the notes sidebar" : column === "graph" ? "Open and focus Graph view" : "Focus the note",
         })),
         { combo: "?", what: "This help" },
-        { combo: "t", what: "Cycle the colour theme (system / light / dark)" },
+        { combo: "t", what: "Switch between selected light and dark themes" },
         { combo: "Esc", what: "Clear the selection, or close an overlay" },
       ],
     },
@@ -407,6 +412,7 @@ export function keyHelp(cmd: string): readonly KeyHelpGroup[] {
     {
       title: "Tabs and panes",
       entries: [
+        { combo: "Alt ← / →", what: "Reorder the focused tab" },
         { combo: "← / → / Home / End", what: "Select a tab when the tab strip is focused" },
         { combo: `${cmd}click`, what: "Open a note or search result in a new tab" },
         { combo: "Pane options (···)", what: "Split right or down, move a tab, or close a pane" },

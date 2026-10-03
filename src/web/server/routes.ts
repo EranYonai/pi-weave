@@ -44,6 +44,9 @@
  */
 
 import { createHash, randomUUID } from "node:crypto";
+import { createReadStream } from "node:fs";
+import { pipeline } from "node:stream/promises";
+import { createVaultBackup } from "./backup";
 import { readFile } from "node:fs/promises";
 import type { IncomingMessage, ServerResponse } from "node:http";
 import type { WorkspaceSnapshot } from "../../core/cache/workspace";
@@ -379,8 +382,16 @@ async function route(
   if (method === "GET" && path === "/") return sendShell(deps, res);
   if (method === "GET" && path === "/app.js") return sendBundle(deps, res);
   if (method === "GET" && path === "/api/graph") return sendGraph(deps, req, res);
+  if (method === "GET" && path === "/api/backup") {
+    const backup = await createVaultBackup(deps.vaultRoot);
+    try {
+      res.writeHead(200, { ...baseHeaders(), "content-type": "application/zip", "content-disposition": `attachment; filename="weave-vault-${new Date().toISOString().slice(0, 10)}.zip"`, "cache-control": "no-store" });
+      await pipeline(createReadStream(backup.path), res);
+    } finally { await backup.dispose(); }
+    return;
+  }
   if (method === "GET" && path === "/api/workspace-state") {
-    return sendJson(res, 200, { viewId: randomUUID(), layout: await deps.workspaceState.readLatest() }, { "cache-control": "no-store" });
+    return sendJson(res, 200, { viewId: randomUUID(), layout: await deps.workspaceState.readLatest(), info: { vaultRoot: deps.vaultRoot, version: (JSON.parse(await readFile(new URL("../../../package.json", import.meta.url), "utf8")) as { version: string }).version } }, { "cache-control": "no-store" });
   }
   if (method === "POST" && path === "/api/workspace-state") return saveWorkspaceState(deps, req, res);
   if (path.startsWith("/api/folder/")) {

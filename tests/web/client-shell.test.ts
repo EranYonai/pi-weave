@@ -21,7 +21,6 @@ import {
   recordVisit,
   searchHint,
   searchShortcut,
-  shortStamp,
   statusBarModel,
 } from "../../src/web/client/shell/shell.model";
 import { COLUMNS } from "../../src/web/client/shell/shell.model";
@@ -118,36 +117,18 @@ describe("empty states", () => {
 // --- the status bar --------------------------------------------------------------------
 
 describe("statusBarModel", () => {
-  it("shows the cwd, the selection and the stamp", () => {
-    const model = statusBarModel("/repo", "note:alpha", "2026-03-04T09:08:07Z");
+  it("shows the cwd and the selection", () => {
+    const model = statusBarModel("/repo", "note:alpha");
     expect(model.cwd).toBe("/repo");
     expect(model.selection).toBe("note:alpha");
-    expect(model.stamp).toBe("2026-03-04T09:08:07Z");
   });
 
   it("says so when nothing is selected", () => {
-    expect(statusBarModel("/repo", null, null).selection).toBe("nothing selected");
+    expect(statusBarModel("/repo", null).selection).toBe("nothing selected");
   });
 
   it("falls back to a dash for an absent cwd", () => {
-    expect(statusBarModel("", null, null).cwd).toBe(NO_VALUE);
-  });
-});
-
-describe("shortStamp", () => {
-  it("keeps only the time from an ISO stamp", () => {
-    expect(shortStamp("2026-03-04T09:08:07Z")).toBe("09:08:07");
-    expect(shortStamp("2026-03-04T09:08:07.123Z")).toBe("09:08:07");
-  });
-
-  it("is a dash when there is no stamp yet", () => {
-    expect(shortStamp(null)).toBe(NO_VALUE);
-  });
-
-  it("passes a non-ISO stamp through rather than slicing it blindly", () => {
-    // The server derives the stamp and may change how; a mangled substring
-    // would be a worse lie than the whole value.
-    expect(shortStamp("rev-42")).toBe("rev-42");
+    expect(statusBarModel("", null).cwd).toBe(NO_VALUE);
   });
 });
 

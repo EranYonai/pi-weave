@@ -156,6 +156,7 @@ Renaming or moving a note rewrites its inbound links automatically, so its backl
 
 The browser workspace puts notes at the center, with a collapsible notes sidebar, document tabs, and optional context for links,
 backlinks, tags, and code mentions. Open a note to replace the current document; `⌘` / `Ctrl` click a note or wiki-link to open a new tab.
+Drag a tab title within its tab strip to reorder tabs, or use `Alt ←` / `Alt →` while the tab is focused.
 Each document tab has its own Back/Forward history and reading position. The tab strip sits at the top of the workspace.
 Use the ribbon search button or `⌘K` / `Ctrl K`; `⌘` / `Ctrl Enter` opens a result
 in a new tab. **Recent** keeps its order while you browse; returning to it refreshes the visit order. Its rows show the same item icons
@@ -177,7 +178,19 @@ within a couple of seconds; the last writer wins.
 Tabs, pane sizes, sidebars, theme, and reading positions restore for the same vault and repository, even when the local server port
 changes. Presentation snapshots live under `$XDG_CONFIG_HOME/pi-weave/presentation` (or `~/.config/pi-weave/presentation`), separate from
 the knowledge files. Unsaved text stays in memory and is guarded on reload/close; it is not restored after closing the browser. Missing
-notes do not prevent the other tabs from restoring. The workspace follows the system theme unless you choose light or dark.
+notes do not prevent the other tabs from restoring. The workspace follows the system theme unless you choose a palette in Settings.
+
+Open **Settings** with the gear button or `⌘,` / `Ctrl ,`. General includes workspace locations, refresh, documentation, and
+keyboard shortcuts. Appearance offers six Catppuccin palettes and three additional light/dark pairs, an independent accent selector,
+and note font size. Choose a light theme and a dark theme; the ribbon button and `t` switch between those two. System mode follows
+your device using the selected pair. Interface holds sidebar visibility, group colors, and the live graph layout sliders. Editor controls spellcheck,
+readable line length, and whether newly opened notes start in editing mode. Files controls startup tabs and whether new tabs take focus.
+These preferences are stored with the workspace snapshots.
+
+**Settings → Backup → Download vault ZIP** exports saved vault files, including attachments, hidden metadata, empty folders, and linked
+content. Save unsaved drafts before downloading. Backups are manual; there is no scheduled backup or sync. Restore by extracting the ZIP
+into a vault directory. Symbolic-link cycles, unreadable files, and entries outside ZIP format limits produce an error instead of a partial
+archive. Presentation snapshots and the separate repository index are not part of the vault download.
 
 This browser facelift is the first stage toward a dedicated macOS window. `/weave-view` still launches the browser, and the agent owns
 the local server's lifetime.
