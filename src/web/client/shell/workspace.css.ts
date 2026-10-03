@@ -1,10 +1,5 @@
 /** Tabbed workspace furniture; the graph keeps its existing palette and renderer. */
 export const WORKSPACE_CSS = `
-#app{grid-template-rows:48px minmax(0,1fr) auto}
-.weave-header{padding:0 16px;gap:20px;border-bottom:1px solid var(--weave-line)}
-.weave-brand{font-size:var(--weave-px-subhead);letter-spacing:-.025em}
-.weave-header .weave-search{height:30px;width:260px;max-width:35vw;border-radius:var(--weave-radius);background:var(--weave-bg)}
-.weave-summary{font-size:var(--weave-px-ui);opacity:.8}
 .weave-workbench{position:relative;display:flex;min-height:0;overflow:hidden;background:var(--weave-page)}
 .weave-workbench button{font:inherit;color:inherit;cursor:pointer}
 .weave-workbench button:focus-visible,.weave-workbench summary:focus-visible{outline:2px solid var(--weave-accent);outline-offset:-2px}
@@ -38,6 +33,8 @@ export const WORKSPACE_CSS = `
 .weave-panes{display:grid;flex:1;min-width:0;min-height:0;overflow:hidden}
 .weave-pane{min-width:0;min-height:0;display:grid;grid-template-rows:42px 36px minmax(0,1fr);overflow:hidden;background:var(--weave-page)}
 .weave-pane[hidden]{display:none}
+.weave-pane-drop{position:relative}
+.weave-pane-drop::after{content:"Move tab here";position:absolute;inset:4px;z-index:20;display:grid;place-items:center;pointer-events:none;border:2px dashed var(--weave-accent);border-radius:var(--weave-radius);color:var(--weave-accent);background:var(--weave-new)}
 .weave-tabs{display:flex;align-items:stretch;min-width:0;overflow-x:auto;background:var(--weave-panel);gap:3px;padding:5px 6px 0;border-bottom:1px solid var(--weave-line);scrollbar-width:thin}
 .weave-tab{display:flex;align-items:center;min-width:90px;max-width:210px;border-radius:var(--weave-radius) var(--weave-radius) 0 0;color:var(--weave-dim);flex-shrink:0;border-bottom:2px solid transparent}
 .weave-tab-active{background:var(--weave-page);color:var(--weave-fg)}
@@ -103,8 +100,6 @@ export const WORKSPACE_CSS = `
   .weave-sidebar-notes{position:absolute;left:44px;top:0;bottom:0;z-index:10;border-right:1px solid var(--weave-line-strong);box-shadow:8px 0 24px #0002}
   .weave-workbench>.weave-workspace-divider{display:none}
   .weave-panes{grid-template-columns:minmax(0,1fr)!important;grid-template-rows:minmax(0,1fr)!important}
-  .weave-summary{display:none}
-  .weave-header .weave-search{max-width:none;width:auto;flex:1}
   .weave-document .weave-note-head{padding:20px}
   .weave-document .weave-note-body{padding:10px 20px 40px}
 }

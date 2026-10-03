@@ -3,8 +3,8 @@
  *
  * P4's exit criterion is "the whole workspace is drivable without a mouse",
  * and a dialog that does not trap focus fails it in the most literal way
- * available: Tab from the last control lands on the header behind the
- * overlay, the user is now typing into a search box they cannot see, and
+ * available: Tab from the last control lands on the workspace behind the
+ * overlay, the user is now typing into a field they cannot see, and
  * `Esc` goes to whatever they landed on. So the palette and the help overlay
  * both trap, and both restore.
  *

@@ -13,7 +13,7 @@
  * "Dark" and "light" alone are not enough: stripping a user of "follow my OS"
  * is a regression the moment anyone prefers the *default* behaviour rather
  * than either specific scheme. The cycle is `system → light → dark → system`
- * so the control is one button, never a menu — a popover in a 34 px header is
+ * so the control is one button, never a menu — a popover in the ribbon is
  * a second focusable thing to reach, and the setting is not worth one.
  *
  * ## The attribute, not a class, not inline styles
@@ -120,7 +120,7 @@ export function themeAttr(choice: ThemeChoice): "light" | "dark" | null {
 // --- the control's view ------------------------------------------------------------
 
 /**
- * The header button's face.
+ * The ribbon button's face.
  *
  * The glyphs are the provenance language the tree already teaches
  * (`tree.model.ts`): filled, half and hollow of one shape. Filled `●` is

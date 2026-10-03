@@ -228,7 +228,7 @@ describe("isTextEntry", () => {
 
 describe("describeKey", () => {
   function event(partial: Partial<KeyboardEventLike> & { key: string }): KeyboardEventLike {
-    return { ctrlKey: false, metaKey: false, shiftKey: false, altKey: false, target: null, preventDefault: () => {}, ...partial };
+    return { defaultPrevented: false, ctrlKey: false, metaKey: false, shiftKey: false, altKey: false, target: null, preventDefault: () => {}, ...partial };
   }
 
   it("reduces a platform event to the five booleans a decision needs", () => {
@@ -272,6 +272,7 @@ describe("watchKeys", () => {
 
   function event(partial: Partial<KeyboardEventLike> & { key: string }): KeyboardEventLike & { prevented: boolean } {
     const self = {
+      defaultPrevented: false,
       ctrlKey: false,
       metaKey: false,
       shiftKey: false,
@@ -293,6 +294,16 @@ describe("watchKeys", () => {
     document.fire(e);
     expect(ran).toEqual([{ type: "openSearch" }]);
     expect(e.prevented).toBe(true);
+  });
+
+  it("does not clear a note after the palette already handled Escape", () => {
+    const document = host();
+    const ran: ShellAction[] = [];
+    watchKeys(document, { context: () => ({ overlay: null, hasSelection: true }), run: (action) => void ran.push(action) });
+    document.fire(event({ key: "Escape", defaultPrevented: true }));
+    expect(ran).toEqual([]);
+    document.fire(event({ key: "Escape" }));
+    expect(ran).toEqual([{ type: "clearSelection" }]);
   });
 
   it("leaves an unclaimed key entirely alone", () => {

@@ -191,6 +191,12 @@ export function closePane(layout: WorkspaceLayout, paneId: string): WorkspaceLay
   return { ...layout, panes: [{ ...kept, tabs: [...kept.tabs, ...closed.tabs] }], activePane: kept.id };
 }
 
+/** Accept a tab drop only in another existing pane. */
+export function tabDropSource(layout: WorkspaceLayout, targetPane: string, tabId: string | null): string | null {
+  if (!layout.panes.some((pane) => pane.id === targetPane)) return null;
+  return layout.panes.find((pane) => pane.id !== targetPane && pane.tabs.some((tab) => tab.id === tabId))?.id ?? null;
+}
+
 export function moveTab(layout: WorkspaceLayout, paneId: string, tabId: string): WorkspaceLayout {
   const found = findTab(layout, paneId, tabId);
   if (!found) return layout;

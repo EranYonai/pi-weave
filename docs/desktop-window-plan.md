@@ -88,10 +88,11 @@ This is a behavior sketch; refine spacing and visual hierarchy against the obser
 
 - The left sidebar shows clearly separated vault and repository scopes, folders, readable titles, and a compact recents view. Reuse current traversal, filtering, and mutations. Keep one visible unified search; the local tree filter remains a list filter, not a competing retrieval mode.
 - Clicking a note, wikilink, or search result opens it in the active note tab. An explicit new-tab action or modifier opens another tab. If the active tab is Graph, opening a note uses the last active note tab in that group, or creates one, preserving the Graph tab.
-- Tabs have titles, active state, close controls, and unsaved indicators. Support explicit New tab, open in new tab, keyboard switching, and close. Start without pinning, preview-tab modes, or arbitrary drag-and-drop docking.
+- Tabs have titles, active state, close controls, and unsaved indicators. Support explicit New tab, open in new tab, keyboard switching, and close. Support dragging tab titles between existing panes; start without pinning, preview-tab modes, or arbitrary docking.
 - Each document tab owns back/forward history and reading position. Back/forward traverses notes within that tab rather than navigating away from the app. New navigation after Back drops the forward tail; deleted targets get a useful missing-note state.
 - Switching tabs preserves an unsaved draft. Replacing a tab's document, navigating its history, or closing its last view prompts before discarding a draft. Keep one draft per note identity across panes/tabs so opening the same note twice cannot create competing in-memory edits. External writes retain the existing last-writer-wins contract; do not overwrite an in-memory draft during a poll.
 - Keep explicit Edit/Save and existing Markdown rendering. This change does not introduce inline preview editing or a new editor engine.
+- Retire the global branding/search/status header. Tabs own the top row; a ribbon search button and `Cmd+K` open unified search. Theme and refresh live in the lower ribbon.
 - Keep `Cmd+K` for unified search. Show an Open in new tab action and its shortcut in results. Context links follow the same navigation rules as the notes list and wikilinks.
 
 ### Graph and split panes

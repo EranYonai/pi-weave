@@ -4,7 +4,7 @@ Branch: `codex/weave-workspace-facelift`. Browser first; dedicated macOS hosting
 
 ## Design contract
 
-- Note-first workspace: quiet header, persistent notes sidebar, document tab strip, optional context sidebar.
+- Note-first workspace: tabs at the top, persistent notes sidebar, optional context sidebar; search/theme/refresh live in the ribbon.
 - One or two pane groups, split right/down with an adjustable divider; closing a pane moves tabs to the remaining pane.
 - Each document tab owns navigation history and reading position; one shared draft per note identity.
 - One Graph tab and renderer per workspace. Change its hosting and selection routing only; preserve physics and drawing.
@@ -35,9 +35,9 @@ Unit checks cover history, tab/pane moves, draft/save races, persisted input val
 
 ## Results
 
-- `npm run check`: typechecks, committed bundle check, and 2,138 tests pass (76 files).
+- `npm run check`: typechecks, committed bundle check, and 2,132 tests pass (76 files).
 - Coverage: 98.90% statements/lines, 95.35% branches, 98.83% functions; thresholds unchanged.
-- Bundle: 404.7 KiB raw, 122.5 KiB gzip (150 KiB gzip budget); no dependency changes.
+- Bundle: 397.1 KiB raw, 117.8 KiB gzip (150 KiB gzip budget); no dependency changes.
 - Disposable-vault browser checks at 1280×800 and 700×720: tab/new-tab search, wiki-link history,
   shared drafts across two views, save refresh, graph/note split, pane merge, sidebars, keyboard
   focus, narrow-pane switching, and scroll restoration. A 1440-pixel reading position survived tab
@@ -68,3 +68,15 @@ Unit checks cover history, tab/pane moves, draft/save races, persisted input val
   split/single-pane destinations, Escape/Clear, return-to-Graph reset, and drag without opening.
   Preview controls remain visible at 700×720 with the notes sidebar open. Sol 6.1 reviewed
   and re-reviewed the drag safeguard with no further actionable findings.
+
+- Retired the global branding/search/status header and its orphaned component, helpers, styles,
+  and tests. Tabs now start at the top; search, theme, and refresh are accessible ribbon controls.
+  Live checks verified palette search, keyboard opening with the sidebar hidden, theme cycling,
+  refresh, narrow-window access, and Graph sizing. Palette Escape no longer clears the note:
+  the shared shortcut listener ignores keys already handled by a local control.
+- Native tab-title dragging uses the existing move operation and highlights the other pane.
+  Live side-by-side checks verified moves in both directions, the only tab leaving a placeholder,
+  an unsaved draft surviving the move, dropping onto Graph, and Graph moving between tab strips.
+  Sol 6.1 reviewed the implementation; the reported graph drop-highlight flicker is fixed.
+  Stacked-pane drag gestures did not complete in the in-app browser automation and remain
+  a manual check; both layouts use the same drop/move implementation.

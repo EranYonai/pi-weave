@@ -51,8 +51,8 @@ were edited. This is a small-vault interaction review, not a large-vault perform
 | Task checkbox | Record a small change without opening the editor | Shared body and write protection across duplicate views; visible checkboxes must match that body |
 | Open in external editor | Use a familiar editing tool | Retain the existing action and reload behavior; external changes do not silently replace a draft |
 | File actions / rename / move / delete | Organize notes | Visible menu trigger alongside filters; guard every affected draft, including background tabs and folder descendants; preserve unrelated drafts |
-| Theme | Adapt the reading surface | Existing system/light/dark cycle and next-action tooltip |
-| Refresh workspace | Retry or fetch external changes immediately | Keep the recovery action; replace implementation-oriented “Refetch everything” wording |
+| Theme ribbon button | Adapt the reading surface | Existing system/light/dark cycle and next-action tooltip |
+| Refresh ribbon button | Retry or fetch external changes immediately | Visible recovery action with a descriptive tooltip |
 | Help | Discover shortcuts and pane actions | Accessible button; shortcuts describe the actual workspace flows |
 | Footer | Identify the workspace and pending work | Keep workspace/draft/restoration status; remove the internal context-bus tooltip |
 
@@ -116,8 +116,8 @@ Native discard/reload confirmation handling remains a manual check where the in-
 browser cannot expose its dialog. Dedicated-window lifecycle is not implemented here.
 
 Sol 6.1 re-reviewed the corrections and found no remaining confirmed blockers. The full
-gate passes 2,138 tests in 76 files, with 98.90% statements/lines, 95.35% branches, and
-98.83% functions. The browser bundle is 122.5 KiB gzip, below its 150 KiB budget.
+gate passes 2,132 tests in 76 files, with 98.90% statements/lines, 95.35% branches, and
+98.83% functions. The browser bundle is 117.8 KiB gzip, below its 150 KiB budget.
 
 ## Check locally
 
@@ -153,3 +153,14 @@ panes, returning to Graph, Escape/Clear, and the narrow-window sidebar overlay. 
 Sigma dispatching double-click before its drag guard; the renderer now suppresses activation
 after node movement. A regression test covers this sequence, and re-review found no further
 actionable issues. The card sits at lower right so the narrow notes sidebar does not cover it.
+
+The global branding/search/status header is retired. Tabs own the top row, and the ribbon
+retains Search, theme, and Refresh. A fresh live reference-app pass confirmed this distribution
+of controls. Browser checks verified search and its keyboard shortcut with the sidebar hidden,
+Escape retaining the note, theme cycling, refresh, narrow access, and graph sizing.
+
+Tab titles can be dragged into the other pane, reusing the menu move operation. Side-by-side
+checks covered both directions, a sole source tab, an unsaved draft, a drop onto Graph, and
+Graph moving between tab strips. Sol 6.1 reviewed source and the highlight containment fix.
+For the manual pass, repeat tab moves in stacked panes: those gestures did not complete in
+the in-app browser automation. No browser errors were recorded.

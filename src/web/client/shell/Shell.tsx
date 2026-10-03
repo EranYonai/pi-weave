@@ -1,7 +1,7 @@
 /** Shared browser/desktop workspace: one data source, two optional tab groups. */
 import { useEffect, useLayoutEffect, useRef, useState } from "preact/hooks";
 import type { GraphPayload, NotePayload } from "../../shared/wire";
-import { activePane, activeTab, activateTab, closePane, closeTab, focusDocument, initialLayout, moveTab, navigateTab, openDocument, openGraph, parseWorkspaceLayout, splitPane, tabSelection } from "../../shared/workspace";
+import { activePane, activeTab, activateTab, closePane, closeTab, focusDocument, initialLayout, moveTab, navigateTab, openDocument, openGraph, parseWorkspaceLayout, splitPane, tabDropSource, tabSelection } from "../../shared/workspace";
 import type { Pane, WorkspaceLayout, WorkspaceTab } from "../../shared/workspace";
 import { fetchJson } from "../api.dom";
 import { openNote, saveNote } from "../api";
@@ -19,13 +19,12 @@ import { startWorkspace, watchNote } from "../workspace";
 import type { WorkspaceHandle } from "../workspace";
 import { ContextRail } from "./ContextRail";
 import { deeplinkSelection, formatHash } from "./deeplink.model";
-import { Header } from "./Header";
 import { HelpOverlay } from "./HelpOverlay";
 import { watchKeys } from "./keys";
 import { COLUMN_FOCUS_SELECTORS, TREE_FILTER_SELECTOR, focusSelector, runShellAction } from "./keys.model";
 import { StatusBar } from "./StatusBar";
 import type { OverlayId } from "./shell.model";
-import { TICK_MS, graphClickOpensTab, looksApple, recentEntries, recordVisit, searchShortcut, statusBarModel, summarize } from "./shell.model";
+import { TICK_MS, graphClickOpensTab, looksApple, recentEntries, recordVisit, searchHint, searchShortcut, statusBarModel } from "./shell.model";
 import { cycleTheme, effectiveScheme, loadTheme, saveTheme, themeAttr, themeButton } from "./theme.model";
 
 export interface ShellProps { cwd: string; initialWidth: number; platform: string; tuner?: boolean }
@@ -125,6 +124,8 @@ export function Shell(props: ShellProps) {
   const [, setDraftRevision] = useState(0);
   const [graphSelection, setGraphSelection] = useState<string | null>(null);
   const [graphPreviewId, setGraphPreviewId] = useState<string | null>(null);
+  const draggedTab = useRef<string | null>(null);
+  const [dropPane, setDropPane] = useState<string | null>(null);
   const [recentMode, setRecentMode] = useState(false);
   const [visits, setVisits] = useState<readonly string[]>([]);
   const [compactContext, setCompactContext] = useState(false);
@@ -139,6 +140,7 @@ export function Shell(props: ShellProps) {
   const [graphBox, setGraphBox] = useState({ left: 0, top: 0, width: 600, height: 500 });
   const pane = activePane(layout);
   const tab = activeTab(layout);
+  const theme = themeButton(layout.theme);
   const selectedId = tab.kind === "graph" ? graphSelection : tabSelection(tab);
   const graphPane = layout.panes.find((group) => group.tabs.some((entry) => entry.id === group.activeTab && entry.kind === "graph"));
   const graphVisible = graphPane !== undefined && (width >= 850 || graphPane.id === layout.activePane);
@@ -296,15 +298,37 @@ export function Shell(props: ShellProps) {
   const rememberScroll = (tabId: string, scroll: number): void => setLayout((current) => ({ ...current,
     panes: current.panes.map((group) => ({ ...group, tabs: group.tabs.map((entry) => entry.id === tabId ? { ...entry, scroll } : entry) })),
   }));
+  const tabDragOver = (paneId: string, event: DragEvent): void => {
+    if (tabDropSource(layout, paneId, draggedTab.current) === null) return;
+    event.preventDefault();
+    if (event.dataTransfer) event.dataTransfer.dropEffect = "move";
+    setDropPane(paneId);
+  };
+  const tabDrop = (paneId: string, event: DragEvent): void => {
+    const id = draggedTab.current;
+    if (tabDropSource(layout, paneId, id) === null) return;
+    event.preventDefault();
+    setLayout((value) => {
+      const source = tabDropSource(value, paneId, id);
+      return source === null ? value : moveTab(value, source, id!);
+    });
+    draggedTab.current = null;
+    setDropPane(null);
+  };
   const renderPane = (group: Pane) => {
     const current = group.tabs.find((entry) => entry.id === group.activeTab)!;
     const isActive = group.id === layout.activePane;
-    return <section key={group.id} class={`weave-pane${isActive ? " weave-pane-active" : ""}`} aria-label={`Workspace pane ${layout.panes.indexOf(group) + 1}`}
+    return <section key={group.id} class={`weave-pane${isActive ? " weave-pane-active" : ""}${dropPane === group.id ? " weave-pane-drop" : ""}`} aria-label={`Workspace pane ${layout.panes.indexOf(group) + 1}`}
+      onDragOver={(event) => tabDragOver(group.id, event)} onDrop={(event) => tabDrop(group.id, event)}
+      onDragLeave={(event) => { if (!event.currentTarget.contains(event.relatedTarget as Node | null)) setDropPane(null); }}
       hidden={width < 850 && !isActive} onFocusCapture={() => { if (!isActive) setLayout((value) => ({ ...value, activePane: group.id })); }}
       onPointerDown={() => { if (!isActive) setLayout((value) => ({ ...value, activePane: group.id })); }}>
       <div class="weave-tabs" role="tablist" aria-label="Open documents">
         {group.tabs.map((entry) => <div key={entry.id} class={`weave-tab${entry.id === current.id ? " weave-tab-active" : ""}`}>
           <button type="button" role="tab" title={titleOf(entry, data.graph)} id={`tab-${entry.id}`} aria-selected={entry.id === current.id} aria-controls={`panel-${group.id}`} tabIndex={entry.id === current.id ? 0 : -1}
+            draggable={layout.panes.length === 2}
+            onDragStart={(event) => { draggedTab.current = entry.id; event.dataTransfer!.effectAllowed = "move"; event.dataTransfer!.setData("application/x-weave-tab", entry.id); }}
+            onDragEnd={() => { draggedTab.current = null; setDropPane(null); }}
             onClick={() => setLayout(activateTab(layout, group.id, entry.id))}
             onKeyDown={(event) => {
               const offset = event.key === "ArrowRight" ? 1 : event.key === "ArrowLeft" ? -1 : 0;
@@ -342,14 +366,17 @@ export function Shell(props: ShellProps) {
   };
 
   return <>
-    <Header summary={summarize(data.graph)} shortcut={searchShortcut(looksApple(props.platform))} onRefresh={() => { workspace.current?.refresh(); setRevision((value) => value + 1); }} onSearch={() => setOverlay("search")}
-      theme={themeButton(layout.theme)} onTheme={() => setLayout({ ...layout, theme: cycleTheme(layout.theme) })} />
     <div class="weave-workbench" ref={root}>
       <nav class="weave-ribbon" aria-label="Workspace tools">
         <button type="button" aria-label="Toggle notes sidebar" aria-pressed={layout.treeVisible} title="Notes" onClick={() => setLayout({ ...layout, treeVisible: !layout.treeVisible })}>▤</button>
         <button type="button" aria-label="Open graph view" title="Graph view" onClick={showGraph}>◌</button>
+        <button type="button" aria-label="Search notes and repository" title={searchHint(searchShortcut(looksApple(props.platform)))} onClick={() => setOverlay("search")}>
+          <svg viewBox="0 0 20 20" width={16} height={16} fill="none" stroke="currentColor" stroke-width={1.7} aria-hidden="true"><circle cx="8.5" cy="8.5" r="5.5" /><path d="m13 13 4 4" /></svg>
+        </button>
         <span class="weave-ribbon-space" />
         <button type="button" aria-label="Toggle context sidebar" aria-pressed={width < 1050 ? compactContext : layout.contextVisible} title="Context" onClick={() => width < 1050 ? setCompactContext(!compactContext) : setLayout({ ...layout, contextVisible: !layout.contextVisible })}>☷</button>
+        <button type="button" aria-label="Refresh workspace" title="Refresh workspace" onClick={() => { workspace.current?.refresh(); setRevision((value) => value + 1); }}>↻</button>
+        <button type="button" aria-label={theme.hint} title={theme.hint} onClick={() => setLayout({ ...layout, theme: cycleTheme(layout.theme) })}>{theme.glyph}</button>
         <button type="button" aria-label="Keyboard shortcuts" onClick={() => setOverlay("help")}>?</button>
       </nav>
       {layout.treeVisible ? <><aside class="weave-sidebar weave-sidebar-notes" aria-label="Notes sidebar" style={{ width: Math.min(layout.treeWidth, width - 90) }}>
@@ -364,7 +391,7 @@ export function Shell(props: ShellProps) {
         }} /> : null}{renderPane(group)}</>)}
       </main>
       {(width < 1050 ? compactContext : layout.contextVisible) ? <><ResizeHandle label="Resize context sidebar" min={180} max={400} value={layout.contextWidth} onChange={(delta) => setLayout((value) => ({ ...value, contextWidth: Math.max(180, Math.min(400, value.contextWidth - delta)) }))} /><aside class="weave-sidebar weave-sidebar-context" style={{ width: layout.contextWidth }} aria-label="Context sidebar"><div class="weave-sidebar-heading"><strong>Context</strong><button type="button" aria-label="Hide context sidebar" onClick={() => { setCompactContext(false); setLayout({ ...layout, contextVisible: false }); }}>»</button></div><ContextRail graph={data.graph} selectedId={selectedId} onSelect={select} /></aside></> : null}
-      {hasGraph ? <div class="weave-graph-host" onPointerDown={() => { if (graphPane) setLayout((current) => ({ ...current, activePane: graphPane.id })); }} onFocusCapture={() => { if (graphPane) setLayout((current) => ({ ...current, activePane: graphPane.id })); }} aria-hidden={!graphVisible} style={{ ...graphBox, visibility: graphVisible ? "visible" : "hidden", pointerEvents: graphVisible ? "auto" : "none" }}>
+      {hasGraph ? <div class="weave-graph-host" onDragOver={(event) => { if (graphPane) tabDragOver(graphPane.id, event); }} onDrop={(event) => { if (graphPane) tabDrop(graphPane.id, event); }} onDragLeave={(event) => { if (!event.currentTarget.contains(event.relatedTarget as Node | null)) setDropPane(null); }} onPointerDown={() => { if (graphPane) setLayout((current) => ({ ...current, activePane: graphPane.id })); }} onFocusCapture={() => { if (graphPane) setLayout((current) => ({ ...current, activePane: graphPane.id })); }} aria-hidden={!graphVisible} style={{ ...graphBox, visibility: graphVisible ? "visible" : "hidden", pointerEvents: graphVisible ? "auto" : "none" }}>
         <Graph graph={data.graph} selectedId={selectedId} previewId={graphPreviewId} onSelect={selectGraph} onOpen={openGraphNode} renderer={createSigmaRenderer} storage={localStorage} host={window} scheme={effectiveScheme(layout.theme, scheme)} bootFailed={data.graphFailed} fit={fit} tuner={props.tuner === true} />
       </div> : null}
     </div>

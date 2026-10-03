@@ -221,6 +221,7 @@ export interface KeyTarget {
  * use, for the same reason: there is no DOM test environment (§10).
  */
 export interface KeyboardEventLike {
+  readonly defaultPrevented: boolean;
   readonly key: string;
   readonly ctrlKey: boolean;
   readonly metaKey: boolean;

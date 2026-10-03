@@ -1,8 +1,8 @@
 /**
  * Everything the shell *decides*, as pure functions (weave-workspace §1.2).
  *
- * The header's status summary, the per-column empty-state copy and the status
- * bar's text all live here rather than inside the components that render them.
+ * The Recent list, per-column empty-state copy and footer status text live
+ * here rather than inside the components that render them.
  * That is not a stylistic
  * preference: §10 forbids adding a DOM test environment, so a conditional
  * inside a `.tsx` is a conditional that can never be covered, and §14 lists
@@ -14,7 +14,7 @@
  * types, no `node:*`, no `src/core`.
  */
 
-import type { GraphPayload, WireNodeKind, WireStalenessState } from "../../shared/wire";
+import type { GraphPayload, WireNodeKind } from "../../shared/wire";
 import { kindIcon } from "../tree/tree.model";
 import type { IconName } from "./icons.model";
 export type ColumnId = "tree" | "note" | "graph";
@@ -44,64 +44,6 @@ export function recentEntries(ids: readonly string[], graph: GraphPayload | null
     const kind: WireNodeKind = node?.kind ?? (id.startsWith("vfolder:") ? "module" : id.startsWith("artifact:") ? "file" : "note");
     return { id, label: node?.label ?? id.replace(/^[^:]+:/, ""), icon: kindIcon(kind), selected: id === selectedId };
   });
-}
-
-// --- the header summary --------------------------------------------------------
-
-/**
- * The `vault:34 · repo:fresh · 127 nodes` readout from the §1.2 sketch.
- *
- * Kept as three fields rather than one pre-joined string so the component can
- * put a separator between them without this module owning a `·`, and so a
- * test asserts the numbers rather than a formatting decision.
- */
-export interface HeaderSummary {
-  /** Note nodes in the vault. */
-  readonly notes: number;
-  /** Repository index freshness, or `null` when the repo is unindexed. */
-  readonly repo: WireStalenessState | null;
-  /** Every node, of every kind. */
-  readonly nodes: number;
-}
-
-/** The summary before the first graph arrives. */
-export const EMPTY_SUMMARY: HeaderSummary = { notes: 0, repo: null, nodes: 0 };
-
-/**
- * Which node kinds count as "vault" for the header.
- *
- * Only `note`. The `vault` node itself is the container, and counting it
- * would make an empty vault read `vault:1` — a number that is technically
- * defensible and would still be read as "there is one note in there".
- */
-const VAULT_KINDS: readonly WireNodeKind[] = ["note"];
-
-/** Derive the header counts from a payload. */
-export function summarize(payload: GraphPayload | null): HeaderSummary {
-  if (payload === null) return EMPTY_SUMMARY;
-  const nodes = payload.model.nodes;
-  return {
-    notes: nodes.filter((node) => VAULT_KINDS.includes(node.kind)).length,
-    repo: payload.model.staleness?.state ?? null,
-    nodes: nodes.length,
-  };
-}
-
-/**
- * The repo segment's text.
- *
- * `"unindexed"` rather than `"missing"` for a null or `missing` staleness:
- * "missing" reads as an error, and a repository that has simply never been
- * scanned is the ordinary first-run state, not a fault. The word the user
- * needs is the one that implies an action they can take.
- */
-export function repoLabel(repo: WireStalenessState | null): string {
-  return repo === null || repo === "missing" ? "unindexed" : repo;
-}
-
-/** `vault:34 · repo:fresh · 127 nodes`, as the pieces to join. */
-export function summaryParts(summary: HeaderSummary): readonly string[] {
-  return [`vault:${summary.notes}`, `repo:${repoLabel(summary.repo)}`, `${summary.nodes} nodes`];
 }
 
 // --- empty states ------------------------------------------------------------------
@@ -166,24 +108,6 @@ export function shortStamp(stamp: string | null): string {
   return match?.[1] ?? stamp;
 }
 
-// --- the refresh button ------------------------------------------------------------
-
-/**
- * The refresh control's glyph, as SVG path data.
- *
- * A drawn icon replaces the `⟳` text character for the same reason §P6.4
- * retires the tree's glyph soup: a text arrow is whatever the platform's
- * fallback font draws it as, while these two strokes are the brand's own
- * weight everywhere. Stored as pure data here — §10 — so `Header.tsx` stays
- * props-in/JSX-out and the shape is testable without a DOM. 24×24 viewBox,
- * stroked, `currentColor`: the header recolours it on hover like any other
- * glyph.
- */
-export const REFRESH_ICON_PATHS: readonly string[] = [
-  "M21 12a9 9 0 1 1-2.64-6.36",
-  "M21 3v6h-6",
-];
-
 /**
  * How often the shell re-renders on its own, in ms.
  *
@@ -199,29 +123,12 @@ export const TICK_MS = 60_000;
 
 // --- the search affordance ---------------------------------------------------------
 
-/**
- * The `⌘K` control.
- *
- * Rendered **disabled** through P1–P3, with a title saying search arrived in
- * P4 — a deliberate choice over omitting it: the keyboard hint taught the
- * shortcut that would exist, and a `disabled` control explaining itself is
- * honest in a way that a working-looking box that does nothing is not.
- *
- * P4 made it live, and it is now a *button* rather than an `<input>`. The
- * palette owns the only text field, so a second one in the header would be
- * two places to type a query into and one of them would be a lie — clicking
- * it opens the overlay and whatever was typed into the header box would be
- * discarded. A button that looks like a search field and opens the real one
- * is the affordance the §1.2 sketch actually describes.
- */
-export const SEARCH_PLACEHOLDER = "Search…";
-
 /** The shortcut hint. `⌘K` on Apple platforms, `Ctrl K` elsewhere. */
 export function searchShortcut(isApple: boolean): string {
   return isApple ? "⌘K" : "Ctrl K";
 }
 
-/** The `title=` on the live search button. Names the key that also opens it. */
+/** The search action's tooltip, including the key that also opens it. */
 export function searchHint(shortcut: string): string {
   return `Search notes and repository (${shortcut})`;
 }

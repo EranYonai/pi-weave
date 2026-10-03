@@ -13,23 +13,18 @@ import { EMPTY_BOOTSTRAP, readBootstrap } from "../../src/web/client/bootstrap";
 import type { OverlayId } from "../../src/web/client/shell/shell.model";
 import {
   CONTEXT_EMPTY,
-  EMPTY_SUMMARY,
   NO_VALUE,
-  SEARCH_PLACEHOLDER,
   looksApple,
   graphClickOpensTab,
   recentEntries,
-  repoLabel,
   recordVisit,
   searchHint,
   searchShortcut,
   shortStamp,
   statusBarModel,
-  summarize,
-  summaryParts,
 } from "../../src/web/client/shell/shell.model";
 import { COLUMNS } from "../../src/web/client/shell/shell.model";
-import type { GraphPayload, WireGraphNode, WireStalenessState } from "../../src/web/shared/wire";
+import type { GraphPayload, WireGraphNode } from "../../src/web/shared/wire";
 
 // --- fixtures ---------------------------------------------------------------------
 
@@ -85,11 +80,11 @@ function node(id: string, kind: WireGraphNode["kind"]): WireGraphNode {
   return { id, kind, label: id, provenance: null, detail: {} };
 }
 
-function payload(nodes: WireGraphNode[], staleness: WireStalenessState | null = null): GraphPayload {
+function payload(nodes: WireGraphNode[]): GraphPayload {
   return {
     model: {
       generatedAt: "2026-03-04T09:08:07Z",
-      staleness: staleness === null ? null : { state: staleness, reasons: [] },
+      staleness: null,
       nodes,
       edges: [],
       contentDigest: "",
@@ -100,61 +95,6 @@ function payload(nodes: WireGraphNode[], staleness: WireStalenessState | null = 
     stamp: "2026-03-04T09:08:07Z",
   };
 }
-
-// --- the header summary --------------------------------------------------------------
-
-describe("summarize", () => {
-  it("is all zeroes and unindexed before the first graph", () => {
-    expect(summarize(null)).toEqual(EMPTY_SUMMARY);
-    expect(summarize(null).repo).toBeNull();
-  });
-
-  it("counts note nodes as the vault count, and everything as nodes", () => {
-    const p = payload([node("note:a", "note"), node("note:b", "note"), node("repo", "repository"), node("v", "vault")]);
-    expect(summarize(p)).toEqual({ notes: 2, repo: null, nodes: 4 });
-  });
-
-  it("does not count the vault container node as a note", () => {
-    // `vault:1` for an empty vault would read as "one note in there".
-    expect(summarize(payload([node("v", "vault")])).notes).toBe(0);
-  });
-
-  it("carries the staleness state through", () => {
-    expect(summarize(payload([], "fresh")).repo).toBe("fresh");
-    expect(summarize(payload([], "stale")).repo).toBe("stale");
-  });
-
-  it("handles a graph with no nodes at all", () => {
-    expect(summarize(payload([]))).toEqual({ notes: 0, repo: null, nodes: 0 });
-  });
-});
-
-describe("repoLabel", () => {
-  it("calls an unscanned repository unindexed, not missing", () => {
-    // "missing" reads as a fault; never-scanned is the ordinary first run.
-    expect(repoLabel(null)).toBe("unindexed");
-    expect(repoLabel("missing")).toBe("unindexed");
-  });
-
-  it("passes real states through", () => {
-    expect(repoLabel("fresh")).toBe("fresh");
-    expect(repoLabel("stale")).toBe("stale");
-  });
-});
-
-describe("summaryParts", () => {
-  it("renders the §1.2 readout", () => {
-    expect(summaryParts({ notes: 34, repo: "fresh", nodes: 127 })).toEqual([
-      "vault:34",
-      "repo:fresh",
-      "127 nodes",
-    ]);
-  });
-
-  it("is honest about an empty workspace", () => {
-    expect(summaryParts(EMPTY_SUMMARY)).toEqual(["vault:0", "repo:unindexed", "0 nodes"]);
-  });
-});
 
 // --- empty states -------------------------------------------------------------------
 
@@ -221,13 +161,9 @@ describe("search affordance", () => {
   });
 
   it("names the shortcut in the tooltip, now that the control is live", () => {
-    // Was `SEARCH_DISABLED_HINT`, asserting the control admitted to being a
-    // placeholder ("search arrives in P4"). P4 arrived, so the honest thing
-    // it has to say changed: the hint now teaches the key that opens the
-    // palette, which is the same action clicking it performs.
+    // The ribbon action and the shortcut share this one palette.
     expect(searchHint("⌘K")).toContain("⌘K");
     expect(searchHint("Ctrl K")).toContain("Ctrl K");
-    expect(SEARCH_PLACEHOLDER).not.toBe("");
   });
 });
 

@@ -13,10 +13,28 @@ import {
   openGraph,
   parseWorkspaceLayout,
   splitPane,
+  tabDropSource,
   tabSelection,
 } from "../../src/web/shared/workspace";
 
 describe("workspace tab model", () => {
+  it("accepts drops only from a known tab in the other pane", () => {
+    const single = openDocument(initialLayout(), "note:first");
+    const layout = splitPane(single, "right");
+    const source = layout.panes[0]!;
+    const target = layout.panes[1]!;
+    const id = source.tabs[0]!.id;
+    expect(tabDropSource(layout, target.id, id)).toBe(source.id);
+    expect(tabDropSource(layout, source.id, id)).toBeNull();
+    expect(tabDropSource(layout, target.id, "tab-missing")).toBeNull();
+    expect(tabDropSource(layout, "pane-missing", id)).toBeNull();
+    expect(tabDropSource(layout, target.id, null)).toBeNull();
+    expect(tabDropSource(single, source.id, id)).toBeNull();
+    const moved = moveTab(layout, tabDropSource(layout, target.id, id)!, id);
+    expect(activeTab(moved)).toBe(source.tabs[0]);
+    expect(moved.activePane).toBe(target.id);
+  });
+
   it("returns from graph to the last active document rather than the last tab in the strip", () => {
     let layout = openDocument(initialLayout(), "note:a");
     const a = activeTab(layout).id;

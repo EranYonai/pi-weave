@@ -56,6 +56,16 @@ function nonced(nonce: string): StyleElement {
 // --- the stylesheet ---------------------------------------------------------------
 
 describe("THEME_CSS", () => {
+  it("starts with the tabs workspace and footer, without the retired header", () => {
+    expect(THEME_CSS).toContain("#app{height:100%;display:grid;grid-template-rows:minmax(0,1fr) auto;");
+    expect(THEME_CSS).not.toContain(".weave-header");
+    expect(THEME_CSS).not.toContain(".weave-summary");
+    expect(WORKSPACE_CSS).not.toContain(".weave-header");
+    for (const selector of [".weave-brand", ".weave-search", ".weave-refresh", ".weave-theme"]) {
+      expect(THEME_CSS).not.toContain(selector);
+    }
+  });
+
   it("defines the palette the components reference", () => {
     for (const name of [
       "--weave-bg",
@@ -97,14 +107,6 @@ describe("THEME_CSS", () => {
 
   it("has a rule for every class the components emit", () => {
     const classes = [
-      "weave-header",
-      "weave-brand",
-      "weave-brand-mark",
-      "weave-search",
-      "weave-summary",
-      "weave-summary-part",
-      "weave-refresh",
-      "weave-theme",
       // `weave-empty` / `-body` / `-phase` went with `EmptyState.tsx` in P3.
       // Every column now renders its own empty state as a plain paragraph
       // (`treeEmptyMessage`, `noteEmptyMessage`, `graphEmptyMessage`,
@@ -183,7 +185,6 @@ describe("THEME_CSS", () => {
       "weave-legend-dim",
       "weave-graph-count",
       // The ⌘K palette and the help overlay (P4).
-      "weave-search-text",
       "weave-scrim",
       "weave-palette",
       "weave-palette-input",
