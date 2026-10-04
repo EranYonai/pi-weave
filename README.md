@@ -13,6 +13,8 @@
 
 **Your notes. Your agent's notes. One searchable knowledge workspace.**
 
+![Pi taking meeting notes alongside the live pi-weave browser workspace](docs/meeting-demo.gif)
+
 I've been chasing the right note-taking workflow for years. Notion, OneNote, Obsidian, and plenty of others.
 
 With pi-weave, I've made one that finally answers the way I want to work today — especially now that AI agents are part of that work.
