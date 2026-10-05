@@ -61,7 +61,7 @@ describe("Excalidraw files", () => {
     const content = source.trimEnd() + " ".repeat(EXCALIDRAW_METADATA_LIMIT);
     await scene(root, "large.excalidraw", content);
     expect(await getExcalidrawArtifact(root, "large.excalidraw")).toMatchObject({ status: "unverified", size: Buffer.byteLength(content) });
-    expect(await getExcalidrawSource(root, "large.excalidraw")).toEqual(Buffer.from(content));
+    expect((await getExcalidrawSource(root, "large.excalidraw"))?.equals(Buffer.from(content))).toBe(true);
     const exact = source.trimEnd() + " ".repeat(EXCALIDRAW_METADATA_LIMIT - Buffer.byteLength(source.trimEnd()));
     await scene(root, "limit.excalidraw", exact);
     expect(await getExcalidrawArtifact(root, "limit.excalidraw")).toMatchObject({ status: "valid" });
