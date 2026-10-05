@@ -1,7 +1,8 @@
 import { promises as fs } from "node:fs";
+import { createHash } from "node:crypto";
 import { join } from "node:path";
 import { unzipSync } from "fflate";
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { startWorkspaceServer, type WorkspaceServer } from "../../src/web/server/server";
 import { createVaultBackup } from "../../src/web/server/backup";
 import { WIKILINK_ATTR, artifactKeyOfNode, previewCard, renderWikilink, resolveWikilink, selectedArtifactPath, wikiIndex, wikilinkTargetOf } from "../../src/web/client/note/note.model";
@@ -42,10 +43,56 @@ describe("scene download and preservation", () => {
     await writeFixture(outside, "outside.excalidraw", scene);
     await fs.symlink(join(vaultRoot, "notes/diagrams/Auth 'café'.excalidraw"), join(vaultRoot, "notes/alias.excalidraw"));
     await fs.symlink(join(outside, "outside.excalidraw"), join(vaultRoot, "notes/outside.excalidraw"));
+    await fs.mkdir(join(vaultRoot, "notes/directory.excalidraw"));
     expect(await (await get("alias.excalidraw")).text()).toBe(scene);
-    for (const slug of ["../outside.excalidraw", "/outside.excalidraw", "diagrams/../alias.excalidraw", "outside.excalidraw", "missing.excalidraw", "diagrams/auth 'café'.excalidraw", "alias.json"]) {
+    for (const slug of ["../outside.excalidraw", "/outside.excalidraw", "diagrams/../alias.excalidraw", "outside.excalidraw", "missing.excalidraw", "diagrams/auth 'café'.excalidraw", "alias.json", "directory.excalidraw"]) {
       expect((await get(slug)).status).toBe(404);
     }
+  });
+
+  it("streams large scene bytes without whole-file reads", async () => {
+    const { vaultRoot, get } = await setup();
+    const source = scene + " ".repeat(2 * 1024 * 1024);
+    await writeFixture(vaultRoot, "notes/large.excalidraw", source);
+    const read = vi.spyOn(fs, "readFile").mockRejectedValue(new Error("whole-file reads forbidden"));
+    try {
+      const response = await get("large.excalidraw");
+      expect(response.status).toBe(200);
+      const hash = createHash("sha256");
+      const reader = response.body!.getReader();
+      let size = 0;
+      for (;;) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        size += value.length;
+        hash.update(value);
+      }
+      expect(size).toBe(Buffer.byteLength(source));
+      expect(hash.digest("hex")).toBe(createHash("sha256").update(source).digest("hex"));
+      expect(read).not.toHaveBeenCalled();
+    } finally { read.mockRestore(); }
+  });
+
+  it("closes the source when a client cancels a large download", async () => {
+    const { vaultRoot, get } = await setup();
+    const path = join(vaultRoot, "notes/large.excalidraw");
+    const fixture = await fs.open(path, "w");
+    await fixture.truncate(32 * 1024 * 1024);
+    await fixture.close();
+    const realOpen = fs.open.bind(fs);
+    let close: ReturnType<typeof vi.spyOn> | undefined;
+    const opened = vi.spyOn(fs, "open").mockImplementation(async (...args) => {
+      const file = await realOpen(...args);
+      close = vi.spyOn(file, "close");
+      return file;
+    });
+    try {
+      const response = await get("large.excalidraw");
+      const reader = response.body!.getReader();
+      expect((await reader.read()).done).toBe(false);
+      await reader.cancel();
+      await expect.poll(() => close?.mock.calls.length ?? 0).toBeGreaterThan(0);
+    } finally { opened.mockRestore(); close?.mockRestore(); }
   });
 
   it("offers malformed source for recovery without interpreting or replacing bytes", async () => {

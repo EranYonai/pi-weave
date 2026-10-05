@@ -61,7 +61,6 @@ export {
   formatRawAppend,
   getHtmlArtifact,
   getExcalidrawArtifact,
-  getExcalidrawSource,
   getVaultArtifact,
   EXCALIDRAW_METADATA_LIMIT,
   getNote,

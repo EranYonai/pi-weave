@@ -76,7 +76,7 @@ export interface LinkOccurrence {
  */
 export function normalizeTarget(raw: string): string {
   const trimmed = raw.trim();
-  return (/\.html?$/i.test(trimmed) || trimmed.endsWith(".excalidraw"))
+  return /\.(?:html?|excalidraw)$/i.test(trimmed)
     ? trimmed.replace(/\\/g, "/").replace(/^\.\//, "")
     : trimmed
         .split("/")
@@ -293,7 +293,7 @@ export function auditLinks(input: LinkAuditInput): LinkAudit {
         continue;
       }
       const basename = occ.target.split("/").pop()!;
-      const scene = occ.target.endsWith(".excalidraw");
+      const scene = /\.excalidraw$/i.test(occ.target);
       const byBase = scene ? [] : byBasename.get(basename) ?? [];
       const byTtl = scene ? [] : byTitle.get(basename) ?? [];
       const rule: LinkFix["rule"] | null = byBase.length === 1 ? "basename" : byTtl.length === 1 ? "title" : null;

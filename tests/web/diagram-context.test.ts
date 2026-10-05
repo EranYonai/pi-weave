@@ -47,6 +47,21 @@ describe("diagram authoring context", () => {
     });
   });
 
+  it("anchors a relative vault override to the requested workspace", async () => {
+    const cwd = await makeTempDir();
+    const vault = join(cwd, "review-vault");
+    const state = await makeTempDir();
+    await fs.mkdir(vault);
+    await createWorkspaceStateStore(cwd, vault, state).write("1e7d9d0a-21f2-4d27-a522-5673e4e31f7b", {
+      ...initialLayout(), theme: "ink-blue",
+    });
+    await withVaultEnv("./review-vault", async () => {
+      expect(await diagramContext({ cwd }, state)).toMatchObject({
+        vaultRoot: vault, notesRoot: join(vault, "notes"), themeSource: "workspace", selectedTheme: "ink-blue",
+      });
+    });
+  });
+
   it("resolves only an explicit system scheme using saved light/dark choices", async () => {
     const cwd = await makeTempDir();
     const vault = await makeTempDir();

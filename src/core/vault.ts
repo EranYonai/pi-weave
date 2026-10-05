@@ -832,17 +832,6 @@ export async function resolveExcalidrawPath(root: string, slug: string): Promise
   }
 }
 
-/** Byte-identical source for editing/recovery, including malformed and large scenes. */
-export async function getExcalidrawSource(root: string, slug: string): Promise<Buffer | null> {
-  const path = await resolveExcalidrawPath(root, slug);
-  if (path === null) return null;
-  try {
-    return await fs.readFile(path);
-  } catch {
-    return null;
-  }
-}
-
 export const EXCALIDRAW_METADATA_LIMIT = 1024 * 1024;
 
 /** Bounded scene validation; never reserialize or interpret export-origin provenance. */

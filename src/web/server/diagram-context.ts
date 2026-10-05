@@ -31,7 +31,7 @@ export function parseDiagramArgs(args: readonly string[]): ContextOptions {
 /** Read the same validated, canonical workspace snapshot as the viewer. */
 export async function diagramContext(options: ContextOptions, stateDir?: string) {
   const cwd = resolve(options.cwd ?? process.cwd());
-  const vaultRoot = resolve(resolveVaultRoot());
+  const vaultRoot = resolve(cwd, resolveVaultRoot());
   const layout = await createWorkspaceStateStore(cwd, vaultRoot, stateDir).readLatest();
   const preferences = layout?.preferences ?? DEFAULT_PREFERENCES;
   const choice = options.theme ?? layout?.theme ?? "system";

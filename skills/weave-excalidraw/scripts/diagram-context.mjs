@@ -482,7 +482,7 @@ function parseDiagramArgs(args) {
 }
 async function diagramContext(options, stateDir) {
   const cwd = resolve2(options.cwd ?? process.cwd());
-  const vaultRoot = resolve2(resolveVaultRoot());
+  const vaultRoot = resolve2(cwd, resolveVaultRoot());
   const layout = await createWorkspaceStateStore(cwd, vaultRoot, stateDir).readLatest();
   const preferences = layout?.preferences ?? DEFAULT_PREFERENCES;
   const choice = options.theme ?? layout?.theme ?? "system";

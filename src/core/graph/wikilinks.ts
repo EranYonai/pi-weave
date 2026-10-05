@@ -25,7 +25,7 @@ export function extractWikilinks(body: string): string[] {
     if (raw.length === 0) continue;
     // HTML and scene artifacts are addressed by their vault-relative filename; unlike a
     // Markdown note, the extension is part of the stable identity.
-    const slug = (/\.html?$/i.test(raw) || raw.endsWith(".excalidraw"))
+    const slug = /\.(?:html?|excalidraw)$/i.test(raw)
       ? raw.replace(/\\/g, "/").replace(/^\.\//, "")
       : raw.split("/").map((part) => slugify(part)).join("/");
     if (seen.has(slug)) continue;

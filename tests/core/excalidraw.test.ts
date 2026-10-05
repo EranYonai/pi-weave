@@ -3,7 +3,7 @@ import { join } from "node:path";
 import { describe, expect, it, vi } from "vitest";
 import {
   addNote, ensureVault, EXCALIDRAW_METADATA_LIMIT, getExcalidrawArtifact,
-  getExcalidrawSource, getNote, readVault, renameFolder, repairVaultLinks,
+  getNote, readVault, renameFolder, repairVaultLinks,
   resolveExcalidrawPath, statNotes,
 } from "../../src/core/vault";
 import { buildCurrentGraph } from "../../src/core/graph/current";
@@ -33,7 +33,7 @@ describe("Excalidraw files", () => {
     expect(vault.artifacts).toEqual([expect.objectContaining({
       kind: "excalidraw", slug: "diagrams/Auth Flow.excalidraw", title: "Auth Flow", status: "valid", size: Buffer.byteLength(source),
     })]);
-    expect(await getExcalidrawSource(root, "diagrams/Auth Flow.excalidraw")).toEqual(Buffer.from(source));
+    expect(await fs.readFile(join(root, "notes", "diagrams/Auth Flow.excalidraw"))).toEqual(Buffer.from(source));
     const graph = await buildCurrentGraph(await makeTempDir(), root);
     expect(graph.nodes.find((node) => node.id === "artifact:diagrams/Auth Flow.excalidraw")).toMatchObject({
       kind: "file", provenance: null, detail: { kind: "excalidraw", status: "valid", "link references": "1" },
@@ -48,7 +48,7 @@ describe("Excalidraw files", () => {
     const root = await makeTempDir();
     await scene(root, "broken.excalidraw", content);
     expect(await getExcalidrawArtifact(root, "broken.excalidraw")).toMatchObject({ status: "invalid", error: expect.stringContaining("recover") });
-    expect(await getExcalidrawSource(root, "broken.excalidraw")).toEqual(Buffer.from(content));
+    expect(await fs.readFile(join(root, "notes", "broken.excalidraw"))).toEqual(Buffer.from(content));
     const vault = await readVault(root);
     expect(vault.artifactCount).toBe(1);
     expect(vault.artifacts?.[0]).toMatchObject({ status: "invalid" });
@@ -56,12 +56,12 @@ describe("Excalidraw files", () => {
     expect(graph.nodes.find((node) => node.id === "artifact:broken.excalidraw")?.detail).toMatchObject({ status: "invalid", error: expect.any(String) });
   });
 
-  it("bounds metadata validation while keeping large sources downloadable", async () => {
+  it("bounds metadata validation while preserving large sources", async () => {
     const root = await makeTempDir();
     const content = source.trimEnd() + " ".repeat(EXCALIDRAW_METADATA_LIMIT);
     await scene(root, "large.excalidraw", content);
     expect(await getExcalidrawArtifact(root, "large.excalidraw")).toMatchObject({ status: "unverified", size: Buffer.byteLength(content) });
-    expect((await getExcalidrawSource(root, "large.excalidraw"))?.equals(Buffer.from(content))).toBe(true);
+    expect((await fs.readFile(join(root, "notes", "large.excalidraw"))).equals(Buffer.from(content))).toBe(true);
     const exact = source.trimEnd() + " ".repeat(EXCALIDRAW_METADATA_LIMIT - Buffer.byteLength(source.trimEnd()));
     await scene(root, "limit.excalidraw", exact);
     expect(await getExcalidrawArtifact(root, "limit.excalidraw")).toMatchObject({ status: "valid" });
@@ -73,11 +73,9 @@ describe("Excalidraw files", () => {
     for (const slug of ["missing.excalidraw", "diagrams/auth Flow.excalidraw", "Diagrams/Auth Flow.excalidraw", "../escape.excalidraw", "/escape.excalidraw", "diagrams/../escape.excalidraw", "./diagrams/Auth Flow.excalidraw", "diagrams//Auth Flow.excalidraw", "diagrams\\Auth Flow.excalidraw", "bad\0.excalidraw", "scene.json"]) {
       expect(await resolveExcalidrawPath(root, slug)).toBeNull();
       expect(await getExcalidrawArtifact(root, slug)).toBeNull();
-      expect(await getExcalidrawSource(root, slug)).toBeNull();
     }
     await fs.mkdir(join(root, "notes", "directory.excalidraw"));
     expect(await getExcalidrawArtifact(root, "directory.excalidraw")).toBeNull();
-    expect(await getExcalidrawSource(root, "directory.excalidraw")).toBeNull();
     expect(await getExcalidrawArtifact(await makeTempDir(), "missing.excalidraw")).toBeNull();
   });
 
@@ -94,25 +92,22 @@ describe("Excalidraw files", () => {
     await fs.mkdir(join(root, "notes", "internal"));
     await scene(root, "internal/nested.excalidraw");
     await fs.symlink(join(root, "notes", "internal"), join(root, "notes", "directory-alias"));
-    expect(await getExcalidrawSource(root, "alias.excalidraw")).toEqual(Buffer.from(source));
-    expect(await getExcalidrawSource(root, "directory-alias/nested.excalidraw")).toEqual(Buffer.from(source));
-    expect(await getExcalidrawSource(root, "external.excalidraw")).toBeNull();
-    expect(await getExcalidrawSource(root, "mounted/outside.excalidraw")).toBeNull();
+    expect(await resolveExcalidrawPath(root, "alias.excalidraw")).toBe(await fs.realpath(target));
+    expect(await resolveExcalidrawPath(root, "directory-alias/nested.excalidraw")).toBe(await fs.realpath(join(root, "notes/internal/nested.excalidraw")));
+    expect(await resolveExcalidrawPath(root, "external.excalidraw")).toBeNull();
+    expect(await resolveExcalidrawPath(root, "mounted/outside.excalidraw")).toBeNull();
     const vault = await readVault(root);
     expect(vault.artifacts?.map((artifact) => artifact.slug)).toContain("mounted/old.html");
     expect(vault.artifacts?.map((artifact) => artifact.slug)).not.toContain("external.excalidraw");
     expect(vault.artifacts?.map((artifact) => artifact.slug)).not.toContain("mounted/outside.excalidraw");
     const aliasRoot = join(await makeTempDir(), "vault-alias");
     await fs.symlink(root, aliasRoot);
-    expect(await getExcalidrawSource(aliasRoot, "alias.excalidraw")).toEqual(Buffer.from(source));
+    expect(await resolveExcalidrawPath(aliasRoot, "alias.excalidraw")).toBe(await fs.realpath(target));
   });
 
   it("survives unreadable scenes without failing vault discovery", async () => {
     const root = await makeTempDir();
     await scene(root, "read-error.excalidraw");
-    const read = vi.spyOn(fs, "readFile").mockRejectedValueOnce(new Error("read error"));
-    expect(await getExcalidrawSource(root, "read-error.excalidraw")).toBeNull();
-    read.mockRestore();
     const open = vi.spyOn(fs, "open").mockRejectedValueOnce(new Error("open error"));
     expect(await getExcalidrawArtifact(root, "read-error.excalidraw")).toBeNull();
     open.mockRestore();
@@ -144,8 +139,20 @@ describe("Excalidraw files", () => {
     await addNote(root, { title: "Hub", body: "[[diagrams/Auth Flow.excalidraw|Overview]] [[diagrams/deep/Nested.excalidraw]]" });
     expect(await renameFolder(root, "diagrams", "Architecture")).toEqual({ ok: true, path: "architecture" });
     expect((await getNote(root, "hub"))?.body).toBe("[[architecture/Auth Flow.excalidraw|Overview]] [[architecture/deep/Nested.excalidraw|diagrams/deep/Nested.excalidraw]]");
-    expect(await getExcalidrawSource(root, "architecture/Auth Flow.excalidraw")).toEqual(Buffer.from(source));
-    expect(await getExcalidrawSource(root, "diagrams/Auth Flow.excalidraw")).toBeNull();
+    expect(await fs.readFile(join(root, "notes", "architecture/Auth Flow.excalidraw"))).toEqual(Buffer.from(source));
+    expect(await resolveExcalidrawPath(root, "diagrams/Auth Flow.excalidraw")).toBeNull();
+  });
+
+  it("never repairs a wrong-case scene extension into a Markdown note", async () => {
+    const root = await makeTempDir();
+    await addNote(root, { title: "Manual.EXCALIDRAW", body: "An unrelated note" });
+    await addNote(root, { title: "Hub", body: "[[Manual.EXCALIDRAW]]" });
+    expect(extractWikilinks("[[Manual.EXCALIDRAW]]")).toEqual(["Manual.EXCALIDRAW"]);
+    expect(normalizeTarget("./Manual.EXCALIDRAW")).toBe("Manual.EXCALIDRAW");
+    const result = await repairVaultLinks(root, { apply: true });
+    expect(result.audit.fixable).toEqual([]);
+    expect(result.audit.unresolvable.map((link) => link.target)).toContain("Manual.EXCALIDRAW");
+    expect((await getNote(root, "hub"))?.body).toBe("[[Manual.EXCALIDRAW]]");
   });
 
   it("caches scenes, notices external updates and handles explicit invalidation/removal", async () => {
