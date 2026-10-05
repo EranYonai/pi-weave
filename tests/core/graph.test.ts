@@ -172,6 +172,7 @@ describe("buildGraph", () => {
       provenance: null,
       detail: {
         path: "reports/sprint.html",
+        kind: "html",
         title: "Sprint report",
         updated: T1,
         size: "123 bytes",

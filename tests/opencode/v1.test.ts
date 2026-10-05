@@ -1,3 +1,4 @@
+import { fileURLToPath } from "node:url";
 import { describe, expect, it, vi } from "vitest";
 import { tool, type Hooks, type PluginInput } from "@opencode-ai/plugin";
 import weave from "../../src/opencode";
@@ -55,7 +56,7 @@ describe("OpenCode V1 1.18.29", () => {
       await hooks.config!(config);
       await hooks.config!(config);
       expect(config.skills.paths).toHaveLength(2);
-      expect(config.skills.paths[1]).toMatch(/pi-weave\/skills$/);
+      expect(config.skills.paths[1]).toBe(fileURLToPath(new URL("../../skills", import.meta.url)));
       const empty = {};
       await hooks.config!(empty);
       expect(Object.keys((empty as any).command)).toEqual(["weave", "weave-scan", "weave-scan-cancel", "weave-view"]);

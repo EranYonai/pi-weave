@@ -167,6 +167,19 @@ unsaved drafts last only while the browser stays open.
 Use **Settings** for themes, fonts, layout, and a manual vault ZIP backup. Press `?` for keyboard shortcuts.
 `/weave-view tui` opens a smaller, read-only terminal explorer in Pi.
 
+### Editable diagrams
+
+Ask your agent to create an Excalidraw diagram and a linked explanatory note. The `weave-excalidraw` skill stores ordinary
+`.excalidraw` files under your vault's `notes/diagrams/`; the companion note makes their meaning searchable and records authorship.
+Link a scene with `[[diagrams/auth-flow.excalidraw]]`, using its exact filename and case.
+
+Select the diagram in the browser workspace and download its editable source. Open it in Excalidraw, edit it, then save it back to the
+displayed vault path and refresh Weave. For offline editing, use your own local/self-hosted Excalidraw installation. The workspace does
+not upload diagrams to an external editor or embed an editor. Scene colors come from the chosen Weave theme at creation time; switching
+workspace themes leaves existing drawings unchanged. Agent updates are saved as reviewable copies to preserve human edits.
+
+See the [diagram skill](skills/weave-excalidraw/SKILL.md) for palette selection, file handling and visual validation.
+
 ## Remember sessions
 
 ```bash
@@ -210,7 +223,7 @@ Most people only need natural language and `/weave-view`.
 | Tool | `weave_note` | List, read, add, append, finalize, and search notes |
 | Tool | `weave_repo` | Check, scan, and summarize the repository index |
 
-The included `weave-notepad` and `weave-explore` skills teach Pi and OpenCode when and how to use these tools. In OpenCode, `/weave` shows
+The included `weave-notepad`, `weave-explore` and `weave-excalidraw` skills teach Pi and OpenCode these workflows. In OpenCode, `/weave` shows
 vault/repository status and scan progress appears in toasts; Pi keeps its persistent status line. V1 slash commands use its standard prompt
 pipeline, so the model reports command results in the conversation. `/weave` does not open a dialog. V1 scans use the model from your last
 chat message: send a message after selecting a model, then scan. Generation runs in temporary child sessions with tools denied;
@@ -292,6 +305,7 @@ Read [AGENTS.md](AGENTS.md) before contributing. Work on a feature branch; do no
 - [Link repair reference](skills/weave-notepad/references/link-repair.md) — how stale links resolve, and what repair will not do
 - [Historical browser workspace notes](docs/weave-workspace.md) — superseded implementation record
 - [Repository exploration skill](skills/weave-explore/SKILL.md) — how Pi uses the index
+- [Diagram skill](skills/weave-excalidraw/SKILL.md) — portable Excalidraw files and themed authoring
 
 ## License
 

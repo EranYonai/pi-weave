@@ -1,6 +1,6 @@
 import { existsSync, readFileSync } from "node:fs";
 import { promises as fs } from "node:fs";
-import { basename, dirname, isAbsolute, join, relative } from "node:path";
+import { basename, dirname, isAbsolute, join, relative, sep } from "node:path";
 import {
   MANAGED_FRONT_MATTER_KEYS,
   parseFrontMatter,
@@ -17,6 +17,8 @@ import { slugify, uniqueSlug } from "./slug";
 import type {
   Note,
   HtmlArtifact,
+  ExcalidrawArtifact,
+  VaultArtifact,
   NoteFrontMatter,
   NoteMeta,
   NoteSearchHit,
@@ -708,8 +710,8 @@ export async function renameFolder(root: string, folder: string, name: string): 
     // backlinks move with it — collected before the rename, while the old
     // paths still exist.
     const moved = (await listNoteFiles(root))
-      .filter((f) => isMarkdown(f) && f.startsWith(`${folder}/`))
-      .map((f) => f.slice(0, -".md".length));
+      .filter((f) => (isMarkdown(f) || isExcalidraw(f)) && f.startsWith(`${folder}/`))
+      .map((f) => isMarkdown(f) ? f.slice(0, -".md".length) : f);
     await fs.rename(from, to);
     await repointBacklinks(root, new Map(moved.map((s) => [s, `${target}/${s.slice(folder.length + 1)}`])));
     return { ok: true, path: target };
@@ -779,7 +781,7 @@ async function listVaultEntries(root: string): Promise<{ files: string[]; folder
         const visible = includeFolders && !entry.name.startsWith(".");
         if ((await walk(child, visible)) && visible) folders.push(child);
       } else if (isFile && isVaultArtifact(entry.name)) {
-        files.push(child);
+        if (!isExcalidraw(child) || await resolveExcalidrawPath(root, child)) files.push(child);
       }
     }
     return true;
@@ -800,8 +802,89 @@ function isHtml(path: string): boolean {
   return path.toLowerCase().endsWith(".html") || path.toLowerCase().endsWith(".htm");
 }
 
+export function isExcalidraw(path: string): boolean {
+  return path.endsWith(".excalidraw");
+}
+
 function isVaultArtifact(path: string): boolean {
-  return isMarkdown(path) || isHtml(path);
+  return isMarkdown(path) || isHtml(path) || isExcalidraw(path);
+}
+
+/** Scene paths are exact filenames, and symlinks must stay in canonical notes/. */
+export async function resolveExcalidrawPath(root: string, slug: string): Promise<string | null> {
+  const parts = slug.split("/");
+  if (!isExcalidraw(slug) || isAbsolute(slug) || slug.includes("\\") || slug.includes("\0") ||
+      parts.some((part) => part === "" || part === "." || part === "..")) return null;
+  try {
+    const notesDir = await fs.realpath(join(root, NOTES_DIR));
+    let path = notesDir;
+    for (const part of parts) {
+      // Enforce exact case even on case-insensitive filesystems; aliases remain valid.
+      if (!(await fs.readdir(path)).includes(part)) return null;
+      path = join(path, part);
+    }
+    const resolved = await fs.realpath(path);
+    const rel = relative(notesDir, resolved);
+    if (rel === "" || rel === ".." || rel.startsWith(`..${sep}`) || isAbsolute(rel)) return null;
+    return resolved;
+  } catch {
+    return null;
+  }
+}
+
+/** Byte-identical source for editing/recovery, including malformed and large scenes. */
+export async function getExcalidrawSource(root: string, slug: string): Promise<Buffer | null> {
+  const path = await resolveExcalidrawPath(root, slug);
+  if (path === null) return null;
+  try {
+    return await fs.readFile(path);
+  } catch {
+    return null;
+  }
+}
+
+export const EXCALIDRAW_METADATA_LIMIT = 1024 * 1024;
+
+/** Bounded scene validation; never reserialize or interpret export-origin provenance. */
+export async function getExcalidrawArtifact(root: string, slug: string): Promise<ExcalidrawArtifact | null> {
+  const path = await resolveExcalidrawPath(root, slug);
+  if (path === null) return null;
+  let handle;
+  try {
+    handle = await fs.open(path, "r");
+    const st = await handle.stat();
+    if (!st.isFile()) return null;
+    const artifact: ExcalidrawArtifact = {
+      kind: "excalidraw", slug, title: basename(slug, ".excalidraw"), description: "",
+      updated: st.mtime.toISOString(), size: st.size, status: "unverified",
+    };
+    // The extra byte catches a file growing after stat without an unbounded read.
+    const buffer = Buffer.alloc(Math.min(st.size, EXCALIDRAW_METADATA_LIMIT) + 1);
+    const { bytesRead } = await handle.read(buffer, 0, buffer.length, 0);
+    if (st.size > EXCALIDRAW_METADATA_LIMIT || bytesRead > EXCALIDRAW_METADATA_LIMIT) {
+      artifact.error = "Scene exceeds the metadata validation limit. Download the source to open it in Excalidraw.";
+      return artifact;
+    }
+    try {
+      const scene: unknown = JSON.parse(buffer.subarray(0, bytesRead).toString("utf8"));
+      if (scene === null || typeof scene !== "object" || !("type" in scene) || scene.type !== "excalidraw" ||
+          !("elements" in scene) || !Array.isArray(scene.elements)) throw new Error("Invalid scene");
+      artifact.status = "valid";
+    } catch {
+      artifact.status = "invalid";
+      artifact.error = "Invalid Excalidraw scene. Download the original source to recover it.";
+    }
+    return artifact;
+  } catch {
+    return null;
+  } finally {
+    await handle?.close();
+  }
+}
+
+/** Read the metadata for either supported standalone artifact kind. */
+export async function getVaultArtifact(root: string, slug: string): Promise<VaultArtifact | null> {
+  return isExcalidraw(slug) ? getExcalidrawArtifact(root, slug) : getHtmlArtifact(root, slug);
 }
 
 /** Resolve a vault-relative HTML path without allowing traversal. */
@@ -846,6 +929,7 @@ export function parseHtmlArtifact(slug: string, text: string, updated = "", size
   const fields = comment ? parseFrontMatter(`---\n${comment[1]}\n---\n`)?.fields : undefined;
   const fallback = basename(slug).replace(/\.html?$/i, "").replace(/[-_]+/g, " ");
   return {
+    kind: "html",
     slug,
     title: fields?.get("title") ? unquoteField(fields.get("title")!) : htmlTagValue(text, "title") || fallback,
     description: fields?.get("description")
@@ -905,9 +989,9 @@ export interface VaultSnapshot {
   fileCount: number;
   /** Subdirectories present in <vault>/notes/, including empty ones. */
   folders?: string[];
-  /** Readable standalone HTML/HTM artifacts. */
-  artifacts?: HtmlArtifact[];
-  /** Number of HTML/HTM files present, including malformed files. */
+  /** Readable standalone HTML/HTM and Excalidraw artifacts. */
+  artifacts?: VaultArtifact[];
+  /** Number of supported artifact files present, including malformed scenes. */
   artifactCount?: number;
 }
 
@@ -915,17 +999,17 @@ export interface VaultSnapshot {
 export async function readVault(root: string): Promise<VaultSnapshot> {
   const { files, folders } = await listVaultEntries(root);
   const notes: Note[] = [];
-  const artifacts: HtmlArtifact[] = [];
+  const artifacts: VaultArtifact[] = [];
   for (const file of files) {
     if (isMarkdown(file)) {
       const note = await getNote(root, file.slice(0, -".md".length));
       if (note) notes.push(note);
-    } else if (isHtml(file)) {
-      const artifact = await getHtmlArtifact(root, file);
+    } else {
+      const artifact = await getVaultArtifact(root, file);
       if (artifact) artifacts.push(artifact);
     }
   }
-  const artifactCount = files.filter(isHtml).length;
+  const artifactCount = files.filter((file) => !isMarkdown(file)).length;
   return {
     notes: notes.sort(byUpdatedDesc),
     fileCount: files.filter(isMarkdown).length,

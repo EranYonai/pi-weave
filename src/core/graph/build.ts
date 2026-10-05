@@ -8,7 +8,7 @@
  * makes the page's refresh-polling cheap.
  */
 
-import type { HtmlArtifact, Note, RepoIndex, StalenessReport, VaultStatus } from "../types";
+import type { VaultArtifact, Note, RepoIndex, StalenessReport, VaultStatus } from "../types";
 import { createHash } from "node:crypto";
 import type { SummaryRecord } from "../summaries";
 import type { EdgeKind, GraphEdge, GraphModel, GraphNode } from "./model";
@@ -19,8 +19,8 @@ export interface BuildGraphInput {
   vault: VaultStatus;
   /** Full notes including bodies (for wiki-link extraction). */
   notes: Note[];
-  /** Standalone HTML/HTM artifacts under the vault's notes directory. */
-  artifacts?: HtmlArtifact[];
+  /** Standalone HTML/HTM and Excalidraw artifacts under the vault's notes directory. */
+  artifacts?: VaultArtifact[];
   /** Repository half; null when cwd is not an indexed git repository. */
   repository: { index: RepoIndex; staleness: StalenessReport } | null;
   /** Deep-scan summaries keyed by repo-relative path (docs/scan-modes.md). */
@@ -212,11 +212,16 @@ function buildVaultSide(
     const parent = (dir.length > 0 && folderIds.get(dir)) || "vault";
     const detail: Record<string, string> = {
       path: artifact.slug,
+      kind: artifact.kind ?? "html",
       title: artifact.title,
       updated: artifact.updated,
       size: `${artifact.size} bytes`,
     };
     if (artifact.description) detail.description = artifact.description;
+    if (artifact.kind === "excalidraw") {
+      detail.status = artifact.status;
+      if (artifact.error) detail.error = artifact.error;
+    }
     const links = artifactLinks.get(artifact.slug) ?? 0;
     if (links > 0) detail["link references"] = String(links);
     nodes.push({ id: `artifact:${artifact.slug}`, kind: "file", label: artifact.title, provenance: null, detail });

@@ -90,6 +90,7 @@ export interface NoteProps {
   loadFailed: boolean;
   graph: GraphPayload | null;
   selectedId: string | null;
+  vaultRoot?: string;
   onSelect: (id: string, newTab?: boolean) => void;
   onOpen: (slug: string) => void;
   /**
@@ -318,13 +319,21 @@ export function Note(props: NoteProps) {
           <h3 class="weave-note-title">{title}</h3>
           <p class="weave-note-meta"><span class="weave-note-time">{artifactPath}</span></p>
         </header>
-        <iframe
+        {/\.excalidraw$/i.test(artifactPath) ? (
+          <div class="weave-scene-handoff">
+            <p>Editable Excalidraw diagram</p>
+            {artifact?.detail.error === undefined ? null : <p role="status">{artifact.detail.error}</p>}
+            <a class="weave-scene-download" href={`/api/scene/${encodeURIComponent(artifactPath)}`} download>Download editable source</a>
+            <p>Open the downloaded file in <a href="https://excalidraw.com/" target="_blank" rel="noreferrer noopener">Excalidraw</a>. Save your edited file back to <code>{props.vaultRoot ? `${props.vaultRoot.replace(/[\\/]$/, "")}/` : ""}notes/{artifactPath}</code>, then refresh Weave.</p>
+            <p>For offline editing, use your local or self-hosted Excalidraw editor.</p>
+          </div>
+        ) : <iframe
           key={artifactKey}
           class="weave-artifact-frame"
           title={title}
           sandbox="allow-scripts"
           src={`/api/artifact/${encodeURIComponent(artifactPath)}`}
-        />
+        />}
       </article>
     );
   }

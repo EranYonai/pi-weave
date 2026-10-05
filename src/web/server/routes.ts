@@ -57,7 +57,7 @@ import type { GraphModel as CoreGraphModel } from "../../core/graph/model";
 import { openNoteInEditor } from "../../core/openInEditor";
 import type { Note } from "../../core/types";
 import type { VaultMutationResult } from "../../core/vault";
-import { addNote, createFolder, deleteFolder, deleteNote, getNote, moveNote, renameFolder, renameNote, resolveHtmlPath, searchNotes, setNoteBody } from "../../core/vault";
+import { addNote, createFolder, deleteFolder, deleteNote, getExcalidrawSource, getNote, moveNote, renameFolder, renameNote, resolveHtmlPath, searchNotes, setNoteBody } from "../../core/vault";
 import { deriveTagIndex, type TaggedNote } from "../../core/view/links";
 import type {
   GraphPayload,
@@ -416,6 +416,9 @@ async function route(
   if (method === "GET" && path.startsWith("/api/okf/")) {
     return sendOkf(deps, path.slice("/api/okf/".length), res);
   }
+  if (method === "GET" && path.startsWith("/api/scene/")) {
+    return sendScene(deps, path.slice("/api/scene/".length), res);
+  }
   if (method === "GET" && path.startsWith("/api/artifact/")) {
     return sendArtifact(deps, path.slice("/api/artifact/".length), res);
   }
@@ -733,6 +736,24 @@ async function sendArtifact(deps: RouteDeps, rel: string, res: ServerResponse): 
     // `sandbox allow-scripts` keeps demos interactive while retaining an
     // opaque origin: scripts cannot reach the workspace or its cookies.
     "content-security-policy": "sandbox allow-scripts; default-src 'none'; script-src 'unsafe-inline'; style-src 'unsafe-inline'; img-src data:",
+    "cache-control": "no-store",
+  });
+  res.end(body);
+}
+
+/** Download original scene bytes, including malformed files for recovery. */
+async function sendScene(deps: RouteDeps, rel: string, res: ServerResponse): Promise<void> {
+  const body = await getExcalidrawSource(deps.vaultRoot, rel);
+  if (body === null) {
+    sendJson(res, 404, { error: "no such scene" });
+    return;
+  }
+  const filename = rel.split("/").at(-1) as string;
+  const encoded = encodeURIComponent(filename).replace(/[!'()*]/g, (char) => `%${char.charCodeAt(0).toString(16).toUpperCase()}`);
+  res.writeHead(200, {
+    ...baseHeaders(),
+    "content-type": JSON_TYPE,
+    "content-disposition": `attachment; filename="${filename.replace(/[^a-zA-Z0-9._-]/g, "_")}"; filename*=UTF-8''${encoded}`,
     "cache-control": "no-store",
   });
   res.end(body);

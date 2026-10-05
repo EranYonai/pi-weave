@@ -41,7 +41,7 @@ const weave = {
       });
     });
 
-    const skills = await Promise.all([packagedSkill("weave-notepad"), packagedSkill("weave-explore")]);
+    const skills = await Promise.all([packagedSkill("weave-notepad"), packagedSkill("weave-explore"), packagedSkill("weave-excalidraw")]);
     const skillRegistration = await context.skill.transform((editor) => {
       for (const skill of skills) editor.add(skill);
     });

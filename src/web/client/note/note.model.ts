@@ -196,6 +196,7 @@ export function safeUrl(raw: string): string | null {
  *    which are inverses of each other.
  */
 export const WIKILINK_ATTR = "data-weave-target";
+export const MISSING_SCENE_ATTR = "data-weave-missing-scene";
 
 /** The rendered task checkbox's zero-based source-order index. */
 export const TASK_CHECKBOX_ATTR = "data-weave-task";
@@ -270,7 +271,7 @@ export function slugOfNode(node: WireGraphNode): string | null {
 export function artifactPathOfNode(node: WireGraphNode): string | null {
   if (node.kind !== "file" || !node.id.startsWith("artifact:")) return null;
   const path = node.detail.path;
-  return path !== undefined && /\.html?$/i.test(path) ? path : null;
+  return path !== undefined && /\.(?:html?|excalidraw)$/i.test(path) ? path : null;
 }
 
 /** Stable iframe key that changes when the artifact on disk changes. */
@@ -308,6 +309,10 @@ export function wikiIndex(payload: GraphPayload | null, slug: string | null): Wi
       bySpelling.set(key.toLowerCase(), target);
     }
   }
+  for (const node of payload.model.nodes) {
+    const path = artifactPathOfNode(node);
+    if (path !== null && /\.excalidraw$/i.test(path)) bySpelling.set(path, node.id);
+  }
   const hasGhosts = slug !== null && (payload.dangling[slug]?.length ?? 0) > 0;
   return { bySpelling, hasGhosts, currentSlug: slug };
 }
@@ -315,6 +320,10 @@ export function wikiIndex(payload: GraphPayload | null, slug: string | null): Wi
 /** The slug a wikilink points at, or `null` when nothing in the vault matches. */
 export function resolveWikilink(index: WikiIndex, target: string): string | null {
   const trimmed = target.trim();
+  if (/\.excalidraw$/i.test(trimmed)) {
+    const target = index.bySpelling.get(trimmed.replace(/\\/g, "/").replace(/^\.\//, ""));
+    return target?.startsWith("artifact:") ? target : null;
+  }
   return index.bySpelling.get(trimmed) ?? index.bySpelling.get(trimmed.toLowerCase()) ?? null;
 }
 
@@ -456,6 +465,9 @@ export function renderWikilink(index: WikiIndex, target: string, alias: string):
   const slug = resolveWikilink(index, target);
   if (slug !== null) {
     return `<a class="weave-wiki" ${WIKILINK_ATTR}="${escapeHtml(slug)}" role="link" tabindex="0" title="${escapeHtml(target.trim())}">${text}</a>`;
+  }
+  if (/\.excalidraw$/i.test(target.trim())) {
+    return `<span class="weave-wiki weave-wiki-ghost" ${MISSING_SCENE_ATTR}="${escapeHtml(target.trim())}" title="missing diagram: ${escapeHtml(target.trim())}">${text}</span>`;
   }
   if (!isGhost(index)) return text;
   return `<span class="weave-wiki weave-wiki-ghost" title="no note named ${escapeHtml(target.trim())}">${text}</span>`;
@@ -659,9 +671,10 @@ export const SANITIZE_CONFIG: SanitizeConfig = frozen({
     "aria-label",
     "start",
     WIKILINK_ATTR,
+    MISSING_SCENE_ATTR,
     TASK_CHECKBOX_ATTR,
   ]),
-  ADD_URI_SAFE_ATTR: frozen([WIKILINK_ATTR, TASK_CHECKBOX_ATTR]),
+  ADD_URI_SAFE_ATTR: frozen([WIKILINK_ATTR, TASK_CHECKBOX_ATTR, MISSING_SCENE_ATTR]),
   ALLOW_DATA_ATTR: false,
   ALLOW_ARIA_ATTR: false,
   ALLOW_UNKNOWN_PROTOCOLS: false,
@@ -795,7 +808,7 @@ export function wikilinkTargetOf(from: ClosestElement | null): string | null {
   let node = from;
   for (let depth = 0; node !== null && depth < MAX_ANCESTOR_WALK; depth++) {
     const slug = node.getAttribute(WIKILINK_ATTR);
-    if (slug !== null && slug !== "") return `${NOTE_PREFIX}${slug}`;
+    if (slug !== null && slug !== "") return slug.startsWith("artifact:") ? slug : `${NOTE_PREFIX}${slug}`;
     node = node.parentElement;
   }
   return null;
@@ -945,6 +958,7 @@ export interface PreviewAnchor {
    * it does not have.
    */
   readonly slug: string | null;
+  readonly missingScene?: string;
   /** The link's visible text, trimmed — the spelling the note was written as. */
   readonly text: string;
 }
@@ -985,6 +999,8 @@ export function previewAnchorOf(from: PreviewElement | null): PreviewAnchor | nu
     const slug = node.getAttribute(WIKILINK_ATTR);
     if (slug !== null && slug !== "") return { slug, text: (node.textContent ?? "").trim() };
     const classes = (node.className ?? "").split(/\s+/);
+    const missingScene = node.getAttribute(MISSING_SCENE_ATTR);
+    if (missingScene !== null) return { slug: null, text: (node.textContent ?? "").trim(), missingScene };
     if (classes.includes("weave-wiki-ghost")) return { slug: null, text: (node.textContent ?? "").trim() };
     node = node.parentElement;
   }
@@ -1086,11 +1102,18 @@ export interface PreviewCard {
  * hover and in preview, and a reader never has to reconcile two vocabularies.
  */
 export function previewCard(payload: GraphPayload | null, anchor: PreviewAnchor): PreviewCard | null {
+  if (anchor.missingScene !== undefined) {
+    return { ghost: true, title: anchor.text, kind: "missing diagram", text: `No diagram at “${anchor.missingScene}”. Restore the file at that vault path, then refresh.` };
+  }
   if (anchor.slug === null) {
     const title = anchor.text === "" ? "this link" : anchor.text;
     return { ghost: true, title, kind: GHOST_KIND, text: `no note named “${title}” yet` };
   }
-  const node = payload?.model.nodes.find((candidate) => candidate.id === `note:${anchor.slug}` && candidate.kind === "note");
+  const id = anchor.slug.startsWith("artifact:") ? anchor.slug : `note:${anchor.slug}`;
+  const node = payload?.model.nodes.find((candidate) => candidate.id === id);
+  if (node !== undefined && artifactPathOfNode(node) !== null) {
+    return { ghost: false, title: node.label, kind: "Excalidraw diagram", text: node.detail.path as string };
+  }
   if (node === undefined) return null;
   const kind = node.provenance === null ? node.kind : `${node.kind} · ${provenanceTitle(node.provenance)}`;
   return { ghost: false, title: node.label, kind, text: excerptOf(node.detail.preview ?? "") };
