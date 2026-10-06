@@ -25,6 +25,27 @@ async function setup() {
 }
 
 describe("scene download and preservation", () => {
+  it("serves only authenticated packaged renderer and font assets", async () => {
+    const root = await makeTempDir();
+    await writeFixture(root, "scene-assets/renderer.js", "/* local renderer */");
+    await writeFixture(root, "scene-assets/fonts/Virgil.woff2", "font bytes");
+    await writeFixture(root, "secret.woff2", "outside asset directory");
+    const server = await startWorkspaceServer({ cwd: root, vaultRoot: root, presentationStateDir: await makeTempDir(), bundlePath: join(root, "app.js") });
+    running.push(server);
+    expect((await fetch(`${server.url}/scene-assets/renderer.js`)).status).toBe(403);
+    const headers = { cookie: `${server.security.cookieName}=${server.token}` };
+    const script = await fetch(`${server.url}/scene-assets/renderer.js`, { headers });
+    expect(script.headers.get("content-type")).toContain("text/javascript");
+    expect(script.headers.get("x-content-type-options")).toBe("nosniff");
+    expect(await script.text()).toBe("/* local renderer */");
+    const font = await fetch(`${server.url}/scene-assets/fonts/Virgil.woff2`, { headers });
+    expect(font.headers.get("content-type")).toBe("font/woff2");
+    expect(await font.text()).toBe("font bytes");
+    for (const path of ["../secret.woff2", "fonts/absent.woff2", "other.js", "styles.css"]) {
+      expect((await fetch(`${server.url}/scene-assets/${encodeURIComponent(path)}`, { headers })).status).toBe(404);
+    }
+  });
+
   it("requires authentication and sends exact source bytes with safe attachment headers", async () => {
     const { get, server } = await setup();
     expect((await fetch(`${server.url}/api/scene/test.excalidraw`)).status).toBe(403);

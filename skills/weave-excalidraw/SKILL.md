@@ -34,7 +34,7 @@ These are two separate writes. If companion creation fails, retain the scene and
 
 Validate JSON, unique IDs and references, then inspect in an available Excalidraw editor or renderer: check clipping, overlaps, arrow endpoints and legibility. Browser/Python/MCP setup is optional; if unavailable, report visual verification as outstanding instead of claiming it passed.
 
-Weave discovers the file and offers source download. Open/download it, edit in stock Excalidraw or another compatible local editor, then save the `.excalidraw` file back to its vault path. Downloading alone does not save edits into the vault. Reopen the saved file to confirm text, moved shapes, arrow bindings and embedded images remain editable.
+Weave discovers the file, renders a local preview, and offers source download. Open/download it, edit in stock Excalidraw or another compatible local editor, then save the `.excalidraw` file back to its vault path and refresh Weave. Downloading alone does not save edits into the vault. Reopen the saved file to confirm text, moved shapes, arrow bindings and embedded images remain editable.
 
 ## Update
 

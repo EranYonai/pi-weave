@@ -9,6 +9,8 @@ dist/
 # directory is excluded, so the directory must be unignored first.
 !src/web/client/dist/
 !src/web/client/dist/app.js
+!src/web/client/dist/scene-assets/
+!src/web/client/dist/scene-assets/**
 
 # pi-weave: local derived knowledge index (see docs/design.md §15)
 .okf/

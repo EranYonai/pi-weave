@@ -173,8 +173,9 @@ Ask your agent to create an Excalidraw diagram and a linked explanatory note. Th
 `.excalidraw` files under your vault's `notes/diagrams/`; the companion note makes their meaning searchable and records authorship.
 Link a scene with `[[diagrams/auth-flow.excalidraw]]`, using its exact filename and case.
 
-Select the diagram in the browser workspace and download its editable source. Open it in Excalidraw, edit it, then save it back to the
-displayed vault path and refresh Weave. For offline editing, use your own local/self-hosted Excalidraw installation. The workspace does
+Select the diagram in the browser workspace to see its preview. Use **Actual size** for larger drawings. Download its editable source,
+open it in Excalidraw, edit it, then save it back to the displayed vault path and refresh Weave. For offline editing, use your own
+local/self-hosted Excalidraw installation. The workspace renders previews locally and does
 not upload diagrams to an external editor or embed an editor. Scene colors come from the chosen Weave theme at creation time; switching
 workspace themes leaves existing drawings unchanged. Agent updates are saved as reviewable copies to preserve human edits.
 

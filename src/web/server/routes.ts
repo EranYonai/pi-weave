@@ -49,6 +49,7 @@ import { createReadStream, promises as fs } from "node:fs";
 import { pipeline } from "node:stream/promises";
 import { createVaultBackup } from "./backup";
 import { readFile } from "node:fs/promises";
+import { dirname, join } from "node:path";
 import type { IncomingMessage, ServerResponse } from "node:http";
 import type { WorkspaceSnapshot } from "../../core/cache/workspace";
 import { WorkspaceCache } from "../../core/cache/workspace";
@@ -382,6 +383,7 @@ async function route(
 
   if (method === "GET" && path === "/") return sendShell(deps, res);
   if (method === "GET" && path === "/app.js") return sendBundle(deps, res);
+  if (method === "GET" && path.startsWith("/scene-assets/")) return sendSceneAsset(deps, path.slice("/scene-assets/".length), res);
   if (method === "GET" && path === "/api/graph") return sendGraph(deps, req, res);
   if (method === "GET" && path === "/api/backup") {
     const backup = await createVaultBackup(deps.vaultRoot);
@@ -486,6 +488,19 @@ async function sendBundle(deps: RouteDeps, res: ServerResponse): Promise<void> {
     "cache-control": "no-store",
   });
   res.end(source);
+}
+
+/** Only packaged renderer assets are served here, after the authentication gate. */
+async function sendSceneAsset(deps: RouteDeps, asset: string, res: ServerResponse): Promise<void> {
+  const type = asset === "renderer.js" ? "text/javascript; charset=utf-8"
+    : /^(?:[a-zA-Z0-9_-]+\/)*[a-zA-Z0-9_-]+\.woff2$/.test(asset) ? "font/woff2" : null;
+  const body = type === null ? null : await readFile(join(dirname(deps.bundlePath), "scene-assets", asset)).catch(() => null);
+  if (body === null) {
+    sendText(res, 404, "no such scene asset\n");
+    return;
+  }
+  res.writeHead(200, { ...baseHeaders(), "content-type": type!, "cache-control": "no-store" });
+  res.end(body);
 }
 
 /**

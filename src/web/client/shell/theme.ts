@@ -227,6 +227,12 @@ body{font-size:var(--weave-px-base)}
 .weave-scene-handoff{padding:14px var(--weave-note-gutter);line-height:1.6;max-width:70ch}
 .weave-scene-handoff code{overflow-wrap:anywhere}
 .weave-scene-download{display:inline-block;color:var(--weave-accent);font-weight:600}
+.weave-scene-preview{padding:14px var(--weave-note-gutter);flex-shrink:0}
+.weave-scene-preview-tools{display:flex;justify-content:flex-end;margin-bottom:8px}
+.weave-scene-preview button{background:var(--weave-panel);color:var(--weave-fg);border:1px solid var(--weave-line);border-radius:var(--weave-radius);padding:5px 9px;cursor:pointer}
+.weave-scene-preview-image{overflow:auto;border:1px solid var(--weave-line);border-radius:var(--weave-radius);max-height:75vh}
+.weave-scene-preview-image img{display:block;width:100%;height:auto}
+.weave-scene-preview-actual img{width:auto;max-width:none}
 .weave-artifact-frame{display:block;flex:1;width:100%;min-height:320px;border:0;background:#fff}
 /* The head pins itself (P6.3): a long note scrolls its prose under the title,
    and the title is what says you are still in the right document — the
@@ -601,7 +607,7 @@ export interface ThemeHost {
 export const NONCE_SOURCES = ["style[nonce]", "style", "script[nonce]", "script[src]"];
 
 /** Read the per-response nonce from the document, or `null`. */
-export function findNonce(host: ThemeHost): string | null {
+export function findNonce(host: Pick<ThemeHost, "querySelector">): string | null {
   for (const selector of NONCE_SOURCES) {
     const nonce = host.querySelector(selector)?.nonce;
     if (typeof nonce === "string" && nonce !== "") return nonce;
