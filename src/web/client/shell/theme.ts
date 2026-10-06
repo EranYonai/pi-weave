@@ -224,9 +224,12 @@ body{font-size:var(--weave-px-base)}
 .weave-note-generated{--weave-spine:var(--weave-faint)}
 .weave-note{border-left:2px solid var(--weave-spine,transparent)}
 .weave-note-empty{flex:1;margin:0;padding:14px var(--weave-note-gutter);color:var(--weave-dim);max-width:44ch;line-height:1.5;background:var(--weave-page)}
-.weave-scene-handoff{padding:14px var(--weave-note-gutter);line-height:1.6;max-width:70ch}
-.weave-scene-handoff code{overflow-wrap:anywhere}
-.weave-scene-download{display:inline-block;color:var(--weave-accent);font-weight:600}
+.weave-scene-help{width:min(560px,calc(100vw - 32px));max-height:80vh;overflow:auto;padding:16px;line-height:1.6;color:var(--weave-fg);background:var(--weave-panel);border:1px solid var(--weave-line-strong);border-radius:var(--weave-radius-pop)}
+.weave-scene-help::backdrop{background:var(--weave-scrim)}
+.weave-scene-help h2{margin:0;font-size:var(--weave-px-subhead)}
+.weave-scene-help code{overflow-wrap:anywhere}
+.weave-scene-help a{color:var(--weave-accent)}
+.weave-scene-help button{padding:5px 12px;background:var(--weave-raise);color:var(--weave-fg);border:1px solid var(--weave-line-strong);border-radius:var(--weave-radius);cursor:pointer}
 .weave-scene-preview{padding:14px var(--weave-note-gutter);flex-shrink:0}
 .weave-scene-preview-tools{display:flex;justify-content:flex-end;margin-bottom:8px}
 .weave-scene-preview button{background:var(--weave-panel);color:var(--weave-fg);border:1px solid var(--weave-line);border-radius:var(--weave-radius);padding:5px 9px;cursor:pointer}

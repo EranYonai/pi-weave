@@ -62,8 +62,8 @@ export const WORKSPACE_CSS = `
 .weave-pane-menu>summary{list-style:none;cursor:pointer;padding:5px 10px;font-size:var(--weave-px-subhead)}
 .weave-pane-menu>summary::-webkit-details-marker{display:none}
 .weave-pane-menu>div{position:absolute;right:0;top:100%;z-index:12;width:185px;padding:5px;display:flex;flex-direction:column;background:var(--weave-panel);border:1px solid var(--weave-line-strong);border-radius:var(--weave-radius)}
-.weave-pane-menu button{text-align:left;border:0;background:none;padding:9px 10px;font-size:var(--weave-px-row)}
-.weave-pane-menu button:hover{background:var(--weave-new)}
+.weave-pane-menu button,.weave-pane-menu a{text-align:left;border:0;background:none;padding:9px 10px;font-size:var(--weave-px-row);color:inherit;text-decoration:none}
+.weave-pane-menu button:hover,.weave-pane-menu a:hover{background:var(--weave-new)}
 .weave-pane-content{min-width:0;min-height:0;display:flex;overflow:hidden;position:relative}
 .weave-document{display:flex;min-width:0;min-height:0;flex:1}
 .weave-document .weave-note{width:100%;border-left:0}
