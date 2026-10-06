@@ -1,3 +1,4 @@
+import type { GraphTheme } from "../../shared/themes";
 /**
  * The note column — reading, and editing (weave-workspace §1.2, P2.4, P5, P6.3).
  *
@@ -85,6 +86,7 @@ const PREVIEW_X = "weave-preview-x";
 const PREVIEW_Y = "weave-preview-y";
 
 export interface NoteProps {
+  theme?: GraphTheme;
   spellcheck?: boolean;
   defaultEdit?: boolean;
   note: NotePayload | null;
@@ -320,7 +322,7 @@ export function Note(props: NoteProps) {
           <p class="weave-note-meta"><span class="weave-note-time">{artifactPath}</span></p>
         </header>
         {/\.excalidraw$/i.test(artifactPath) ? (
-          <ScenePreview key={artifactKey} path={artifactPath} version={artifactKey} title={title} />
+          <ScenePreview key={artifactKey} path={artifactPath} version={artifactKey} title={title} theme={props.theme ?? "light"} />
         ) : <iframe
           key={artifactKey}
           class="weave-artifact-frame"

@@ -1,8 +1,10 @@
+import type { GraphTheme } from "../../shared/themes";
+import { previewColors } from "./scene-preview-theme";
 import { exportToBlob } from "@excalidraw/excalidraw";
 type ExportData = Parameters<typeof exportToBlob>[0];
 
 /** Raster output isolates scene links/embeds from the workspace document. */
-async function render(scene: unknown): Promise<string> {
+async function render(scene: unknown, theme?: GraphTheme): Promise<string> {
   if (scene === null || typeof scene !== "object" || !("elements" in scene) || !Array.isArray(scene.elements)) {
     throw new Error("Invalid Excalidraw scene.");
   }
@@ -15,9 +17,13 @@ async function render(scene: unknown): Promise<string> {
   if (data.elements.every((element: { isDeleted?: boolean }) => element.isDeleted)) {
     throw new Error("This diagram has no visible elements.");
   }
+  const palette = theme === undefined ? null : previewColors(data.appState?.viewBackgroundColor, theme);
+  const elements = data.elements.filter((element: { isDeleted?: boolean }) => !element.isDeleted).map((element: ExportData["elements"][number]) => palette === null ? element : {
+    ...element, strokeColor: palette.color(element.strokeColor), backgroundColor: palette.color(element.backgroundColor),
+  });
   const blob = await exportToBlob({
-    elements: data.elements.filter((element: { isDeleted?: boolean }) => !element.isDeleted),
-    appState: { ...data.appState, exportEmbedScene: false, exportWithDarkMode: false, exportBackground: true, exportScale: 1 },
+    elements,
+    appState: { ...data.appState, ...(palette === null ? {} : { viewBackgroundColor: palette.canvas }), exportEmbedScene: false, exportWithDarkMode: false, exportBackground: true, exportScale: 1 },
     files: data.files ?? {}, maxWidthOrHeight: 4096, mimeType: "image/png",
   });
   return new Promise((resolve, reject) => {

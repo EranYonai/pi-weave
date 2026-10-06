@@ -17,7 +17,7 @@ describe("lazy official scene renderer", () => {
     const { host, script, appendChild } = environment();
     const { renderScenePreview } = await import("../../src/web/client/note/scene-preview");
     const first = { elements: ["one"] }; const second = { elements: ["two"] };
-    const a = renderScenePreview(first); const b = renderScenePreview(second);
+    const a = renderScenePreview(first, "paper-blue"); const b = renderScenePreview(second, "dark");
     expect(appendChild).toHaveBeenCalledTimes(1);
     expect(script.src).toBe("/scene-assets/renderer.js");
     expect(script.nonce).toBe("server-nonce");
@@ -26,8 +26,8 @@ describe("lazy official scene renderer", () => {
     script.onload();
     expect(await a).toBe("data:image/png;base64,preview");
     expect(await b).toBe("data:image/png;base64,preview");
-    expect(host.weaveSceneRenderer).toHaveBeenCalledWith(first);
-    expect(host.weaveSceneRenderer).toHaveBeenCalledWith(second);
+    expect(host.weaveSceneRenderer).toHaveBeenCalledWith(first, "paper-blue");
+    expect(host.weaveSceneRenderer).toHaveBeenCalledWith(second, "dark");
     await renderScenePreview(first);
     expect(appendChild).toHaveBeenCalledTimes(1);
   });

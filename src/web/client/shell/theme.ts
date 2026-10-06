@@ -230,12 +230,11 @@ body{font-size:var(--weave-px-base)}
 .weave-scene-help code{overflow-wrap:anywhere}
 .weave-scene-help a{color:var(--weave-accent)}
 .weave-scene-help button{padding:5px 12px;background:var(--weave-raise);color:var(--weave-fg);border:1px solid var(--weave-line-strong);border-radius:var(--weave-radius);cursor:pointer}
-.weave-scene-preview{padding:14px var(--weave-note-gutter);flex-shrink:0}
-.weave-scene-preview-tools{display:flex;justify-content:flex-end;margin-bottom:8px}
-.weave-scene-preview button{background:var(--weave-panel);color:var(--weave-fg);border:1px solid var(--weave-line);border-radius:var(--weave-radius);padding:5px 9px;cursor:pointer}
-.weave-scene-preview-image{overflow:auto;border:1px solid var(--weave-line);border-radius:var(--weave-radius);max-height:75vh}
-.weave-scene-preview-image img{display:block;width:100%;height:auto}
-.weave-scene-preview-actual img{width:auto;max-width:none}
+.weave-scene-preview{padding:14px var(--weave-note-gutter);display:flex;flex-direction:column;flex:1;min-height:0}
+.weave-scene-preview-tools{display:flex;justify-content:flex-end;width:100%;max-width:var(--weave-reading-width,760px);margin:0 auto 8px}
+.weave-scene-preview button{background:var(--weave-panel);color:var(--weave-fg);border:1px solid var(--weave-line);border-radius:var(--weave-radius);padding:5px;display:inline-flex;align-items:center;cursor:pointer}
+.weave-scene-preview-image{overflow:auto;flex:1;min-height:0;width:100%;max-width:var(--weave-reading-width,760px);margin:0 auto;max-height:min(60vh,640px)}
+.weave-scene-preview-image img{display:block;width:var(--weave-scene-width,0px);height:var(--weave-scene-height,0px);margin:0 auto;border:1px solid var(--weave-line);border-radius:var(--weave-radius);transition:width 180ms ease,height 180ms ease}
 .weave-artifact-frame{display:block;flex:1;width:100%;min-height:320px;border:0;background:#fff}
 /* The head pins itself (P6.3): a long note scrolls its prose under the title,
    and the title is what says you are still in the right document — the

@@ -21,6 +21,7 @@ import { ContextRail } from "./ContextRail";
 import { deeplinkSelection, formatHash } from "./deeplink.model";
 import { Settings } from "./Settings";
 import type { Preferences } from "../../shared/preferences";
+import type { GraphTheme } from "../../shared/themes";
 import { THEMES } from "../../shared/themes";
 import { HelpOverlay } from "./HelpOverlay";
 import { watchKeys } from "./keys";
@@ -49,7 +50,7 @@ function RecentList(props: { visits: readonly string[]; graph: GraphPayload | nu
 
 /** A tab view can unmount; the shared draft store outlives it. */
 function DocumentView(props: {
-  preferences: Preferences; tab: WorkspaceTab; graph: GraphPayload | null; drafts: DraftStore; revision: number;
+  theme: GraphTheme; preferences: Preferences; tab: WorkspaceTab; graph: GraphPayload | null; drafts: DraftStore; revision: number;
   onSelect: (id: string, newTab?: boolean) => void; onSave: (slug: string, body: string) => Promise<boolean>;
   now: number; onScroll: (value: number) => void; onSearch: () => void; onGraph: () => void; onCreate: (title: string) => Promise<boolean>;
 }) {
@@ -106,7 +107,7 @@ function DocumentView(props: {
   return <div class="weave-document" ref={element} onScrollCapture={(event) => {
     const target = event.target as HTMLElement;
     if (target.classList.contains("weave-note")) { savedScroll.current = target.scrollTop; props.onScroll(target.scrollTop); }
-  }}><Note spellcheck={props.preferences.spellcheck} defaultEdit={props.preferences.defaultEdit} note={payload?.note ?? null} loadFailed={payload?.failed ?? false} loadVersion={payload?.version ?? 0} graph={props.graph} selectedId={id}
+  }}><Note theme={props.theme} spellcheck={props.preferences.spellcheck} defaultEdit={props.preferences.defaultEdit} note={payload?.note ?? null} loadFailed={payload?.failed ?? false} loadVersion={payload?.version ?? 0} graph={props.graph} selectedId={id}
     onSelect={props.onSelect} onOpen={(noteSlug) => void openNote(fetchJson, noteSlug).then((result) => {
       if (!result.ok) window.alert(result.message); else if (!result.data.opened) window.alert("Could not open the note in an editor.");
     })} onSave={props.onSave} drafts={props.drafts} idPrefix={props.tab.id} now={props.now} /></div>;
@@ -438,7 +439,7 @@ export function Shell(props: ShellProps) {
         <form method="dialog"><button type="submit">Close</button></form>
       </dialog> : null}
       <div class="weave-pane-content" role="tabpanel" tabIndex={-1} id={`panel-${group.id}`} aria-labelledby={`tab-${current.id}`} {...(current.kind === "graph" ? { ref: graphSlot } : {})}>
-        {current.kind === "document" ? <DocumentView key={`${current.id}:${current.cursor}:${tabSelection(current)}`} preferences={layout.preferences} tab={current} graph={data.graph} drafts={drafts} revision={revision} now={now}
+        {current.kind === "document" ? <DocumentView key={`${current.id}:${current.cursor}:${tabSelection(current)}`} theme={graphTheme} preferences={layout.preferences} tab={current} graph={data.graph} drafts={drafts} revision={revision} now={now}
           onSelect={(id, newTab) => select(id, newTab, group.id)} onSave={save} onScroll={(value) => rememberScroll(current.id, value)}
           onSearch={() => setOverlay("search")} onGraph={showGraph} onCreate={(title) => create(title, group.id)} /> : null}
       </div>

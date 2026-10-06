@@ -6,7 +6,7 @@ afterEach(() => { vi.unstubAllGlobals(); vi.resetModules(); exportToBlob.mockRes
 
 async function renderer(readerFails = false) {
   vi.resetModules();
-  const host: { weaveSceneRenderer?: (scene: unknown) => Promise<string> } = {};
+  const host: { weaveSceneRenderer?: (scene: unknown, theme?: { theme: "dark"; accent: "rose" }) => Promise<string> } = {};
   vi.stubGlobal("window", host);
   vi.stubGlobal("FileReader", class {
     result = "data:image/png;base64,preview";
@@ -53,6 +53,22 @@ describe("official scene export boundary", () => {
     expect(JSON.stringify(source)).toBe(before);
     await render({ elements: [{}] });
     expect(exportToBlob.mock.calls[1]?.[0].files).toEqual({});
+  });
+
+  it("rerenders palette roles without modifying source bytes, custom colors or images", async () => {
+    const render = await renderer();
+    exportToBlob.mockResolvedValue(new Blob([]));
+    const source = { elements: [
+      { strokeColor: "#182334", backgroundColor: "#e9edf2" },
+      { strokeColor: "#174ea6", backgroundColor: "#ef1234" },
+    ], appState: { viewBackgroundColor: "#f4f6f8" }, files: { img: { dataURL: "data:image/png;base64,aGVsbG8=" } } };
+    const before = JSON.stringify(source);
+    await render(source, { theme: "dark", accent: "rose" });
+    expect(exportToBlob.mock.calls[0]?.[0]).toMatchObject({
+      elements: [{ strokeColor: "#cad3f5", backgroundColor: "#1e2030" }, { strokeColor: "#f4a4a6", backgroundColor: "#ef1234" }],
+      appState: { viewBackgroundColor: "#24273a", exportWithDarkMode: false }, files: source.files,
+    });
+    expect(JSON.stringify(source)).toBe(before);
   });
 
   it("propagates export and image reading errors for the UI recovery path", async () => {

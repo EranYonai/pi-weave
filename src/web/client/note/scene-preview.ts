@@ -1,6 +1,7 @@
+import type { GraphTheme } from "../../shared/themes";
 import { findNonce } from "../shell/theme";
 
-interface RendererWindow { weaveSceneRenderer?: (scene: unknown) => Promise<string>; EXCALIDRAW_ASSET_PATH?: string }
+interface RendererWindow { weaveSceneRenderer?: (scene: unknown, theme?: GraphTheme) => Promise<string>; EXCALIDRAW_ASSET_PATH?: string }
 interface Script { nonce: string; src: string; onload: () => void; onerror: () => void; remove(): void }
 interface PreviewDocument {
   createElement(name: "script"): Script;
@@ -10,7 +11,7 @@ interface PreviewDocument {
 let loading: Promise<void> | null = null;
 
 /** Only diagrams request the separately shipped official renderer. */
-export async function renderScenePreview(scene: unknown): Promise<string> {
+export async function renderScenePreview(scene: unknown, theme?: GraphTheme): Promise<string> {
   const { window: host, document, location } = globalThis as unknown as {
     window: RendererWindow; document: PreviewDocument; location: { origin: string };
   };
@@ -30,5 +31,5 @@ export async function renderScenePreview(scene: unknown): Promise<string> {
     });
     await loading;
   }
-  return host.weaveSceneRenderer!(scene);
+  return host.weaveSceneRenderer!(scene, theme);
 }

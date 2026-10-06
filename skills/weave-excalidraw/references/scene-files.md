@@ -19,15 +19,24 @@ Elements need stable unique IDs, ordinary Excalidraw geometry/style fields and r
 
 Official format and API references: [JSON export](https://docs.excalidraw.com/docs/@excalidraw/excalidraw/api/utils/export), [element helpers](https://docs.excalidraw.com/docs/@excalidraw/excalidraw/api/utils/element).
 
+## Label fitting
+
+An existing label's `width`/`height` are not suitable for a new, longer label. Set the selected `fontFamily`, `fontSize` and `lineHeight` first; wrap using that font's measurements when an editor/renderer is available. Use real newline characters; keep `text` as the rendered wrapped lines and `originalText` as the editable label. Preserve Unicode grapheme clusters when wrapping.
+
+For a rectangle label, require `shape.width >= text.width + 2 * padding` and `shape.height >= text.height + 2 * padding`; use at least 24px padding for these authored diagrams. Center it with `text.x = shape.x + (shape.width - text.width) / 2` and the equivalent y expression. Bind it through `text.containerId = shape.id` **and** the shape's `boundElements` text entry. `textAlign`/`verticalAlign` alone do not position or bind text. After changing a label or font, recalculate both dimensions and recenter it; if its container grows, move subsequent shapes and attached arrows to preserve spacing. For ellipses/diamonds, use the stock editor's bound-text sizing because their usable interior is smaller.
+
+The small-flow helper estimates Cascadia monospace cells with wide margins; it does not measure installed font glyphs. Declared rectangles should pass the arithmetic checks above, but an available renderer must still confirm the actual text. Avoid repairing overflow by simply shrinking all labels to unreadable sizes.
+
 ## Exclusive creation using Node
 
 For the fixed `diagrams/` location, this pattern allows a symlinked vault root but rejects a symlinked notes/diagrams directory. Supply the helper's `notesRoot`, a basename such as `auth-flow.excalidraw`, and serialized scene JSON. Use a different basename on collision. The scene content must be generated and validated before writing.
 
 ```js
 import { mkdir, lstat, realpath, writeFile } from "node:fs/promises";
-import { basename, join } from "node:path";
+import { basename, join, resolve } from "node:path";
 
 async function createScene(notesRoot, name, sceneText) {
+  notesRoot = resolve(notesRoot);
   if (basename(name) !== name || !/^[a-z0-9][a-z0-9-]*\.excalidraw$/.test(name)) {
     throw new Error("Use a simple scene basename");
   }
