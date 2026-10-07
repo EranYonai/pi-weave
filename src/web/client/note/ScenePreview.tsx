@@ -17,7 +17,7 @@ export function ScenePreview(props: { path: string; version: string; title: stri
     if (container === null || img === null) return;
     const resize = () => {
       if (img.naturalWidth === 0 || img.naturalHeight === 0) return;
-      const size = scenePreviewSize(img.naturalWidth, img.naturalHeight, Math.max(1, container.clientWidth - 2), Math.max(1, container.clientHeight - 2), enlarged);
+      const size = scenePreviewSize(img.naturalWidth, img.naturalHeight, Math.max(1, container.clientWidth - 2), enlarged);
       img.style.setProperty("--weave-scene-width", `${size.width}px`);
       img.style.setProperty("--weave-scene-height", `${size.height}px`);
     };

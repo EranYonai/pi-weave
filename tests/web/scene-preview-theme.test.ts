@@ -46,6 +46,5 @@ describe("preview palette and fit", () => {
   it("shares the reading column and animates dimensions with reduced motion support", () => {
     expect(THEME_CSS).toContain("max-width:var(--weave-reading-width,760px)");
     expect(THEME_CSS).toContain("transition:width 180ms ease,height 180ms ease");
-    expect(THEME_CSS).toContain("max-height:min(60vh,640px)");
   });
 });
