@@ -71,6 +71,8 @@ export interface Note extends NoteMeta {
 
 /** A standalone HTML artifact discovered under the vault's notes directory. */
 export interface HtmlArtifact {
+  /** Optional only for compatibility with existing HTML artifact callers. */
+  kind?: "html";
   /** Vault-relative path, including the `.html`/`.htm` extension. */
   slug: string;
   title: string;
@@ -79,6 +81,15 @@ export interface HtmlArtifact {
   updated: string;
   size: number;
 }
+
+/** Editable scene metadata; scene bytes and Excalidraw's source field stay untouched. */
+export interface ExcalidrawArtifact extends Omit<HtmlArtifact, "kind"> {
+  kind: "excalidraw";
+  status: "valid" | "invalid" | "unverified";
+  error?: string;
+}
+
+export type VaultArtifact = HtmlArtifact | ExcalidrawArtifact;
 
 /** Summary of one note for list/search output. */
 export interface NoteSummary extends NoteMeta {
@@ -186,7 +197,7 @@ export interface VaultStatus {
   exists: boolean;
   noteCount: number;
   folders?: string[];
-  /** Number of discovered HTML/HTM artifacts. */
+  /** Number of discovered HTML/HTM and Excalidraw artifacts. */
   artifactCount?: number;
 }
 

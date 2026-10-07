@@ -33,8 +33,8 @@ import { buildGraph, type BuildGraphInput } from "../graph/build";
 import type { GraphModel } from "../graph/model";
 import { readRepositorySide } from "../graph/current";
 import { withMutationQueue } from "../mutex";
-import { getHtmlArtifact, getNote, listNoteFolders, statNotes } from "../vault";
-import type { HtmlArtifact, Note } from "../types";
+import { getVaultArtifact, isExcalidraw, getNote, listNoteFolders, statNotes } from "../vault";
+import type { VaultArtifact, Note } from "../types";
 
 /**
  * One build's outputs: the graph, and the notes it was built from.
@@ -75,7 +75,7 @@ interface CachedNote {
 interface CachedArtifact {
   mtimeMs: number;
   size: number;
-  artifact: HtmlArtifact;
+  artifact: VaultArtifact;
 }
 
 /** The repository half, held behind a TTL because assessing it spawns git. */
@@ -145,7 +145,7 @@ function classify(
       const slug = rel.slice(0, -".md".length).split(sep).join("/");
       return { scope: "vault", slug };
     }
-    if (rel.toLowerCase().endsWith(".html") || rel.toLowerCase().endsWith(".htm")) {
+    if (rel.toLowerCase().endsWith(".html") || rel.toLowerCase().endsWith(".htm") || isExcalidraw(rel)) {
       return { scope: "vault", slug: rel.split(sep).join("/") };
     }
     const base = rel.split(sep).pop() ?? rel;
@@ -308,7 +308,7 @@ export class WorkspaceCache {
   invalidate(absPath: string): void {
     const { scope, slug } = classify(absPath, { cwd: this.cwd, vaultRoot: this.vaultRoot });
     if (scope === "vault" && slug !== null) {
-      if (slug.toLowerCase().endsWith(".html") || slug.toLowerCase().endsWith(".htm")) this.artifacts.delete(slug);
+      if (slug.toLowerCase().endsWith(".html") || slug.toLowerCase().endsWith(".htm") || isExcalidraw(slug)) this.artifacts.delete(slug);
       else this.notes.delete(slug);
       if (this.building) this.evictedDuringBuild.add(slug);
     } else if (scope === "repo") {
@@ -434,7 +434,7 @@ export class WorkspaceCache {
       this.artifacts.clear();
     } else {
       for (const slug of this.evictedDuringBuild) {
-        if (/\.html?$/i.test(slug)) this.artifacts.delete(slug);
+        if ((/\.html?$/i.test(slug) || isExcalidraw(slug))) this.artifacts.delete(slug);
         else this.notes.delete(slug);
       }
     }
@@ -448,7 +448,7 @@ export class WorkspaceCache {
    * Stat every note; re-read only the ones whose mtime or size moved. Notes
    * that disappeared are evicted, so the map never outgrows the vault.
    */
-  private async refreshNotes(): Promise<{ notes: Note[]; artifacts: HtmlArtifact[] }> {
+  private async refreshNotes(): Promise<{ notes: Note[]; artifacts: VaultArtifact[] }> {
     const previousFolders = this.folders;
     const [stats, folders] = await Promise.all([statNotes(this.vaultRoot), listNoteFolders(this.vaultRoot)]);
     this.folders = folders;
@@ -457,15 +457,15 @@ export class WorkspaceCache {
     const previousFileCount = this.fileCount;
     const previousRawArtifactCount = this.artifactCount;
     this.fileCount = stats.filter((st) => st.path.toLowerCase().endsWith(".md")).length;
-    this.artifactCount = stats.filter((st) => /\.html?$/i.test(st.path)).length;
+    this.artifactCount = stats.filter((st) => (/\.html?$/i.test(st.path) || isExcalidraw(st.path))).length;
     let read = 0;
 
     const next = new Map<string, CachedNote>();
     const nextArtifacts = new Map<string, CachedArtifact>();
     const out: Note[] = [];
-    const artifactOut: HtmlArtifact[] = [];
+    const artifactOut: VaultArtifact[] = [];
     for (const st of stats) {
-      if (/\.html?$/i.test(st.path)) {
+      if ((/\.html?$/i.test(st.path) || isExcalidraw(st.path))) {
         const hit = this.artifacts.get(st.slug);
         if (hit !== undefined && hit.mtimeMs === st.mtimeMs && hit.size === st.size) {
           this.notesCached += 1;
@@ -475,7 +475,7 @@ export class WorkspaceCache {
         }
         this.notesRead += 1;
         read += 1;
-        const artifact = await getHtmlArtifact(this.vaultRoot, st.slug);
+        const artifact = await getVaultArtifact(this.vaultRoot, st.slug);
         if (artifact === null) continue;
         const cached = { mtimeMs: st.mtimeMs, size: st.size, artifact };
         nextArtifacts.set(st.slug, cached);

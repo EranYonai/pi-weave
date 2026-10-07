@@ -96,7 +96,7 @@ export function graphPreview(payload: GraphPayload | null, id: string | null): G
   if (payload === null || id === null) return null;
   const node = payload.model.nodes.find((candidate) => candidate.id === id);
   if (node === undefined) return null;
-  const kind = id.startsWith("artifact:") ? "HTML artifact" : id.startsWith("vfolder:") ? "Folder" : node.kind;
+  const kind = id.startsWith("artifact:") ? (node.detail.kind === "excalidraw" ? "Excalidraw diagram" : "HTML artifact") : id.startsWith("vfolder:") ? "Folder" : node.kind;
   return { id, title: node.label, kind, icon: kindIcon(node.kind) };
 }
 

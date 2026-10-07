@@ -39,6 +39,7 @@ import {
   SANITIZE_CONFIG,
   TASK_CHECKBOX_ATTR,
   WIKILINK_ATTR,
+  MISSING_SCENE_ATTR,
   hasTextSelection,
   CREATED_WORD,
   escapeHtml,
@@ -726,7 +727,7 @@ describe("SANITIZE_CONFIG", () => {
     expect(SANITIZE_CONFIG.ALLOWED_ATTR).toContain(TASK_CHECKBOX_ATTR);
     expect(SANITIZE_CONFIG.ALLOWED_ATTR).toContain("aria-label");
     expect(SANITIZE_CONFIG.ALLOWED_ATTR).not.toContain("disabled");
-    expect(SANITIZE_CONFIG.ADD_URI_SAFE_ATTR).toEqual([WIKILINK_ATTR, TASK_CHECKBOX_ATTR]);
+    expect(SANITIZE_CONFIG.ADD_URI_SAFE_ATTR).toEqual([WIKILINK_ATTR, TASK_CHECKBOX_ATTR, MISSING_SCENE_ATTR]);
   });
 
   it("admits no other data-* or aria-* attribute", () => {

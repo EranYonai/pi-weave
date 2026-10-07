@@ -66,7 +66,7 @@ describe("OpenCode plugin", () => {
 
       expect([...tools.keys()].sort()).toEqual(["weave_note", "weave_repo"]);
       expect([...tools.values()].every((tool) => tool.options.codemode === false)).toBe(true);
-      expect([...skills.keys()].sort()).toEqual(["weave-explore", "weave-notepad"]);
+      expect([...skills.keys()].sort()).toEqual(["weave-excalidraw", "weave-explore", "weave-notepad"]);
       expect([...commands.keys()].sort()).toEqual(["weave", "weave-scan", "weave-scan-cancel", "weave-view"]);
       expect(skills.get("weave-notepad")?.path).toMatch(/skills\/weave-notepad\/SKILL\.md$/);
       expect(skills.get("weave-notepad")?.content).toContain("# Weave Notepad");

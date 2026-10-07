@@ -224,6 +224,17 @@ body{font-size:var(--weave-px-base)}
 .weave-note-generated{--weave-spine:var(--weave-faint)}
 .weave-note{border-left:2px solid var(--weave-spine,transparent)}
 .weave-note-empty{flex:1;margin:0;padding:14px var(--weave-note-gutter);color:var(--weave-dim);max-width:44ch;line-height:1.5;background:var(--weave-page)}
+.weave-scene-help{width:min(560px,calc(100vw - 32px));max-height:80vh;overflow:auto;padding:16px;line-height:1.6;color:var(--weave-fg);background:var(--weave-panel);border:1px solid var(--weave-line-strong);border-radius:var(--weave-radius-pop)}
+.weave-scene-help::backdrop{background:var(--weave-scrim)}
+.weave-scene-help h2{margin:0;font-size:var(--weave-px-subhead)}
+.weave-scene-help code{overflow-wrap:anywhere}
+.weave-scene-help a{color:var(--weave-accent)}
+.weave-scene-help button{padding:5px 12px;background:var(--weave-raise);color:var(--weave-fg);border:1px solid var(--weave-line-strong);border-radius:var(--weave-radius);cursor:pointer}
+.weave-scene-preview{padding:14px var(--weave-note-gutter);display:flex;flex-direction:column;flex:1;min-height:0}
+.weave-scene-preview-tools{display:flex;justify-content:flex-end;width:100%;max-width:var(--weave-reading-width,760px);margin:0 auto 8px}
+.weave-scene-preview button{background:var(--weave-panel);color:var(--weave-fg);border:1px solid var(--weave-line);border-radius:var(--weave-radius);padding:5px;display:inline-flex;align-items:center;cursor:pointer}
+.weave-scene-preview-image{overflow:auto;scrollbar-gutter:stable both-edges;flex:1;min-height:0;width:100%;max-width:var(--weave-reading-width,760px);margin:0 auto}
+.weave-scene-preview-image img{display:block;width:var(--weave-scene-width,0px);height:var(--weave-scene-height,0px);margin:0 auto;border:1px solid var(--weave-line);border-radius:var(--weave-radius);transition:width 180ms ease,height 180ms ease}
 .weave-artifact-frame{display:block;flex:1;width:100%;min-height:320px;border:0;background:#fff}
 /* The head pins itself (P6.3): a long note scrolls its prose under the title,
    and the title is what says you are still in the right document — the
@@ -598,7 +609,7 @@ export interface ThemeHost {
 export const NONCE_SOURCES = ["style[nonce]", "style", "script[nonce]", "script[src]"];
 
 /** Read the per-response nonce from the document, or `null`. */
-export function findNonce(host: ThemeHost): string | null {
+export function findNonce(host: Pick<ThemeHost, "querySelector">): string | null {
   for (const selector of NONCE_SOURCES) {
     const nonce = host.querySelector(selector)?.nonce;
     if (typeof nonce === "string" && nonce !== "") return nonce;

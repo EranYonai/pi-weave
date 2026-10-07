@@ -11,10 +11,15 @@ The pi-weave vault is the user's long-term memory: plain Markdown notes with fro
 Use `weave_note`. Without the tool, edit the files directly (`PI_WEAVE_VAULT` overrides the vault root). Front matter:
 `title`, `created`, `updated` (ISO-8601), `tags`, and `source: human | agent | generated`.
 
+## Diagram requests
+
+For an Excalidraw request, including “write an example excalidraw graph note”, read [Weave Excalidraw](../weave-excalidraw/SKILL.md) before `add`. Create and verify a new `.excalidraw` scene first, then create its companion note with the exact returned wiki link. A Markdown note linking an existing drawing does not create a diagram; reuse a scene only when the user asks to reuse it. If file tools are unavailable, report that scene creation is blocked instead of claiming success.
+
 ## Capture
 
 - Create notes only on explicit requests: “remember this”, “start a note”, “add to this note”. Do not capture conversation unprompted.
-- Given new content, call `add` directly and report the slug. Do not list the vault, inspect the repository, or run git first.
+- Given new text content, call `add` directly and report the slug. Diagram requests follow the workflow above. Do not list the vault, inspect the repository, or run git first.
+- With `weave_note`, pass only Markdown body in `text`; pass title, tags and source as fields. The tool writes front matter. Include front matter yourself only when writing a note file directly.
 - When extending existing knowledge, make one targeted `search`, then `append` to the matching note instead of duplicating it.
 - Ask one short question if content is missing; exploration cannot reveal what the user meant.
 - Use a specific title and 1–4 lowercase tags; reuse existing tags when known.

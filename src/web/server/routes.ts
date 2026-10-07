@@ -45,10 +45,11 @@
  */
 
 import { createHash, randomUUID } from "node:crypto";
-import { createReadStream } from "node:fs";
+import { createReadStream, promises as fs } from "node:fs";
 import { pipeline } from "node:stream/promises";
 import { createVaultBackup } from "./backup";
 import { readFile } from "node:fs/promises";
+import { dirname, join } from "node:path";
 import type { IncomingMessage, ServerResponse } from "node:http";
 import type { WorkspaceSnapshot } from "../../core/cache/workspace";
 import { WorkspaceCache } from "../../core/cache/workspace";
@@ -57,7 +58,7 @@ import type { GraphModel as CoreGraphModel } from "../../core/graph/model";
 import { openNoteInEditor } from "../../core/openInEditor";
 import type { Note } from "../../core/types";
 import type { VaultMutationResult } from "../../core/vault";
-import { addNote, createFolder, deleteFolder, deleteNote, getNote, moveNote, renameFolder, renameNote, resolveHtmlPath, searchNotes, setNoteBody } from "../../core/vault";
+import { addNote, createFolder, deleteFolder, deleteNote, getNote, moveNote, renameFolder, renameNote, resolveExcalidrawPath, resolveHtmlPath, searchNotes, setNoteBody } from "../../core/vault";
 import { deriveTagIndex, type TaggedNote } from "../../core/view/links";
 import type {
   GraphPayload,
@@ -382,6 +383,7 @@ async function route(
 
   if (method === "GET" && path === "/") return sendShell(deps, res);
   if (method === "GET" && path === "/app.js") return sendBundle(deps, res);
+  if (method === "GET" && path.startsWith("/scene-assets/")) return sendSceneAsset(deps, path.slice("/scene-assets/".length), res);
   if (method === "GET" && path === "/api/graph") return sendGraph(deps, req, res);
   if (method === "GET" && path === "/api/backup") {
     const backup = await createVaultBackup(deps.vaultRoot);
@@ -415,6 +417,9 @@ async function route(
   }
   if (method === "GET" && path.startsWith("/api/okf/")) {
     return sendOkf(deps, path.slice("/api/okf/".length), res);
+  }
+  if (method === "GET" && path.startsWith("/api/scene/")) {
+    return sendScene(deps, path.slice("/api/scene/".length), res);
   }
   if (method === "GET" && path.startsWith("/api/artifact/")) {
     return sendArtifact(deps, path.slice("/api/artifact/".length), res);
@@ -483,6 +488,19 @@ async function sendBundle(deps: RouteDeps, res: ServerResponse): Promise<void> {
     "cache-control": "no-store",
   });
   res.end(source);
+}
+
+/** Only packaged renderer assets are served here, after the authentication gate. */
+async function sendSceneAsset(deps: RouteDeps, asset: string, res: ServerResponse): Promise<void> {
+  const type = asset === "renderer.js" ? "text/javascript; charset=utf-8"
+    : /^(?:[a-zA-Z0-9_-]+\/)*[a-zA-Z0-9_-]+\.woff2$/.test(asset) ? "font/woff2" : null;
+  const body = type === null ? null : await readFile(join(dirname(deps.bundlePath), "scene-assets", asset)).catch(() => null);
+  if (body === null) {
+    sendText(res, 404, "no such scene asset\n");
+    return;
+  }
+  res.writeHead(200, { ...baseHeaders(), "content-type": type!, "cache-control": "no-store" });
+  res.end(body);
 }
 
 /**
@@ -736,6 +754,31 @@ async function sendArtifact(deps: RouteDeps, rel: string, res: ServerResponse): 
     "cache-control": "no-store",
   });
   res.end(body);
+}
+
+/** Download original scene bytes, including malformed files for recovery. */
+async function sendScene(deps: RouteDeps, rel: string, res: ServerResponse): Promise<void> {
+  const path = await resolveExcalidrawPath(deps.vaultRoot, rel);
+  const file = path === null ? null : await fs.open(path, "r").catch(() => null);
+  if (file === null) {
+    sendJson(res, 404, { error: "no such scene" });
+    return;
+  }
+  try {
+    if (!(await file.stat()).isFile()) {
+      sendJson(res, 404, { error: "no such scene" });
+      return;
+    }
+    const filename = rel.split("/").at(-1) as string;
+    const encoded = encodeURIComponent(filename).replace(/[!'()*]/g, (char) => `%${char.charCodeAt(0).toString(16).toUpperCase()}`);
+    res.writeHead(200, {
+      ...baseHeaders(),
+      "content-type": JSON_TYPE,
+      "content-disposition": `attachment; filename="${filename.replace(/[^a-zA-Z0-9._-]/g, "_")}"; filename*=UTF-8''${encoded}`,
+      "cache-control": "no-store",
+    });
+    await pipeline(file.createReadStream(), res);
+  } finally { await file.close(); }
 }
 
 async function sendSearch(deps: RouteDeps, query: URLSearchParams, res: ServerResponse): Promise<void> {

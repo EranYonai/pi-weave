@@ -60,6 +60,9 @@ export {
   formatNote,
   formatRawAppend,
   getHtmlArtifact,
+  getExcalidrawArtifact,
+  getVaultArtifact,
+  EXCALIDRAW_METADATA_LIMIT,
   getNote,
   listNotes,
   moveNote,
@@ -69,6 +72,7 @@ export {
   renameNote,
   repairVaultLinks,
   resolveHtmlPath,
+  resolveExcalidrawPath,
   resolveNotePath,
   searchNotes,
   setNoteBody,
@@ -92,7 +96,7 @@ export {
   type LinkFix,
   type UnresolvableLink,
 } from "./links/repair";
-export type { HtmlArtifact } from "./types";
+export type { HtmlArtifact, ExcalidrawArtifact, VaultArtifact } from "./types";
 export { withMutationQueue } from "./mutex";
 export { formatDashboard, formatStatusLine, getWorkspaceStatus } from "./workspace";
 export { WorkspaceCache } from "./cache/workspace";

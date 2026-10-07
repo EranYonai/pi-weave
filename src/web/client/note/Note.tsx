@@ -1,3 +1,4 @@
+import type { GraphTheme } from "../../shared/themes";
 /**
  * The note column — reading, and editing (weave-workspace §1.2, P2.4, P5, P6.3).
  *
@@ -73,6 +74,7 @@ import {
 import type { NoteHeaderView, PreviewElement, PreviewEvent } from "./note.model";
 import { createDraftStore } from "./drafts";
 import type { DraftStore } from "./drafts";
+import { ScenePreview } from "./ScenePreview";
 
 /**
  * The custom properties the preview card is placed with, written by the
@@ -84,6 +86,7 @@ const PREVIEW_X = "weave-preview-x";
 const PREVIEW_Y = "weave-preview-y";
 
 export interface NoteProps {
+  theme?: GraphTheme;
   spellcheck?: boolean;
   defaultEdit?: boolean;
   note: NotePayload | null;
@@ -318,13 +321,15 @@ export function Note(props: NoteProps) {
           <h3 class="weave-note-title">{title}</h3>
           <p class="weave-note-meta"><span class="weave-note-time">{artifactPath}</span></p>
         </header>
-        <iframe
+        {/\.excalidraw$/i.test(artifactPath) ? (
+          <ScenePreview key={artifactKey} path={artifactPath} version={artifactKey} title={title} theme={props.theme ?? "light"} />
+        ) : <iframe
           key={artifactKey}
           class="weave-artifact-frame"
           title={title}
           sandbox="allow-scripts"
           src={`/api/artifact/${encodeURIComponent(artifactPath)}`}
-        />
+        />}
       </article>
     );
   }

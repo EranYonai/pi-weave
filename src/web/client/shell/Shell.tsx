@@ -11,7 +11,7 @@ import { createSigmaRenderer } from "../graph/renderer.dom";
 import { Note } from "../note/Note";
 import { createDraftStore, mayMutateDrafts, mayRemoveDrafts } from "../note/drafts";
 import type { DraftStore } from "../note/drafts";
-import { DISCARD_PROMPT } from "../note/note.model";
+import { DISCARD_PROMPT, selectedArtifactPath } from "../note/note.model";
 import { SearchPalette } from "../search/SearchPalette";
 import { Icon, Tree } from "../tree/Tree";
 import { initialWorkspaceState } from "../state";
@@ -21,6 +21,7 @@ import { ContextRail } from "./ContextRail";
 import { deeplinkSelection, formatHash } from "./deeplink.model";
 import { Settings } from "./Settings";
 import type { Preferences } from "../../shared/preferences";
+import type { GraphTheme } from "../../shared/themes";
 import { THEMES } from "../../shared/themes";
 import { HelpOverlay } from "./HelpOverlay";
 import { watchKeys } from "./keys";
@@ -49,7 +50,7 @@ function RecentList(props: { visits: readonly string[]; graph: GraphPayload | nu
 
 /** A tab view can unmount; the shared draft store outlives it. */
 function DocumentView(props: {
-  preferences: Preferences; tab: WorkspaceTab; graph: GraphPayload | null; drafts: DraftStore; revision: number;
+  theme: GraphTheme; preferences: Preferences; tab: WorkspaceTab; graph: GraphPayload | null; drafts: DraftStore; revision: number;
   onSelect: (id: string, newTab?: boolean) => void; onSave: (slug: string, body: string) => Promise<boolean>;
   now: number; onScroll: (value: number) => void; onSearch: () => void; onGraph: () => void; onCreate: (title: string) => Promise<boolean>;
 }) {
@@ -106,7 +107,7 @@ function DocumentView(props: {
   return <div class="weave-document" ref={element} onScrollCapture={(event) => {
     const target = event.target as HTMLElement;
     if (target.classList.contains("weave-note")) { savedScroll.current = target.scrollTop; props.onScroll(target.scrollTop); }
-  }}><Note spellcheck={props.preferences.spellcheck} defaultEdit={props.preferences.defaultEdit} note={payload?.note ?? null} loadFailed={payload?.failed ?? false} loadVersion={payload?.version ?? 0} graph={props.graph} selectedId={id}
+  }}><Note theme={props.theme} spellcheck={props.preferences.spellcheck} defaultEdit={props.preferences.defaultEdit} note={payload?.note ?? null} loadFailed={payload?.failed ?? false} loadVersion={payload?.version ?? 0} graph={props.graph} selectedId={id}
     onSelect={props.onSelect} onOpen={(noteSlug) => void openNote(fetchJson, noteSlug).then((result) => {
       if (!result.ok) window.alert(result.message); else if (!result.data.opened) window.alert("Could not open the note in an editor.");
     })} onSave={props.onSave} drafts={props.drafts} idPrefix={props.tab.id} now={props.now} /></div>;
@@ -247,7 +248,7 @@ export function Shell(props: ShellProps) {
   useEffect(() => { if (ready) setVisits((previous) => recordVisit(previous, selectedId)); }, [ready, selectedId]);
   useEffect(() => {
     if (!ready) return;
-    history.replaceState(null, "", formatHash(selectedId));
+    history.replaceState(null, "", formatHash(selectedId) || `${location.pathname}${location.search}`);
     document.documentElement.dataset.weaveTheme = palette;
     document.documentElement.dataset.weaveScheme = THEMES[palette].scheme;
     document.documentElement.dataset.weaveAccent = layout.preferences.accent;
@@ -371,6 +372,9 @@ export function Shell(props: ShellProps) {
   const renderPane = (group: Pane) => {
     const current = group.tabs.find((entry) => entry.id === group.activeTab)!;
     const isActive = group.id === layout.activePane;
+    const artifactPath = current.kind === "document" ? selectedArtifactPath(data.graph, tabSelection(current)) : null;
+    const scenePath = artifactPath !== null && /\.excalidraw$/i.test(artifactPath) ? artifactPath : null;
+    const sceneHelpId = `scene-help-${group.id}`;
     return <section key={group.id} class={`weave-pane${isActive ? " weave-pane-active" : ""}${dropPane === group.id ? " weave-pane-drop" : ""}`} data-drop-label={draggedTab.current === null ? "Open note here" : "Move tab here"} aria-label={`Workspace pane ${layout.panes.indexOf(group) + 1}`}
       onDragOver={(event) => tabDragOver(group.id, event)} onDrop={(event) => tabDrop(group.id, event)}
       onDragLeave={(event) => { if (!event.currentTarget.contains(event.relatedTarget as Node | null)) setDropPane(null); }}
@@ -417,13 +421,25 @@ export function Shell(props: ShellProps) {
           event.preventDefault(); event.stopPropagation(); event.currentTarget.open = false;
           event.currentTarget.querySelector("summary")?.focus();
         }}><summary aria-label="Pane options" title="Pane options">···</summary><div onClick={(event) => { const details = event.currentTarget.closest("details"); if (details) details.open = false; }}>
+          {scenePath !== null ? <>
+            <a href={`/api/scene/${encodeURIComponent(scenePath)}`} download>Download source</a>
+            <button type="button" onClick={() => (document.getElementById(sceneHelpId) as HTMLDialogElement).showModal()}>How to edit</button>
+          </> : null}
           <button type="button" onClick={() => setLayout(splitPane({ ...layout, activePane: group.id }, "right"))}>{layout.panes.length > 1 ? "Arrange side by side" : "Split right"}</button>
           <button type="button" onClick={() => setLayout(splitPane({ ...layout, activePane: group.id }, "down"))}>{layout.panes.length > 1 ? "Stack panes" : "Split down"}</button>
           {layout.panes.length > 1 ? <><button type="button" onClick={() => setLayout(moveTab(layout, group.id, current.id))}>Move tab to other pane</button><button type="button" title="Move all tabs to the other pane and close this pane" onClick={() => setLayout(closePane(layout, group.id))}>Close pane</button></> : null}
         </div></details>
       </div>
+      {scenePath !== null ? <dialog id={sceneHelpId} class="weave-scene-help" aria-labelledby={`${sceneHelpId}-title`} onKeyDown={(event) => event.stopPropagation()}
+        onClose={(event) => event.currentTarget.closest(".weave-pane")?.querySelector<HTMLElement>(".weave-pane-menu>summary")?.focus()}>
+        <h2 id={`${sceneHelpId}-title`}>Edit this diagram</h2>
+        <p>Download the source from the pane menu, then open it in <a href="https://excalidraw.com/" target="_blank" rel="noreferrer noopener">Excalidraw</a>.</p>
+        <p>Save your edited file back to <code>{info.vaultRoot ? `${info.vaultRoot.replace(/[\\/]$/, "")}/` : ""}notes/{scenePath}</code>, then refresh Weave.</p>
+        <p>For offline editing, use your local or self-hosted Excalidraw editor.</p>
+        <form method="dialog"><button type="submit">Close</button></form>
+      </dialog> : null}
       <div class="weave-pane-content" role="tabpanel" tabIndex={-1} id={`panel-${group.id}`} aria-labelledby={`tab-${current.id}`} {...(current.kind === "graph" ? { ref: graphSlot } : {})}>
-        {current.kind === "document" ? <DocumentView key={`${current.id}:${current.cursor}:${tabSelection(current)}`} preferences={layout.preferences} tab={current} graph={data.graph} drafts={drafts} revision={revision} now={now}
+        {current.kind === "document" ? <DocumentView key={`${current.id}:${current.cursor}:${tabSelection(current)}`} theme={graphTheme} preferences={layout.preferences} tab={current} graph={data.graph} drafts={drafts} revision={revision} now={now}
           onSelect={(id, newTab) => select(id, newTab, group.id)} onSave={save} onScroll={(value) => rememberScroll(current.id, value)}
           onSearch={() => setOverlay("search")} onGraph={showGraph} onCreate={(title) => create(title, group.id)} /> : null}
       </div>

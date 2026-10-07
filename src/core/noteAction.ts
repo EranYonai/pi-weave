@@ -25,7 +25,9 @@ export const WEAVE_NOTE_DESCRIPTION =
   "finalize (restructure a note above its raw tail), search (ranked slug/title/tags/body matches plus linked, tagged, and lexically related notes; returns the full note when one result or one exact identity resolves), " +
   "links (audit stale [[wiki-links]]; fix=true repairs the unambiguous ones), " +
   "suggest (rank unlinked notes that share distinctive vocabulary; reports only, never writes). " +
-  "Use it to remember decisions, facts, and user preferences across sessions.";
+  "Use it to remember decisions, facts, and user preferences across sessions. " +
+  "Pass Markdown body only in text; the tool writes YAML front matter from title/tags/source fields. " +
+  "For Excalidraw requests, follow weave-excalidraw to create and verify a new scene file before adding its companion; add creates Markdown only, not a diagram.";
 
 export interface NoteActionInput {
   action: "list" | "get" | "add" | "append" | "finalize" | "search" | "links" | "suggest";
