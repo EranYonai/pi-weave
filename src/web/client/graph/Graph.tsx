@@ -55,8 +55,6 @@ import { Icon } from "../tree/Tree";
 
 export interface GraphProps {
   graph: GraphPayload | null;
-  /** Reframe the graph when shown in the Context sidebar. */
-  compact?: boolean;
   selectedId: string | null;
   onSelect: (id: string | null) => void;
   previewId: string | null;
@@ -210,10 +208,6 @@ export function Graph(props: GraphProps) {
   useEffect(() => {
     renderer.current?.setGraph(model.graph);
   }, [model.key, forceKey, groupColors]);
-
-  useEffect(() => {
-    if (props.compact) renderer.current?.fit();
-  }, [model.key, forceKey, groupColors, props.compact]);
 
   // Live layout, in two effects so pause/resume and re-layout are independent.
   //

@@ -486,7 +486,7 @@ export function Shell(props: ShellProps) {
         onFocusCapture={() => { if (!contextGraphActive && graphPane) setLayout((current) => ({ ...current, activePane: graphPane.id })); }}
         aria-hidden={!graphVisible} inert={!graphVisible} role={contextGraphActive ? "region" : undefined} aria-label={contextGraphActive ? "Note graph" : undefined}
         style={{ ...graphBox, visibility: graphVisible ? "visible" : "hidden", pointerEvents: graphVisible ? "auto" : "none" }}>
-        <Graph compact={contextGraphActive} graph={data.graph} selectedId={selectedId} previewId={graphPreviewId} onSelect={selectGraph} onOpen={openGraphNode} renderer={createSigmaRenderer} storage={localStorage} host={window} scheme={graphTheme} forces={layout.preferences.forces} groupColors={layout.preferences.groupColors} bootFailed={data.graphFailed} fit={fit} />
+        <Graph graph={data.graph} selectedId={selectedId} previewId={graphPreviewId} onSelect={selectGraph} onOpen={openGraphNode} renderer={createSigmaRenderer} storage={localStorage} host={window} scheme={graphTheme} forces={layout.preferences.forces} groupColors={layout.preferences.groupColors} bootFailed={data.graphFailed} fit={fit} />
       </div> : null}
     </div>
     <div class="weave-footer"><StatusBar model={statusBarModel(props.cwd, selectedId)} />
