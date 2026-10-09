@@ -100,17 +100,6 @@ export function graphPreview(payload: GraphPayload | null, id: string | null): G
   return { id, title: node.label, kind, icon: kindIcon(node.kind) };
 }
 
-/** The current note and its direct connections, excluding folder containment. */
-export function noteNeighborhood(payload: GraphPayload | null, id: string | null): GraphPayload | null {
-  if (payload === null || id === null) return null;
-  const edges = payload.model.edges.filter((edge) => edge.kind !== "contains");
-  const ids = focusNeighborhood(id, edges);
-  return { ...payload, model: { ...payload.model,
-    nodes: payload.model.nodes.filter((node) => ids.has(node.id)),
-    edges: edges.filter((edge) => ids.has(edge.source) && ids.has(edge.target)),
-  } };
-}
-
 /**
  * The state a freshly loaded graph opens in: **fully expanded**.
  *

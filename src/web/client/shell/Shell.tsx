@@ -6,7 +6,6 @@ import type { Pane, WorkspaceLayout, WorkspaceTab } from "../../shared/workspace
 import { fetchJson } from "../api.dom";
 import { createNote, fetchGraph, openNote, saveNote } from "../api";
 import { Graph } from "../graph/Graph";
-import { noteNeighborhood } from "../graph/column.model";
 import { schemeOf, watchScheme } from "../graph/scheme";
 import { createSigmaRenderer } from "../graph/renderer.dom";
 import { Note } from "../note/Note";
@@ -175,7 +174,6 @@ export function Shell(props: ShellProps) {
   const contextGraphActive = contextGraph && tab.kind === "document" && !fullGraphVisible;
   const contextVisible = width < 1050 ? compactContext : layout.contextVisible;
   const graphVisible = fullGraphVisible || contextGraphActive && contextVisible && documentId !== null;
-  const localGraph = useMemo(() => noteNeighborhood(data.graph, documentId), [data.graph, documentId]);
   const hasGraph = layout.panes.some((group) => group.tabs.some((entry) => entry.kind === "graph"));
   const live = useRef({ layout, overlay, selectedId, graphPreviewId, select: (_id: string | null) => {} });
   const previewGraphNode = (id: string | null): void => {
@@ -488,7 +486,7 @@ export function Shell(props: ShellProps) {
         onFocusCapture={() => { if (!contextGraphActive && graphPane) setLayout((current) => ({ ...current, activePane: graphPane.id })); }}
         aria-hidden={!graphVisible} inert={!graphVisible} role={contextGraphActive ? "region" : undefined} aria-label={contextGraphActive ? "Note graph" : undefined}
         style={{ ...graphBox, visibility: graphVisible ? "visible" : "hidden", pointerEvents: graphVisible ? "auto" : "none" }}>
-        <Graph compact={contextGraphActive} graph={contextGraphActive ? localGraph : data.graph} selectedId={selectedId} previewId={graphPreviewId} onSelect={selectGraph} onOpen={openGraphNode} renderer={createSigmaRenderer} storage={localStorage} host={window} scheme={graphTheme} forces={layout.preferences.forces} groupColors={layout.preferences.groupColors} bootFailed={data.graphFailed} fit={fit} />
+        <Graph compact={contextGraphActive} graph={data.graph} selectedId={selectedId} previewId={graphPreviewId} onSelect={selectGraph} onOpen={openGraphNode} renderer={createSigmaRenderer} storage={localStorage} host={window} scheme={graphTheme} forces={layout.preferences.forces} groupColors={layout.preferences.groupColors} bootFailed={data.graphFailed} fit={fit} />
       </div> : null}
     </div>
     <div class="weave-footer"><StatusBar model={statusBarModel(props.cwd, selectedId)} />

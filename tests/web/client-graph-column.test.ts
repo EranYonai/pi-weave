@@ -33,7 +33,6 @@ import {
   highlightFor,
   hoverHighlight,
   initialGraphView,
-  noteNeighborhood,
   toggleCluster,
 } from "../../src/web/client/graph/column.model";
 import type { GraphViewState } from "../../src/web/client/graph/column.model";
@@ -672,50 +671,18 @@ describe("P3 exit criterion — selecting anywhere highlights everywhere (§11, 
 });
 
 
-describe("note neighborhood", () => {
-  const node = (id: string, kind: WireGraphNode["kind"] = "note"): WireGraphNode => ({ id, kind, label: id, provenance: null, detail: {} });
-  const payload = payloadOf([node("vault", "vault"), node("note:current"), node("note:linked"), node("note:backlink"), node("note:two-hops"), node("file:anchor", "file"), node("note:unrelated")], [
-    { source: "vault", target: "note:current", kind: "contains" },
-    { source: "note:current", target: "note:linked", kind: "links-to" },
-    { source: "note:backlink", target: "note:current", kind: "mentions" },
-    { source: "note:linked", target: "note:two-hops", kind: "links-to" },
-    { source: "note:linked", target: "note:backlink", kind: "links-to" },
-    { source: "note:current", target: "file:anchor", kind: "anchored-at" },
-  ]);
-
-  it("keeps direct links, backlinks and anchors without expanding to the vault or two hops", () => {
-    const local = noteNeighborhood(payload, "note:current")!;
-    expect(local.model.nodes.map(node => node.id)).toEqual(["note:current", "note:linked", "note:backlink", "file:anchor"]);
-    expect(local.model.edges).toEqual([payload.model.edges[1], payload.model.edges[2], payload.model.edges[4], payload.model.edges[5]]);
-    expect(local.model.nodes[0]).toBe(payload.model.nodes[1]);
-    expect(local.tags).toBe(payload.tags);
-    expect(payload.model.nodes).toHaveLength(7);
-    expect(payload.model.edges).toHaveLength(6);
-  });
-
-  it("follows a new current note and keeps an isolated note visible", () => {
-    expect(noteNeighborhood(payload, "note:linked")!.model.nodes.map(node => node.id)).toEqual(["note:current", "note:linked", "note:backlink", "note:two-hops"]);
-    expect(noteNeighborhood(payload, "note:unrelated")!.model.nodes.map(node => node.id)).toEqual(["note:unrelated"]);
-    expect(noteNeighborhood(payload, "note:unrelated")!.model.edges).toEqual([]);
-    expect(noteNeighborhood(payload, "missing")!.model.nodes).toEqual([]);
-  });
-
-  it("waits for both a graph and a current note", () => {
-    expect(noteNeighborhood(null, "note:current")).toBeNull();
-    expect(noteNeighborhood(payload, null)).toBeNull();
-  });
-});
-
-
-it("keeps the note highlight with smaller nodes and edges in the compact graph", () => {
-  const local = noteNeighborhood(SMALL, "note:a")!;
+for (const expanded of [true, false]) it(`keeps the same nodes, edges and note highlight in the compact graph with folders ${expanded ? "expanded" : "collapsed"}`, () => {
   const storage: PositionStorage = { getItem: () => null, setItem: () => {} };
-  const view = initialGraphView(viewModel(local));
+  const view = expanded ? initialGraphView(SMALL_MODEL) : { expanded: new Set<string>(["vault"]) };
   const theme = "light";
-  const full = graphColumnModel(local, "note:a", view, storage, theme);
-  const compact = graphColumnModel(local, "note:a", view, storage, theme, false, true, true);
-  expect(compact.graph.nodes.length).toBeGreaterThan(0);
-  expect(compact.graph.edges.length).toBeGreaterThan(0);
+  const full = graphColumnModel(SMALL, "note:a", view, storage, theme);
+  const compact = graphColumnModel(SMALL, "note:a", view, storage, theme, false, true, true);
+  expect(compact.visible).toBe(full.visible);
+  expect(compact.total).toBe(SMALL.model.nodes.length);
+  expect(compact.key).toBe(full.key);
+  expect(compact.graph.nodes.map(node => node.id)).toEqual(full.graph.nodes.map(node => node.id));
+  expect(compact.graph.nodes.some(node => node.id === "repository")).toBe(true);
+  expect(compact.graph.edges.map(({ source, target }) => [source, target])).toEqual(full.graph.edges.map(({ source, target }) => [source, target]));
   for (const [index, node] of compact.graph.nodes.entries()) {
     expect(node.size).toBeGreaterThan(0);
     expect(node.size).toBeLessThan(full.graph.nodes[index]!.size);

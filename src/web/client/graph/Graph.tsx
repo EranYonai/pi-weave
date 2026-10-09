@@ -55,7 +55,7 @@ import { Icon } from "../tree/Tree";
 
 export interface GraphProps {
   graph: GraphPayload | null;
-  /** Reframe the note neighborhood when its shape changes. */
+  /** Draw the graph at a smaller size and reframe it when its shape changes. */
   compact?: boolean;
   selectedId: string | null;
   onSelect: (id: string | null) => void;
@@ -132,7 +132,7 @@ export function Graph(props: GraphProps) {
 
   // The shell's decision wins; `schemeOf` stays for a host-driven default.
   const scheme = props.scheme ?? schemeOf(props.host);
-  const view = effectiveView(props.graph, props.compact ? null : state);
+  const view = effectiveView(props.graph, state);
   // Memoized for two reasons, one cheap and one load-bearing. Cheap: the
   // shell re-renders on every editor keystroke and every divider pixel, and
   // an un-memoized run re-reads `localStorage` and re-parses the position
@@ -148,14 +148,14 @@ export function Graph(props: GraphProps) {
   const preview = graphPreview(props.graph, props.previewId);
 
   // Read by the mount-time `onSelect`, which outlives this render.
-  const live = useRef({ view, model, onSelect: props.onSelect, selectedId: props.selectedId, compact: props.compact });
-  live.current = { view, model, onSelect: props.onSelect, selectedId: props.selectedId, compact: props.compact };
+  const live = useRef({ view, model, onSelect: props.onSelect, selectedId: props.selectedId });
+  live.current = { view, model, onSelect: props.onSelect, selectedId: props.selectedId };
 
   useEffect(() => {
     const instance = props.renderer(scheme);
     instance.onSelect((id) => {
       const next = graphClick(live.current.view, live.current.model.clusters, id);
-      if (!live.current.compact) setState(next.state);
+      setState(next.state);
       live.current.onSelect(next.selectedId);
     });
     // Hover drives the *same* reducers a click does (§7.4): the pointer and
