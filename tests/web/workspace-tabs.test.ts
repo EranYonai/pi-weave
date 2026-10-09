@@ -40,7 +40,7 @@ describe("workspace tab model", () => {
   });
 
   it("reorders graph tabs in a background pane without changing pane focus", () => {
-    const layout = splitPane(openGraph(openDocument(initialLayout(), "note:a")), "right");
+    const layout = splitPane(openDocument(openGraph(openDocument(initialLayout(), "note:a")), "note:b", { newTab: true }), "right");
     const pane = layout.panes[0]!;
     const graph = pane.tabs.find(tab => tab.kind === "graph")!;
     const reordered = reorderTab(layout, pane.id, graph.id, pane.tabs[0]!.id);
@@ -193,19 +193,34 @@ describe("workspace tab model", () => {
     expect(parseWorkspaceLayout(split)).not.toBeNull();
   });
 
-  it("starts an empty document beside graph and preserves tab IDs through moves", () => {
-    let layout = openGraph(initialLayout());
-    layout = splitPane(layout, "right");
-    expect(activeTab(layout)).toMatchObject({ kind: "document", history: [null] });
-    const targetTabId = activeTab(layout).id;
-    const targetPane = layout.activePane;
-    layout = openDocument(layout, "note:two");
-    const sourcePane = layout.panes.find((pane) => pane.id !== targetPane)!;
-    const moving = sourcePane.tabs.find((tab) => tab.kind === "graph")!;
-    layout = moveTab(layout, sourcePane.id, moving.id);
-    expect(layout.activePane).toBe(targetPane);
-    expect(activeTab(layout).id).toBe(moving.id);
-    expect(layout.panes.flatMap((pane) => pane.tabs).some((tab) => tab.id === targetTabId)).toBe(true);
+  for (const direction of ["right", "down"] as const) it(`moves the focused graph on split ${direction} and keeps the note in the source pane`, () => {
+    const document = openDocument(initialLayout(), "note:a");
+    const layout = openGraph(document);
+    const graph = activeTab(layout);
+    const split = splitPane(layout, direction);
+    expect(split.split).toBe(direction);
+    expect(split.panes).toHaveLength(2);
+    expect(split.activePane).toBe(split.panes[1]!.id);
+    expect(activeTab(split)).toBe(graph);
+    expect(split.panes[0]!.tabs).toEqual(document.panes[0]!.tabs);
+    expect(split.panes[0]!.activeTab).toBe(activeTab(document).id);
+    expect(split.panes.flatMap(pane => pane.tabs).filter(tab => tab.kind === "graph")).toEqual([graph]);
+    expect(parseWorkspaceLayout(JSON.parse(JSON.stringify(split)))).toEqual(split);
+    const movedBack = moveTab(split, split.activePane, graph.id);
+    expect(movedBack.panes).toHaveLength(1);
+    expect(activeTab(movedBack)).toBe(graph);
+    expect(activePane(movedBack).tabs[0]).toBe(activeTab(document));
+  });
+
+  it("moves a graph-only tab on split and leaves an empty document in the source pane", () => {
+    const opened = openGraph(initialLayout());
+    const graph = activeTab(opened);
+    const layout = { ...opened, panes: [{ ...opened.panes[0]!, tabs: [graph], activeTab: graph.id }] };
+    const split = splitPane(layout, "right");
+    expect(activeTab(split)).toBe(graph);
+    expect(split.panes[0]!.tabs).toHaveLength(1);
+    expect(split.panes[0]!.tabs[0]).toMatchObject({ kind: "document", history: [null] });
+    expect(parseWorkspaceLayout(split)).not.toBeNull();
   });
 
   it("moves the sole tab into a new pane while leaving an empty source tab", () => {
@@ -229,7 +244,10 @@ describe("workspace tab model", () => {
     const forty = { ...thirtyNine, panes: [{ ...pane, tabs: [...tabs, { ...tabs[0]!, id: "tab-40" }], activeTab: "tab-1" }] };
     expect(splitPane(forty, "right").panes.flatMap(pane => pane.tabs)).toHaveLength(40);
     const graphFull = { ...forty, panes: [{ ...forty.panes[0]!, tabs: forty.panes[0]!.tabs.map((tab, i) => i === 0 ? { ...tab, kind: "graph" as const } : tab) }] };
-    expect(splitPane(graphFull, "right")).toBe(graphFull);
+    const graphSplit = splitPane(graphFull, "right");
+    expect(graphSplit.panes).toHaveLength(2);
+    expect(activeTab(graphSplit)).toBe(activeTab(graphFull));
+    expect(graphSplit.panes.flatMap(pane => pane.tabs)).toHaveLength(40);
     expect(openDocument(forty, "note:extra", { newTab: true })).toBe(forty);
     // Moving the last tab collapses its split without adding a placeholder.
     expect(moveTab(split, split.activePane, activeTab(split).id).panes).toHaveLength(1);
