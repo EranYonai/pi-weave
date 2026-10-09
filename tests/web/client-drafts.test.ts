@@ -95,11 +95,20 @@ describe("shared note drafts", () => {
 });
 
 describe("dirty view removal", () => {
+  it("keeps the dirty draft when splitting moves its only view", () => {
+    const drafts = createDraftStore();
+    drafts.open("one", "original"); drafts.edit("one", "edited");
+    const one = openDocument(initialLayout(), "note:one");
+    const confirm = vi.fn(() => false);
+    expect(mayRemoveDrafts(drafts, one, splitPane(one, "down"), confirm)).toBe(true);
+    expect(confirm).not.toHaveBeenCalled();
+    expect(drafts.get("one")?.body).toBe("edited");
+  });
   it("keeps one shared draft while another tab/pane still selects the note", () => {
     const drafts = createDraftStore();
     drafts.open("one", "original"); drafts.edit("one", "edited");
     const one = openDocument(initialLayout(), "note:one");
-    const two = splitPane(one, "right");
+    const two = { ...openDocument(splitPane(one, "right"), "note:one", { paneId: "pane-1" }), activePane: "pane-2" };
     const confirm = vi.fn(() => false);
     const merged = closePane(two, two.activePane);
     expect(mayRemoveDrafts(drafts, two, merged, confirm)).toBe(true);
@@ -144,7 +153,7 @@ describe("clean edit-mode draft removal", () => {
     const drafts = createDraftStore();
     drafts.open("one", "original");
     const one = openDocument(initialLayout(), "note:one");
-    const two = splitPane(one, "right");
+    const two = { ...openDocument(splitPane(one, "right"), "note:one", { paneId: "pane-1" }), activePane: "pane-2" };
     const remaining = closeTab(two, two.activePane, two.panes[1]!.activeTab);
     const confirm = vi.fn(() => false);
     expect(mayRemoveDrafts(drafts, two, remaining, confirm)).toBe(true);

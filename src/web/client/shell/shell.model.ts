@@ -131,7 +131,7 @@ export function searchHint(shortcut: string): string {
  * other. Making that unrepresentable costs nothing here and removes a whole
  * class of bug from the keyboard layer, which is the thing that opens them.
  */
-export type OverlayId = "search" | "help" | "settings" | null;
+export type OverlayId = "search" | "help" | "settings" | "graph" | null;
 
 /**
  * Whether a platform string looks like an Apple one.

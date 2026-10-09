@@ -25,21 +25,22 @@ export interface FocusTrapHandle {
 }
 
 /**
- * Trap focus inside an element while it is mounted, and restore it after.
+ * Trap focus inside an element while active, and restore it after.
  *
  * The dialog itself is focused on mount rather than its first control,
  * deliberately: a screen reader announces the dialog's `aria-label` and role
  * on arrival, which a jump straight to the input would skip. `trapTarget`
  * handles the resulting `at === -1` explicitly for exactly this case.
  */
-export function useFocusTrap(): FocusTrapHandle {
+export function useFocusTrap(active = true): FocusTrapHandle {
   const ref = useRef<HTMLElement | null>(null);
 
   useEffect(() => {
+    if (!active) return;
     const previous = document.activeElement;
     ref.current?.focus();
     return () => void restoreFocus(previous instanceof HTMLElement ? previous : null);
-  }, []);
+  }, [active]);
 
   return {
     ref,

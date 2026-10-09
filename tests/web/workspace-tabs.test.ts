@@ -165,21 +165,32 @@ describe("workspace tab model", () => {
     expect(activeTab(openDocument(graphOnly, "note:second", { newTab: true })).kind).toBe("document");
   });
 
-  it("duplicates document view on split and merges tabs when closing a pane", () => {
+  for (const direction of ["right", "down"] as const) it(`moves the focused document on split ${direction} with its history and scroll`, () => {
     let layout = openDocument(initialLayout(), "note:a");
     layout = openDocument(layout, "note:b");
     layout = { ...layout, panes: layout.panes.map((pane) => ({ ...pane, tabs: pane.tabs.map((tab) => ({ ...tab, scroll: 250 })) })) };
-    layout = splitPane(layout, "down");
-    expect(layout.split).toBe("down");
+    const focused = activeTab(layout);
+    layout = splitPane(layout, direction);
+    expect(layout.split).toBe(direction);
     expect(layout.panes).toHaveLength(2);
-    expect(tabSelection(activeTab(layout))).toBe("note:b");
-    expect(activeTab(layout).id).not.toBe(layout.panes[0]?.tabs[0]?.id);
-    expect(activeTab(layout).history).toEqual(layout.panes[0]?.tabs[0]?.history);
-    expect(activeTab(layout).scroll).toBe(250);
+    expect(activeTab(layout)).toBe(focused);
+    expect(layout.panes[0]?.tabs[0]).toMatchObject({ kind: "document", history: [null], scroll: 0 });
+    expect(layout.panes.flatMap(pane => pane.tabs).filter(tab => tabSelection(tab) === "note:b")).toHaveLength(1);
+    expect(parseWorkspaceLayout(layout)).not.toBeNull();
     layout = closePane(layout, layout.activePane);
     expect(layout.panes).toHaveLength(1);
     expect(layout.panes[0]?.tabs).toHaveLength(2);
-    expect(activePane(layout).id).toBe(layout.panes[0]?.id);
+  });
+
+  it("leaves the neighboring tab selected when splitting a multi-tab pane", () => {
+    const first = openDocument(initialLayout(), "note:first");
+    const layout = openDocument(first, "note:second", { newTab: true });
+    const split = splitPane(layout, "right");
+    expect(split.panes[0]?.tabs).toEqual(first.panes[0]?.tabs);
+    expect(split.panes[0]?.activeTab).toBe(activeTab(first).id);
+    expect(activeTab(split)).toBe(activeTab(layout));
+    expect(split.panes.flatMap(pane => pane.tabs)).toHaveLength(2);
+    expect(parseWorkspaceLayout(split)).not.toBeNull();
   });
 
   it("starts an empty document beside graph and preserves tab IDs through moves", () => {
@@ -214,14 +225,16 @@ describe("workspace tab model", () => {
     const tabs = Array.from({ length: 39 }, (_, index) => ({ ...pane.tabs[0]!, id: `tab-${index + 1}` }));
     const thirtyNine = { ...initial, panes: [{ ...pane, tabs, activeTab: "tab-1" }] };
     const split = splitPane(thirtyNine, "right");
-    expect(split.panes.flatMap((group) => group.tabs)).toHaveLength(40);
+    expect(split.panes.flatMap((group) => group.tabs)).toHaveLength(39);
     const forty = { ...thirtyNine, panes: [{ ...pane, tabs: [...tabs, { ...tabs[0]!, id: "tab-40" }], activeTab: "tab-1" }] };
-    expect(splitPane(forty, "right")).toBe(forty);
+    expect(splitPane(forty, "right").panes.flatMap(pane => pane.tabs)).toHaveLength(40);
+    const graphFull = { ...forty, panes: [{ ...forty.panes[0]!, tabs: forty.panes[0]!.tabs.map((tab, i) => i === 0 ? { ...tab, kind: "graph" as const } : tab) }] };
+    expect(splitPane(graphFull, "right")).toBe(graphFull);
     expect(openDocument(forty, "note:extra", { newTab: true })).toBe(forty);
     // Moving the last tab collapses its split without adding a placeholder.
     expect(moveTab(split, split.activePane, activeTab(split).id).panes).toHaveLength(1);
-    const moved = moveTab(split, split.panes[0]!.id, "tab-1");
-    expect(moved.panes.flatMap(group => group.tabs)).toHaveLength(40);
+    const moved = moveTab(split, split.panes[0]!.id, "tab-2");
+    expect(moved.panes.flatMap(group => group.tabs)).toHaveLength(39);
     expect(parseWorkspaceLayout(moved)).not.toBeNull();
   });
 
@@ -259,6 +272,7 @@ describe("workspace tab model", () => {
     expect(activeTab(layout).id).toBe(firstTabId);
     expect(activateTab(layout, "missing", firstTabId)).toBe(layout);
     layout = activateTab(layout, firstPane.id, firstPane.tabs[1]!.id);
+    layout = openDocument(layout, "note:b", { newTab: true });
     layout = splitPane(layout, "right");
     const other = layout.panes[1]!;
     const original = layout.panes[0]!;

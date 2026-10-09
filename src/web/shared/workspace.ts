@@ -184,11 +184,13 @@ export function navigateTab(layout: WorkspaceLayout, paneId: string, delta: -1 |
 
 export function splitPane(layout: WorkspaceLayout, direction: "right" | "down"): WorkspaceLayout {
   if (layout.panes.length === 2) return layout.split === direction ? layout : { ...layout, split: direction };
+  if (activeTab(layout).kind === "document") {
+    const moved = moveTab(layout, layout.activePane, activeTab(layout).id);
+    return moved === layout ? layout : { ...moved, split: direction };
+  }
   if (layout.panes.reduce((count, pane) => count + pane.tabs.length, 0) >= MAX_TABS) return layout;
-  const current = activeTab(layout);
   const id = nextId(layout, "pane");
-  let tab = emptyDocument(nextId(layout, "tab"));
-  if (current.kind === "document") tab = { ...current, id: tab.id, history: [...current.history], scroll: current.scroll };
+  const tab = emptyDocument(nextId(layout, "tab"));
   return { ...layout, panes: [...layout.panes, { id, tabs: [tab], activeTab: tab.id }], activePane: id, split: direction };
 }
 
