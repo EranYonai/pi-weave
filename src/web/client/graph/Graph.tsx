@@ -55,6 +55,8 @@ import { Icon } from "../tree/Tree";
 
 export interface GraphProps {
   graph: GraphPayload | null;
+  /** Reframe the note neighborhood when its shape changes. */
+  compact?: boolean;
   selectedId: string | null;
   onSelect: (id: string | null) => void;
   previewId: string | null;
@@ -130,7 +132,7 @@ export function Graph(props: GraphProps) {
 
   // The shell's decision wins; `schemeOf` stays for a host-driven default.
   const scheme = props.scheme ?? schemeOf(props.host);
-  const view = effectiveView(props.graph, state);
+  const view = effectiveView(props.graph, props.compact ? null : state);
   // Memoized for two reasons, one cheap and one load-bearing. Cheap: the
   // shell re-renders on every editor keystroke and every divider pixel, and
   // an un-memoized run re-reads `localStorage` and re-parses the position
@@ -140,20 +142,20 @@ export function Graph(props: GraphProps) {
   // graph. Identity is the whole contract; do not switch the effect to
   // comparing set contents, the memo makes comparison unnecessary.
   const model = useMemo(
-    () => graphColumnModel(props.graph, props.selectedId, view, props.storage, scheme, props.bootFailed, groupColors),
-    [props.graph, props.selectedId, view, props.storage, scheme, props.bootFailed, forceKey, groupColors],
+    () => graphColumnModel(props.graph, props.selectedId, view, props.storage, scheme, props.bootFailed, groupColors, props.compact),
+    [props.graph, props.selectedId, view, props.storage, scheme, props.bootFailed, forceKey, groupColors, props.compact],
   );
   const preview = graphPreview(props.graph, props.previewId);
 
   // Read by the mount-time `onSelect`, which outlives this render.
-  const live = useRef({ view, model, onSelect: props.onSelect, selectedId: props.selectedId });
-  live.current = { view, model, onSelect: props.onSelect, selectedId: props.selectedId };
+  const live = useRef({ view, model, onSelect: props.onSelect, selectedId: props.selectedId, compact: props.compact });
+  live.current = { view, model, onSelect: props.onSelect, selectedId: props.selectedId, compact: props.compact };
 
   useEffect(() => {
     const instance = props.renderer(scheme);
     instance.onSelect((id) => {
       const next = graphClick(live.current.view, live.current.model.clusters, id);
-      setState(next.state);
+      if (!live.current.compact) setState(next.state);
       live.current.onSelect(next.selectedId);
     });
     // Hover drives the *same* reducers a click does (§7.4): the pointer and
@@ -207,7 +209,8 @@ export function Graph(props: GraphProps) {
 
   useEffect(() => {
     renderer.current?.setGraph(model.graph);
-  }, [model.key, forceKey, groupColors]);
+    if (props.compact) renderer.current?.fit();
+  }, [model.key, forceKey, groupColors, props.compact]);
 
   // Live layout, in two effects so pause/resume and re-layout are independent.
   //

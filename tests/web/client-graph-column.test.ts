@@ -33,6 +33,7 @@ import {
   highlightFor,
   hoverHighlight,
   initialGraphView,
+  noteNeighborhood,
   toggleCluster,
 } from "../../src/web/client/graph/column.model";
 import type { GraphViewState } from "../../src/web/client/graph/column.model";
@@ -668,4 +669,62 @@ describe("P3 exit criterion — selecting anywhere highlights everywhere (§11, 
     expect(column.highlight?.has("repository")).toBe(true);
     expect(column.graph.nodes.some((n) => n.id === "module:src/m000")).toBe(false);
   });
+});
+
+
+describe("note neighborhood", () => {
+  const node = (id: string, kind: WireGraphNode["kind"] = "note"): WireGraphNode => ({ id, kind, label: id, provenance: null, detail: {} });
+  const payload = payloadOf([node("vault", "vault"), node("note:current"), node("note:linked"), node("note:backlink"), node("note:two-hops"), node("file:anchor", "file"), node("note:unrelated")], [
+    { source: "vault", target: "note:current", kind: "contains" },
+    { source: "note:current", target: "note:linked", kind: "links-to" },
+    { source: "note:backlink", target: "note:current", kind: "mentions" },
+    { source: "note:linked", target: "note:two-hops", kind: "links-to" },
+    { source: "note:linked", target: "note:backlink", kind: "links-to" },
+    { source: "note:current", target: "file:anchor", kind: "anchored-at" },
+  ]);
+
+  it("keeps direct links, backlinks and anchors without expanding to the vault or two hops", () => {
+    const local = noteNeighborhood(payload, "note:current")!;
+    expect(local.model.nodes.map(node => node.id)).toEqual(["note:current", "note:linked", "note:backlink", "file:anchor"]);
+    expect(local.model.edges).toEqual([payload.model.edges[1], payload.model.edges[2], payload.model.edges[4], payload.model.edges[5]]);
+    expect(local.model.nodes[0]).toBe(payload.model.nodes[1]);
+    expect(local.tags).toBe(payload.tags);
+    expect(payload.model.nodes).toHaveLength(7);
+    expect(payload.model.edges).toHaveLength(6);
+  });
+
+  it("follows a new current note and keeps an isolated note visible", () => {
+    expect(noteNeighborhood(payload, "note:linked")!.model.nodes.map(node => node.id)).toEqual(["note:current", "note:linked", "note:backlink", "note:two-hops"]);
+    expect(noteNeighborhood(payload, "note:unrelated")!.model.nodes.map(node => node.id)).toEqual(["note:unrelated"]);
+    expect(noteNeighborhood(payload, "note:unrelated")!.model.edges).toEqual([]);
+    expect(noteNeighborhood(payload, "missing")!.model.nodes).toEqual([]);
+  });
+
+  it("waits for both a graph and a current note", () => {
+    expect(noteNeighborhood(null, "note:current")).toBeNull();
+    expect(noteNeighborhood(payload, null)).toBeNull();
+  });
+});
+
+
+it("keeps the note highlight with smaller nodes and edges in the compact graph", () => {
+  const local = noteNeighborhood(SMALL, "note:a")!;
+  const storage: PositionStorage = { getItem: () => null, setItem: () => {} };
+  const view = initialGraphView(viewModel(local));
+  const theme = "light";
+  const full = graphColumnModel(local, "note:a", view, storage, theme);
+  const compact = graphColumnModel(local, "note:a", view, storage, theme, false, true, true);
+  expect(compact.graph.nodes.length).toBeGreaterThan(0);
+  expect(compact.graph.edges.length).toBeGreaterThan(0);
+  for (const [index, node] of compact.graph.nodes.entries()) {
+    expect(node.size).toBeGreaterThan(0);
+    expect(node.size).toBeLessThan(full.graph.nodes[index]!.size);
+    expect(node.id).toBe(full.graph.nodes[index]!.id);
+    expect(node.label).toBe(full.graph.nodes[index]!.label);
+  }
+  for (const [index, edge] of compact.graph.edges.entries()) {
+    expect(edge.size).toBeGreaterThan(0);
+    expect(edge.size).toBeLessThan(full.graph.edges[index]!.size);
+  }
+  expect(compact.highlight).toEqual(full.highlight);
 });

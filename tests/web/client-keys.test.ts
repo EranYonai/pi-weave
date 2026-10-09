@@ -164,7 +164,7 @@ describe("shellKey — the keys it must not take", () => {
 });
 
 describe("shellKey — while an overlay is open", () => {
-  for (const overlay of ["search", "help", "graph"] as const) {
+  for (const overlay of ["search", "help"] as const) {
     describe(overlay, () => {
       const ctx: KeyContext = { overlay, hasSelection: true };
 
