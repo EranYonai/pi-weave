@@ -55,7 +55,7 @@ import { Icon } from "../tree/Tree";
 
 export interface GraphProps {
   graph: GraphPayload | null;
-  /** Draw the graph at a smaller size and reframe it when its shape changes. */
+  /** Reframe the graph when shown in the Context sidebar. */
   compact?: boolean;
   selectedId: string | null;
   onSelect: (id: string | null) => void;
@@ -142,8 +142,8 @@ export function Graph(props: GraphProps) {
   // graph. Identity is the whole contract; do not switch the effect to
   // comparing set contents, the memo makes comparison unnecessary.
   const model = useMemo(
-    () => graphColumnModel(props.graph, props.selectedId, view, props.storage, scheme, props.bootFailed, groupColors, props.compact),
-    [props.graph, props.selectedId, view, props.storage, scheme, props.bootFailed, forceKey, groupColors, props.compact],
+    () => graphColumnModel(props.graph, props.selectedId, view, props.storage, scheme, props.bootFailed, groupColors),
+    [props.graph, props.selectedId, view, props.storage, scheme, props.bootFailed, forceKey, groupColors],
   );
   const preview = graphPreview(props.graph, props.previewId);
 
@@ -209,6 +209,9 @@ export function Graph(props: GraphProps) {
 
   useEffect(() => {
     renderer.current?.setGraph(model.graph);
+  }, [model.key, forceKey, groupColors]);
+
+  useEffect(() => {
     if (props.compact) renderer.current?.fit();
   }, [model.key, forceKey, groupColors, props.compact]);
 

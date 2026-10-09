@@ -328,7 +328,6 @@ export function graphColumnModel(
    * it uncoloured by default would waste the layout.
    */
   groupColors = true,
-  compact = false,
 ): GraphColumnModel {
   if (payload === null)
     // Identity preserved on the ordinary path (`EMPTY_COLUMN` is compared by
@@ -347,10 +346,7 @@ export function graphColumnModel(
 
   const graph = renderGraph(reduced.nodes, edges, layout.positions, scheme, fills);
   return {
-    graph: compact ? { ...graph,
-      nodes: graph.nodes.map((node) => ({ ...node, size: node.size * .25 })),
-      edges: graph.edges.map((edge) => ({ ...edge, size: edge.size * .5 })),
-    } : graph,
+    graph,
     highlight: highlightFor(edges, selectedId),
     key: layout.key,
     cached: layout.cached,

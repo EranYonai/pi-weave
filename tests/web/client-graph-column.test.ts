@@ -671,27 +671,16 @@ describe("P3 exit criterion — selecting anywhere highlights everywhere (§11, 
 });
 
 
-for (const expanded of [true, false]) it(`keeps the same nodes, edges and note highlight in the compact graph with folders ${expanded ? "expanded" : "collapsed"}`, () => {
+for (const expanded of [true, false]) it(`keeps the same graph geometry when highlighting a note with folders ${expanded ? "expanded" : "collapsed"}`, () => {
   const storage: PositionStorage = { getItem: () => null, setItem: () => {} };
   const view = expanded ? initialGraphView(SMALL_MODEL) : { expanded: new Set<string>(["vault"]) };
   const theme = "light";
-  const full = graphColumnModel(SMALL, "note:a", view, storage, theme);
-  const compact = graphColumnModel(SMALL, "note:a", view, storage, theme, false, true, true);
-  expect(compact.visible).toBe(full.visible);
-  expect(compact.total).toBe(SMALL.model.nodes.length);
-  expect(compact.key).toBe(full.key);
-  expect(compact.graph.nodes.map(node => node.id)).toEqual(full.graph.nodes.map(node => node.id));
-  expect(compact.graph.nodes.some(node => node.id === "repository")).toBe(true);
-  expect(compact.graph.edges.map(({ source, target }) => [source, target])).toEqual(full.graph.edges.map(({ source, target }) => [source, target]));
-  for (const [index, node] of compact.graph.nodes.entries()) {
-    expect(node.size).toBeGreaterThan(0);
-    expect(node.size).toBeLessThan(full.graph.nodes[index]!.size);
-    expect(node.id).toBe(full.graph.nodes[index]!.id);
-    expect(node.label).toBe(full.graph.nodes[index]!.label);
-  }
-  for (const [index, edge] of compact.graph.edges.entries()) {
-    expect(edge.size).toBeGreaterThan(0);
-    expect(edge.size).toBeLessThan(full.graph.edges[index]!.size);
-  }
-  expect(compact.highlight).toEqual(full.highlight);
+  const unselected = graphColumnModel(SMALL, null, view, storage, theme);
+  const selected = graphColumnModel(SMALL, "note:a", view, storage, theme);
+  expect(selected.graph).toEqual(unselected.graph);
+  expect(selected.key).toBe(unselected.key);
+  expect(selected.total).toBe(SMALL.model.nodes.length);
+  expect(selected.graph.nodes.some(node => node.id === "repository")).toBe(true);
+  expect(selected.highlight?.has("note:a")).toBe(true);
+  expect(unselected.highlight).toBeNull();
 });
