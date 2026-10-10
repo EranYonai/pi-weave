@@ -26,7 +26,8 @@ Use `weave_note`. Without the tool, edit the files directly (`PI_WEAVE_VAULT` ov
 
 During live dictation or interviews, keep the organized note current after every append; do not wait until the session ends:
 
-1. `append` with `raw: true` preserves the user's words verbatim under `## Raw`. Never silently reword dictation.
+1. Start the note with `add` and `raw: true`, so its first words land in `## Raw` too. Then `append` each chunk with `raw: true`.
+   Never silently reword dictation.
 2. Immediately `finalize` the body above the tail: TLDR, sections, decisions, questions, tasks, entities, and links reflecting
    everything said so far.
 
@@ -36,7 +37,7 @@ Outside dictation, finalize only on request.
 
 - Keep an append-only raw section at the bottom: `---`, then `## Raw`, then the notice shown below.
 - Fence verbatim input in code blocks. Prepend each subsequent block with `<!-- appended YYYY-MM-DD HH:MM -->`.
-- Use `append` with `raw: true` when available; it maintains this format and creates the tail if missing. Do not hand-format it.
+- Use `add` or `append` with `raw: true` when available; they maintain this format and create the tail if missing. Do not hand-format it.
 - `finalize` changes only the body above the tail. Never rewrite, remove, or move words out of the raw tail. If no tail exists, preserve the
   entire previous body as a new raw tail before restructuring; the tool does this automatically.
 

@@ -428,6 +428,28 @@ describe("weave_note tool", () => {
     });
   });
 
+  it("a dictated note started with raw add keeps its first words through append and finalize", async () => {
+    const mock = buildExtension();
+    const ctx = createMockCtx(await makeTempDir());
+    await withVaultEnv(await makeTempDir(), async () => {
+      const added = await mock.runTool(
+        "weave_note",
+        { action: "add", title: "Interview", text: "first words, verbatim", source: "human", raw: true },
+        ctx,
+      );
+      expect(added.content[0]?.text).toContain("preserved verbatim in its ## Raw tail");
+      await mock.runTool("weave_note", { action: "append", slug: "interview", text: "second chunk", raw: true }, ctx);
+      await mock.runTool("weave_note", { action: "finalize", slug: "interview", text: "**TLDR:** summary" }, ctx);
+      const got = await mock.runTool("weave_note", { action: "get", slug: "interview" }, ctx);
+      const text = got.content[0]?.text ?? "";
+      expect(text).toContain("**TLDR:** summary");
+      expect(text).toContain("first words, verbatim");
+      expect(text).toContain("second chunk");
+      expect(text.indexOf("first words, verbatim")).toBeGreaterThan(text.indexOf("## Raw"));
+      expect(text.indexOf("first words, verbatim")).toBeLessThan(text.indexOf("second chunk"));
+    });
+  });
+
   it("finalize on a note without a raw tail preserves the whole body", async () => {
     const mock = buildExtension();
     const ctx = createMockCtx(await makeTempDir());
