@@ -344,8 +344,9 @@ export function graphColumnModel(
   // by a branch that is not on screen.
   const fills = groupColors ? groupNodeColors(reduced.nodes, edges, scheme) : undefined;
 
+  const graph = renderGraph(reduced.nodes, edges, layout.positions, scheme, fills);
   return {
-    graph: renderGraph(reduced.nodes, edges, layout.positions, scheme, fills),
+    graph,
     highlight: highlightFor(edges, selectedId),
     key: layout.key,
     cached: layout.cached,

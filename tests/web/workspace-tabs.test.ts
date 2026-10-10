@@ -40,7 +40,7 @@ describe("workspace tab model", () => {
   });
 
   it("reorders graph tabs in a background pane without changing pane focus", () => {
-    const layout = splitPane(openGraph(openDocument(initialLayout(), "note:a")), "right");
+    const layout = splitPane(openDocument(openGraph(openDocument(initialLayout(), "note:a")), "note:b", { newTab: true }), "right");
     const pane = layout.panes[0]!;
     const graph = pane.tabs.find(tab => tab.kind === "graph")!;
     const reordered = reorderTab(layout, pane.id, graph.id, pane.tabs[0]!.id);
@@ -165,36 +165,62 @@ describe("workspace tab model", () => {
     expect(activeTab(openDocument(graphOnly, "note:second", { newTab: true })).kind).toBe("document");
   });
 
-  it("duplicates document view on split and merges tabs when closing a pane", () => {
+  for (const direction of ["right", "down"] as const) it(`moves the focused document on split ${direction} with its history and scroll`, () => {
     let layout = openDocument(initialLayout(), "note:a");
     layout = openDocument(layout, "note:b");
     layout = { ...layout, panes: layout.panes.map((pane) => ({ ...pane, tabs: pane.tabs.map((tab) => ({ ...tab, scroll: 250 })) })) };
-    layout = splitPane(layout, "down");
-    expect(layout.split).toBe("down");
+    const focused = activeTab(layout);
+    layout = splitPane(layout, direction);
+    expect(layout.split).toBe(direction);
     expect(layout.panes).toHaveLength(2);
-    expect(tabSelection(activeTab(layout))).toBe("note:b");
-    expect(activeTab(layout).id).not.toBe(layout.panes[0]?.tabs[0]?.id);
-    expect(activeTab(layout).history).toEqual(layout.panes[0]?.tabs[0]?.history);
-    expect(activeTab(layout).scroll).toBe(250);
+    expect(activeTab(layout)).toBe(focused);
+    expect(layout.panes[0]?.tabs[0]).toMatchObject({ kind: "document", history: [null], scroll: 0 });
+    expect(layout.panes.flatMap(pane => pane.tabs).filter(tab => tabSelection(tab) === "note:b")).toHaveLength(1);
+    expect(parseWorkspaceLayout(layout)).not.toBeNull();
     layout = closePane(layout, layout.activePane);
     expect(layout.panes).toHaveLength(1);
     expect(layout.panes[0]?.tabs).toHaveLength(2);
-    expect(activePane(layout).id).toBe(layout.panes[0]?.id);
   });
 
-  it("starts an empty document beside graph and preserves tab IDs through moves", () => {
-    let layout = openGraph(initialLayout());
-    layout = splitPane(layout, "right");
-    expect(activeTab(layout)).toMatchObject({ kind: "document", history: [null] });
-    const targetTabId = activeTab(layout).id;
-    const targetPane = layout.activePane;
-    layout = openDocument(layout, "note:two");
-    const sourcePane = layout.panes.find((pane) => pane.id !== targetPane)!;
-    const moving = sourcePane.tabs.find((tab) => tab.kind === "graph")!;
-    layout = moveTab(layout, sourcePane.id, moving.id);
-    expect(layout.activePane).toBe(targetPane);
-    expect(activeTab(layout).id).toBe(moving.id);
-    expect(layout.panes.flatMap((pane) => pane.tabs).some((tab) => tab.id === targetTabId)).toBe(true);
+  it("leaves the neighboring tab selected when splitting a multi-tab pane", () => {
+    const first = openDocument(initialLayout(), "note:first");
+    const layout = openDocument(first, "note:second", { newTab: true });
+    const split = splitPane(layout, "right");
+    expect(split.panes[0]?.tabs).toEqual(first.panes[0]?.tabs);
+    expect(split.panes[0]?.activeTab).toBe(activeTab(first).id);
+    expect(activeTab(split)).toBe(activeTab(layout));
+    expect(split.panes.flatMap(pane => pane.tabs)).toHaveLength(2);
+    expect(parseWorkspaceLayout(split)).not.toBeNull();
+  });
+
+  for (const direction of ["right", "down"] as const) it(`moves the focused graph on split ${direction} and keeps the note in the source pane`, () => {
+    const document = openDocument(initialLayout(), "note:a");
+    const layout = openGraph(document);
+    const graph = activeTab(layout);
+    const split = splitPane(layout, direction);
+    expect(split.split).toBe(direction);
+    expect(split.panes).toHaveLength(2);
+    expect(split.activePane).toBe(split.panes[1]!.id);
+    expect(activeTab(split)).toBe(graph);
+    expect(split.panes[0]!.tabs).toEqual(document.panes[0]!.tabs);
+    expect(split.panes[0]!.activeTab).toBe(activeTab(document).id);
+    expect(split.panes.flatMap(pane => pane.tabs).filter(tab => tab.kind === "graph")).toEqual([graph]);
+    expect(parseWorkspaceLayout(JSON.parse(JSON.stringify(split)))).toEqual(split);
+    const movedBack = moveTab(split, split.activePane, graph.id);
+    expect(movedBack.panes).toHaveLength(1);
+    expect(activeTab(movedBack)).toBe(graph);
+    expect(activePane(movedBack).tabs[0]).toBe(activeTab(document));
+  });
+
+  it("moves a graph-only tab on split and leaves an empty document in the source pane", () => {
+    const opened = openGraph(initialLayout());
+    const graph = activeTab(opened);
+    const layout = { ...opened, panes: [{ ...opened.panes[0]!, tabs: [graph], activeTab: graph.id }] };
+    const split = splitPane(layout, "right");
+    expect(activeTab(split)).toBe(graph);
+    expect(split.panes[0]!.tabs).toHaveLength(1);
+    expect(split.panes[0]!.tabs[0]).toMatchObject({ kind: "document", history: [null] });
+    expect(parseWorkspaceLayout(split)).not.toBeNull();
   });
 
   it("moves the sole tab into a new pane while leaving an empty source tab", () => {
@@ -214,14 +240,19 @@ describe("workspace tab model", () => {
     const tabs = Array.from({ length: 39 }, (_, index) => ({ ...pane.tabs[0]!, id: `tab-${index + 1}` }));
     const thirtyNine = { ...initial, panes: [{ ...pane, tabs, activeTab: "tab-1" }] };
     const split = splitPane(thirtyNine, "right");
-    expect(split.panes.flatMap((group) => group.tabs)).toHaveLength(40);
+    expect(split.panes.flatMap((group) => group.tabs)).toHaveLength(39);
     const forty = { ...thirtyNine, panes: [{ ...pane, tabs: [...tabs, { ...tabs[0]!, id: "tab-40" }], activeTab: "tab-1" }] };
-    expect(splitPane(forty, "right")).toBe(forty);
+    expect(splitPane(forty, "right").panes.flatMap(pane => pane.tabs)).toHaveLength(40);
+    const graphFull = { ...forty, panes: [{ ...forty.panes[0]!, tabs: forty.panes[0]!.tabs.map((tab, i) => i === 0 ? { ...tab, kind: "graph" as const } : tab) }] };
+    const graphSplit = splitPane(graphFull, "right");
+    expect(graphSplit.panes).toHaveLength(2);
+    expect(activeTab(graphSplit)).toBe(activeTab(graphFull));
+    expect(graphSplit.panes.flatMap(pane => pane.tabs)).toHaveLength(40);
     expect(openDocument(forty, "note:extra", { newTab: true })).toBe(forty);
     // Moving the last tab collapses its split without adding a placeholder.
     expect(moveTab(split, split.activePane, activeTab(split).id).panes).toHaveLength(1);
-    const moved = moveTab(split, split.panes[0]!.id, "tab-1");
-    expect(moved.panes.flatMap(group => group.tabs)).toHaveLength(40);
+    const moved = moveTab(split, split.panes[0]!.id, "tab-2");
+    expect(moved.panes.flatMap(group => group.tabs)).toHaveLength(39);
     expect(parseWorkspaceLayout(moved)).not.toBeNull();
   });
 
@@ -259,6 +290,7 @@ describe("workspace tab model", () => {
     expect(activeTab(layout).id).toBe(firstTabId);
     expect(activateTab(layout, "missing", firstTabId)).toBe(layout);
     layout = activateTab(layout, firstPane.id, firstPane.tabs[1]!.id);
+    layout = openDocument(layout, "note:b", { newTab: true });
     layout = splitPane(layout, "right");
     const other = layout.panes[1]!;
     const original = layout.panes[0]!;
@@ -301,6 +333,24 @@ describe("workspace tab model", () => {
 });
 
 describe("workspace layout validation", () => {
+  it("restores context section heights and migrates older snapshots", () => {
+    const layout = { ...initialLayout(), contextGraphHeight: 420, contextTagsHeight: 240 };
+    expect(parseWorkspaceLayout(JSON.parse(JSON.stringify(layout)))).toEqual(layout);
+    const { contextGraphHeight: _graph, contextTagsHeight: _tags, ...legacy } = layout;
+    expect(parseWorkspaceLayout(legacy)).toEqual({ ...layout, contextGraphHeight: 260, contextTagsHeight: 180 });
+    expect(parseWorkspaceLayout({ ...legacy, contextGraphHeight: 120 })?.contextGraphHeight).toBe(120);
+    expect(parseWorkspaceLayout({ ...legacy, contextTagsHeight: 600 })?.contextTagsHeight).toBe(600);
+    expect(parseWorkspaceLayout({ ...layout, contextGraphHeight: 800, contextTagsHeight: 60 })).not.toBeNull();
+  });
+
+  it("rejects invalid context section heights", () => {
+    for (const [key, below, above] of [["contextGraphHeight", 119, 801], ["contextTagsHeight", 59, 601]] as const) {
+      for (const value of [below, above, Infinity, NaN, "240", null, undefined]) {
+        expect(parseWorkspaceLayout({ ...initialLayout(), [key]: value })).toBeNull();
+      }
+    }
+  });
+
   it("round-trips valid state and rejects unsafe shape, limits, and references", () => {
     const layout = initialLayout();
     expect(parseWorkspaceLayout(layout)).toEqual(layout);

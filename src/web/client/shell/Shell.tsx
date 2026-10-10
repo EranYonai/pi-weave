@@ -18,6 +18,7 @@ import { initialWorkspaceState } from "../state";
 import { startWorkspace, watchNote } from "../workspace";
 import type { WorkspaceHandle } from "../workspace";
 import { ContextRail } from "./ContextRail";
+import { ResizeHandle } from "./ResizeHandle";
 import { deeplinkSelection, formatHash } from "./deeplink.model";
 import { Settings } from "./Settings";
 import type { Preferences } from "../../shared/preferences";
@@ -112,28 +113,11 @@ function DocumentView(props: {
     })} onSave={props.onSave} drafts={props.drafts} idPrefix={props.tab.id} now={props.now} /></div>;
 }
 
-function ResizeHandle(props: { label: string; horizontal?: boolean; value: number; min: number; max: number; onChange: (delta: number) => void }) {
-  const last = useRef<number | null>(null);
-  return <div class="weave-workspace-divider" role="separator" tabIndex={0} aria-label={props.label}
-    aria-orientation={props.horizontal ? "horizontal" : "vertical"} aria-valuenow={Math.round(props.value)} aria-valuemin={props.min} aria-valuemax={props.max}
-    onPointerDown={(event) => { last.current = props.horizontal ? event.clientY : event.clientX; event.currentTarget.setPointerCapture(event.pointerId); }}
-    onPointerMove={(event) => {
-      if (last.current === null) return;
-      const at = props.horizontal ? event.clientY : event.clientX;
-      props.onChange(at - last.current); last.current = at;
-    }}
-    onPointerUp={(event) => { last.current = null; event.currentTarget.releasePointerCapture(event.pointerId); }}
-    onPointerCancel={() => { last.current = null; }}
-    onKeyDown={(event) => {
-      if (!["ArrowLeft", "ArrowRight", "ArrowUp", "ArrowDown"].includes(event.key)) return;
-      event.preventDefault(); props.onChange(event.key === "ArrowLeft" || event.key === "ArrowUp" ? -20 : 20);
-    }} />;
-}
-
 export function Shell(props: ShellProps) {
   const [data, setData] = useState(initialWorkspaceState);
   const [layout, setLayout] = useState(() => ({ ...initialLayout(), theme: loadTheme(localStorage) ?? "system" }));
   const [overlay, setOverlay] = useState<OverlayId>(null);
+  const [contextGraph, setContextGraph] = useState(false);
   const [now, setNow] = useState(Date.now);
   const [width, setWidth] = useState(props.initialWidth);
   const [scheme, setScheme] = useState(() => schemeOf(window));
@@ -143,6 +127,7 @@ export function Shell(props: ShellProps) {
   const [revision, setRevision] = useState(0);
   const [, setDraftRevision] = useState(0);
   const [graphSelection, setGraphSelection] = useState<string | null>(null);
+  const lastViewedDocument = useRef<string | null>(null);
   const [graphPreviewId, setGraphPreviewId] = useState<string | null>(null);
   const draggedTab = useRef<string | null>(null);
   const [dropTab, setDropTab] = useState<{ paneId: string; before: string | null } | null>(null);
@@ -157,6 +142,7 @@ export function Shell(props: ShellProps) {
   const linked = useRef(false);
   const root = useRef<HTMLDivElement | null>(null);
   const graphSlot = useRef<HTMLDivElement | null>(null);
+  const contextGraphSlot = useRef<HTMLDivElement | null>(null);
   const fit = useRef<(() => void) | null>(null);
   const [graphBox, setGraphBox] = useState({ left: 0, top: 0, width: 600, height: 500 });
   const pane = activePane(layout);
@@ -164,17 +150,24 @@ export function Shell(props: ShellProps) {
   const theme = themeButton(layout.theme, scheme, layout.preferences);
   const palette = effectiveScheme(layout.theme, scheme, layout.preferences);
   const graphTheme = useMemo(() => ({ theme: palette, accent: layout.preferences.accent }), [palette, layout.preferences.accent]);
-  const selectedId = tab.kind === "graph" ? graphSelection : tabSelection(tab);
+  const documentId = tabSelection(tab);
+  const selectedId = tab.kind === "graph" ? graphSelection : documentId;
   const graphPane = layout.panes.find((group) => group.tabs.some((entry) => entry.id === group.activeTab && entry.kind === "graph"));
-  const graphVisible = graphPane !== undefined && (width >= 850 || graphPane.id === layout.activePane);
+  const fullGraphVisible = graphPane !== undefined && (width >= 850 || graphPane.id === layout.activePane);
+  const contextGraphActive = contextGraph && tab.kind === "document" && !fullGraphVisible;
   const contextVisible = width < 1050 ? compactContext : layout.contextVisible;
+  const graphVisible = fullGraphVisible || contextGraphActive && contextVisible && documentId !== null;
   const hasGraph = layout.panes.some((group) => group.tabs.some((entry) => entry.kind === "graph"));
   const live = useRef({ layout, overlay, selectedId, graphPreviewId, select: (_id: string | null) => {} });
   const previewGraphNode = (id: string | null): void => {
     live.current.graphPreviewId = id;
     setGraphPreviewId(id);
   };
-  useEffect(() => { if (!graphVisible) previewGraphNode(null); }, [graphVisible]);
+  useEffect(() => { previewGraphNode(null); }, [graphVisible, contextGraphActive, documentId]);
+  useEffect(() => {
+    if (documentId !== null) { lastViewedDocument.current = documentId; setGraphSelection(documentId); }
+    else if (tab.kind === "graph") setGraphSelection(lastViewedDocument.current);
+  }, [tab.id, tab.kind, documentId]);
 
   const change = (next: WorkspaceLayout): void => {
     if (mayRemoveDrafts(drafts, live.current.layout, next, () => window.confirm(DISCARD_PROMPT))) setLayout(next);
@@ -182,16 +175,25 @@ export function Shell(props: ShellProps) {
   const select = (id: string | null, newTab = false, paneId = layout.activePane, keepSidebar = false): void => {
     const next = (id === null ? openDocument : openWithPreferences)(layout, id, { newTab, paneId });
     change(width < 850 && !keepSidebar ? { ...next, treeVisible: false } : next);
-    setCompactContext(false);
+    if (!contextGraph) setCompactContext(false);
+  };
+  const toggleContextGraph = (): void => {
+    const showing = !(contextGraphActive && contextVisible);
+    setContextGraph(showing);
+    if (showing) {
+      setLayout((current) => ({ ...focusDocument(current), contextVisible: true }));
+      setCompactContext(true);
+    }
   };
   const showGraph = (): void => setLayout((current) => ({ ...openGraph(current), ...(width < 850 ? { treeVisible: false } : {}) }));
   const openGraphNode = (id: string): void => {
     previewGraphNode(null);
+    if (contextGraphActive) { select(id, true); return; }
     const other = layout.panes.find((group) => group.id !== graphPane?.id);
     select(id, true, other?.id ?? graphPane?.id ?? layout.activePane);
   };
   const selectGraph = (id: string | null): void => {
-    setGraphSelection(id);
+    if (!contextGraphActive) setGraphSelection(id);
     if (graphClickOpensTab(live.current.graphPreviewId, id)) openGraphNode(id);
     else previewGraphNode(id);
   };
@@ -229,7 +231,10 @@ export function Shell(props: ShellProps) {
           if (value.info) setInfo(value.info);
           const restored = parseWorkspaceLayout(value.layout);
           if (restored) {
-            setLayout(restoreWorkspace(restored));
+            const restoredLayout = restoreWorkspace(restored);
+            setLayout(restoredLayout);
+            lastViewedDocument.current = tabSelection(activeTab(focusDocument(restoredLayout)));
+            setGraphSelection(lastViewedDocument.current);
             setVisits(restored.panes.flatMap((pane) => pane.tabs.flatMap((tab) => tab.history)).reduce<readonly string[]>(recordVisit, []));
           }
         } else setPersistError(true);
@@ -319,7 +324,7 @@ export function Shell(props: ShellProps) {
   }, [layout.panes.map((group) => group.activeTab).join(","), layout.activePane, width, ready, data.graph?.stamp,
     layout.treeVisible, layout.treeWidth, layout.contextVisible, layout.contextWidth, layout.ratio, layout.split]);
   useLayoutEffect(() => {
-    const slot = graphSlot.current;
+    const slot = contextGraphActive ? contextGraphSlot.current : graphSlot.current;
     const parent = root.current;
     if (!graphVisible || !slot || !parent) return;
     const measure = (): void => {
@@ -329,7 +334,7 @@ export function Shell(props: ShellProps) {
     measure();
     const observer = new ResizeObserver(measure); observer.observe(slot); observer.observe(parent);
     return () => observer.disconnect();
-  }, [graphVisible, layout, width]);
+  }, [contextGraphActive, graphVisible, layout, width]);
 
   const rememberScroll = (tabId: string, scroll: number): void => setLayout((current) => ({ ...current,
     panes: current.panes.map((group) => ({ ...group, tabs: group.tabs.map((entry) => entry.id === tabId ? { ...entry, scroll } : entry) })),
@@ -435,6 +440,7 @@ export function Shell(props: ShellProps) {
       <nav class="weave-ribbon" aria-label="Workspace tools">
         <button type="button" aria-label="Toggle notes sidebar" aria-pressed={layout.treeVisible} title="Notes" onClick={() => setLayout({ ...layout, treeVisible: !layout.treeVisible })}>▤</button>
         <button type="button" aria-label="Open graph view" title="Graph view" onClick={showGraph}>◌</button>
+        <button type="button" aria-label="Toggle note graph" title="Note graph" aria-pressed={contextGraphActive && contextVisible} onClick={toggleContextGraph}><svg viewBox="0 0 20 20" width={18} height={18} fill="none" stroke="currentColor" stroke-width={1.5} aria-hidden="true"><rect x="2" y="2" width="16" height="16" rx="3" /><circle cx="10" cy="10" r="4" /></svg></button>
         <button type="button" aria-label="Search notes and repository" title={searchHint(searchShortcut(looksApple(props.platform)))} onClick={() => setOverlay("search")}>
           <svg viewBox="0 0 20 20" width={16} height={16} fill="none" stroke="currentColor" stroke-width={1.7} aria-hidden="true"><circle cx="8.5" cy="8.5" r="5.5" /><path d="m13 13 4 4" /></svg>
         </button>
@@ -455,8 +461,14 @@ export function Shell(props: ShellProps) {
           setLayout((value) => ({ ...value, ratio: Math.max(.2, Math.min(.8, value.ratio + delta / (extent ?? 800))) }));
         }} /> : null}{renderPane(group)}</>)}
       </main>
-      <div class="weave-sidebar-dock weave-context-dock" data-open={contextVisible} inert={!contextVisible} aria-hidden={!contextVisible} style={{ "--weave-sidebar-width": `${layout.contextWidth}px` }}><ResizeHandle label="Resize context sidebar" min={180} max={400} value={layout.contextWidth} onChange={(delta) => setLayout((value) => ({ ...value, contextWidth: Math.max(180, Math.min(400, value.contextWidth - delta)) }))} /><aside class="weave-sidebar weave-sidebar-context" aria-label="Context sidebar"><div class="weave-sidebar-heading"><strong>Context</strong><button type="button" aria-label="Hide context sidebar" onClick={() => { root.current?.querySelector<HTMLButtonElement>('[aria-label="Toggle context sidebar"]')?.focus(); setCompactContext(false); setLayout({ ...layout, contextVisible: false }); }}>»</button></div><ContextRail graph={data.graph} selectedId={selectedId} onSelect={select} /></aside></div>
-      {hasGraph ? <div class="weave-graph-host" onDragOver={(event) => { if (graphPane) tabDragOver(graphPane.id, event); }} onDrop={(event) => { if (graphPane) tabDrop(graphPane.id, event); }} onDragLeave={(event) => { if (!event.currentTarget.contains(event.relatedTarget as Node | null)) setDropPane(null); }} onPointerDown={() => { if (graphPane) setLayout((current) => ({ ...current, activePane: graphPane.id })); }} onFocusCapture={() => { if (graphPane) setLayout((current) => ({ ...current, activePane: graphPane.id })); }} aria-hidden={!graphVisible} style={{ ...graphBox, visibility: graphVisible ? "visible" : "hidden", pointerEvents: graphVisible ? "auto" : "none" }}>
+      <div class="weave-sidebar-dock weave-context-dock" data-open={contextVisible} inert={!contextVisible} aria-hidden={!contextVisible} style={{ "--weave-sidebar-width": `${layout.contextWidth}px` }}><ResizeHandle label="Resize context sidebar" min={180} max={400} value={layout.contextWidth} onChange={(delta) => setLayout((value) => ({ ...value, contextWidth: Math.max(180, Math.min(400, value.contextWidth - delta)) }))} /><aside class="weave-sidebar weave-sidebar-context" aria-label="Context sidebar"><div class="weave-sidebar-heading"><strong>Context</strong><button type="button" aria-label="Hide context sidebar" onClick={() => { root.current?.querySelector<HTMLButtonElement>('[aria-label="Toggle context sidebar"]')?.focus(); setCompactContext(false); setLayout({ ...layout, contextVisible: false }); }}>»</button></div>{contextGraphActive ? <section class="weave-context-graph-section" aria-label="Note connections"><div class="weave-context-graph-heading"><strong>Note graph</strong><button type="button" aria-label="Hide note graph" onClick={() => { root.current?.querySelector<HTMLButtonElement>('[aria-label="Toggle note graph"]')?.focus(); setContextGraph(false); }}>×</button></div><div class="weave-context-graph-slot" ref={contextGraphSlot} style={{ height: layout.contextGraphHeight }}>{documentId === null ? <p>Select a note to see its connections.</p> : null}</div><ResizeHandle label="Resize note graph" horizontal min={120} max={800} value={graphBox.height} onChange={(delta) => setLayout((value) => ({ ...value, contextGraphHeight: Math.max(120, Math.min(800, (contextGraphSlot.current?.clientHeight ?? value.contextGraphHeight) + delta)) }))} /></section> : null}<ContextRail graph={data.graph} selectedId={selectedId} onSelect={select} tagHeight={layout.contextTagsHeight} onTagResize={(contextTagsHeight) => setLayout((value) => ({ ...value, contextTagsHeight }))} /></aside></div>
+      {hasGraph || contextGraph ? <div class={`weave-graph-host${contextGraphActive ? " weave-context-graph-host" : ""}`}
+        onDragOver={(event) => { if (!contextGraphActive && graphPane) tabDragOver(graphPane.id, event); }} onDrop={(event) => { if (!contextGraphActive && graphPane) tabDrop(graphPane.id, event); }}
+        onDragLeave={(event) => { if (!event.currentTarget.contains(event.relatedTarget as Node | null)) setDropPane(null); }}
+        onPointerDown={() => { if (!contextGraphActive && graphPane) setLayout((current) => ({ ...current, activePane: graphPane.id })); }}
+        onFocusCapture={() => { if (!contextGraphActive && graphPane) setLayout((current) => ({ ...current, activePane: graphPane.id })); }}
+        aria-hidden={!graphVisible} inert={!graphVisible} role={contextGraphActive ? "region" : undefined} aria-label={contextGraphActive ? "Note graph" : undefined}
+        style={{ ...graphBox, visibility: graphVisible ? "visible" : "hidden", pointerEvents: graphVisible ? "auto" : "none" }}>
         <Graph graph={data.graph} selectedId={selectedId} previewId={graphPreviewId} onSelect={selectGraph} onOpen={openGraphNode} renderer={createSigmaRenderer} storage={localStorage} host={window} scheme={graphTheme} forces={layout.preferences.forces} groupColors={layout.preferences.groupColors} bootFailed={data.graphFailed} fit={fit} />
       </div> : null}
     </div>

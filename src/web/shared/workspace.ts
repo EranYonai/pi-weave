@@ -29,6 +29,8 @@ export interface WorkspaceLayout {
   readonly contextVisible: boolean;
   readonly treeWidth: number;
   readonly contextWidth: number;
+  readonly contextGraphHeight: number;
+  readonly contextTagsHeight: number;
   readonly theme: ThemeChoice;
   readonly preferences: Preferences;
 }
@@ -50,6 +52,8 @@ export function initialLayout(): WorkspaceLayout {
     contextVisible: true,
     treeWidth: 240,
     contextWidth: 240,
+    contextGraphHeight: 260,
+    contextTagsHeight: 180,
     theme: "system",
     preferences: DEFAULT_PREFERENCES,
   };
@@ -184,12 +188,8 @@ export function navigateTab(layout: WorkspaceLayout, paneId: string, delta: -1 |
 
 export function splitPane(layout: WorkspaceLayout, direction: "right" | "down"): WorkspaceLayout {
   if (layout.panes.length === 2) return layout.split === direction ? layout : { ...layout, split: direction };
-  if (layout.panes.reduce((count, pane) => count + pane.tabs.length, 0) >= MAX_TABS) return layout;
-  const current = activeTab(layout);
-  const id = nextId(layout, "pane");
-  let tab = emptyDocument(nextId(layout, "tab"));
-  if (current.kind === "document") tab = { ...current, id: tab.id, history: [...current.history], scroll: current.scroll };
-  return { ...layout, panes: [...layout.panes, { id, tabs: [tab], activeTab: tab.id }], activePane: id, split: direction };
+  const moved = moveTab(layout, layout.activePane, activeTab(layout).id);
+  return moved === layout ? layout : { ...moved, split: direction };
 }
 
 export function closePane(layout: WorkspaceLayout, paneId: string): WorkspaceLayout {
@@ -246,13 +246,17 @@ function boundedId(value: unknown, prefix?: "pane" | "tab"): value is string {
 }
 
 export function parseWorkspaceLayout(value: unknown): WorkspaceLayout | null {
-  if (!record(value) || !exactKeys(value, ["version", "panes", "activePane", "split", "ratio", "treeVisible", "contextVisible", "treeWidth", "contextWidth", "theme", ...(Object.hasOwn(value, "preferences") ? ["preferences"] : [])])) return null;
+  if (!record(value) || !exactKeys(value, ["version", "panes", "activePane", "split", "ratio", "treeVisible", "contextVisible", "treeWidth", "contextWidth", "theme", ...["preferences", "contextGraphHeight", "contextTagsHeight"].filter(key => Object.hasOwn(value, key))])) return null;
   if (value["version"] !== 1 || !Array.isArray(value["panes"]) || value["panes"].length < 1 || value["panes"].length > 2 || !boundedId(value["activePane"], "pane")) return null;
   if (value["split"] !== "right" && value["split"] !== "down") return null;
   if (typeof value["ratio"] !== "number" || !Number.isFinite(value["ratio"]) || value["ratio"] < 0.1 || value["ratio"] > 0.9) return null;
   if (typeof value["treeVisible"] !== "boolean" || typeof value["contextVisible"] !== "boolean") return null;
   if (typeof value["treeWidth"] !== "number" || !Number.isFinite(value["treeWidth"]) || value["treeWidth"] < 120 || value["treeWidth"] > 800) return null;
   if (typeof value["contextWidth"] !== "number" || !Number.isFinite(value["contextWidth"]) || value["contextWidth"] < 120 || value["contextWidth"] > 800) return null;
+  const contextGraphHeight = Object.hasOwn(value, "contextGraphHeight") ? value["contextGraphHeight"] : 260;
+  const contextTagsHeight = Object.hasOwn(value, "contextTagsHeight") ? value["contextTagsHeight"] : 180;
+  if (typeof contextGraphHeight !== "number" || !Number.isFinite(contextGraphHeight) || contextGraphHeight < 120 || contextGraphHeight > 800) return null;
+  if (typeof contextTagsHeight !== "number" || !Number.isFinite(contextTagsHeight) || contextTagsHeight < 60 || contextTagsHeight > 600) return null;
   if (!isThemeChoice(value["theme"])) return null;
   let preferences = Object.hasOwn(value, "preferences") ? parsePreferences(value["preferences"]) : DEFAULT_PREFERENCES;
   if (preferences === null) return null;
@@ -288,7 +292,7 @@ export function parseWorkspaceLayout(value: unknown): WorkspaceLayout | null {
     panes.push({ id: rawPane["id"], tabs, activeTab: rawPane["activeTab"], ...(typeof lastDocumentTab === "string" ? { lastDocumentTab } : {}) });
   }
   if (count > MAX_TABS || graphs > 1 || !panes.some((pane) => pane.id === value["activePane"])) return null;
-  return { version: 1, panes, activePane: value["activePane"], split: value["split"], ratio: value["ratio"], treeVisible: value["treeVisible"], contextVisible: value["contextVisible"], treeWidth: value["treeWidth"], contextWidth: value["contextWidth"], theme: value["theme"], preferences };
+  return { version: 1, panes, activePane: value["activePane"], split: value["split"], ratio: value["ratio"], treeVisible: value["treeVisible"], contextVisible: value["contextVisible"], treeWidth: value["treeWidth"], contextWidth: value["contextWidth"], contextGraphHeight, contextTagsHeight, theme: value["theme"], preferences };
 }
 
 /** Startup choice resets navigation only; appearance and sidebar preferences survive. */

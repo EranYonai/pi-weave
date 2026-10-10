@@ -1,6 +1,6 @@
 /** Tabbed workspace furniture; the graph keeps its existing palette and renderer. */
 export const WORKSPACE_CSS = `
-.weave-workbench{position:relative;display:flex;min-height:0;overflow:hidden;background:var(--weave-page)}
+.weave-workbench{position:relative;isolation:isolate;display:flex;min-height:0;overflow:hidden;background:var(--weave-page)}
 .weave-workbench button{font:inherit;color:inherit;cursor:pointer}
 .weave-workbench button:focus-visible,.weave-workbench summary:focus-visible{outline:2px solid var(--weave-accent);outline-offset:-2px}
 .weave-workbench button:disabled{opacity:.35;cursor:default}
@@ -93,6 +93,16 @@ export const WORKSPACE_CSS = `
 .weave-sidebar-context .weave-ctx-link{padding-top:7px;padding-bottom:7px}
 .weave-graph-host{position:absolute;z-index:2;display:flex;background:var(--weave-bg)}
 .weave-graph-host>.weave-graph{width:100%;height:100%;flex:1}
+.weave-context-graph-section{flex:none;border-bottom:1px solid var(--weave-line)}
+.weave-context-graph-heading{display:flex;align-items:center;justify-content:space-between;padding:4px 12px;font-size:var(--weave-px-caption);color:var(--weave-dim)}
+.weave-context-graph-heading button{border:0;background:none;padding:2px 6px;font-size:18px}
+.weave-context-graph-slot{max-height:calc(100dvh - 180px);min-height:120px}
+.weave-context-tags{min-height:60px;max-height:60vh;overflow:auto}
+.weave-context-graph-slot>p{padding:16px;margin:0;color:var(--weave-dim);font-size:var(--weave-px-row)}
+.weave-context-graph-host{z-index:11}
+.weave-context-graph-host .weave-graph-legend{display:none}
+.weave-context-graph-host .weave-graph-preview{bottom:56px;padding:8px 28px 8px 8px}
+.weave-context-graph-host .weave-graph-preview-title{font-size:var(--weave-px-caption)}
 .weave-graph-preview{pointer-events:none;position:absolute;z-index:2;right:8px;bottom:64px;width:min(280px,calc(100% - 16px));box-sizing:border-box;display:flex;flex-direction:column;gap:8px;padding:10px 34px 10px 10px;background:var(--weave-panel);border:1px solid var(--weave-line-strong);border-radius:var(--weave-radius);box-shadow:0 6px 22px #0003}
 .weave-graph-preview-info{display:flex;align-items:center;gap:8px;min-width:0}
 .weave-graph-preview-copy{display:flex;flex-direction:column;min-width:0;gap:2px}

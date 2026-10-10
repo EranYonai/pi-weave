@@ -669,3 +669,18 @@ describe("P3 exit criterion — selecting anywhere highlights everywhere (§11, 
     expect(column.graph.nodes.some((n) => n.id === "module:src/m000")).toBe(false);
   });
 });
+
+
+for (const expanded of [true, false]) it(`keeps the same graph geometry when highlighting a note with folders ${expanded ? "expanded" : "collapsed"}`, () => {
+  const storage: PositionStorage = { getItem: () => null, setItem: () => {} };
+  const view = expanded ? initialGraphView(SMALL_MODEL) : { expanded: new Set<string>(["vault"]) };
+  const theme = "light";
+  const unselected = graphColumnModel(SMALL, null, view, storage, theme);
+  const selected = graphColumnModel(SMALL, "note:a", view, storage, theme);
+  expect(selected.graph).toEqual(unselected.graph);
+  expect(selected.key).toBe(unselected.key);
+  expect(selected.total).toBe(SMALL.model.nodes.length);
+  expect(selected.graph.nodes.some(node => node.id === "repository")).toBe(true);
+  expect(selected.highlight?.has("note:a")).toBe(true);
+  expect(unselected.highlight).toBeNull();
+});
