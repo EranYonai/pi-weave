@@ -333,6 +333,24 @@ describe("workspace tab model", () => {
 });
 
 describe("workspace layout validation", () => {
+  it("restores context section heights and migrates older snapshots", () => {
+    const layout = { ...initialLayout(), contextGraphHeight: 420, contextTagsHeight: 240 };
+    expect(parseWorkspaceLayout(JSON.parse(JSON.stringify(layout)))).toEqual(layout);
+    const { contextGraphHeight: _graph, contextTagsHeight: _tags, ...legacy } = layout;
+    expect(parseWorkspaceLayout(legacy)).toEqual({ ...layout, contextGraphHeight: 260, contextTagsHeight: 180 });
+    expect(parseWorkspaceLayout({ ...legacy, contextGraphHeight: 120 })?.contextGraphHeight).toBe(120);
+    expect(parseWorkspaceLayout({ ...legacy, contextTagsHeight: 600 })?.contextTagsHeight).toBe(600);
+    expect(parseWorkspaceLayout({ ...layout, contextGraphHeight: 800, contextTagsHeight: 60 })).not.toBeNull();
+  });
+
+  it("rejects invalid context section heights", () => {
+    for (const [key, below, above] of [["contextGraphHeight", 119, 801], ["contextTagsHeight", 59, 601]] as const) {
+      for (const value of [below, above, Infinity, NaN, "240", null, undefined]) {
+        expect(parseWorkspaceLayout({ ...initialLayout(), [key]: value })).toBeNull();
+      }
+    }
+  });
+
   it("round-trips valid state and rejects unsafe shape, limits, and references", () => {
     const layout = initialLayout();
     expect(parseWorkspaceLayout(layout)).toEqual(layout);

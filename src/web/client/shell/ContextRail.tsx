@@ -12,17 +12,20 @@
  * resolve it.
  */
 
-import { useState } from "preact/hooks";
+import { useRef, useState } from "preact/hooks";
 import type { ContextModel, ContextRow, RailSectionView, RailToggles, TagGroupRow } from "../context/context.model";
 import { contextModel, emptyRailToggles, railPanelId, railSectionView, railTagsView, railToggled } from "../context/context.model";
 import type { GraphPayload } from "../../shared/wire";
 import { CONTEXT_EMPTY } from "./shell.model";
 import { Icon } from "../tree/Tree";
+import { ResizeHandle } from "./ResizeHandle";
 
 export interface ContextRailProps {
   graph: GraphPayload | null;
   selectedId: string | null;
   onSelect: (id: string, newTab?: boolean) => void;
+  tagHeight: number;
+  onTagResize: (height: number) => void;
 }
 
 function Row({ row, onSelect }: { row: ContextRow; onSelect: (newTab: boolean) => void }) {
@@ -91,6 +94,7 @@ function Tag({ tag, onSelect }: { tag: TagGroupRow; onSelect: (id: string, newTa
 }
 
 export function ContextRail(props: ContextRailProps) {
+  const tagRows = useRef<HTMLUListElement | null>(null);
   const model: ContextModel = contextModel(props.graph, props.selectedId);
   // The user's open/closed word lives in this component — it is view state,
   // not a workspace fact, so it does not cross the §1.3 bus and does not
@@ -110,11 +114,12 @@ export function ContextRail(props: ContextRailProps) {
       {model.tags.length === 0 ? null : (
         <section class="weave-ctx-group">
           <Heading view={tags} onToggle={toggleFor(tags)} />
-          <ul class="weave-ctx-tags" id={railPanelId(tags.heading)} hidden={tags.collapsed}>
+          <ul class="weave-ctx-tags weave-context-tags" ref={tagRows} style={{ height: props.tagHeight }} id={railPanelId(tags.heading)} hidden={tags.collapsed}>
             {model.tags.map((tag) => (
               <Tag key={tag.tag} tag={tag} onSelect={props.onSelect} />
             ))}
           </ul>
+          {tags.collapsed ? null : <ResizeHandle label="Resize tags section" horizontal min={60} max={600} value={props.tagHeight} onChange={(delta) => props.onTagResize(Math.max(60, Math.min(600, (tagRows.current?.clientHeight ?? props.tagHeight) + delta)))} />}
         </section>
       )}
     </div>

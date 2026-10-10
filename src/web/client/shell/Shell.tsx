@@ -18,6 +18,7 @@ import { initialWorkspaceState } from "../state";
 import { startWorkspace, watchNote } from "../workspace";
 import type { WorkspaceHandle } from "../workspace";
 import { ContextRail } from "./ContextRail";
+import { ResizeHandle } from "./ResizeHandle";
 import { deeplinkSelection, formatHash } from "./deeplink.model";
 import { Settings } from "./Settings";
 import type { Preferences } from "../../shared/preferences";
@@ -110,24 +111,6 @@ function DocumentView(props: {
     onSelect={props.onSelect} onOpen={(noteSlug) => void openNote(fetchJson, noteSlug).then((result) => {
       if (!result.ok) window.alert(result.message); else if (!result.data.opened) window.alert("Could not open the note in an editor.");
     })} onSave={props.onSave} drafts={props.drafts} idPrefix={props.tab.id} now={props.now} /></div>;
-}
-
-function ResizeHandle(props: { label: string; horizontal?: boolean; value: number; min: number; max: number; onChange: (delta: number) => void }) {
-  const last = useRef<number | null>(null);
-  return <div class="weave-workspace-divider" role="separator" tabIndex={0} aria-label={props.label}
-    aria-orientation={props.horizontal ? "horizontal" : "vertical"} aria-valuenow={Math.round(props.value)} aria-valuemin={props.min} aria-valuemax={props.max}
-    onPointerDown={(event) => { last.current = props.horizontal ? event.clientY : event.clientX; event.currentTarget.setPointerCapture(event.pointerId); }}
-    onPointerMove={(event) => {
-      if (last.current === null) return;
-      const at = props.horizontal ? event.clientY : event.clientX;
-      props.onChange(at - last.current); last.current = at;
-    }}
-    onPointerUp={(event) => { last.current = null; event.currentTarget.releasePointerCapture(event.pointerId); }}
-    onPointerCancel={() => { last.current = null; }}
-    onKeyDown={(event) => {
-      if (!["ArrowLeft", "ArrowRight", "ArrowUp", "ArrowDown"].includes(event.key)) return;
-      event.preventDefault(); props.onChange(event.key === "ArrowLeft" || event.key === "ArrowUp" ? -20 : 20);
-    }} />;
 }
 
 export function Shell(props: ShellProps) {
@@ -478,7 +461,7 @@ export function Shell(props: ShellProps) {
           setLayout((value) => ({ ...value, ratio: Math.max(.2, Math.min(.8, value.ratio + delta / (extent ?? 800))) }));
         }} /> : null}{renderPane(group)}</>)}
       </main>
-      <div class="weave-sidebar-dock weave-context-dock" data-open={contextVisible} inert={!contextVisible} aria-hidden={!contextVisible} style={{ "--weave-sidebar-width": `${layout.contextWidth}px` }}><ResizeHandle label="Resize context sidebar" min={180} max={400} value={layout.contextWidth} onChange={(delta) => setLayout((value) => ({ ...value, contextWidth: Math.max(180, Math.min(400, value.contextWidth - delta)) }))} /><aside class="weave-sidebar weave-sidebar-context" aria-label="Context sidebar"><div class="weave-sidebar-heading"><strong>Context</strong><button type="button" aria-label="Hide context sidebar" onClick={() => { root.current?.querySelector<HTMLButtonElement>('[aria-label="Toggle context sidebar"]')?.focus(); setCompactContext(false); setLayout({ ...layout, contextVisible: false }); }}>»</button></div>{contextGraphActive ? <section class="weave-context-graph-section" aria-label="Note connections"><div class="weave-context-graph-heading"><strong>Note graph</strong><button type="button" aria-label="Hide note graph" onClick={() => { root.current?.querySelector<HTMLButtonElement>('[aria-label="Toggle note graph"]')?.focus(); setContextGraph(false); }}>×</button></div><div class="weave-context-graph-slot" ref={contextGraphSlot}>{documentId === null ? <p>Select a note to see its connections.</p> : null}</div></section> : null}<ContextRail graph={data.graph} selectedId={selectedId} onSelect={select} /></aside></div>
+      <div class="weave-sidebar-dock weave-context-dock" data-open={contextVisible} inert={!contextVisible} aria-hidden={!contextVisible} style={{ "--weave-sidebar-width": `${layout.contextWidth}px` }}><ResizeHandle label="Resize context sidebar" min={180} max={400} value={layout.contextWidth} onChange={(delta) => setLayout((value) => ({ ...value, contextWidth: Math.max(180, Math.min(400, value.contextWidth - delta)) }))} /><aside class="weave-sidebar weave-sidebar-context" aria-label="Context sidebar"><div class="weave-sidebar-heading"><strong>Context</strong><button type="button" aria-label="Hide context sidebar" onClick={() => { root.current?.querySelector<HTMLButtonElement>('[aria-label="Toggle context sidebar"]')?.focus(); setCompactContext(false); setLayout({ ...layout, contextVisible: false }); }}>»</button></div>{contextGraphActive ? <section class="weave-context-graph-section" aria-label="Note connections"><div class="weave-context-graph-heading"><strong>Note graph</strong><button type="button" aria-label="Hide note graph" onClick={() => { root.current?.querySelector<HTMLButtonElement>('[aria-label="Toggle note graph"]')?.focus(); setContextGraph(false); }}>×</button></div><div class="weave-context-graph-slot" ref={contextGraphSlot} style={{ height: layout.contextGraphHeight }}>{documentId === null ? <p>Select a note to see its connections.</p> : null}</div><ResizeHandle label="Resize note graph" horizontal min={120} max={800} value={graphBox.height} onChange={(delta) => setLayout((value) => ({ ...value, contextGraphHeight: Math.max(120, Math.min(800, (contextGraphSlot.current?.clientHeight ?? value.contextGraphHeight) + delta)) }))} /></section> : null}<ContextRail graph={data.graph} selectedId={selectedId} onSelect={select} tagHeight={layout.contextTagsHeight} onTagResize={(contextTagsHeight) => setLayout((value) => ({ ...value, contextTagsHeight }))} /></aside></div>
       {hasGraph || contextGraph ? <div class={`weave-graph-host${contextGraphActive ? " weave-context-graph-host" : ""}`}
         onDragOver={(event) => { if (!contextGraphActive && graphPane) tabDragOver(graphPane.id, event); }} onDrop={(event) => { if (!contextGraphActive && graphPane) tabDrop(graphPane.id, event); }}
         onDragLeave={(event) => { if (!event.currentTarget.contains(event.relatedTarget as Node | null)) setDropPane(null); }}

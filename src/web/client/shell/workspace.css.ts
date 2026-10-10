@@ -96,7 +96,8 @@ export const WORKSPACE_CSS = `
 .weave-context-graph-section{flex:none;border-bottom:1px solid var(--weave-line)}
 .weave-context-graph-heading{display:flex;align-items:center;justify-content:space-between;padding:4px 12px;font-size:var(--weave-px-caption);color:var(--weave-dim)}
 .weave-context-graph-heading button{border:0;background:none;padding:2px 6px;font-size:18px}
-.weave-context-graph-slot{height:260px;max-height:38vh;min-height:160px}
+.weave-context-graph-slot{max-height:calc(100dvh - 180px);min-height:120px}
+.weave-context-tags{min-height:60px;max-height:60vh;overflow:auto}
 .weave-context-graph-slot>p{padding:16px;margin:0;color:var(--weave-dim);font-size:var(--weave-px-row)}
 .weave-context-graph-host{z-index:11}
 .weave-context-graph-host .weave-graph-legend{display:none}
