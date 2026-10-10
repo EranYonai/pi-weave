@@ -61,7 +61,7 @@ When editing files directly, preserve the same format:
 ## TLDR on finalize
 
 Every finalized note opens with a TLDR directly under the title: a `**TLDR:**` block of 1–8 lines on what the note says and what
-matters most. Bullets and lists are fine. Always name the action items, if any. Rewrite it on each `finalize` so it reflects the whole
+matters most. Bullets and lists are fine. Always list action items, if any, as `- [ ]` checkboxes. Rewrite it on each `finalize` so it reflects the whole
 note; never stack a second one.
 
 ## Retrieve
