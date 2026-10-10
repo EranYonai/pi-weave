@@ -37,6 +37,12 @@ export interface AddNoteInput {
   body: string;
   tags?: string[];
   source?: NoteSource;
+  /**
+   * Start the note with `body` as its first verbatim block in the `## Raw`
+   * tail instead of as editorial body. Dictation starts here, so a later
+   * `finalize` cannot replace the user's opening words.
+   */
+  raw?: boolean;
   /** Injectable clock for tests. */
   now?: Date;
 }
@@ -104,7 +110,8 @@ export function resolveNotePath(root: string, slug: string): string | null {
 export async function addNote(root: string, input: AddNoteInput): Promise<Note> {
   await ensureVault(root);
   return withVaultLock(root, async () => {
-    const now = (input.now ?? new Date()).toISOString();
+    const date = input.now ?? new Date();
+    const now = date.toISOString();
     const base = slugify(input.title);
     const slug = uniqueSlug(base, (candidate) => existsSync(notePath(root, candidate)));
 
@@ -117,7 +124,10 @@ export async function addNote(root: string, input: AddNoteInput): Promise<Note> 
     };
     // No `frontMatter`: a brand-new note has no prior layout to respect, so
     // the serializer writes its canonical block.
-    return writeNote(notePath(root, slug), slug, meta, input.body, undefined);
+    const body = input.raw && input.body.trim() !== ""
+      ? `${rawTailOpening()}\n\n${formatRawAppend(input.body, date)}\n`
+      : input.body;
+    return writeNote(notePath(root, slug), slug, meta, body, undefined);
   });
 }
 
@@ -373,7 +383,8 @@ export interface UpsertNoteInput {
 export async function upsertNote(root: string, input: UpsertNoteInput): Promise<Note> {
   await ensureVault(root);
   return withVaultLock(root, async () => {
-    const now = (input.now ?? new Date()).toISOString();
+    const date = input.now ?? new Date();
+    const now = date.toISOString();
     const identity = input.identity;
     let existing = await getNote(root, input.slug);
     if (existing !== null && identity && frontMatterField(existing.frontMatter, identity.field) !== identity.value) {

@@ -21,7 +21,7 @@ import type { Note, NoteSearchHit } from "./types";
 export const WEAVE_NOTE_DESCRIPTION =
   "Read and write notes in the pi-weave vault — a persistent, human-readable knowledge base " +
   "of Markdown notes. Actions: list (all notes — avoid on large vaults, prefer search), get (one note by slug), add (new note), " +
-  "append (extend a note; raw=true appends verbatim dictation into the ## Raw tail), " +
+  "append (extend a note; raw=true appends verbatim dictation into the ## Raw tail; add with raw=true starts the note there), " +
   "finalize (restructure a note above its raw tail), search (ranked slug/title/tags/body matches plus linked, tagged, and lexically related notes; returns the full note when one result or one exact identity resolves), " +
   "links (audit stale [[wiki-links]]; fix=true repairs the unambiguous ones), " +
   "suggest (rank unlinked notes that share distinctive vocabulary; reports only, never writes). " +
@@ -222,9 +222,15 @@ export async function executeNoteAction(
           body: params.text!,
           ...(params.tags ? { tags: params.tags } : {}),
           ...(params.source ? { source: params.source } : {}),
+          ...(params.raw ? { raw: true, now: now() } : {}),
         }),
       );
-      return { text: `Note created: ${note.slug} (${vault})`, details: { action: "add", note } };
+      return {
+        text: params.raw
+          ? `Note created: ${note.slug} (${vault}), text preserved verbatim in its ## Raw tail.`
+          : `Note created: ${note.slug} (${vault})`,
+        details: { action: "add", note },
+      };
     }
 
     case "append": {

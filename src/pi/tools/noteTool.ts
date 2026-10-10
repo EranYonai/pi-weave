@@ -26,7 +26,7 @@ export function registerNoteTool(pi: ExtensionAPI): void {
       text: Type.Optional(Type.String({ description: "Markdown body (add), addition (append), or restructured body above the raw tail (finalize)" })),
       tags: Type.Optional(Type.Array(Type.String(), { description: "Tags (add)" })),
       slug: Type.Optional(Type.String({ description: "Note slug (get, append, finalize)" })),
-      raw: Type.Optional(Type.Boolean({ description: "append: add text as verbatim dictation to the ## Raw tail (timestamped fenced block; tail created if missing). Use for dictation/scribbles; omit for structured Markdown additions" })),
+      raw: Type.Optional(Type.Boolean({ description: "add/append: keep text as verbatim dictation in the ## Raw tail (timestamped fenced block; tail created if missing). Use for the user's own words, including the first words of a dictated note; omit for structured Markdown" })),
       source: Type.Optional(StringEnum(["human", "agent"] as const, { description: "Provenance (add): human for user-scribbled notes, agent for Pi-drafted (default agent)" })),
       query: Type.Optional(Type.String({ description: "Search query (search)" })),
       fix: Type.Optional(Type.Boolean({ description: "links: apply the unambiguous repairs. Omit for a read-only report" })),
