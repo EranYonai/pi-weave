@@ -59,6 +59,25 @@ When editing files directly, preserve the same format:
 ```
 ````
 
+## Second thoughts
+
+When the user states a decision, check the `search` hits you already made and the target note's decisions for an earlier **human**
+decision that it contradicts. Do not run extra searches or reads for this.
+
+- Keep the bar high: an explicit decision against an explicit decision on the same subject. Overlapping facts, refinements, and
+  compatible choices are not conflicts. When unsure, stay silent.
+- Capture first, then ask. Save the user's words as usual, then ask one short question quoting the earlier decision with its date and
+  slug: replace it, or are both true? At most one question per turn.
+- `source` is per note, not per line, so judge each decision by where it came from. It is human when the user's words for it are in the
+  raw tail, or when it sits in a `source: human` note outside an "Agent addendum". Anything else counts as agent.
+- Conflicting agent or `generated` decisions do not get a question; the human statement already wins. Mention them in one line.
+- If the user says it replaces the old one, strike the old decision through instead of deleting it, and link the new one:
+  `~~OIDC next quarter~~ (superseded 2026-10-11 → [[auth-sso]])`, where the link names the note that holds the new decision. When the
+  new decision is in the same note, drop the link: `(superseded 2026-10-11)`. A note should not link to itself.
+- Never edit the raw tail to supersede anything. `finalize` keeps superseded lines, struck through, in the body.
+
+See [references/second-thoughts.md](references/second-thoughts.md) for example exchanges.
+
 ## TLDR on finalize
 
 Every finalized note opens with a TLDR directly under the title: a `**TLDR:**` block of 1–8 lines on what the note says and what
