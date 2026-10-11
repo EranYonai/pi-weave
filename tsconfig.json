@@ -17,6 +17,6 @@
   // factory, and must *not* see `@types/node`. It has its own project,
   // `tsconfig.web.json`; `npm run typecheck` runs both, so coverage of the
   // source tree is still total.
-  "include": ["src/**/*.ts", "tests/**/*.ts", "vitest.config.ts"],
+  "include": ["src/**/*.ts", "tests/**/*.ts", "e2e/**/*.ts", "vitest.config.ts", "vitest.e2e.config.ts"],
   "exclude": ["src/web/client/**"]
 }
