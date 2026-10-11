@@ -1,10 +1,11 @@
 import { promises as fs } from "node:fs";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
 import { describe, expect, it } from "vitest";
 import {
   assessStaleness,
   buildRepoIndex,
   buildStructure,
+  ensureRepoIndex,
   readRepoIndex,
   summarizeIndex,
   writeRepoIndex,
@@ -435,5 +436,36 @@ describe("summarizeIndex", () => {
     expect(text).toContain("(1 uncommitted)");
     const moduleLine = summarizeIndex(index).find((l) => l.startsWith("Modules: "))!;
     expect(moduleLine.split(",").length).toBeLessThanOrEqual(13); // 12 entries + prefix
+  });
+});
+
+describe("ensureRepoIndex", () => {
+  async function repoWithCommit(): Promise<string> {
+    const dir = await makeTempDir();
+    gitInit(dir);
+    await writeFixture(dir, "src/index.ts", "export {};\n");
+    commitAll(dir, "initial");
+    return dir;
+  }
+
+  it("rebuilds when files under .okf change, since git never sees them", async () => {
+    const repo = await repoWithCommit();
+    await ensureRepoIndex(repo);
+    const settled = (await ensureRepoIndex(repo))!.index.structure.okFiles ?? [];
+    expect(settled).toContain(".okf/okf.json");
+
+    const sidecar = join(repo, ".okf", "repository", "summaries", "src--index.ts.summary.md");
+    await fs.mkdir(dirname(sidecar), { recursive: true });
+    await fs.writeFile(sidecar, "---\ntarget: src/index.ts\n---\n\nEntry.", "utf8");
+    const refreshed = (await ensureRepoIndex(repo))!.index.structure.okFiles ?? [];
+    expect(refreshed).toContain(".okf/repository/summaries/src--index.ts.summary.md");
+  });
+
+  it("returns an in-memory index when the cache cannot be written", async () => {
+    const repo = await repoWithCommit();
+    await fs.writeFile(join(repo, ".okf"), "not a directory", "utf8");
+    const ensured = await ensureRepoIndex(repo);
+    expect(ensured?.staleness.state).toBe("fresh");
+    expect(ensured?.index.structure.fileCount).toBeGreaterThan(0);
   });
 });
