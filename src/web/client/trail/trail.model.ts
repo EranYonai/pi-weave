@@ -54,8 +54,10 @@ function lightTimes(trail: TrailPayload, replay: TrailReplay | null): Array<{ ev
 }
 
 /**
- * Node id → glow. A node touched several ways shows the strongest kind
- * (wrote > read > searched) at the freshest strength.
+ * Node id → glow. A node touched several ways in one turn shows the strongest
+ * kind (wrote > read > searched) at the freshest strength; a later turn's
+ * touch replaces an earlier turn's, so a note read now is not still shown as
+ * written a turn ago.
  *
  * Live, an event stamped slightly in the future (clock skew) glows at full
  * strength; in a replay a step whose moment has not come yet stays dark.
@@ -63,6 +65,7 @@ function lightTimes(trail: TrailPayload, replay: TrailReplay | null): Array<{ ev
 export function trailMarks(trail: TrailPayload | null, now: number, replay: TrailReplay | null = null): ReadonlyMap<string, TrailMark> {
   if (trail === null) return NO_MARKS;
   const marks = new Map<string, TrailMark>();
+  const turnOf = new Map<string, number>();
   for (const { event, at } of lightTimes(trail, replay)) {
     const age = now - at;
     if (replay !== null && age < 0) continue;
@@ -70,9 +73,11 @@ export function trailMarks(trail: TrailPayload | null, now: number, replay: Trai
     if (!(strength > 0)) continue;
     for (const slug of event.slugs) {
       const id = `note:${slug}`;
-      const existing = marks.get(id);
+      // A newer turn's touch replaces an older turn's; within a turn the strongest kind wins.
+      const existing = turnOf.get(id) === event.turn ? marks.get(id) : undefined;
       const kind = existing === undefined || RANK[event.kind] > RANK[existing.kind] ? event.kind : existing.kind;
       marks.set(id, { kind, strength: Math.max(strength, existing?.strength ?? 0) });
+      turnOf.set(id, event.turn);
     }
   }
   return marks.size === 0 ? NO_MARKS : marks;
@@ -139,10 +144,11 @@ function stepView(event: WireTrailEvent, labels: ReadonlyMap<string, string>): T
   };
 }
 
-function clock(iso: string): string {
+function clock(iso: string, seconds = false): string {
   const at = new Date(iso);
   if (Number.isNaN(at.getTime())) return "";
-  return `${String(at.getHours()).padStart(2, "0")}:${String(at.getMinutes()).padStart(2, "0")}`;
+  const parts = [at.getHours(), at.getMinutes(), ...(seconds ? [at.getSeconds()] : [])];
+  return parts.map((part) => String(part).padStart(2, "0")).join(":");
 }
 
 /**
@@ -161,12 +167,14 @@ export function trailTurns(trail: TrailPayload | null, graph: GraphPayload | nul
     if (events === undefined) byTurn.set(event.turn, [event]);
     else events.push(event);
   }
-  const views = [...byTurn.entries()]
-    .sort(([a], [b]) => b - a)
-    .map(([turn, events]) => {
-      const used = new Set(events.filter((event) => event.kind !== "searched").flatMap((event) => event.slugs));
-      return { turn, time: clock(events[0]!.at), steps: events.map((event) => stepView(event, labels)), used: used.size };
-    });
+  const turns = [...byTurn.entries()].sort(([a], [b]) => b - a);
+  // Turns in the same minute would get identical chips, so those show seconds.
+  const minutes = turns.map(([, events]) => clock(events[0]!.at));
+  const views = turns.map(([turn, events], index) => {
+    const used = new Set(events.filter((event) => event.kind !== "searched").flatMap((event) => event.slugs));
+    const shared = minutes.filter((minute) => minute === minutes[index]).length > 1;
+    return { turn, time: clock(events[0]!.at, shared), steps: events.map((event) => stepView(event, labels)), used: used.size };
+  });
   if (trail.turn > views[0]!.turn) views.unshift({ turn: trail.turn, time: "", steps: [], used: 0 });
   return views.slice(0, TRAIL_TURNS_SHOWN);
 }

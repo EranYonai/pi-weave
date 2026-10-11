@@ -56,6 +56,14 @@ describe("trailMarks", () => {
     expect(older.get("note:a")).toEqual({ kind: "read", strength: 1 });
   });
 
+  it("lets a later turn's touch replace an earlier turn's", () => {
+    const payload = trail(
+      event(0, { turn: 1, kind: "wrote", action: "add", slugs: ["a"] }),
+      event(10, { turn: 2, kind: "read", slugs: ["a"] }),
+    );
+    expect(trailMarks(payload, T0 + 10_000).get("note:a")).toEqual({ kind: "read", strength: 1 });
+  });
+
   it("clamps a slightly-future live event to full strength and skips unparseable times", () => {
     expect(trailMarks(trail(event(5, { slugs: ["a"] })), T0).get("note:a")?.strength).toBe(1);
     expect(trailMarks(trail(event(0, { at: "garbage" })), T0).size).toBe(0);
@@ -99,7 +107,7 @@ describe("trailTurns", () => {
     const [latest, earlier] = trailTurns(payload, GRAPH);
     expect(latest!.turn).toBe(2);
     expect(latest!.used).toBe(5);
-    expect(latest!.time).toMatch(/^\d\d:\d\d$/);
+    expect(latest!.time).toMatch(/^\d\d:\d\d(:\d\d)?$/);
     expect(latest!.steps.map((step) => [step.verb, step.notes.map((note) => note.label), step.detail])).toEqual([
       ['searched "auth"', [], "2 hits"],
       ["read", ["Auth migration"], null],
@@ -122,6 +130,11 @@ describe("trailTurns", () => {
     expect(previous!.turn).toBe(1);
     expect(turnHeading(current!, true)).toBe("This turn");
     expect(TRAIL_EMPTY_TURN).toMatch(/Nothing/);
+  });
+
+  it("adds seconds when two turns started in the same minute", () => {
+    const views = trailTurns(trail(event(0, { turn: 1 }), event(5, { turn: 2 }), event(3_600, { turn: 3 })), null);
+    expect(views.map((view) => view.time.length)).toEqual([5, 8, 8]);
   });
 
   it("lists at most a handful of turns and nothing for an empty trail", () => {
