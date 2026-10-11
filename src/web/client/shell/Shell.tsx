@@ -1,6 +1,6 @@
 /** Shared browser/desktop workspace: one data source, two optional tab groups. */
 import { useEffect, useLayoutEffect, useRef, useState, useMemo } from "preact/hooks";
-import type { GraphPayload, NotePayload } from "../../shared/wire";
+import type { GraphPayload, NotePayload, TrailPayload } from "../../shared/wire";
 import { activePane, activeTab, activateTab, closePane, closeTab, focusDocument, initialLayout, reorderTab, moveTab, navigateTab, openDocument, openWithPreferences, restoreWorkspace, openGraph, parseWorkspaceLayout, splitPane, tabDropSource, tabSelection } from "../../shared/workspace";
 import type { Pane, WorkspaceLayout, WorkspaceTab } from "../../shared/workspace";
 import { fetchJson } from "../api.dom";
@@ -18,6 +18,9 @@ import { initialWorkspaceState } from "../state";
 import { startWorkspace, watchNote } from "../workspace";
 import type { WorkspaceHandle } from "../workspace";
 import { ContextRail } from "./ContextRail";
+import { startTrailPoll } from "../trail/trail";
+import { TRAIL_TICK_MS, trailLive, trailMarks, trailTurns } from "../trail/trail.model";
+import type { TrailReplay } from "../trail/trail.model";
 import { ResizeHandle } from "./ResizeHandle";
 import { deeplinkSelection, formatHash } from "./deeplink.model";
 import { Settings } from "./Settings";
@@ -119,6 +122,9 @@ export function Shell(props: ShellProps) {
   const [overlay, setOverlay] = useState<OverlayId>(null);
   const [contextGraph, setContextGraph] = useState(false);
   const [now, setNow] = useState(Date.now);
+  const [trail, setTrail] = useState<TrailPayload | null>(null);
+  const [trailNow, setTrailNow] = useState(Date.now);
+  const [replay, setReplay] = useState<TrailReplay | null>(null);
   const [width, setWidth] = useState(props.initialWidth);
   const [scheme, setScheme] = useState(() => schemeOf(window));
   const [ready, setReady] = useState(false);
@@ -272,6 +278,24 @@ export function Shell(props: ShellProps) {
     }, 350);
     return () => window.clearTimeout(timer);
   }, [layout, ready]);
+  // The recall trail: its own poll, and a fade clock that runs only while
+  // something is glowing (or a replay still has steps to light).
+  useEffect(() => startTrailPoll({
+    fetch: fetchJson,
+    onTrail: (next) => { setTrail(next); setReplay(null); setTrailNow(Date.now()); },
+  }), []);
+  const trailGlowing = trailLive(trail, trailNow, replay);
+  useEffect(() => {
+    if (!trailGlowing) {
+      if (replay !== null) setReplay(null);
+      return;
+    }
+    const tick = window.setInterval(() => setTrailNow(Date.now()), TRAIL_TICK_MS);
+    return () => window.clearInterval(tick);
+  }, [trailGlowing]);
+  const glows = useMemo(() => trailMarks(trail, trailNow, replay), [trail, trailNow, replay]);
+  const turns = useMemo(() => trailTurns(trail, data.graph), [trail, data.graph]);
+  const replayTurn = (turn: number): void => { const at = Date.now(); setTrailNow(at); setReplay({ turn, startedAt: at }); };
   useEffect(() => {
     const tick = window.setInterval(() => setNow(Date.now()), TICK_MS);
     const resize = (): void => setWidth(window.innerWidth);
@@ -452,7 +476,7 @@ export function Shell(props: ShellProps) {
       </nav>
       <div class="weave-sidebar-dock weave-notes-dock" data-open={layout.treeVisible} inert={!layout.treeVisible} aria-hidden={!layout.treeVisible} style={{ "--weave-sidebar-width": `${Math.min(layout.treeWidth, width - 90)}px` }}><aside class="weave-sidebar weave-sidebar-notes" aria-label="Notes sidebar">
         <div class="weave-sidebar-heading"><button type="button" aria-pressed={!recentMode} onClick={() => setRecentMode(false)}>Files</button><button type="button" aria-pressed={recentMode} onClick={() => setRecentMode(true)}>Recent</button><button type="button" aria-label="Hide notes sidebar" onClick={() => { root.current?.querySelector<HTMLButtonElement>('[aria-label="Toggle notes sidebar"]')?.focus(); setLayout({ ...layout, treeVisible: false }); }}>«</button></div>
-        {recentMode ? <RecentList visits={visits} graph={data.graph} selectedId={selectedId} onSelect={select} /> : <Tree graph={data.graph} selectedId={selectedId} recentIds={data.recentIds} onSelect={(id, newTab, keepSidebar) => select(id, newTab, layout.activePane, keepSidebar)} onMutate={mayMutate} onRefresh={() => workspace.current?.refresh()} now={now} />}
+        {recentMode ? <RecentList visits={visits} graph={data.graph} selectedId={selectedId} onSelect={select} /> : <Tree graph={data.graph} selectedId={selectedId} recentIds={data.recentIds} trail={glows} onSelect={(id, newTab, keepSidebar) => select(id, newTab, layout.activePane, keepSidebar)} onMutate={mayMutate} onRefresh={() => workspace.current?.refresh()} now={now} />}
         <div class="weave-vault-label"><span>Workspace</span><strong title={props.cwd}>{props.cwd.split(/[\\/]/).filter(Boolean).pop() ?? "Weave"}</strong></div>
       </aside><ResizeHandle label="Resize notes sidebar" min={180} max={420} value={layout.treeWidth} onChange={(delta) => setLayout((value) => ({ ...value, treeWidth: Math.max(180, Math.min(420, value.treeWidth + delta)) }))} /></div>
       <main class={`weave-panes weave-split-${layout.split}`} style={layout.panes.length === 2 && width >= 850 ? { [layout.split === "right" ? "gridTemplateColumns" : "gridTemplateRows"]: `minmax(0, ${layout.ratio}fr) 4px minmax(0, ${1 - layout.ratio}fr)` } : {}}>
@@ -461,7 +485,7 @@ export function Shell(props: ShellProps) {
           setLayout((value) => ({ ...value, ratio: Math.max(.2, Math.min(.8, value.ratio + delta / (extent ?? 800))) }));
         }} /> : null}{renderPane(group)}</>)}
       </main>
-      <div class="weave-sidebar-dock weave-context-dock" data-open={contextVisible} inert={!contextVisible} aria-hidden={!contextVisible} style={{ "--weave-sidebar-width": `${layout.contextWidth}px` }}><ResizeHandle label="Resize context sidebar" min={180} max={400} value={layout.contextWidth} onChange={(delta) => setLayout((value) => ({ ...value, contextWidth: Math.max(180, Math.min(400, value.contextWidth - delta)) }))} /><aside class="weave-sidebar weave-sidebar-context" aria-label="Context sidebar"><div class="weave-sidebar-heading"><strong>Context</strong><button type="button" aria-label="Hide context sidebar" onClick={() => { root.current?.querySelector<HTMLButtonElement>('[aria-label="Toggle context sidebar"]')?.focus(); setCompactContext(false); setLayout({ ...layout, contextVisible: false }); }}>»</button></div>{contextGraphActive ? <section class="weave-context-graph-section" aria-label="Note connections"><div class="weave-context-graph-heading"><strong>Note graph</strong><button type="button" aria-label="Hide note graph" onClick={() => { root.current?.querySelector<HTMLButtonElement>('[aria-label="Toggle note graph"]')?.focus(); setContextGraph(false); }}>×</button></div><div class="weave-context-graph-slot" ref={contextGraphSlot} style={{ height: layout.contextGraphHeight }}>{documentId === null ? <p>Select a note to see its connections.</p> : null}</div><ResizeHandle label="Resize note graph" horizontal min={120} max={800} value={graphBox.height} onChange={(delta) => setLayout((value) => ({ ...value, contextGraphHeight: Math.max(120, Math.min(800, (contextGraphSlot.current?.clientHeight ?? value.contextGraphHeight) + delta)) }))} /></section> : null}<ContextRail graph={data.graph} selectedId={selectedId} onSelect={select} tagHeight={layout.contextTagsHeight} onTagResize={(contextTagsHeight) => setLayout((value) => ({ ...value, contextTagsHeight }))} /></aside></div>
+      <div class="weave-sidebar-dock weave-context-dock" data-open={contextVisible} inert={!contextVisible} aria-hidden={!contextVisible} style={{ "--weave-sidebar-width": `${layout.contextWidth}px` }}><ResizeHandle label="Resize context sidebar" min={180} max={400} value={layout.contextWidth} onChange={(delta) => setLayout((value) => ({ ...value, contextWidth: Math.max(180, Math.min(400, value.contextWidth - delta)) }))} /><aside class="weave-sidebar weave-sidebar-context" aria-label="Context sidebar"><div class="weave-sidebar-heading"><strong>Context</strong><button type="button" aria-label="Hide context sidebar" onClick={() => { root.current?.querySelector<HTMLButtonElement>('[aria-label="Toggle context sidebar"]')?.focus(); setCompactContext(false); setLayout({ ...layout, contextVisible: false }); }}>»</button></div>{contextGraphActive ? <section class="weave-context-graph-section" aria-label="Note connections"><div class="weave-context-graph-heading"><strong>Note graph</strong><button type="button" aria-label="Hide note graph" onClick={() => { root.current?.querySelector<HTMLButtonElement>('[aria-label="Toggle note graph"]')?.focus(); setContextGraph(false); }}>×</button></div><div class="weave-context-graph-slot" ref={contextGraphSlot} style={{ height: layout.contextGraphHeight }}>{documentId === null ? <p>Select a note to see its connections.</p> : null}</div><ResizeHandle label="Resize note graph" horizontal min={120} max={800} value={graphBox.height} onChange={(delta) => setLayout((value) => ({ ...value, contextGraphHeight: Math.max(120, Math.min(800, (contextGraphSlot.current?.clientHeight ?? value.contextGraphHeight) + delta)) }))} /></section> : null}<ContextRail graph={data.graph} selectedId={selectedId} onSelect={select} trail={turns} trailTurn={replay?.turn ?? null} onReplay={replayTurn} tagHeight={layout.contextTagsHeight} onTagResize={(contextTagsHeight) => setLayout((value) => ({ ...value, contextTagsHeight }))} /></aside></div>
       {hasGraph || contextGraph ? <div class={`weave-graph-host${contextGraphActive ? " weave-context-graph-host" : ""}`}
         onDragOver={(event) => { if (!contextGraphActive && graphPane) tabDragOver(graphPane.id, event); }} onDrop={(event) => { if (!contextGraphActive && graphPane) tabDrop(graphPane.id, event); }}
         onDragLeave={(event) => { if (!event.currentTarget.contains(event.relatedTarget as Node | null)) setDropPane(null); }}
@@ -469,7 +493,7 @@ export function Shell(props: ShellProps) {
         onFocusCapture={() => { if (!contextGraphActive && graphPane) setLayout((current) => ({ ...current, activePane: graphPane.id })); }}
         aria-hidden={!graphVisible} inert={!graphVisible} role={contextGraphActive ? "region" : undefined} aria-label={contextGraphActive ? "Note graph" : undefined}
         style={{ ...graphBox, visibility: graphVisible ? "visible" : "hidden", pointerEvents: graphVisible ? "auto" : "none" }}>
-        <Graph graph={data.graph} selectedId={selectedId} previewId={graphPreviewId} onSelect={selectGraph} onOpen={openGraphNode} renderer={createSigmaRenderer} storage={localStorage} host={window} scheme={graphTheme} forces={layout.preferences.forces} groupColors={layout.preferences.groupColors} bootFailed={data.graphFailed} fit={fit} />
+        <Graph graph={data.graph} selectedId={selectedId} previewId={graphPreviewId} onSelect={selectGraph} onOpen={openGraphNode} renderer={createSigmaRenderer} storage={localStorage} host={window} scheme={graphTheme} forces={layout.preferences.forces} groupColors={layout.preferences.groupColors} bootFailed={data.graphFailed} fit={fit} trail={glows} />
       </div> : null}
     </div>
     <div class="weave-footer"><StatusBar model={statusBarModel(props.cwd, selectedId)} />

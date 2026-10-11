@@ -1,5 +1,7 @@
 /** The vault and repository tree column. */
 
+import type { TrailMark } from "../trail/trail.model";
+import { trailRowClass } from "../trail/trail.model";
 import { NOTE_DRAG_TYPE } from "../shell/shell.model";
 import { useLayoutEffect, useRef, useState } from "preact/hooks";
 import { createFolder, deleteFolder, deleteNote, moveNote, renameFolder, renameNote } from "../api";
@@ -46,6 +48,8 @@ export interface TreeProps {
   graph: GraphPayload | null;
   selectedId: string | null;
   recentIds: ReadonlySet<string>;
+  /** Recall-trail glows by row id (`trail/trail.model.ts`). */
+  trail?: ReadonlyMap<string, TrailMark>;
   onSelect: (id: string, newTab?: boolean, keepSidebar?: boolean) => void;
   /**
    * Ask before a mutation that would invalidate an open draft. `false` means
@@ -76,13 +80,13 @@ export function Icon({ name, class: className }: { name: IconName; class?: strin
   );
 }
 
-function Row({ view, recentIds, edit, onEdit, onRename, onSelect, onToggle, onMenu, onDrop }: { view: ReturnType<typeof rowViews>[number]; recentIds: ReadonlySet<string>; edit: string | null; onEdit: (value: string) => void; onRename: (value: string | null) => void; onSelect: (newTab: boolean) => void; onToggle: () => void; onMenu: (x: number, y: number) => void; onDrop: (id: string) => void }) {
+function Row({ view, recentIds, trail, edit, onEdit, onRename, onSelect, onToggle, onMenu, onDrop }: { view: ReturnType<typeof rowViews>[number]; recentIds: ReadonlySet<string>; trail: TrailMark | undefined; edit: string | null; onEdit: (value: string) => void; onRename: (value: string | null) => void; onSelect: (newTab: boolean) => void; onToggle: () => void; onMenu: (x: number, y: number) => void; onDrop: (id: string) => void }) {
   const folder = dropFolder(view.id);
   return (
     <li
       id={view.domId}
       data-row-id={view.id}
-      class={`weave-row weave-row-${view.kind}${view.selected ? " weave-row-on" : ""}${recentIds.has(view.id) ? " weave-row-new" : ""}`}
+      class={`weave-row weave-row-${view.kind}${view.selected ? " weave-row-on" : ""}${recentIds.has(view.id) ? " weave-row-new" : ""}${trailRowClass(trail)}`}
       role="treeitem"
       aria-level={view.level}
       aria-posinset={view.posinset}
@@ -297,7 +301,7 @@ export function Tree(props: TreeProps) {
             setMenu({ id: "vault", label: "Vault", x: event.clientX, y: event.clientY });
           }}
         >
-          {rowViews(rows, props.selectedId, props.now).map((view) => <Row key={view.id} view={view} recentIds={props.recentIds} edit={editing?.id === view.id ? editing.value : null} onEdit={(value) => setEditing((current) => current === null ? null : { ...current, value })} onRename={commitEdit} onSelect={(newTab) => { props.onSelect(view.id, newTab); if (view.hasKids) setState((current) => toggleExpanded(current, view.id)); }} onToggle={() => setState(toggleExpanded(state, view.id))} onMenu={(x, y) => setMenu({ id: view.id, label: view.label, x, y })} onDrop={(dragged) => { const folder = dropFolder(view.id); if (dragged.startsWith("note:") && folder !== undefined) { const target = mutableTreeRow(dragged); if (target !== null && !props.onMutate(affectedNoteSlugs(props.graph, target))) return; void run(moveNote(fetchJson, dragged.slice("note:".length), folder)); } }} />)}
+          {rowViews(rows, props.selectedId, props.now).map((view) => <Row key={view.id} view={view} recentIds={props.recentIds} trail={props.trail?.get(view.id)} edit={editing?.id === view.id ? editing.value : null} onEdit={(value) => setEditing((current) => current === null ? null : { ...current, value })} onRename={commitEdit} onSelect={(newTab) => { props.onSelect(view.id, newTab); if (view.hasKids) setState((current) => toggleExpanded(current, view.id)); }} onToggle={() => setState(toggleExpanded(state, view.id))} onMenu={(x, y) => setMenu({ id: view.id, label: view.label, x, y })} onDrop={(dragged) => { const folder = dropFolder(view.id); if (dragged.startsWith("note:") && folder !== undefined) { const target = mutableTreeRow(dragged); if (target !== null && !props.onMutate(affectedNoteSlugs(props.graph, target))) return; void run(moveNote(fetchJson, dragged.slice("note:".length), folder)); } }} />)}
         </ul>
       ) : <p class="weave-tree-empty">{empty}</p>}
       <p class="weave-tree-count">{rowCountLabel(rows)}</p>

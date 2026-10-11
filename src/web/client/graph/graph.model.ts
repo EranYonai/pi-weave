@@ -882,6 +882,47 @@ export function edgeReducer(
   };
 }
 
+// --- the recall trail (issue #78) -----------------------------------------------------
+
+/** The slice of `trail.model.ts`'s `TrailMark` this layer reads, restated to keep this file import-free of it. */
+export interface TrailGlow {
+  readonly kind: "searched" | "read" | "wrote";
+  readonly strength: number;
+}
+
+/**
+ * How each kind of touch is painted: which slot it blends toward, how far, and
+ * how much the node grows. A search hit is a soft amber hint, a read is a
+ * filled glow, and a write is the accent at full presence — the one place
+ * this canvas spends the accent on a note, because a write is the event.
+ */
+export const TRAIL_STYLE: Readonly<Record<TrailGlow["kind"], { slot: ColorSlot; blend: number; growth: number }>> = {
+  searched: { slot: "warning", blend: 0.35, growth: 1.08 },
+  read: { slot: "success", blend: 0.85, growth: 1.3 },
+  wrote: { slot: "accent", blend: 1, growth: 1.5 },
+};
+
+/**
+ * The recall-trail layer, applied **over** the selection reducer's answer.
+ *
+ * Over, because the trail is the live event: a note the agent just wrote must
+ * read as such even when it sits in the receded cloud of an unrelated
+ * selection. Colour and size scale with the glow's strength, so the fade is a
+ * smooth return to whatever the selection layer said; the label is kept so a
+ * glowing node always names itself.
+ */
+export function trailOverride(glow: TrailGlow | undefined, data: RenderNode, scheme: GraphTheme): NodeDisplayOverride {
+  if (glow === undefined || !(glow.strength > 0)) return {};
+  const style = TRAIL_STYLE[glow.kind];
+  const strength = Math.min(1, glow.strength);
+  return {
+    color: blendHex(data.color, graphPalette(scheme)[style.slot], style.blend * strength),
+    size: data.size * growth(style.growth, strength),
+    zIndex: data.zIndex + HIGHLIGHT_Z_LIFT * 3,
+    label: data.label,
+  };
+}
+
 // --- sigma settings (§7.4) -------------------------------------------------------------
 
 /**

@@ -140,6 +140,31 @@ export interface GraphPayload {
 }
 
 /** `GET /api/note/:slug`. */
+/** How the agent touched a note — see `src/core/trail.ts`. */
+export type WireTrailKind = "searched" | "read" | "wrote";
+
+/** One recall-trail step. `at` is ISO; `slugs` may be empty for a search with no hits. */
+export interface WireTrailEvent {
+  seq: number;
+  turn: number;
+  at: string;
+  kind: WireTrailKind;
+  action: string;
+  slugs: string[];
+  query?: string;
+}
+
+/**
+ * `GET /api/trail` — the notes the agent searched, read and wrote this
+ * session, oldest first, filtered to this workspace's vault. ETag'd on
+ * `stamp`, like the graph, so polling it is a `304` while the agent is idle.
+ */
+export interface TrailPayload {
+  stamp: string;
+  turn: number;
+  events: WireTrailEvent[];
+}
+
 export interface NotePayload {
   note: ViewNote;
 }

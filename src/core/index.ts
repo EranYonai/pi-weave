@@ -103,6 +103,16 @@ export {
   type NoteActionResult,
 } from "./noteAction";
 export {
+  RecallTrail,
+  recallTrail,
+  TRAIL_CAPACITY,
+  TURN_GAP_MS,
+  type TrailEntry,
+  type TrailEvent,
+  type TrailKind,
+  type TrailSnapshot,
+} from "./trail";
+export {
   executeRepoAction,
   WEAVE_REPO_DESCRIPTION,
   type RepoActionInput,

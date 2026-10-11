@@ -68,6 +68,29 @@ describe("session_start", () => {
     });
   });
 
+  it("echoes how many notes the turn used, and resets on the next turn", async () => {
+    const mock = buildExtension();
+    const cwd = await makeTempDir();
+    const vault = await makeTempDir();
+    await withVaultEnv(vault, async () => {
+      const ctx = createMockCtx(cwd);
+      await mock.emit("session_start", {}, ctx);
+      await mock.emit("agent_start", {}, ctx);
+      const tool = mock.tools.get("weave_note")! as unknown as { execute: (id: string, params: unknown) => Promise<unknown> };
+      await tool.execute("1", { action: "add", title: "Alpha", text: "a" });
+      await tool.execute("2", { action: "get", slug: "alpha" });
+      await mock.emit("agent_end", {}, ctx);
+      expect(ctx.ui.statuses.weave).toBe("○ 🕸️ vault:0 · used 1 note");
+      await mock.emit("agent_start", {}, ctx);
+      await tool.execute("3", { action: "add", title: "Beta", text: "b" });
+      await tool.execute("4", { action: "append", slug: "alpha", text: "more" });
+      await mock.emit("agent_end", {}, ctx);
+      expect(ctx.ui.statuses.weave).toBe("○ 🕸️ vault:0 · used 2 notes");
+      await mock.emit("agent_start", {}, ctx);
+      expect(ctx.ui.statuses.weave).toBe("● 🕸️ vault:0");
+    });
+  });
+
   it("handles ctx without theme or when theme property access throws", async () => {
     const mock = buildExtension();
     const cwd = await makeTempDir();
