@@ -71,7 +71,8 @@ decision that it contradicts. Do not run extra searches or reads for this.
   raw tail, or when it sits in a `source: human` note outside an "Agent addendum". Anything else counts as agent.
 - Conflicting agent or `generated` decisions do not get a question; the human statement already wins. Mention them in one line.
 - If the user says it replaces the old one, strike the old decision through instead of deleting it, and link the new one:
-  `~~OIDC next quarter~~ (superseded 2026-10-11 → [[auth-sso]])`, where the link names the note that holds the new decision.
+  `~~OIDC next quarter~~ (superseded 2026-10-11 → [[auth-sso]])`, where the link names the note that holds the new decision. When the
+  new decision is in the same note, drop the link: `(superseded 2026-10-11)`. A note should not link to itself.
 - Never edit the raw tail to supersede anything. `finalize` keeps superseded lines, struck through, in the body.
 
 See [references/second-thoughts.md](references/second-thoughts.md) for example exchanges.

@@ -25,9 +25,12 @@ The Decisions section afterwards:
 ```markdown
 ## Decisions
 
-- ~~2026-09-03: OIDC next quarter, JWT compatibility window~~ (superseded 2026-10-11 → [[auth-migration]])
+- ~~2026-09-03: OIDC next quarter, JWT compatibility window~~ (superseded 2026-10-11)
 - 2026-10-11: Go with SAML.
 ```
+
+The new decision is in the same note, so there is no link. When it lives in another note, link it:
+`(superseded 2026-10-11 → [[auth-sso]])`.
 
 If the user answers "both are true", leave both lines as they are and say so.
 
