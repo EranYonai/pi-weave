@@ -266,11 +266,13 @@ body{font-size:var(--weave-px-base)}
 /* Mono and a tighter line than the prose: this is Markdown source, where
    alignment carries meaning proportional text throws away. */
 .weave-note-editor{
-  display:block;width:100%;flex:1;min-height:0;resize:none;
+  display:block;width:100%;flex:1 0 auto;min-height:12em;resize:none;
   padding:12px var(--weave-note-gutter) 28px;box-sizing:border-box;
   font-family:var(--weave-mono);font-size:var(--weave-px-row);line-height:1.6;
   color:var(--weave-fg);background:var(--weave-bg);border:0;outline:0;
 }
+/* The \`## Raw\` tail under the editor: rendered, quiet, not editable. */
+.weave-note-raw{flex:none;opacity:.72}
 .weave-note-tags{margin:6px 0 0;display:flex;gap:5px;flex-wrap:wrap}
 .weave-tag{
   font-size:var(--weave-px-caption);color:var(--weave-accent);background:var(--weave-panel);

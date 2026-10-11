@@ -930,6 +930,20 @@ export interface GraphSettings {
 export const LABEL_SIZE_THRESHOLD = (MIN_NODE_SIZE + MAX_NODE_SIZE) / 2;
 
 /**
+ * Below this many nodes every node carries its name.
+ *
+ * The size threshold exists to keep a dense graph legible; on a vault of
+ * two or three notes it left all but one circle unnamed, and a small graph
+ * has no density to protect.
+ */
+export const SMALL_GRAPH_NODES = 30;
+
+/** `labelRenderedSizeThreshold` for a graph of `nodeCount` nodes. */
+export function labelThreshold(nodeCount: number): number {
+  return nodeCount < SMALL_GRAPH_NODES ? 0 : LABEL_SIZE_THRESHOLD;
+}
+
+/**
  * Label collision grid, in screen pixels.
  *
  * `COLLIDE_RADIUS` is the layout's own answer to "how much room does a node

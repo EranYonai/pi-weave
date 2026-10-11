@@ -10,7 +10,8 @@ import {
   unquoteField,
   upsertFrontMatterFields,
 } from "./frontmatter";
-import { auditLinks, fenceRanges, rawTailStart, rewriteLinks, RAW_NOTES_HEADING, type LinkAudit, type LinkFix } from "./links/repair";
+import { auditLinks, rewriteLinks, RAW_NOTES_HEADING, type LinkAudit, type LinkFix } from "./links/repair";
+import { joinRawTail, rawTailBoundary } from "./view/rawTail";
 import { withMutationQueue } from "./mutex";
 import { NOTES_DIR, OKF_MANIFEST } from "./paths";
 import { slugify, uniqueSlug } from "./slug";
@@ -598,30 +599,11 @@ export async function repairVaultLinks(root: string, options: { apply?: boolean 
 
 /**
  * Keep the on-disk `## Raw` tail whatever the body says — it is append-only.
- * `rawTailStart`, not `extractRawTail`: fence-aware, for untrusted input.
+ * `rawTailBoundary`, not `extractRawTail`: fence-aware, for untrusted input.
  */
 function preserveRawTail(currentBody: string, nextBody: string): string {
-  const tail = currentBody.slice(tailBoundary(currentBody)).trimEnd();
-  const head = nextBody.slice(0, tailBoundary(nextBody)).trim();
-  if (tail === "") return head;
-  // An emptied head leaves the tail alone, not a leading blank line.
-  return head === "" ? tail : `${head}\n\n${tail}`;
-}
-
-/** A `---` rule, alone on the line, with only blank space after it. */
-const TAIL_RULE_RE = /(?:^|\n)-{3,}[ \t]*\r?\n\s*$/;
-
-/**
- * Where the tail's text begins — the `---` rule, not the heading
- * `rawTailStart` returns. Splitting at the heading orphans the rule.
- */
-function tailBoundary(body: string): number {
-  const heading = rawTailStart(body, fenceRanges(body));
-  if (heading === body.length) return heading;
-  const rule = TAIL_RULE_RE.exec(body.slice(0, heading));
-  if (rule === null) return heading;
-  // `index` is the newline before the rule when there is one; step over it.
-  return rule.index === 0 && !body.startsWith("\n") ? 0 : rule.index + 1;
+  const tail = currentBody.slice(rawTailBoundary(currentBody)).trimEnd();
+  return joinRawTail(nextBody.slice(0, rawTailBoundary(nextBody)).trim(), tail);
 }
 
 /**

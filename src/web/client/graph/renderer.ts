@@ -1,7 +1,7 @@
 import type { GraphTheme } from "../../shared/themes";
 import type { Point } from "../../shared/layout";
 import type { EdgeDisplayOverride, GraphSettings, NodeDisplayOverride, RenderEdge, RenderGraph, RenderNode, ViewBox } from "./graph.model";
-import { edgeReducer, fadeStep, frameBox, graphSettings, nodeReducer } from "./graph.model";
+import { edgeReducer, fadeStep, frameBox, graphSettings, labelThreshold, nodeReducer } from "./graph.model";
 import type { ProjectedGraph } from "./project";
 import { positionsOf, project, syncPositions } from "./project";
 
@@ -56,6 +56,7 @@ export interface SigmaLike {
   setSetting(key: "nodeReducer", value: (id: string, data: RenderNode) => NodeDisplayOverride): unknown;
   setSetting(key: "edgeReducer", value: (key: string, data: RenderEdge, scheme: GraphTheme) => EdgeDisplayOverride): unknown;
   setSetting(key: "enableCameraPanning", value: boolean): unknown;
+  setSetting(key: "labelRenderedSizeThreshold", value: number): unknown;
   setGraph(graph: ProjectedGraph): unknown;
   /**
    * Freeze the graph→viewport normalization onto a fixed box.
@@ -246,6 +247,7 @@ export function sigmaRenderer(
       instance.on("upNode", () => endDrag(dragging));
       instance.on("upStage", () => endDrag(null));
       applyReducers(instance);
+      instance.setSetting("labelRenderedSizeThreshold", labelThreshold(graph.order));
       // Freeze the view box for whatever graph arrived before mount, so the
       // first frame is already framed and stable — see `SigmaLike.setCustomBBox`.
       instance.setCustomBBox(boxOf());
@@ -255,6 +257,8 @@ export function sigmaRenderer(
     setGraph(next: RenderGraph) {
       graph = project(next);
       sigma?.setGraph(graph);
+      // A graph that crossed the small-graph line gains or loses its labels.
+      sigma?.setSetting("labelRenderedSizeThreshold", labelThreshold(graph.order));
       // Re-frame on a shape change: new nodes legitimately change the extent,
       // and the box is what keeps the *drag* frames from also changing it.
       // Deliberately not touched by `setPositions` — a settling simulation

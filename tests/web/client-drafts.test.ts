@@ -5,6 +5,21 @@ import { toggleTaskCheckbox } from "../../src/web/client/note/note.model";
 import { initialLayout, openDocument, closeTab, splitPane, closePane } from "../../src/web/shared/workspace";
 
 describe("shared note drafts", () => {
+  it("keeps the Raw tail out of the editor and joins it back on save", async () => {
+    const drafts = createDraftStore();
+    const tail = "---\n\n## Raw\n<!-- NEVER edit below this line. Verbatim user input preserved here. -->\n\n```\nhi\n```";
+    drafts.open("one", `Body text.\n\n${tail}\n`);
+    expect(drafts.get("one")).toEqual({ body: "Body text.", baseline: "Body text.", tail, saving: false });
+    drafts.taskBody("one", `Body text.\n\n${tail}`, drafts.nextLoadVersion());
+    drafts.edit("one", "Body text, edited.");
+    const onSave = vi.fn(async () => true);
+    await drafts.save("one", onSave);
+    expect(onSave).toHaveBeenCalledWith("one", `Body text, edited.\n\n${tail}`);
+    // The optimistic body under the read view keeps its tail too.
+    expect(drafts.getTaskBody("one", "")).toBe(`Body text, edited.\n\n${tail}`);
+    expect(drafts.get("one")).toBeNull();
+  });
+
   it("ignores no-op edits and exposes only dirty note identities", async () => {
     const drafts = createDraftStore();
     const changed = vi.fn();
@@ -34,7 +49,7 @@ describe("shared note drafts", () => {
     const firstView = drafts.get("one");
     const secondView = drafts.get("one");
     expect(firstView).toBe(secondView);
-    expect(drafts.get("one")).toEqual({ body: "original", baseline: "original", saving: false });
+    expect(drafts.get("one")).toEqual({ body: "original", baseline: "original", tail: "", saving: false });
     drafts.edit("one", "edited");
     expect(secondView?.body).toBe("edited");
     expect(drafts.isDirty("one")).toBe(true);
@@ -62,7 +77,7 @@ describe("shared note drafts", () => {
     resolveSave(true);
     await saving;
 
-    expect(drafts.get("one")).toEqual({ body: "typed while saving", baseline: "sent", saving: false });
+    expect(drafts.get("one")).toEqual({ body: "typed while saving", baseline: "sent", tail: "", saving: false });
     expect(drafts.isDirty("one")).toBe(true);
 
     let resolveSecond!: (ok: boolean) => void;
@@ -72,7 +87,7 @@ describe("shared note drafts", () => {
     drafts.edit("two", "original");
     resolveSecond(true);
     await secondSave;
-    expect(drafts.get("two")).toEqual({ body: "original", baseline: "sent", saving: false });
+    expect(drafts.get("two")).toEqual({ body: "original", baseline: "sent", tail: "", saving: false });
     expect(drafts.isDirty("two")).toBe(true);
   });
 
@@ -90,7 +105,7 @@ describe("shared note drafts", () => {
     drafts.open("one", "replacement");
     resolveSave(true);
     await saving;
-    expect(drafts.get("one")).toEqual({ body: "replacement", baseline: "replacement", saving: false });
+    expect(drafts.get("one")).toEqual({ body: "replacement", baseline: "replacement", tail: "", saving: false });
   });
 });
 

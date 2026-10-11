@@ -34,6 +34,7 @@ import {
   isCommand,
   isTextEntry,
   keyHelp,
+  NAVIGATING_SELECTOR,
   runShellAction,
   shellKey,
 } from "../../src/web/client/shell/keys.model";
@@ -46,7 +47,7 @@ import type { TreeRow } from "../../src/web/shared/view";
 // --- fixtures -----------------------------------------------------------------------
 
 function key(partial: Partial<KeyDescriptor> & { key: string }): KeyDescriptor {
-  return { ctrl: false, meta: false, shift: false, alt: false, typing: false, ...partial };
+  return { ctrl: false, meta: false, shift: false, alt: false, typing: false, navigating: false, ...partial };
 }
 
 /** Nothing open, nothing selected — the state the workspace mostly sits in. */
@@ -109,8 +110,8 @@ describe("shellKey — the claimed shortcuts", () => {
     expect(shellKey(key({ key: "?", shift: true }), IDLE)).toEqual({ type: "openHelp" });
   });
 
-  it("clears the selection on Escape when there is one", () => {
-    expect(shellKey(key({ key: "Escape" }), { overlay: null, hasSelection: true })).toEqual({ type: "clearSelection" });
+  it("clears the selection on Escape from the tree or the graph", () => {
+    expect(shellKey(key({ key: "Escape", navigating: true }), { overlay: null, hasSelection: true })).toEqual({ type: "clearSelection" });
   });
 });
 
@@ -119,6 +120,13 @@ describe("shellKey — the keys it must not take", () => {
     // Swallowing a key to do nothing with it is the theft this module exists
     // to avoid.
     expect(shellKey(key({ key: "Escape" }), IDLE)).toBeNull();
+    expect(shellKey(key({ key: "Escape", navigating: true }), IDLE)).toBeNull();
+  });
+
+  it("leaves Escape alone while reading a note", () => {
+    // Focus in the note column, or nowhere at all: clearing the selection
+    // from here closed the note the reader was in the middle of.
+    expect(shellKey(key({ key: "Escape" }), { overlay: null, hasSelection: true })).toBeNull();
   });
 
   it("never claims Tab, in any state", () => {
@@ -242,7 +250,7 @@ describe("describeKey", () => {
     return { defaultPrevented: false, ctrlKey: false, metaKey: false, shiftKey: false, altKey: false, target: null, preventDefault: () => {}, ...partial };
   }
 
-  it("reduces a platform event to the five booleans a decision needs", () => {
+  it("reduces a platform event to the six booleans a decision needs", () => {
     expect(describeKey(event({ key: "k", metaKey: true }))).toEqual({
       key: "k",
       ctrl: false,
@@ -250,7 +258,16 @@ describe("describeKey", () => {
       shift: false,
       alt: false,
       typing: false,
+      navigating: false,
     });
+  });
+
+  it("derives `navigating` from where the target sits", () => {
+    const inside = (selector: string): unknown => (selector === NAVIGATING_SELECTOR ? {} : null);
+    expect(describeKey(event({ key: "Escape", target: { tagName: "LI", closest: inside } })).navigating).toBe(true);
+    expect(describeKey(event({ key: "Escape", target: { tagName: "DIV", closest: () => null } })).navigating).toBe(false);
+    expect(describeKey(event({ key: "Escape", target: {} })).navigating).toBe(false);
+    expect(describeKey(event({ key: "Escape", target: null })).navigating).toBe(false);
   });
 
   it("derives `typing` from the target", () => {
@@ -313,7 +330,7 @@ describe("watchKeys", () => {
     watchKeys(document, { context: () => ({ overlay: null, hasSelection: true }), run: (action) => void ran.push(action) });
     document.fire(event({ key: "Escape", defaultPrevented: true }));
     expect(ran).toEqual([]);
-    document.fire(event({ key: "Escape" }));
+    document.fire(event({ key: "Escape", target: { closest: () => ({}) } }));
     expect(ran).toEqual([{ type: "clearSelection" }]);
   });
 
@@ -418,7 +435,7 @@ describe("every action is reachable from a key", () => {
       ...Object.keys(COMMAND_KEYS).map((letter) => key({ key: letter, meta: true })),
       ...Object.keys(COLUMN_DIGITS).map((digit) => key({ key: digit, meta: true })),
       ...Object.keys(BARE_KEYS).map((k) => key({ key: k })),
-      key({ key: "Escape" }),
+      key({ key: "Escape", navigating: true }),
       key({ key: "w", alt: true }),
     ];
     for (const ctx of contexts) {

@@ -43,6 +43,8 @@ import {
   LABEL_DROP_AT,
   LABEL_GRID_CELL_SIZE,
   LABEL_SIZE_THRESHOLD,
+  labelThreshold,
+  SMALL_GRAPH_NODES,
   MAX_NODE_SIZE,
   MIN_NODE_SIZE,
   NEIGHBOUR_GROWTH,
@@ -815,6 +817,12 @@ describe("sigma settings (§7.4)", () => {
     expect(graphSettings("dark").hideEdgesOnMove).toBe(true);
   });
 
+  it("drops the label threshold below the small-graph line", () => {
+    expect(labelThreshold(0)).toBe(0);
+    expect(labelThreshold(SMALL_GRAPH_NODES - 1)).toBe(0);
+    expect(labelThreshold(SMALL_GRAPH_NODES)).toBe(LABEL_SIZE_THRESHOLD);
+  });
+
   it("derives the label threshold from the size range rather than tuning it", () => {
     // Between a leaf and a hub: the nodes that are structurally significant at
     // this zoom get a label first, the rest as you zoom in. A tuned constant
@@ -1095,6 +1103,7 @@ function fakeSigma() {
   let graph: ReturnType<typeof project> | null = null;
   let resets = 0;
   const panning: boolean[] = [];
+  const thresholds: number[] = [];
   let prevented = 0;
   /** The boxes handed to `setCustomBBox`, in order — `null` means cleared. */
   const boxes: Array<ViewBox | null> = [];
@@ -1118,6 +1127,7 @@ function fakeSigma() {
       if (key === "nodeReducer") nodes = value as (id: string, data: RenderNode) => NodeDisplayOverride;
       if (key === "edgeReducer") edges = value as (key: string, data: RenderEdge) => EdgeDisplayOverride;
       if (key === "enableCameraPanning") panning.push(value as boolean);
+      if (key === "labelRenderedSizeThreshold") thresholds.push(value as number);
       return instance;
     },
     setGraph(next) {
@@ -1165,6 +1175,7 @@ function fakeSigma() {
     resets: () => resets,
     graph: () => graph,
     panning: () => panning,
+    thresholds: () => thresholds,
     boxes: () => boxes,
     nodeReducer: () => nodes,
     edgeReducer: () => edges,
@@ -1231,6 +1242,18 @@ describe("sigmaRenderer over the injected constructor (§7.5)", () => {
     expect(settings.hideEdgesOnMove).toBe(true);
     expect(settings.defaultNodeColor).toBe(GRAPH_PALETTE.light.dim);
     expect(fake.created[0]?.graph.order).toBe(3);
+  });
+
+  it("labels every node of a small graph, and only the large ones of a big one", () => {
+    // A vault of two or three notes used to open with one name on screen.
+    const fake = fakeSigma();
+    const renderer = sigmaRenderer(fake.factory, "dark");
+    renderer.setGraph(model);
+    renderer.mount(container);
+    expect(fake.thresholds()).toEqual([0]);
+    const many = Array.from({ length: SMALL_GRAPH_NODES }, (_, i) => node(`n${i}`, "note"));
+    renderer.setGraph(renderGraph(many, [], at(many.map((n, i) => [n.id, i, i])), "dark"));
+    expect(fake.thresholds()).toEqual([0, LABEL_SIZE_THRESHOLD]);
   });
 
   it("is idempotent on mount", () => {

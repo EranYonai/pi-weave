@@ -131,6 +131,13 @@ export type { TreeRow, TreeState } from "../../core/view/tree";
  */
 export { formatTreeMeta, relTime } from "../../core/view/time";
 
+/**
+ * The note editor holds only the head of a body; the `## Raw` tail is shown
+ * read-only beneath it and rejoined on save. The vault splits with the same
+ * function, so the editor can never hide text the server would overwrite.
+ */
+export { joinRawTail, splitRawTail } from "../../core/view/rawTail";
+
 // --- context rail (§1.2, P2) --------------------------------------------------
 
 /** Links, backlinks and the ordered meta block for the selected node. */
