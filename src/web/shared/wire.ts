@@ -40,7 +40,7 @@
  * contract.
  */
 
-import type { WireGraphModel, WireNoteSearchHit, WireNoteSource, WireViewNote } from "./graph";
+import type { WireGraphModel, WireNoteSearchHit, WireViewNote } from "./graph";
 import type { Point } from "./metrics";
 
 /**

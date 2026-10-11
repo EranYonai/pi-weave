@@ -74,9 +74,8 @@ export const NODE_GLOBALS = ["process", "Buffer", "__dirname", "__filename"];
  * words. It adds nothing new to the closure: its own imports are
  * `graph/model.ts`, `types.ts` and `view/tree.ts`, all of which the door
  * already reached, so the node-free proof below covers it unchanged.
- * `core/view/health.ts` and `core/view/index.ts` stay out — the barrel because
- * it re-exports `health.ts`, and `health.ts` because it is a TUI surface no
- * browser column consumes.
+ * `core/view/index.ts` stays out: the barrel re-exports modules no browser
+ * column consumes.
  *
  * ## Why it is exact rather than generous
  *

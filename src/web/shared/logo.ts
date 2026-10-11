@@ -4,7 +4,7 @@
  * The web viewer is a single committed bundle behind a strict CSP
  * (img-src 'self' data:), so the brand mark is an inlined 48×48 PNG —
  * the transparent-background spider derived from docs/pi-weave-logo.png —
- * rather than a new static route. Same pattern as the TUI's branding.ts.
+ * rather than a new static route.
  */
 export const LOGO_MARK_MIME = "image/png";
 /** 48×48 transparent PNG, base64 — crisp at 2× for the 18px header mark. */

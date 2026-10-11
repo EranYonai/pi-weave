@@ -41,7 +41,7 @@
  * `⌘K`, which would otherwise re-open the palette on top of itself.
  */
 
-import { COLUMNS, type ColumnId, type OverlayId } from "./shell.model";
+import type { ColumnId, OverlayId } from "./shell.model";
 
 // --- the event, without the DOM ---------------------------------------------------
 

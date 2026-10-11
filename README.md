@@ -152,8 +152,7 @@ Renaming or moving a note rewrites its inbound links automatically, so its backl
 
 ```bash
 /weave-view              # open the browser workspace
-/weave-view --no-open    # start it and print the URL
-/weave-view tui          # Pi only: terminal UI for SSH or browser-free use
+/weave-view --no-open    # start it and print the URL (handy over SSH)
 ```
 
 Browse and search your notes, follow links, or explore the graph. Use tabs and split panes to keep related notes side by side.
@@ -165,7 +164,6 @@ Tabs, layout, and settings restore when you return and survive package updates f
 unsaved drafts last only while the browser stays open.
 
 Use **Settings** for themes, fonts, layout, and a manual vault ZIP backup. Press `?` for keyboard shortcuts.
-`/weave-view tui` opens a smaller, read-only terminal explorer in Pi.
 
 ## Remember sessions
 
@@ -201,7 +199,7 @@ Most people only need natural language and `/weave-view`.
 
 | Surface | Name | Purpose |
 |---|---|---|
-| Command | `/weave-view` | Open the browser workspace (`tui` is a Pi-only argument) |
+| Command | `/weave-view` | Open the browser workspace |
 | Command | `/weave` | Show vault and repository status |
 | Command | `/weave-scan` | Build or refresh the repository index |
 | Command | `/weave-scan deep` | Add incremental model-written file summaries |
