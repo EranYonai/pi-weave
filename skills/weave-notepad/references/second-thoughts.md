@@ -39,6 +39,13 @@ If the user answers "both are true", leave both lines as they are and say so.
 | "Use Okta as the OIDC provider" | human: "OIDC next quarter" | Compatible; it builds on the decision |
 | "We're going with SAML" | generated session note: "team leaning OIDC" | Not a human decision; mention it in one line |
 | "SAML might be simpler" | human: "OIDC next quarter" | Not a decision |
+| "We're going with SAML" | "OIDC next quarter" in the Agent addendum of a `source: human` note | Agent-written line; mention it in one line |
+
+## Mixed authorship
+
+`source` describes who created the note, not each line in it. A decision the user dictated into an agent note is human: its words are in
+the raw tail. A decision in the Agent addendum of a human note is the agent's. Check the raw tail or the addendum before deciding whether to
+ask.
 
 ## Rules of thumb
 
