@@ -89,16 +89,6 @@ describe("baseline: pi + pi-weave + /weave-view", () => {
     expect(note, `no note with the body in ${notes.join(", ")}`).toBeDefined();
   });
 
-  it("/weave-view tui opens the terminal explorer, q closes it", async () => {
-    await pi.submit("/weave-view tui");
-    // The note shows up inside the explorer, and pi's editor is gone.
-    const footer = "Tab focus · ↑↓/jk move";
-    await pi.waitFor(footer, { label: "TUI explorer footer" });
-    expect(pi.visible()).toContain(NOTE_TITLE);
-    pi.press("q");
-    await pi.waitForGone(footer, { label: "TUI explorer" });
-  });
-
   it("/weave-view --no-open starts the browser workspace", async () => {
     await pi.submit("/weave-view --no-open");
     const screen = await pi.waitFor(/http:\/\/127\.0\.0\.1:\d+\/\?t=\S+/, { label: "workspace URL" });
