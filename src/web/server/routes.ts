@@ -51,17 +51,17 @@ import { createHash, randomUUID } from "node:crypto";
 import { createReadStream } from "node:fs";
 import { pipeline } from "node:stream/promises";
 import { createVaultBackup } from "./backup";
-import { readFile, stat } from "node:fs/promises";
+import { readFile } from "node:fs/promises";
 import type { IncomingMessage, ServerResponse } from "node:http";
 import type { WorkspaceSnapshot } from "../../core/cache/workspace";
 import { WorkspaceCache } from "../../core/cache/workspace";
 import { readOkfFileForView } from "../../core/graph/current";
 import type { GraphModel as CoreGraphModel } from "../../core/graph/model";
-import { historyEnabled, readHistory, setHistoryEnabled } from "../../core/history";
+import { historyEnabled, setHistoryEnabled } from "../../core/history";
 import { openNoteInEditor } from "../../core/openInEditor";
 import type { Note } from "../../core/types";
 import type { VaultMutationResult } from "../../core/vault";
-import { addNote, createFolder, deleteFolder, deleteNote, getNote, moveNote, renameFolder, renameNote, resolveHtmlPath, resolveNotePath, searchNotes, setNoteBody } from "../../core/vault";
+import { addNote, createFolder, deleteFolder, deleteNote, getNote, moveNote, renameFolder, readNoteHistory, renameNote, resolveHtmlPath, searchNotes, setNoteBody } from "../../core/vault";
 import { deriveTagIndex, type TaggedNote } from "../../core/view/links";
 import type {
   GraphPayload,
@@ -713,18 +713,12 @@ function notePayload(note: Note): NotePayload {
  * edit made outside pi-weave since the last write shows as the final step.
  */
 async function sendHistory(deps: RouteDeps, slug: string, res: ServerResponse): Promise<void> {
-  const note = await getNote(deps.vaultRoot, slug);
-  const path = resolveNotePath(deps.vaultRoot, slug);
-  if (note === null || path === null) {
+  const revisions = await readNoteHistory(deps.vaultRoot, slug);
+  if (revisions === null) {
     sendJson(res, 404, { error: "no such note" });
     return;
   }
-  const mtime = await stat(path).then((s) => s.mtime.toISOString(), () => note.updated);
-  const payload: HistoryPayload = {
-    slug,
-    enabled: await historyEnabled(deps.vaultRoot),
-    revisions: await readHistory(deps.vaultRoot, slug, { body: note.body, at: mtime }),
-  };
+  const payload: HistoryPayload = { slug, enabled: await historyEnabled(deps.vaultRoot), revisions };
   sendJson(res, 200, payload, { "cache-control": "no-store" });
 }
 

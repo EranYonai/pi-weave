@@ -13,12 +13,14 @@ import {
 import { auditLinks, fenceRanges, rawTailStart, rewriteLinks, RAW_NOTES_HEADING, type LinkAudit, type LinkFix } from "./links/repair";
 import {
   moveHistory,
+  readHistory,
   moveHistoryFolder,
   recordRevision,
   removeHistory,
   removeHistoryFolder,
   type HistoryAuthor,
   type HistoryOp,
+  type NoteRevision,
 } from "./history";
 import { withMutationQueue } from "./mutex";
 import { NOTES_DIR, OKF_MANIFEST } from "./paths";
@@ -695,6 +697,22 @@ export async function setNoteBody(
     const written = await writeNote(path, slug, { ...note, updated: now.toISOString() }, next, note.frontMatter);
     await record(root, written, by, "edit", before, written.updated);
     return { ok: true, slug };
+  });
+}
+
+/**
+ * Every saved revision of a note, ending on what the note says now, or null
+ * when the note is missing. Under the vault lock, so a write cannot land
+ * between reading the note and comparing it with its log: that window would
+ * record the old body as an outside edit.
+ */
+export async function readNoteHistory(root: string, slug: string): Promise<NoteRevision[] | null> {
+  const path = resolveNotePath(root, slug);
+  if (path === null) return null;
+  return withVaultLock(root, async () => {
+    const note = await getNote(root, slug);
+    if (note === null) return null;
+    return readHistory(root, slug, await priorBody(path, note));
   });
 }
 

@@ -211,3 +211,16 @@ describe("note history", () => {
     expect(diffBodies("", "new")).toEqual({ keep: [0, 0], text: "new" });
   });
 });
+
+describe("readNoteHistory", () => {
+  it("reads under the vault lock, so a concurrent write is never mistaken for an outside edit", async () => {
+    const { readNoteHistory } = await import("../../src/core/vault");
+    const root = await makeTempDir();
+    const note = await addNote(root, { title: "Busy", body: "a", now: at(0) });
+    const [history] = await Promise.all([readNoteHistory(root, note.slug), setNoteBody(root, note.slug, "b", at(1))]);
+    expect(history!.every((r) => r.by !== "outside")).toBe(true);
+    expect((await readHistory(root, note.slug)).map((r) => r.by)).toEqual(["agent", "human"]);
+    expect(await readNoteHistory(root, "missing")).toBeNull();
+    expect(await readNoteHistory(root, "../escape")).toBeNull();
+  });
+});
