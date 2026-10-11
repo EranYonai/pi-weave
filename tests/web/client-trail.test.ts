@@ -8,6 +8,7 @@ import type { SigmaLike } from "../../src/web/client/graph/renderer";
 import { startTrailPoll } from "../../src/web/client/trail/trail";
 import {
   REPLAY_STEP_MS,
+  TRAIL_EMPTY_TURN,
   TRAIL_FADE_MS,
   TRAIL_TURNS_SHOWN,
   trailLive,
@@ -114,6 +115,15 @@ describe("trailTurns", () => {
     expect(earlier!.turn).toBe(1);
   });
 
+  it("leads with a started turn that has no steps yet, so the last one is not shown as current", () => {
+    const payload = { ...trail(event(0, { turn: 1 })), turn: 2 };
+    const [current, previous] = trailTurns(payload, null);
+    expect(current).toEqual({ turn: 2, time: "", steps: [], used: 0 });
+    expect(previous!.turn).toBe(1);
+    expect(turnHeading(current!, true)).toBe("This turn");
+    expect(TRAIL_EMPTY_TURN).toMatch(/Nothing/);
+  });
+
   it("lists at most a handful of turns and nothing for an empty trail", () => {
     const many = trail(...Array.from({ length: 9 }, (_, i) => event(i, { turn: i + 1 })));
     expect(trailTurns(many, null)).toHaveLength(TRAIL_TURNS_SHOWN);
@@ -143,16 +153,16 @@ describe("trailOverride", () => {
   const data = { id: "note:a", x: 0, y: 0, size: 4, label: "A", color: "#888888", kind: "note", provenance: "human", zIndex: 2, type: "circle" } as RenderNode;
 
   it("blends toward the kind's colour, grows and lifts the node, and keeps its label", () => {
-    const wrote = trailOverride({ kind: "wrote", strength: 1 }, data, "dark");
+    const wrote = trailOverride({ kind: "wrote", strength: 1 }, data, "dark", "A");
     expect(wrote).toEqual({ color: blendHex("#888888", GRAPH_PALETTE.dark.accent, 1), size: 4 * TRAIL_STYLE.wrote.growth, zIndex: 2 + HIGHLIGHT_Z_LIFT * 3, label: "A" });
-    const fading = trailOverride({ kind: "searched", strength: 0.5 }, data, "light");
+    const fading = trailOverride({ kind: "searched", strength: 0.5 }, data, "light", "A");
     expect(fading.color).toBe(blendHex("#888888", GRAPH_PALETTE.light.warning, TRAIL_STYLE.searched.blend * 0.5));
-    expect(trailOverride({ kind: "read", strength: 3 }, data, "dark").size).toBe(4 * TRAIL_STYLE.read.growth);
+    expect(trailOverride({ kind: "read", strength: 3 }, data, "dark", "A").size).toBe(4 * TRAIL_STYLE.read.growth);
   });
 
   it("is nothing for no glow or a spent one", () => {
-    expect(trailOverride(undefined, data, "dark")).toEqual({});
-    expect(trailOverride({ kind: "read", strength: 0 }, data, "dark")).toEqual({});
+    expect(trailOverride(undefined, data, "dark", "A")).toEqual({});
+    expect(trailOverride({ kind: "read", strength: 0 }, data, "dark", "A")).toEqual({});
   });
 });
 
@@ -178,6 +188,12 @@ describe("sigmaRenderer.setTrail", () => {
     const data = { id: "note:a", x: 0, y: 0, size: 4, label: "A", color: "#888888", kind: "note", provenance: "human", zIndex: 2, type: "circle" } as RenderNode;
     expect(reducer!("note:a", data)["size"]).toBe(4 * TRAIL_STYLE.wrote.growth);
     expect(reducer!("note:b", { ...data, id: "note:b" })["size"]).toBe(4);
+    // Composes over the selection layer: a receded node glows from its receded state.
+    renderer.setHighlight(new Set(["note:b"]), "note:b");
+    const receded = reducer!("note:a", data);
+    expect(receded["label"]).toBe("A");
+    expect(receded["zIndex"]).toBe(0 + HIGHLIGHT_Z_LIFT * 3);
+    renderer.setHighlight(null);
     const before = installs;
     renderer.setTrail(new Map());
     expect(installs).toBe(before + 1);

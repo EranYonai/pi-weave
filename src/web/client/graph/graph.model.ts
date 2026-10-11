@@ -907,11 +907,18 @@ export const TRAIL_STYLE: Readonly<Record<TrailGlow["kind"], { slot: ColorSlot; 
  *
  * Over, because the trail is the live event: a note the agent just wrote must
  * read as such even when it sits in the receded cloud of an unrelated
- * selection. Colour and size scale with the glow's strength, so the fade is a
- * smooth return to whatever the selection layer said; the label is kept so a
- * glowing node always names itself.
+ * selection. It is handed the *reduced* node, and colour and size scale with
+ * the glow's strength, so the fade is a smooth return to whatever the
+ * selection layer said; the label is kept so a glowing node always names itself.
  */
-export function trailOverride(glow: TrailGlow | undefined, data: RenderNode, scheme: GraphTheme): NodeDisplayOverride {
+export function trailOverride(
+  glow: TrailGlow | undefined,
+  /** The node as the selection layer left it, so the glow composes over recession and growth. */
+  data: Pick<RenderNode, "color" | "size" | "zIndex">,
+  scheme: GraphTheme,
+  /** The node's own label — the selection layer may have dropped it, and a glowing node always names itself. */
+  label: string,
+): NodeDisplayOverride {
   if (glow === undefined || !(glow.strength > 0)) return {};
   const style = TRAIL_STYLE[glow.kind];
   const strength = Math.min(1, glow.strength);
@@ -919,7 +926,7 @@ export function trailOverride(glow: TrailGlow | undefined, data: RenderNode, sch
     color: blendHex(data.color, graphPalette(scheme)[style.slot], style.blend * strength),
     size: data.size * growth(style.growth, strength),
     zIndex: data.zIndex + HIGHLIGHT_Z_LIFT * 3,
-    label: data.label,
+    label,
   };
 }
 

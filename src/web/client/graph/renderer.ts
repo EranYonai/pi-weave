@@ -178,7 +178,10 @@ export function sigmaRenderer(
     const nodes = nodeReducer(highlight, selected, fade);
     const edges = edgeReducer(highlight, selected, fade);
     const glows = trail;
-    instance.setSetting("nodeReducer", (id, data) => ({ ...data, ...nodes(id, data, scheme), ...trailOverride(glows.get(id), data, scheme) }));
+    instance.setSetting("nodeReducer", (id, data) => {
+      const reduced = { ...data, ...nodes(id, data, scheme) };
+      return { ...reduced, ...trailOverride(glows.get(id), reduced, scheme, data.label) };
+    });
     instance.setSetting("edgeReducer", (key, data) => ({ ...data, ...edges(key, data, scheme) }));
   };
 

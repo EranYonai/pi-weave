@@ -145,7 +145,13 @@ function clock(iso: string): string {
   return `${String(at.getHours()).padStart(2, "0")}:${String(at.getMinutes()).padStart(2, "0")}`;
 }
 
-/** The strip: the newest {@link TRAIL_TURNS_SHOWN} turns, each with its steps in order. */
+/**
+ * The strip: the newest {@link TRAIL_TURNS_SHOWN} turns, each with its steps in order.
+ *
+ * When the harness has started a turn that has not touched a note yet (Pi's
+ * `agent_start` moves `trail.turn` ahead of the newest event), that empty
+ * turn leads the list, so the previous turn is never presented as current.
+ */
 export function trailTurns(trail: TrailPayload | null, graph: GraphPayload | null): TrailTurnView[] {
   if (trail === null || trail.events.length === 0) return [];
   const labels = new Map<string, string>((graph?.model.nodes ?? []).map((node) => [node.id, node.label]));
@@ -155,16 +161,20 @@ export function trailTurns(trail: TrailPayload | null, graph: GraphPayload | nul
     if (events === undefined) byTurn.set(event.turn, [event]);
     else events.push(event);
   }
-  return [...byTurn.entries()]
+  const views = [...byTurn.entries()]
     .sort(([a], [b]) => b - a)
-    .slice(0, TRAIL_TURNS_SHOWN)
     .map(([turn, events]) => {
       const used = new Set(events.filter((event) => event.kind !== "searched").flatMap((event) => event.slugs));
       return { turn, time: clock(events[0]!.at), steps: events.map((event) => stepView(event, labels)), used: used.size };
     });
+  if (trail.turn > views[0]!.turn) views.unshift({ turn: trail.turn, time: "", steps: [], used: 0 });
+  return views.slice(0, TRAIL_TURNS_SHOWN);
 }
 
 /** The strip's heading for a turn: the latest is "This turn", older ones are their time. */
+/** What the strip says for a turn with no steps yet. */
+export const TRAIL_EMPTY_TURN = "Nothing recalled yet.";
+
 export function turnHeading(view: TrailTurnView, latest: boolean): string {
   return latest ? "This turn" : view.time === "" ? `Turn ${view.turn}` : view.time;
 }

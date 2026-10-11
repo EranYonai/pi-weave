@@ -459,6 +459,7 @@ body{font-size:var(--weave-px-base)}
 .weave-trail-detail{color:var(--weave-faint);font-family:var(--weave-mono);font-size:var(--weave-px-caption)}
 .weave-trail-note{font:inherit;color:var(--weave-fg);background:none;border:0;padding:0;cursor:pointer;text-decoration:underline;text-decoration-color:var(--weave-line-strong);text-underline-offset:2px}
 .weave-trail-note:hover{color:var(--weave-accent)}
+.weave-trail-empty{margin:4px 0 0;color:var(--weave-faint)}
 .weave-trail-turns{display:flex;flex-wrap:wrap;gap:4px;margin-top:6px}
 .weave-ctx-head{margin:0}
 .weave-ctx-heading{
