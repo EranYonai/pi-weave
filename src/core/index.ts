@@ -9,6 +9,7 @@ export { findGitRoot } from "./git";
 export {
   assessStaleness,
   buildRepoIndex,
+  ensureRepoIndex,
   readRepoIndex,
   summarizeIndex,
   writeRepoIndex,

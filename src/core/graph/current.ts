@@ -15,7 +15,7 @@ import { join, resolve, sep } from "node:path";
 // that cache, so going through the barrel would close an import cycle.
 import { findGitRoot } from "../git";
 import { resolveVaultRoot } from "../paths";
-import { assessStaleness, readRepoIndex } from "../repoIndex";
+import { ensureRepoIndex } from "../repoIndex";
 import { readSummaryMap } from "../summaries";
 import type { Note } from "../types";
 import { getNote, readVault, resolveNotePath } from "../vault";
@@ -72,7 +72,7 @@ export async function readOkfFileForView(cwd: string, rel: string): Promise<{ pa
 
 /**
  * Assemble the repository half of the graph input for `cwd`, or null when
- * cwd is not inside a git repository with a readable `.okf` index. Shared
+ * cwd is not inside a git repository with at least one commit. Shared
  * with `src/core/cache/workspace` so the cached and uncached paths cannot
  * drift in what they read.
  */
@@ -81,19 +81,21 @@ export async function readRepositorySide(
 ): Promise<Pick<BuildGraphInput, "repository" | "summaries"> | null> {
   const repoRoot = await findGitRoot(cwd);
   if (repoRoot === null) return null;
-  const index = await readRepoIndex(repoRoot);
-  if (index === null) return null;
+  // The structure index is plumbing: built or refreshed here when missing or
+  // stale, so the repository side of the graph never waits on a manual scan.
+  const repository = await ensureRepoIndex(repoRoot);
+  if (repository === null) return null;
   return {
-    repository: { index, staleness: await assessStaleness(repoRoot) },
+    repository,
     summaries: await readSummaryMap(repoRoot), // deep-scan sidecars, read live
   };
 }
 
 /**
  * Assemble the fresh graph from disk. Called on every viewer fetch
- * (no caching). Reads the complete vault and, when cwd is an indexed git
- * repository, the repo index + deep-scan summary sidecars. Degrades to a vault-only graph when
- * the repo has no index or the index is corrupt.
+ * (no caching). Reads the complete vault and, when cwd is inside a git
+ * repository, the repo index (refreshed on demand) + deep-scan summary
+ * sidecars. Degrades to a vault-only graph when the repo has no commits.
  *
  * One read per note: `readVault` returns bodies *and* the file count, so the
  * old `listNotes` → `getNote`-per-slug → `noteCount` sequence (2N reads plus

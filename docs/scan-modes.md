@@ -1,6 +1,9 @@
 # scan-modes.md — light and deep repository scanning
 
-> Status: **implemented**.
+> Status: **implemented**, then revised (issue #76, 2026-10-11): the light scan is no longer a user-facing mode. Bare `/weave-scan` runs
+> the deep scan (`deep` remains an alias), and the light index is silent plumbing — `ensureRepoIndex` builds or refreshes it whenever the
+> deep scan, the graph, or `weave_repo overview` needs it. The session-start "unindexed/stale" nudges and the `weave_repo` `scan` and
+> `status` actions are gone. The sections below are the original design and still describe the deep pipeline accurately.
 
 ## As-built deltas
 

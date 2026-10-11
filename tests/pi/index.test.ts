@@ -41,7 +41,7 @@ describe("session_start", () => {
     await withVaultEnv(await makeTempDir(), async () => {
       const ctx = createMockCtx(cwd);
       await mock.emit("session_start", {}, ctx);
-      expect(ctx.ui.statuses.weave).toBe("○ 🕸️ vault:0");
+      expect(ctx.ui.statuses.weave).toBe("○ 🕸️ 0 notes");
       expect(ctx.ui.notifications).toEqual([]);
     });
   });
@@ -52,19 +52,54 @@ describe("session_start", () => {
     await withVaultEnv(await makeTempDir(), async () => {
       const ctx = createMockCtx(cwd);
       await mock.emit("session_start", {}, ctx);
-      expect(ctx.ui.statuses.weave).toBe("○ 🕸️ vault:0");
+      expect(ctx.ui.statuses.weave).toBe("○ 🕸️ 0 notes");
 
       await mock.emit("agent_start", {}, ctx);
-      expect(ctx.ui.statuses.weave).toBe("● 🕸️ vault:0");
+      expect(ctx.ui.statuses.weave).toBe("● 🕸️ 0 notes");
 
       await mock.emit("agent_end", {}, ctx);
-      expect(ctx.ui.statuses.weave).toBe("○ 🕸️ vault:0");
+      expect(ctx.ui.statuses.weave).toBe("○ 🕸️ 0 notes");
 
       // Uses lastCtx when event ctx is undefined
       await mock.emit("agent_start", {}, undefined as unknown as typeof ctx);
-      expect(ctx.ui.statuses.weave).toBe("● 🕸️ vault:0");
+      expect(ctx.ui.statuses.weave).toBe("● 🕸️ 0 notes");
       await mock.emit("agent_end", {}, undefined as unknown as typeof ctx);
-      expect(ctx.ui.statuses.weave).toBe("○ 🕸️ vault:0");
+      expect(ctx.ui.statuses.weave).toBe("○ 🕸️ 0 notes");
+    });
+  });
+
+  it("recounts notes the agent wrote when its turn ends", async () => {
+    const mock = buildExtension();
+    const cwd = await makeTempDir();
+    await withVaultEnv(await makeTempDir(), async () => {
+      const ctx = createMockCtx(cwd);
+      await mock.emit("session_start", {}, ctx);
+      await mock.emit("agent_start", {}, ctx);
+      await mock.runTool("weave_note", { action: "add", title: "Fresh", text: "x" }, ctx);
+      await mock.emit("agent_end", {}, ctx);
+      expect(ctx.ui.statuses.weave).toBe("○ 🕸️ 1 note");
+    });
+  });
+
+  it("leaves a running scan's progress on the status line when a turn ends", async () => {
+    const mock = buildExtension();
+    const repo = await makeRepo();
+    await withVaultEnv(await makeTempDir(), async () => {
+      let release: () => void;
+      const held = new Promise<void>((resolve) => { release = resolve; });
+      const ctx = createMockCtx(repo, true, {
+        model: { provider: "p", id: "m" },
+        complete: async () => {
+          await held;
+          return fauxAssistantMessage("s");
+        },
+      });
+      await mock.emit("session_start", {}, ctx);
+      await mock.commands.get("weave-scan")!.handler("", ctx);
+      await mock.emit("agent_end", {}, ctx);
+      expect(ctx.ui.statuses.weave).toContain("deep scan");
+      release!();
+      await deepScanDone(repo);
     });
   });
 
@@ -75,7 +110,7 @@ describe("session_start", () => {
       const ctx = createMockCtx(cwd);
       delete (ctx.ui as { theme?: unknown }).theme;
       await mock.emit("session_start", {}, ctx);
-      expect(ctx.ui.statuses.weave).toBe("○ 🕸️ vault:0");
+      expect(ctx.ui.statuses.weave).toBe("○ 🕸️ 0 notes");
 
       const throwingCtx = createMockCtx(cwd);
       Object.defineProperty(throwingCtx.ui, "theme", {
@@ -84,61 +119,25 @@ describe("session_start", () => {
         },
       });
       await mock.emit("agent_start", {}, throwingCtx);
-      expect(throwingCtx.ui.statuses.weave).toBe("● 🕸️ vault:0");
+      expect(throwingCtx.ui.statuses.weave).toBe("● 🕸️ 0 notes");
 
       const noUiCtx = { cwd, hasUI: false, mode: "print", ui: {} } as unknown as typeof ctx;
       await mock.emit("agent_start", {}, noUiCtx);
     });
   });
 
-  it("notifies when the repository is not indexed", async () => {
+  it("never nudges the user to scan a repository", async () => {
     const mock = buildExtension();
     const repo = await makeRepo();
     await withVaultEnv(await makeTempDir(), async () => {
       const ctx = createMockCtx(repo);
       await mock.emit("session_start", {}, ctx);
-      expect(ctx.ui.statuses.weave).toBe("○ 🕸️ vault:0 · repo:unindexed");
-      expect(ctx.ui.notifications).toHaveLength(1);
-      expect(ctx.ui.notifications[0]?.level).toBe("info");
-      expect(ctx.ui.notifications[0]?.message).toContain("no knowledge index");
-    });
-  });
-
-  it("warns when the index is stale", async () => {
-    const mock = buildExtension();
-    const repo = await makeRepo();
-    const ctx0 = createMockCtx(repo);
-    // Index first via the scan command
-    await withVaultEnv(await makeTempDir(), async () => {
-      await mock.commands.get("weave-scan")!.handler("", ctx0);
-      gitExec(repo, ["checkout", "-b", "feature"]);
-      const ctx = createMockCtx(repo);
-      await mock.emit("session_start", {}, ctx);
-      expect(ctx.ui.notifications[0]?.level).toBe("warning");
-      expect(ctx.ui.notifications[0]?.message).toContain("stale");
-    });
-  });
-
-  it("skips notifications without UI (print/json mode)", async () => {
-    const mock = buildExtension();
-    const repo = await makeRepo();
-    await withVaultEnv(await makeTempDir(), async () => {
-      const ctx = createMockCtx(repo, /* hasUI */ false);
-      await mock.emit("session_start", {}, ctx);
-      expect(ctx.ui.statuses.weave).toBeDefined();
+      expect(ctx.ui.statuses.weave).toBe("○ 🕸️ 0 notes");
       expect(ctx.ui.notifications).toEqual([]);
-    });
-  });
-
-  it("says nothing when the index is fresh", async () => {
-    const mock = buildExtension();
-    const repo = await makeRepo();
-    await withVaultEnv(await makeTempDir(), async () => {
-      const ctx = createMockCtx(repo);
-      await mock.commands.get("weave-scan")!.handler("", ctx);
-      ctx.ui.notifications.length = 0;
+      // A repository that moved on since its last index stays quiet too.
+      await mock.runTool("weave_repo", { action: "overview" }, ctx);
+      gitExec(repo, ["checkout", "-b", "feature"]);
       await mock.emit("session_start", {}, ctx);
-      expect(ctx.ui.statuses.weave).toContain(":ok");
       expect(ctx.ui.notifications).toEqual([]);
     });
   });
@@ -153,7 +152,7 @@ describe("/weave command", () => {
       await mock.commands.get("weave")!.handler("", ctx);
       expect(ctx.ui.notifications).toHaveLength(1);
       expect(ctx.ui.notifications[0]?.message).toContain("Vault (");
-      expect(ctx.ui.notifications[0]?.message).toContain("not inside a git repository");
+      expect(ctx.ui.notifications[0]?.message).not.toContain("Repository");
     });
   });
 });
@@ -177,32 +176,37 @@ describe("/weave-scan command", () => {
     expect(ctx.ui.notifications[0]?.message).toContain("no commits");
   });
 
-  it("builds the index, excludes .okf locally, and updates the status line", async () => {
+  it("rejects an unknown mode with usage instead of scanning", async () => {
     const mock = buildExtension();
     const repo = await makeRepo();
     await withVaultEnv(await makeTempDir(), async () => {
-      const ctx = createMockCtx(repo);
-      await mock.commands.get("weave-scan")!.handler("", ctx);
-      expect(ctx.ui.notifications[0]?.message).toContain("index refreshed");
-      expect(ctx.ui.statuses.weave).toContain(":ok");
-      expect(JSON.parse(await fs.readFile(join(repo, ".okf", "okf.json"), "utf8")).scope).toBe("repository");
-      expect(await fs.readFile(join(repo, ".git", "info", "exclude"), "utf8")).toContain(".okf/");
+      const ctx = createMockCtx(repo, true, {
+        model: { provider: "p", id: "m" },
+        complete: async () => { throw new Error("should not be called"); },
+      });
+      await mock.commands.get("weave-scan")!.handler("nonsense", ctx);
+      expect(ctx.ui.notifications).toHaveLength(1);
+      expect(ctx.ui.notifications[0]?.level).toBe("warning");
+      expect(ctx.ui.notifications[0]?.message).toContain("usage: /weave-scan");
+      await expect(fs.stat(join(repo, ".okf"))).rejects.toThrow();
     });
   });
 });
 
-describe("/weave-scan deep", () => {
-  it("warns and stays light-only when no session model is active", async () => {
+describe("/weave-scan deep (the default)", () => {
+  it("refreshes the index silently and warns when no session model is active", async () => {
     const mock = buildExtension();
     const repo = await makeRepo();
     await withVaultEnv(await makeTempDir(), async () => {
       const ctx = createMockCtx(repo); // no model configured
-      await mock.commands.get("weave-scan")!.handler("deep", ctx);
+      await mock.commands.get("weave-scan")!.handler("", ctx);
       await deepScanDone(repo); // background scan settles
-      expect(ctx.ui.notifications.some((n) => n.level === "warning" && n.message.includes("deep scan needs an active session model"))).toBe(true);
-      expect(ctx.ui.statuses.weave).toContain(":ok");
-      // light index is still written
+      expect(ctx.ui.notifications).toHaveLength(1);
+      expect(ctx.ui.notifications[0]?.message).toContain("deep scan needs an active session model");
+      expect(ctx.ui.statuses.weave).toBe("○ 🕸️ 0 notes");
+      // the structure index is still written, and excluded from git locally
       expect(JSON.parse(await fs.readFile(join(repo, ".okf", "okf.json"), "utf8")).scope).toBe("repository");
+      expect(await fs.readFile(join(repo, ".git", "info", "exclude"), "utf8")).toContain(".okf/");
     });
   });
 
@@ -214,13 +218,14 @@ describe("/weave-scan deep", () => {
         model: { provider: "testprovider", id: "test-model-1" },
         complete: async () => fauxAssistantMessage("Summarizes the entry point."),
       });
-      await mock.commands.get("weave-scan")!.handler("deep", ctx);
+      await mock.commands.get("weave-scan")!.handler("", ctx);
       await deepScanDone(repo);
       expect(ctx.ui.notifications.some((n) => n.level === "info" && n.message.includes("deep scan complete"))).toBe(true);
+      expect(ctx.ui.notifications.some((n) => n.message.includes("index refreshed"))).toBe(false);
       const summariesDir = join(repo, ".okf", "repository", "summaries");
       const files = await fs.readdir(summariesDir);
       expect(files.some((f) => f.endsWith(".summary.md"))).toBe(true);
-      expect(ctx.ui.statuses.weave).toContain(":ok");
+      expect(ctx.ui.statuses.weave).toBe("○ 🕸️ 0 notes · 1 summary");
     });
   });
 
@@ -251,21 +256,7 @@ describe("/weave-scan deep", () => {
     });
   });
 
-  it("treats any non-deep arg as light-only (exact-match contract)", async () => {
-    const mock = buildExtension();
-    const repo = await makeRepo();
-    await withVaultEnv(await makeTempDir(), async () => {
-      const ctx = createMockCtx(repo, true, {
-        model: { provider: "p", id: "m" },
-        complete: async () => { throw new Error("should not be called"); },
-      });
-      await mock.commands.get("weave-scan")!.handler("nonsense", ctx);
-      expect(ctx.ui.notifications.some((n) => n.message.includes("deep scan"))).toBe(false);
-      expect(ctx.ui.statuses.weave).toContain(":ok");
-    });
-  });
-
-  it("matches 'DEEP' case-insensitively", async () => {
+  it("keeps 'deep' as an alias, case-insensitively", async () => {
     const mock = buildExtension();
     const repo = await makeRepo();
     await withVaultEnv(await makeTempDir(), async () => {
@@ -706,73 +697,47 @@ describe("weave_repo tool", () => {
   it("reports when not inside a repository", async () => {
     const mock = buildExtension();
     const ctx = createMockCtx(await makeTempDir());
-    for (const action of ["status", "scan", "overview"] as const) {
-      const res = await mock.runTool("weave_repo", { action }, ctx);
-      expect(res.content[0]?.text).toContain("Not inside a git repository");
-    }
+    const res = await mock.runTool("weave_repo", { action: "overview" }, ctx);
+    expect(res.content[0]?.text).toContain("Not inside a git repository");
   });
 
-  it("status reports missing index", async () => {
+  it("overview builds the index itself and points at /weave-scan for summaries", async () => {
     const mock = buildExtension();
     const repo = await makeRepo();
     const ctx = createMockCtx(repo);
-    const res = await mock.runTool("weave_repo", { action: "status" }, ctx);
-    expect(res.content[0]?.text).toContain("Index state: missing");
-  });
-
-  it("scan builds the index (with progress update), then status is fresh", async () => {
-    const mock = buildExtension();
-    const repo = await makeRepo();
-    const ctx = createMockCtx(repo);
-    const updates: string[] = [];
-    const res = await mock.runTool("weave_repo", { action: "scan" }, ctx, (u) =>
-      updates.push((u as { content: { text: string }[] }).content[0]?.text ?? ""),
-    );
-    expect(res.content[0]?.text).toContain("Knowledge index written");
+    const res = await mock.runTool("weave_repo", { action: "overview" }, ctx);
     expect(res.content[0]?.text).toContain("Repository:");
-    expect(updates[0]).toContain("Scanning");
-
-    const status = await mock.runTool("weave_repo", { action: "status" }, ctx);
-    expect(status.content[0]?.text).toContain("Index state: fresh");
-    expect(status.content[0]?.text).toContain("Indexed at:");
+    expect(res.content[0]?.text).toContain("Summaries: none yet");
+    expect(res.details).toMatchObject({ indexed: true, summaryCount: 0 });
+    expect(JSON.parse(await fs.readFile(join(repo, ".okf", "okf.json"), "utf8")).scope).toBe("repository");
   });
 
-  it("scan fails gracefully without commits", async () => {
+  it("overview refreshes a stale index and counts summaries", async () => {
+    const mock = buildExtension();
+    const repo = await makeRepo();
+    await withVaultEnv(await makeTempDir(), async () => {
+      const ctx = createMockCtx(repo, true, {
+        model: { provider: "p", id: "m" },
+        complete: async () => fauxAssistantMessage("s"),
+      });
+      await mock.commands.get("weave-scan")!.handler("", ctx);
+      await deepScanDone(repo);
+      await writeFixture(repo, "new-file.ts", "x");
+      const res = await mock.runTool("weave_repo", { action: "overview" }, ctx);
+      expect(res.content[0]?.text).toContain("Summaries: 1 file(s)");
+      expect(res.content[0]?.text).not.toContain("⚠");
+      const index = (res.details as { index: { git: { changedFiles: string[] } } }).index;
+      expect(index.git.changedFiles).toContain("new-file.ts");
+    });
+  });
+
+  it("overview fails gracefully without commits", async () => {
     const mock = buildExtension();
     const repo = await makeTempDir();
     gitInit(repo);
     const ctx = createMockCtx(repo);
-    const res = await mock.runTool("weave_repo", { action: "scan" }, ctx);
+    const res = await mock.runTool("weave_repo", { action: "overview" }, ctx);
     expect(res.content[0]?.text).toContain("no commits");
-  });
-
-  it("overview asks for a scan when missing, and reports stale indexes", async () => {
-    const mock = buildExtension();
-    const repo = await makeRepo();
-    const ctx = createMockCtx(repo);
-
-    const missing = await mock.runTool("weave_repo", { action: "overview" }, ctx);
-    expect(missing.content[0]?.text).toContain("No knowledge index");
-
-    await mock.runTool("weave_repo", { action: "scan" }, ctx);
-    const fresh = await mock.runTool("weave_repo", { action: "overview" }, ctx);
-    expect(fresh.content[0]?.text).toContain("Repository:");
-    expect(fresh.content[0]?.text).not.toContain("⚠");
-
-    await writeFixture(repo, "new-file.ts", "x");
-    const stale = await mock.runTool("weave_repo", { action: "overview" }, ctx);
-    expect(stale.content[0]?.text).toContain("⚠ index is stale");
-  });
-
-  it("status shows staleness reasons", async () => {
-    const mock = buildExtension();
-    const repo = await makeRepo();
-    const ctx = createMockCtx(repo);
-    await mock.runTool("weave_repo", { action: "scan" }, ctx);
-    await writeFixture(repo, "dirty.ts", "x");
-    const res = await mock.runTool("weave_repo", { action: "status" }, ctx);
-    expect(res.content[0]?.text).toContain("Index state: stale");
-    expect(res.content[0]?.text).toContain("uncommitted");
   });
 });
 

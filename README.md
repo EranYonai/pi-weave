@@ -180,18 +180,18 @@ technical takeaways, works outside Git repositories, and can be stopped with `/w
 
 ## Repository knowledge
 
-Inside a Git repository, pi-weave detects whether `<repo>/.okf/` is missing, fresh, or stale.
+Inside a Git repository, `/weave-scan` asks your session model for a short summary of each file, so you and your agent can find your way
+around without reading everything. It only revisits files whose content changed since the last run.
 
 ```bash
-/weave-scan         # fast structural index
-/weave-scan deep    # also summarize changed files with the active model
+/weave-scan         # summarize changed files with the active model
 ```
 
-The light index covers languages, packages, modules, entry points, and Git state. A deep scan adds short per-file summaries and only
-revisits files whose content changed.
+pi-weave also keeps a small structural index of the repository (languages, packages, modules, entry points, Git state). It feeds the graph
+and links notes to the files they mention. You never build it by hand: it is refreshed automatically whenever something needs it.
 
-The repository index is a cache, not a source of truth. Delete `.okf`, scan again, and nothing important is lost. pi-weave excludes it
-locally from Git by default.
+Everything under `<repo>/.okf/` is a cache, not a source of truth. Delete it and nothing important is lost. pi-weave excludes it locally
+from Git by default.
 
 ## Commands and tools
 
@@ -201,12 +201,11 @@ Most people only need natural language and `/weave-view`.
 |---|---|---|
 | Command | `/weave-view` | Open the browser workspace |
 | Command | `/weave` | Show vault and repository status |
-| Command | `/weave-scan` | Build or refresh the repository index |
-| Command | `/weave-scan deep` | Add incremental model-written file summaries |
+| Command | `/weave-scan` | Add incremental model-written file summaries |
 | Command | `/weave-scan sessions [path]` | Turn changed session-history files into durable memory notes |
-| Command | `/weave-scan-cancel` | Stop a deep or session scan |
+| Command | `/weave-scan-cancel` | Stop a running scan |
 | Tool | `weave_note` | List, read, add, append, finalize, and search notes |
-| Tool | `weave_repo` | Check, scan, and summarize the repository index |
+| Tool | `weave_repo` | Describe the repository structure for the agent |
 
 The included `weave-notepad` and `weave-explore` skills teach Pi and OpenCode when and how to use these tools. In OpenCode, `/weave` shows
 vault/repository status and scan progress appears in toasts; Pi keeps its persistent status line. V1 slash commands use its standard prompt

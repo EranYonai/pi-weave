@@ -55,13 +55,7 @@ const weaveTui = {
   async setup(context) {
     const rpc = context.client.rpc(WEAVE_RPC);
     try {
-      const initial = await rpc.status({});
-      const text = String(record(initial).text ?? "");
-      if (text.includes("repo:unindexed")) {
-        context.ui.toast.show({ message: "This repository is not indexed yet. Run /weave-scan.", variant: "info" });
-      } else if (text.includes(":stale")) {
-        context.ui.toast.show({ message: "The pi-weave repository index is stale. Run /weave-scan.", variant: "warning" });
-      }
+      await rpc.status({});
     } catch {
       context.ui.toast.show({ message: "pi-weave unavailable", variant: "warning" });
     }

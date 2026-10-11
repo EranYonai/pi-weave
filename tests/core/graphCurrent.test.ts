@@ -6,7 +6,7 @@ import {
   readRepositorySide,
   type ViewNote,
 } from "../../src/core/graph/current";
-import { buildRepoIndex, writeRepoIndex } from "../../src/core/repoIndex";
+import { assessStaleness, buildRepoIndex, readRepoIndex, writeRepoIndex } from "../../src/core/repoIndex";
 import { addNote } from "../../src/core/vault";
 import { commitAll, gitInit, makeTempDir, withVaultEnv, writeFixture } from "../helpers";
 import { mkdir, writeFile } from "node:fs/promises";
@@ -62,19 +62,32 @@ describe("buildCurrentGraph (core)", () => {
     });
   });
 
-  it("skips a repo without an index and degrades to vault-only", async () => {
+  it("builds the index on demand for a repo without one", async () => {
     const vault = await makeTempDir();
     await withVaultEnv(vault, async () => {
       const repo = await makeTempDir();
       gitInit(repo);
-      commitAll(repo, "init"); // git repo, but no .okf index
+      await writeFixture(repo, "src/index.ts", "export const x = 1;\n");
+      commitAll(repo, "init"); // git repo, but no .okf index yet
+      const model = await buildCurrentGraph(repo, vault);
+      expect(model.nodes.some((n) => n.id === "repository")).toBe(true);
+      expect(model.staleness?.state).toBe("fresh");
+      expect(await readRepoIndex(repo)).not.toBeNull();
+    });
+  });
+
+  it("degrades to vault-only in a repo with no commits", async () => {
+    const vault = await makeTempDir();
+    await withVaultEnv(vault, async () => {
+      const repo = await makeTempDir();
+      gitInit(repo);
       const model = await buildCurrentGraph(repo, vault);
       expect(model.nodes.some((n) => n.id === "repository")).toBe(false);
       expect(model.staleness).toBeNull();
     });
   });
 
-  it("degrades on a corrupt index without throwing", async () => {
+  it("rebuilds a corrupt index without throwing", async () => {
     const vault = await makeTempDir();
     await withVaultEnv(vault, async () => {
       const repo = await makeTempDir();
@@ -90,9 +103,10 @@ describe("buildCurrentGraph (core)", () => {
       );
       await writeFile(join(repo, ".okf", "repository", "git.json"), "{}", "utf8");
 
-      // corrupt structure.json → readRepoIndex returns null → vault-only graph
+      // corrupt structure.json → treated as missing → rebuilt in place
       const model = await buildCurrentGraph(repo, vault);
-      expect(model.nodes.some((n) => n.id === "repository")).toBe(false);
+      expect(model.nodes.some((n) => n.id === "repository")).toBe(true);
+      expect(await readRepoIndex(repo)).not.toBeNull();
     });
   });
 
@@ -207,10 +221,23 @@ describe("readRepositorySide (core)", () => {
     expect(await readRepositorySide(await makeTempDir())).toBeNull();
   });
 
-  it("returns null for a git repo with no .okf index", async () => {
+  it("returns null for a git repo with no commits", async () => {
     const repo = await makeTempDir();
     gitInit(repo);
-    commitAll(repo, "init");
     expect(await readRepositorySide(repo)).toBeNull();
+  });
+
+  it("refreshes a stale index before returning it", async () => {
+    const repo = await makeTempDir();
+    gitInit(repo);
+    await writeFixture(repo, "a.ts", "a\n");
+    commitAll(repo, "init");
+    await writeRepoIndex(repo, (await buildRepoIndex(repo))!);
+    await writeFixture(repo, "b.ts", "b\n");
+    commitAll(repo, "second");
+    expect((await assessStaleness(repo)).state).toBe("stale");
+    const side = await readRepositorySide(repo);
+    expect(side?.repository?.staleness.state).toBe("fresh");
+    expect((await assessStaleness(repo)).state).toBe("fresh");
   });
 });
