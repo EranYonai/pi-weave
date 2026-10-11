@@ -168,8 +168,11 @@ function isEntry(value: unknown): value is LogEntry {
  * Replay a log into revisions. A line that is not JSON, or a delta that does
  * not fit the body before it, is skipped, and so is every delta after it up
  * to the next full copy: guessing would show the user text nobody wrote.
+ *
+ * With `lastOnly`, only the newest revision is kept. Recording a write needs
+ * nothing else, and keeping every body would cost the sum of all of them.
  */
-function replay(text: string): NoteRevision[] {
+function replay(text: string, lastOnly = false): NoteRevision[] {
   const revisions: NoteRevision[] = [];
   let body: string | null = null;
   for (const line of text.split("\n")) {
@@ -197,19 +200,20 @@ function replay(text: string): NoteRevision[] {
     } else {
       continue;
     }
+    if (lastOnly) revisions.length = 0;
     revisions.push({ at: entry.at, by: entry.by, op: entry.op, body });
   }
   return revisions;
 }
 
-async function readLog(path: string): Promise<{ revisions: NoteRevision[]; lines: number }> {
+async function readLog(path: string, lastOnly = false): Promise<{ revisions: NoteRevision[]; lines: number }> {
   let text: string;
   try {
     text = await fs.readFile(path, "utf8");
   } catch {
     return { revisions: [], lines: 0 };
   }
-  return { revisions: replay(text), lines: text.split("\n").filter((line) => line.trim() !== "").length };
+  return { revisions: replay(text, lastOnly), lines: text.split("\n").filter((line) => line.trim() !== "").length };
 }
 
 /** The smallest prefix/suffix-preserving edit that turns `from` into `to`. */
@@ -264,7 +268,7 @@ export async function recordRevision(root: string, slug: string, input: RecordIn
   try {
     const path = historyPath(root, slug);
     if (path === null || !(await historyEnabled(root))) return;
-    const log = await readLog(path);
+    const log = await readLog(path, true);
     const pending: Array<{ at: string; by: HistoryAuthor; op: HistoryOp; body: string }> = [];
     let last = log.revisions.at(-1);
     if (input.before !== null && last?.body !== input.before.body) {
