@@ -44,6 +44,7 @@ import type {
   NotePayload,
   OpenResult,
   SearchPayload,
+  TrailPayload,
   ViewNote,
 } from "../shared/wire";
 
@@ -214,6 +215,21 @@ export function isGraphPayload(value: unknown): value is GraphPayload {
   return isObject(value["tags"]) && isObject(value["dangling"]);
 }
 
+/** `TrailPayload`. Events are rendered as links, so each one's shape is checked. */
+export function isTrailPayload(value: unknown): value is TrailPayload {
+  if (!isObject(value) || typeof value["stamp"] !== "string" || typeof value["turn"] !== "number") return false;
+  const events = value["events"];
+  return Array.isArray(events) && events.every((event: unknown) =>
+    isObject(event)
+    && typeof event["seq"] === "number"
+    && typeof event["turn"] === "number"
+    && typeof event["at"] === "string"
+    && (event["kind"] === "searched" || event["kind"] === "read" || event["kind"] === "wrote")
+    && typeof event["action"] === "string"
+    && isStringArray(event["slugs"])
+    && (event["query"] === undefined || typeof event["query"] === "string"));
+}
+
 /** `ViewNote`. Every field is rendered, so every field is checked. */
 export function isViewNote(value: unknown): value is ViewNote {
   if (!isObject(value)) return false;
@@ -269,12 +285,26 @@ export function isMutationResult(value: unknown): value is MutationResult {
  *   present its `stamp` is sent as `If-None-Match` and a `304` returns it
  *   back with `cached: true`.
  */
-export async function fetchGraph(fetchImpl: FetchLike, previous: GraphPayload | null = null): Promise<ApiResult<GraphPayload>> {
+export function fetchGraph(fetchImpl: FetchLike, previous: GraphPayload | null = null): Promise<ApiResult<GraphPayload>> {
+  return fetchConditional(fetchImpl, "/api/graph", previous, isGraphPayload);
+}
+
+/** `GET /api/trail` — the recall trail, revalidated on its stamp exactly like the graph. */
+export function fetchTrail(fetchImpl: FetchLike, previous: TrailPayload | null = null): Promise<ApiResult<TrailPayload>> {
+  return fetchConditional(fetchImpl, "/api/trail", previous, isTrailPayload);
+}
+
+async function fetchConditional<T extends { stamp: string }>(
+  fetchImpl: FetchLike,
+  url: string,
+  previous: T | null,
+  guard: (value: unknown) => value is T,
+): Promise<ApiResult<T>> {
   const headers = previous === null ? undefined : { "if-none-match": `"${previous.stamp}"` };
 
   let response: HttpResponse;
   try {
-    response = await fetchImpl("/api/graph", headers === undefined ? {} : { headers });
+    response = await fetchImpl(url, headers === undefined ? {} : { headers });
   } catch (error) {
     return failure("network", 0, error instanceof Error ? error.message : "network request failed");
   }
@@ -298,7 +328,7 @@ export async function fetchGraph(fetchImpl: FetchLike, previous: GraphPayload | 
   } catch {
     return failure("malformed", response.status, "response was not valid JSON");
   }
-  if (!isGraphPayload(body)) return failure("malformed", response.status, "response did not match the expected shape");
+  if (!guard(body)) return failure("malformed", response.status, "response did not match the expected shape");
   return success(body);
 }
 

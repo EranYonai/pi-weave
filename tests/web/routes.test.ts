@@ -45,7 +45,7 @@ import {
   type StartWorkspaceServerOptions,
   type WorkspaceServer,
 } from "../../src/web/server/server";
-import type { GraphPayload, HistoryPayload, NotePayload, OkfFilePayload, SearchPayload } from "../../src/web/shared/wire";
+import type { GraphPayload, HistoryPayload, NotePayload, OkfFilePayload, SearchPayload, TrailPayload } from "../../src/web/shared/wire";
 import { WIRE_MODEL_OMITTED_KEYS } from "../../src/web/shared/wire";
 import { commitAll, gitInit, makeTempDir, withVaultEnv, writeFixture } from "../helpers";
 
@@ -1437,5 +1437,44 @@ describe("note history", () => {
     expect(JSON.parse(await fs.readFile(join(vaultRoot, "okf.json"), "utf8"))).toMatchObject({ history: false });
     expect((await get(server, "/api/history/alpha-note").then((r) => r.json()) as HistoryPayload).enabled).toBe(false);
     for (const body of [null, {}, { enabled: "no" }]) expect((await post(server, "/api/history-settings", body)).status).toBe(400);
+  });
+});
+
+// --- GET /api/trail (issue #78) -------------------------------------------------
+
+describe("GET /api/trail", () => {
+  it("serves this vault's recall trail, ETag'd on the buffer stamp", async () => {
+    const { recallTrail } = await import("../../src/core/trail");
+    const { server, vaultRoot } = await bootFresh();
+    recallTrail.clear();
+    recallTrail.beginTurn();
+    recallTrail.record({ kind: "read", action: "get", slugs: ["alpha-note"], vault: vaultRoot, at: new Date("2026-10-11T05:00:00Z") });
+    recallTrail.record({ kind: "wrote", action: "append", slugs: ["elsewhere"], vault: "/some/other/vault", at: new Date("2026-10-11T05:00:01Z") });
+
+    const res = await get(server, "/api/trail");
+    expect(res.status).toBe(200);
+    const etag = res.headers.get("etag");
+    expect(etag).toBe('"1.2"');
+    expect(res.headers.get("access-control-allow-origin")).toBeNull();
+    const payload = (await res.json()) as TrailPayload;
+    expect(payload).toEqual({
+      stamp: "1.2",
+      turn: 1,
+      events: [{ seq: 1, turn: 1, at: "2026-10-11T05:00:00.000Z", kind: "read", action: "get", slugs: ["alpha-note"] }],
+    });
+
+    const cached = await get(server, "/api/trail", { headers: { "if-none-match": etag! } });
+    expect(cached.status).toBe(304);
+
+    recallTrail.record({ kind: "searched", action: "search", slugs: [], query: "beta", vault: vaultRoot, at: new Date("2026-10-11T05:00:02Z") });
+    const moved = await get(server, "/api/trail", { headers: { "if-none-match": etag! } });
+    expect(moved.status).toBe(200);
+    expect(((await moved.json()) as TrailPayload).events.map((event) => event.query)).toEqual([undefined, "beta"]);
+    recallTrail.clear();
+  });
+
+  it("requires the session cookie like every other route", async () => {
+    const { server } = await boot();
+    expect((await raw(server, "/api/trail")).status).toBe(403);
   });
 });

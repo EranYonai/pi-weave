@@ -1,7 +1,7 @@
 import type { GraphTheme } from "../../shared/themes";
 import type { Point } from "../../shared/layout";
-import type { EdgeDisplayOverride, GraphSettings, NodeDisplayOverride, RenderEdge, RenderGraph, RenderNode, ViewBox } from "./graph.model";
-import { edgeReducer, fadeStep, frameBox, graphSettings, labelThreshold, nodeReducer } from "./graph.model";
+import type { EdgeDisplayOverride, GraphSettings, NodeDisplayOverride, RenderEdge, RenderGraph, RenderNode, TrailGlow, ViewBox } from "./graph.model";
+import { edgeReducer, fadeStep, frameBox, graphSettings, labelThreshold, nodeReducer, trailOverride } from "./graph.model";
 import type { ProjectedGraph } from "./project";
 import { positionsOf, project, syncPositions } from "./project";
 
@@ -130,6 +130,8 @@ export function sigmaRenderer(
   let highlight: ReadonlySet<string> | null = null;
   /** The selection inside that neighbourhood — see `nodeReducer`. */
   let selected: string | null = null;
+  /** Recall-trail glows, layered over the selection — see `trailOverride`. */
+  let trail: ReadonlyMap<string, TrailGlow> = new Map();
   /**
    * How present the highlight currently *looks*, and where it is heading.
    *
@@ -176,7 +178,11 @@ export function sigmaRenderer(
   const applyReducers = (instance: SigmaLike): void => {
     const nodes = nodeReducer(highlight, selected, fade);
     const edges = edgeReducer(highlight, selected, fade);
-    instance.setSetting("nodeReducer", (id, data) => ({ ...data, ...nodes(id, data, scheme) }));
+    const glows = trail;
+    instance.setSetting("nodeReducer", (id, data) => {
+      const reduced = { ...data, ...nodes(id, data, scheme) };
+      return { ...reduced, ...trailOverride(glows.get(id), reduced, scheme, data.label) };
+    });
     instance.setSetting("edgeReducer", (key, data) => ({ ...data, ...edges(key, data, scheme) }));
   };
 
@@ -298,6 +304,12 @@ export function sigmaRenderer(
       }
       if (sigma !== null) applyReducers(sigma);
       if (fade !== fadeTo) armFade();
+    },
+
+    /** Replace the recall-trail glows. The caller re-sends as the fade ticks. */
+    setTrail(next: ReadonlyMap<string, TrailGlow>) {
+      trail = next;
+      if (sigma !== null) applyReducers(sigma);
     },
 
     onSelect(handler: (id: string | null) => void) {

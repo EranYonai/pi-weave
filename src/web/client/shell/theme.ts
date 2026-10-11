@@ -178,6 +178,16 @@ body{font-size:var(--weave-px-base)}
   40%{font-weight:700}
   100%{background:transparent;font-weight:400}
 }
+/* Recall trail (issue #78): a note the agent searched, read or wrote. The
+   tint follows the graph's palette for the same kinds (warn → ok → accent)
+   and steps down through three strength buckets as the glow fades. */
+.weave-row-trail{--weave-trail:var(--weave-warn);box-shadow:inset 2px 0 0 color-mix(in srgb,var(--weave-trail) var(--weave-trail-mix),transparent);background:color-mix(in srgb,var(--weave-trail) calc(var(--weave-trail-mix) / 6),transparent)}
+.weave-row-trail-read{--weave-trail:var(--weave-ok)}
+.weave-row-trail-wrote{--weave-trail:var(--weave-accent)}
+.weave-row-trail-3{--weave-trail-mix:90%}
+.weave-row-trail-2{--weave-trail-mix:55%}
+.weave-row-trail-1{--weave-trail-mix:25%}
+.weave-row-trail-wrote.weave-row-trail-3 .weave-label{font-weight:600}
 .weave-twisty{width:16px;height:16px;flex:none;display:inline-flex;align-items:center;justify-content:center;color:var(--weave-faint);cursor:pointer}
 .weave-kind{flex:none;color:var(--weave-faint);font-size:var(--weave-px-ui)}
 .weave-prov{flex:none;font-size:var(--weave-px-prov)}
@@ -460,6 +470,24 @@ body{font-size:var(--weave-px-base)}
    border, cursor — plus a full-width flex row so the count badge lands on the
    right edge of the *column*, not of the text. */
 .weave-ctx-group{padding:2px var(--weave-gutter) 2px}
+.weave-trail{padding-top:6px;padding-bottom:6px;border-bottom:1px solid var(--weave-line)}
+.weave-trail-head{display:flex;align-items:center;gap:6px;font-size:var(--weave-px-caption);font-weight:600;letter-spacing:.09em;color:var(--weave-faint);text-transform:uppercase}
+.weave-trail-head .weave-ctx-count{margin-left:0}
+.weave-trail-replay,.weave-trail-turn{font:inherit;font-size:var(--weave-px-caption);letter-spacing:0;text-transform:none;color:var(--weave-dim);background:none;border:1px solid var(--weave-line);border-radius:var(--weave-radius);padding:0 6px;cursor:pointer}
+.weave-trail-replay{margin-left:auto}
+.weave-trail-replay:hover,.weave-trail-turn:hover{color:var(--weave-fg)}
+.weave-trail-turn-on{color:var(--weave-accent);border-color:var(--weave-accent)}
+.weave-trail-steps{margin:4px 0 0;padding:0;list-style:none;display:flex;flex-direction:column;gap:2px}
+.weave-trail-step{display:flex;flex-wrap:wrap;align-items:baseline;gap:4px;padding-left:10px;position:relative;line-height:1.45}
+.weave-trail-step::before{content:"";position:absolute;left:0;top:.55em;width:6px;height:6px;border-radius:999px;background:var(--weave-warn)}
+.weave-trail-read::before{background:var(--weave-ok)}
+.weave-trail-wrote::before{background:var(--weave-accent)}
+.weave-trail-verb{color:var(--weave-dim)}
+.weave-trail-detail{color:var(--weave-faint);font-family:var(--weave-mono);font-size:var(--weave-px-caption)}
+.weave-trail-note{font:inherit;color:var(--weave-fg);background:none;border:0;padding:0;cursor:pointer;text-decoration:underline;text-decoration-color:var(--weave-line-strong);text-underline-offset:2px}
+.weave-trail-note:hover{color:var(--weave-accent)}
+.weave-trail-empty{margin:4px 0 0;color:var(--weave-faint)}
+.weave-trail-turns{display:flex;flex-wrap:wrap;gap:4px;margin-top:6px}
 .weave-ctx-head{margin:0}
 .weave-ctx-heading{
   display:flex;align-items:center;gap:5px;width:100%;margin:0;padding:2px 0;

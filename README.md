@@ -157,6 +157,8 @@ Renaming or moving a note rewrites its inbound links automatically, so its backl
 
 Browse and search your notes, follow links, or explore the graph. Use tabs and split panes to keep related notes side by side.
 Notes update within a couple of seconds as your agent writes them.
+While your agent works, the notes it searches, reads, and writes light up in the tree and graph, and fade after about a minute.
+The **This turn** list in the Context sidebar shows those steps in order; click an earlier turn to replay it.
 
 Ask your agent to write, organize, and connect notes, or click **New note** on an empty tab to start one yourself.
 Click **Edit** to change Markdown and `⌘S` / `Ctrl S` to save. Your original words in `## Raw` stay intact.

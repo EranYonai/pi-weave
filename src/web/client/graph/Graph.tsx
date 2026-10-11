@@ -45,6 +45,7 @@ import {
 } from "./column.model";
 import type { PositionStorage } from "./positions";
 import type { GraphRenderer, RendererFactory } from "./renderer";
+import type { TrailGlow } from "./graph.model";
 import { schemeOf } from "./scheme";
 import type { SchemeHost } from "./scheme";
 import type { GraphTheme } from "../../shared/themes";
@@ -92,8 +93,11 @@ export interface GraphProps {
    * keeps the ownership where it is and costs one line at each end.
    */
   fit: { current: (() => void) | null };
-
+  /** Recall-trail glows by node id (`trail/trail.model.ts`). Omitted means none. */
+  trail?: ReadonlyMap<string, TrailGlow>;
 }
+
+const NO_GLOWS: ReadonlyMap<string, TrailGlow> = new Map();
 
 export function Graph(props: GraphProps) {
   const canvas = useRef<HTMLDivElement | null>(null);
@@ -156,6 +160,8 @@ export function Graph(props: GraphProps) {
   const preview = graphPreview(props.graph, props.previewId);
 
   // Read by the mount-time `onSelect`, which outlives this render.
+  const trailRef = useRef<ReadonlyMap<string, TrailGlow>>(NO_GLOWS);
+  trailRef.current = props.trail ?? NO_GLOWS;
   const live = useRef({ view, model, onSelect: props.onSelect, selectedId: props.selectedId });
   live.current = { view, model, onSelect: props.onSelect, selectedId: props.selectedId };
 
@@ -205,6 +211,7 @@ export function Graph(props: GraphProps) {
     // the column is already showing.
     instance.setGraph(live.current.model.graph);
     instance.setHighlight(live.current.model.highlight, live.current.selectedId);
+    instance.setTrail(trailRef.current);
     props.fit.current = () => instance.fit();
     return () => {
       instance.destroy();
@@ -251,6 +258,10 @@ export function Graph(props: GraphProps) {
   useEffect(() => {
     renderer.current?.setHighlight(model.highlight, props.selectedId);
   }, [model.highlight, props.selectedId]);
+
+  useEffect(() => {
+    renderer.current?.setTrail(trailRef.current);
+  }, [props.trail]);
 
   return (
     <div class="weave-graph">

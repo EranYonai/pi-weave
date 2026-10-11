@@ -7,6 +7,7 @@ import {
   formatDashboard,
   formatStatusLine,
   getWorkspaceStatus,
+  recallTrail,
   type WorkspaceStatus,
 } from "../core";
 import { registerNoteTool } from "./tools/noteTool";
@@ -62,7 +63,11 @@ export default function piWeave(pi: ExtensionAPI): void {
     // server was listening. The browser-launch-failure path is exactly that
     // shape, which is why it was the case that caught it.
     const port = web.port();
-    const suffix = port === null ? "" : ` · web:${port}`;
+    // The recall trail's one terminal echo: how many notes this turn
+    // actually read or wrote. Resets when the next turn begins.
+    const used = recallTrail.usedThisTurn();
+    const recall = used === 0 ? "" : ` · used ${used} note${used === 1 ? "" : "s"}`;
+    const suffix = `${recall}${port === null ? "" : ` · web:${port}`}`;
 
     // Clear only when there is genuinely nothing to say: no base text *and*
     // no server.
@@ -95,6 +100,7 @@ export default function piWeave(pi: ExtensionAPI): void {
   });
 
   pi.on("agent_start", async (_event, ctx) => {
+    recallTrail.beginTurn();
     isActive = true;
     updateStatus(ctx);
   });

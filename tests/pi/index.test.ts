@@ -1,7 +1,8 @@
 import { promises as fs } from "node:fs";
 import { join } from "node:path";
-import { describe, expect, it } from "vitest";
+import { beforeEach, describe, expect, it } from "vitest";
 import { fauxAssistantMessage } from "@earendil-works/pi-ai";
+import { recallTrail } from "../../src/core";
 import piWeave, { deepScanDone } from "../../src/pi/index";
 import { commitAll, createMockCtx, createMockPi, gitExec, gitInit, makeTempDir, withVaultEnv, writeFixture } from "../helpers";
 
@@ -19,6 +20,10 @@ async function makeRepo(): Promise<string> {
   commitAll(dir, "initial");
   return dir;
 }
+
+// The recall trail is process-wide; a turn left open by one test must not
+// leak its "used N notes" echo into the next one.
+beforeEach(() => recallTrail.clear());
 
 describe("extension registration", () => {
   it("registers both tools and both commands", () => {
@@ -77,7 +82,7 @@ describe("session_start", () => {
       await mock.emit("agent_start", {}, ctx);
       await mock.runTool("weave_note", { action: "add", title: "Fresh", text: "x" }, ctx);
       await mock.emit("agent_end", {}, ctx);
-      expect(ctx.ui.statuses.weave).toBe("○ 🕸️ 1 note");
+      expect(ctx.ui.statuses.weave).toBe("○ 🕸️ 1 note · used 1 note");
     });
   });
 
@@ -100,6 +105,29 @@ describe("session_start", () => {
       expect(ctx.ui.statuses.weave).toContain("deep scan");
       release!();
       await deepScanDone(repo);
+    });
+  });
+
+  it("echoes how many notes the turn used, and resets on the next turn", async () => {
+    const mock = buildExtension();
+    const cwd = await makeTempDir();
+    const vault = await makeTempDir();
+    await withVaultEnv(vault, async () => {
+      const ctx = createMockCtx(cwd);
+      await mock.emit("session_start", {}, ctx);
+      await mock.emit("agent_start", {}, ctx);
+      const tool = mock.tools.get("weave_note")! as unknown as { execute: (id: string, params: unknown) => Promise<unknown> };
+      await tool.execute("1", { action: "add", title: "Alpha", text: "a" });
+      await tool.execute("2", { action: "get", slug: "alpha" });
+      await mock.emit("agent_end", {}, ctx);
+      expect(ctx.ui.statuses.weave).toBe("○ 🕸️ 1 note · used 1 note");
+      await mock.emit("agent_start", {}, ctx);
+      await tool.execute("3", { action: "add", title: "Beta", text: "b" });
+      await tool.execute("4", { action: "append", slug: "alpha", text: "more" });
+      await mock.emit("agent_end", {}, ctx);
+      expect(ctx.ui.statuses.weave).toBe("○ 🕸️ 2 notes · used 2 notes");
+      await mock.emit("agent_start", {}, ctx);
+      expect(ctx.ui.statuses.weave).toBe("● 🕸️ 2 notes");
     });
   });
 

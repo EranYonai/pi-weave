@@ -6,6 +6,7 @@
  * | GET    | `/`                      | the HTML shell, with its per-response nonce  |
  * | GET    | `/app.js`                | the committed bundle, `Cache-Control: no-store` |
  * | GET    | `/api/graph`             | {@link GraphPayload}, ETag'd on `stamp`      |
+ * | GET    | `/api/trail`             | {@link TrailPayload}, ETag'd on `stamp`      |
  * | GET    | `/api/note/:slug`        | {@link NotePayload}                          |
  * | POST   | `/api/note/:slug`        | save a note's Markdown body                  |
  * | POST   | `/api/notes`            | create an empty human-authored vault note    |
@@ -52,6 +53,7 @@ import { createReadStream } from "node:fs";
 import { pipeline } from "node:stream/promises";
 import { createVaultBackup } from "./backup";
 import { readFile } from "node:fs/promises";
+import { resolve as resolvePath } from "node:path";
 import type { IncomingMessage, ServerResponse } from "node:http";
 import type { WorkspaceSnapshot } from "../../core/cache/workspace";
 import { WorkspaceCache } from "../../core/cache/workspace";
@@ -59,6 +61,7 @@ import { readOkfFileForView } from "../../core/graph/current";
 import type { GraphModel as CoreGraphModel } from "../../core/graph/model";
 import { historyEnabled, setHistoryEnabled } from "../../core/history";
 import { openNoteInEditor } from "../../core/openInEditor";
+import { recallTrail, type RecallTrail } from "../../core/trail";
 import type { Note } from "../../core/types";
 import type { VaultMutationResult } from "../../core/vault";
 import { addNote, createFolder, deleteFolder, deleteNote, getNote, moveNote, renameFolder, readNoteHistory, renameNote, resolveHtmlPath, searchNotes, setNoteBody } from "../../core/vault";
@@ -71,6 +74,7 @@ import type {
   OkfFilePayload,
   OpenResult,
   SearchPayload,
+  TrailPayload,
   ViewNote,
 } from "../shared/wire";
 import { WIRE_MODEL_OMITTED_KEYS } from "../shared/wire";
@@ -91,6 +95,8 @@ export interface RouteDeps {
   /** Test seam for `POST /api/open`; defaults to the real editor shell-out. */
   openNote?: ((slug: string) => Promise<boolean>) | undefined;
   workspaceState: WorkspaceStateStore;
+  /** The recall trail to serve. Defaults to the process-wide one the tools write. */
+  trail?: RecallTrail | undefined;
 }
 
 const JSON_TYPE = "application/json; charset=utf-8";
@@ -389,6 +395,7 @@ async function route(
   if (method === "GET" && path === "/") return sendShell(deps, res);
   if (method === "GET" && path === "/app.js") return sendBundle(deps, res);
   if (method === "GET" && path === "/api/graph") return sendGraph(deps, req, res);
+  if (method === "GET" && path === "/api/trail") return sendTrail(deps, req, res);
   if (method === "GET" && path === "/api/backup") {
     const backup = await createVaultBackup(deps.vaultRoot);
     try {
@@ -564,6 +571,29 @@ async function sendGraph(deps: RouteDeps, req: IncomingMessage, res: ServerRespo
     "cache-control": "no-cache",
   });
   res.end(body);
+}
+
+/**
+ * `GET /api/trail`. The trail is process-wide, so it is filtered to this
+ * server's vault; the stamp is the buffer's own, which moves on every record.
+ */
+function sendTrail(deps: RouteDeps, req: IncomingMessage, res: ServerResponse): void {
+  const snapshot = (deps.trail ?? recallTrail).snapshot();
+  const etag = `"${snapshot.stamp}"`;
+  const conditional = req.headers["if-none-match"];
+  if (matchesEtag(etag, typeof conditional === "string" ? conditional : undefined)) {
+    res.writeHead(304, { ...baseHeaders(), etag, "cache-control": "no-cache" });
+    res.end();
+    return;
+  }
+  const payload: TrailPayload = {
+    stamp: snapshot.stamp,
+    turn: snapshot.turn,
+    events: snapshot.events
+      .filter((event) => resolvePath(event.vault) === resolvePath(deps.vaultRoot))
+      .map(({ vault: _vault, ...event }) => event),
+  };
+  sendJson(res, 200, payload, { etag, "cache-control": "no-cache" });
 }
 
 /**
