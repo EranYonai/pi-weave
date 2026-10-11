@@ -513,7 +513,8 @@ export interface ViewBox {
  * session: the node stays under the cursor, the canvas bounds the drag, and
  * `[fit]` re-frames onto whatever the current positions are.
  *
- * Use the position extent, with a minimum span of four collision radii.
+ * Use the position extent padded by the largest node size, so no circle
+ * at the edge is cut off, with a minimum span of four collision radii.
  * A single node (or coincident nodes) has no extent; Sigma scales layout-unit
  * node sizes by that span, so a near-zero box magnifies one node across the
  * canvas. Pixel-based `stagePadding` cannot prevent that.
@@ -536,7 +537,9 @@ export function frameBox(points: readonly Point[]): ViewBox | null {
     if (p.y > maxY) maxY = p.y;
   }
   if (seen === 0) return null;
-  const padding = Math.max(0, (COLLIDE_RADIUS * 4 - Math.max(maxX - minX, maxY - minY)) / 2);
+  // The extent is of node *centres*; the circles reach past it by up to a
+  // full node size, which clipped the outermost nodes on a small graph.
+  const padding = Math.max(MAX_NODE_SIZE, (COLLIDE_RADIUS * 4 - Math.max(maxX - minX, maxY - minY)) / 2);
   return { x: [minX - padding, maxX + padding], y: [minY - padding, maxY + padding] };
 }
 

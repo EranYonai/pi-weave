@@ -779,13 +779,14 @@ describe("frameBox — the frozen view box", () => {
     expect((box.y[0] + box.y[1]) / 2).toBe(20);
   });
 
-  it("keeps the exact extent when positions already span enough room", () => {
+  it("pads the extent by the largest node so edge circles are not clipped", () => {
     const box = frameBox([
       { x: -100, y: 50 },
       { x: 300, y: -20 },
       { x: 70, y: 90 },
     ]);
-    expect(box).toEqual({ x: [-100, 300], y: [-20, 90] });
+    const m = MAX_NODE_SIZE;
+    expect(box).toEqual({ x: [-100 - m, 300 + m], y: [-20 - m, 90 + m] });
   });
 
   it("is null for no finite positions", () => {
@@ -801,7 +802,8 @@ describe("frameBox — the frozen view box", () => {
       { x: Number.NaN, y: 4 },
       { x: 500, y: -300 },
     ]);
-    expect(box).toEqual({ x: [100, 500], y: [-300, 100] });
+    const m = MAX_NODE_SIZE;
+    expect(box).toEqual({ x: [100 - m, 500 + m], y: [-300 - m, 100 + m] });
   });
 });
 
