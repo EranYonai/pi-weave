@@ -104,7 +104,15 @@ export default function piWeave(pi: ExtensionAPI): void {
 
   pi.on("agent_end", async (_event, ctx) => {
     isActive = false;
-    updateStatus(ctx);
+    // The agent may have written notes this turn, so recount them — unless a
+    // background scan owns the status line with its progress, or no session
+    // ever seeded a status line to recount.
+    const cwd = ctx?.cwd ?? lastCtx?.cwd;
+    if (cwd && lastStatusText !== undefined && inFlightDeepScans.size === 0 && inFlightSessionScans.size === 0) {
+      updateStatus(ctx, formatStatusLine(await getWorkspaceStatus(cwd)));
+    } else {
+      updateStatus(ctx);
+    }
   });
 
   pi.on("session_start", async (_event, ctx) => {

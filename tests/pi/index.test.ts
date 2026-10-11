@@ -68,6 +68,41 @@ describe("session_start", () => {
     });
   });
 
+  it("recounts notes the agent wrote when its turn ends", async () => {
+    const mock = buildExtension();
+    const cwd = await makeTempDir();
+    await withVaultEnv(await makeTempDir(), async () => {
+      const ctx = createMockCtx(cwd);
+      await mock.emit("session_start", {}, ctx);
+      await mock.emit("agent_start", {}, ctx);
+      await mock.runTool("weave_note", { action: "add", title: "Fresh", text: "x" }, ctx);
+      await mock.emit("agent_end", {}, ctx);
+      expect(ctx.ui.statuses.weave).toBe("○ 🕸️ 1 note");
+    });
+  });
+
+  it("leaves a running scan's progress on the status line when a turn ends", async () => {
+    const mock = buildExtension();
+    const repo = await makeRepo();
+    await withVaultEnv(await makeTempDir(), async () => {
+      let release: () => void;
+      const held = new Promise<void>((resolve) => { release = resolve; });
+      const ctx = createMockCtx(repo, true, {
+        model: { provider: "p", id: "m" },
+        complete: async () => {
+          await held;
+          return fauxAssistantMessage("s");
+        },
+      });
+      await mock.emit("session_start", {}, ctx);
+      await mock.commands.get("weave-scan")!.handler("", ctx);
+      await mock.emit("agent_end", {}, ctx);
+      expect(ctx.ui.statuses.weave).toContain("deep scan");
+      release!();
+      await deepScanDone(repo);
+    });
+  });
+
   it("handles ctx without theme or when theme property access throws", async () => {
     const mock = buildExtension();
     const cwd = await makeTempDir();
