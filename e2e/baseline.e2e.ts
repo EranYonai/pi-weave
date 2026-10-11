@@ -96,6 +96,18 @@ describe("baseline: pi + pi-weave + /weave-view", () => {
     await pi.waitFor(/web:\d+/, { label: "web marker in status line" });
   });
 
+  it("/weave-view tui explains the explorer was retired", async () => {
+    await pi.submit("/weave-view tui");
+    await pi.waitFor("the terminal explorer was retired", { label: "retired-explorer warning" });
+    // Nothing took over the terminal, and the running workspace is still advertised.
+    await pi.waitFor(/web:\d+/, { label: "web marker still in status line" });
+  });
+
+  it("/weave-view with a bad argument prints the usage", async () => {
+    await pi.submit("/weave-view nope");
+    await pi.waitFor("usage: /weave-view [--no-open]", { label: "usage line" });
+  });
+
   it("the workspace loads and lists the note", async () => {
     page = await browser.newPage({ viewport: { width: 1400, height: 900 } });
     page.setDefaultTimeout(10_000);
