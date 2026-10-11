@@ -845,6 +845,9 @@ export const DONE_LABEL = "Done";
 export const SAVE_LABEL = "Save";
 export const SAVING_LABEL = "Saving…";
 export const EDITOR_ARIA_LABEL = "Note body";
+export const EDITOR_PLACEHOLDER = "Start writing…";
+/** Names the read-only `## Raw` tail shown beneath the editor. */
+export const RAW_TAIL_ARIA_LABEL = "Raw notes, read-only";
 export const DISCARD_PROMPT = "Discard unsaved changes to this note?";
 
 /** The note header: title, provenance badge, relative time, tags. */

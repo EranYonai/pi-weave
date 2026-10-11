@@ -62,6 +62,12 @@ export interface KeyDescriptor {
   readonly alt: boolean;
   /** Focus is in an `<input>`, `<textarea>`, `<select>` or contenteditable. */
   readonly typing: boolean;
+  /**
+   * Focus is in the tree or the graph — the columns that *make* a selection,
+   * and so the only places `Esc` may clear one. Read from a note, the same
+   * key used to close the note you were reading.
+   */
+  readonly navigating: boolean;
 }
 
 /** What the shell knows that changes what a key means. */
@@ -172,11 +178,12 @@ export function shellKey(event: KeyDescriptor, ctx: KeyContext): ShellAction | n
     return column === undefined ? null : { type: "focusColumn", column };
   }
 
-  // Only claimed when there is a selection to clear. With nothing selected,
-  // `Esc` belongs to whatever else the browser or a future dialog wants it
-  // for, and swallowing it silently would be the kind of key theft this
-  // module exists to avoid.
-  if (event.key === "Escape") return ctx.hasSelection ? { type: "clearSelection" } : null;
+  // Only claimed when there is a selection to clear, and only from the tree
+  // or the graph. With nothing selected, `Esc` belongs to whatever else the
+  // browser or a future dialog wants it for, and swallowing it silently would
+  // be the kind of key theft this module exists to avoid. From the note
+  // column it would close the note being read, which nobody means by it.
+  if (event.key === "Escape") return ctx.hasSelection && event.navigating ? { type: "clearSelection" } : null;
 
   if (!isBare(event) || event.typing) return null;
   return BARE_KEYS[event.key] ?? null;
@@ -216,7 +223,12 @@ export function isTextEntry(tagName: string | null, contentEditable: boolean): b
 export interface KeyTarget {
   readonly tagName?: string | undefined;
   readonly isContentEditable?: boolean | undefined;
+  /** `Element.closest`; absent on `window` and `document`. */
+  closest?(selector: string): unknown;
 }
+
+/** The tree and graph columns, where {@link KeyDescriptor.navigating} holds. */
+export const NAVIGATING_SELECTOR = ".weave-sidebar-notes, .weave-graph-host";
 
 /**
  * The slice of `KeyboardEvent` the subscription reads.
@@ -246,6 +258,7 @@ export function describeKey(event: KeyboardEventLike): KeyDescriptor {
     shift: event.shiftKey,
     alt: event.altKey,
     typing: isTextEntry(event.target?.tagName ?? null, event.target?.isContentEditable === true),
+    navigating: (event.target?.closest?.(NAVIGATING_SELECTOR) ?? null) !== null,
   };
 }
 
@@ -395,7 +408,7 @@ export function keyHelp(cmd: string): readonly KeyHelpGroup[] {
         })),
         { combo: "?", what: "This help" },
         { combo: "t", what: "Switch between selected light and dark themes" },
-        { combo: "Esc", what: "Clear the selection, or close an overlay" },
+        { combo: "Esc", what: "Clear the selection from the tree or graph, or close an overlay" },
       ],
     },
     {

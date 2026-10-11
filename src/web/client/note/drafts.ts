@@ -1,8 +1,16 @@
+import { joinRawTail, splitRawTail } from "../../shared/view";
 import { tabSelection, type WorkspaceLayout } from "../../shared/workspace";
 
+/**
+ * An open editor. `body` is only the part above the `## Raw` tail: the tail
+ * is append-only, so it is kept aside as `tail`, shown read-only, and joined
+ * back on save. Typing below it used to be silently dropped by the server.
+ */
 export interface NoteDraft {
   body: string;
   baseline: string;
+  /** The verbatim `## Raw` tail as it was when the editor opened; "" when none. */
+  tail: string;
   saving: boolean;
 }
 
@@ -16,6 +24,7 @@ interface TaskSource {
 export interface DraftStore {
   get(slug: string): Readonly<NoteDraft> | null;
   subscribe(listener: () => void): () => void;
+  /** Open an editor on a full note body; the `## Raw` tail is split off. */
   open(slug: string, body: string): void;
   edit(slug: string, body: string): void;
   discard(slug: string): void;
@@ -45,7 +54,8 @@ export function createDraftStore(): DraftStore {
     },
     open(slug, body) {
       if (drafts.has(slug)) return;
-      drafts.set(slug, { body, baseline: body, saving: false });
+      const { head, tail } = splitRawTail(body);
+      drafts.set(slug, { body: head, baseline: head, tail, saving: false });
       notify();
     },
     edit(slug, body) {
@@ -68,17 +78,20 @@ export function createDraftStore(): DraftStore {
       const draft = drafts.get(slug);
       if (draft === undefined || draft.saving || taskSources.get(slug)?.saving) return;
       const sent = draft.body;
+      // The server keeps the on-disk tail whatever arrives; sending it anyway
+      // keeps the optimistic task body below whole until the next load.
+      const full = joinRawTail(sent, draft.tail);
       draft.saving = true;
       notify();
       let ok = false;
       try {
-        ok = await onSave(slug, sent);
+        ok = await onSave(slug, full);
       } finally {
         // Discard/reopen during an in-flight request gives the new draft a new identity.
         if (drafts.get(slug) === draft) {
           const source = taskSources.get(slug);
           if (ok && source !== undefined) {
-            source.body = sent;
+            source.body = full;
             source.version = ++loadVersion;
             delete source.pending;
           }

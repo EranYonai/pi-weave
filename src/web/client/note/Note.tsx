@@ -49,6 +49,7 @@ import {
   EDIT_LABEL,
   EDITED_WORD,
   EDITOR_ARIA_LABEL,
+  EDITOR_PLACEHOLDER,
   EMPTY_PREVIEW,
   SAVE_LABEL,
   SAVING_LABEL,
@@ -60,6 +61,7 @@ import {
   previewAnchorOf,
   previewCard,
   previewPlacement,
+  RAW_TAIL_ARIA_LABEL,
   reducePreview,
   renderNote,
   selectedArtifactPath,
@@ -201,7 +203,20 @@ export function Note(props: NoteProps) {
   const dispatch = (event: PreviewEvent): void => void sendPreview((state) => reducePreview(state, event));
   const bodyRef = useRef<HTMLDivElement | null>(null);
   const cardRef = useRef<HTMLDivElement | null>(null);
+  const editorRef = useRef<HTMLTextAreaElement | null>(null);
+  // Set by the gesture that opened the editor *in this column*, consumed by
+  // the layout effect below once the textarea exists. A flag rather than
+  // "focus whenever a draft appears": the same note open in a second pane
+  // shares the draft, and must not take the cursor away from this one.
+  const focusEditor = useRef(false);
   const draft = note === null ? null : drafts.get(note.slug);
+  // The read-only `## Raw` tail beneath the editor. Same pipeline as the
+  // body, so wikilinks and fenced dictation look exactly as they do in read
+  // mode.
+  const tailHtml = useMemo(
+    () => (draft === null || draft.tail === "" || index === null ? "" : renderNote(DOMPurify, draft.tail, index)),
+    [draft?.tail, index],
+  );
   const taskSaving = note !== null && drafts.isTaskSaving(note.slug);
   const save = async (): Promise<void> => {
     if (note !== null && !drafts.isTaskSaving(note.slug)) await drafts.save(note.slug, props.onSave);
@@ -239,16 +254,30 @@ export function Note(props: NoteProps) {
   useEffect(() => {
     if (note !== null && defaultOpened.current !== note.slug) {
       defaultOpened.current = note.slug;
-      if (props.defaultEdit && drafts.get(note.slug) === null) drafts.open(note.slug, body);
+      if (props.defaultEdit && drafts.get(note.slug) === null) {
+        focusEditor.current = true;
+        drafts.open(note.slug, body);
+      }
     }
   }, [note?.slug, props.defaultEdit]);
 
   const toggleEdit = (): void => {
     if (note === null || drafts.isTaskSaving(note.slug)) return;
-    if (drafts.get(note.slug) === null) drafts.open(note.slug, body);
-    else if (!drafts.isDirty(note.slug) || window.confirm(DISCARD_PROMPT)) drafts.discard(note.slug);
+    if (drafts.get(note.slug) === null) {
+      focusEditor.current = true;
+      drafts.open(note.slug, body);
+    } else if (!drafts.isDirty(note.slug) || window.confirm(DISCARD_PROMPT)) drafts.discard(note.slug);
   };
   const card = preview.anchor === null ? null : previewCard(props.graph, preview.anchor);
+
+  // Cursor in the textarea, after the last word, the moment it appears.
+  useLayoutEffect(() => {
+    const editor = editorRef.current;
+    if (editor === null || !focusEditor.current) return;
+    focusEditor.current = false;
+    editor.focus();
+    editor.setSelectionRange(editor.value.length, editor.value.length);
+  }, [draft !== null]);
 
   useLayoutEffect(() => {
     if (note !== null) drafts.taskBody(note.slug, note.body, props.loadVersion);
@@ -350,9 +379,12 @@ export function Note(props: NoteProps) {
         onSave={() => void save()}
       />
       {draft !== null ? (
+        <>
         <textarea
+          ref={editorRef}
           class="weave-note-editor"
           aria-label={EDITOR_ARIA_LABEL}
+          placeholder={EDITOR_PLACEHOLDER}
           spellcheck={props.spellcheck ?? true}
           value={draft.body}
           onInput={(event) => drafts.edit(note.slug, (event.target as HTMLTextAreaElement).value)}
@@ -369,6 +401,12 @@ export function Note(props: NoteProps) {
             void save();
           }}
         />
+        {/* Append-only, so never in the textarea: anything typed there used
+            to be dropped on save without a word. Sanitised by `renderNote`. */}
+        {tailHtml === "" ? null : (
+          <section class="weave-note-body weave-note-raw" aria-label={RAW_TAIL_ARIA_LABEL} dangerouslySetInnerHTML={{ __html: tailHtml }} />
+        )}
+        </>
       ) : (
       <div
           ref={bodyRef}

@@ -100,6 +100,10 @@ export function Graph(props: GraphProps) {
   const renderer = useRef<GraphRenderer | null>(null);
   const dynamics = useRef<GraphSimulation | null>(null);
   const clock = useRef<number | null>(null);
+  // Whether the camera has been fitted to the first settled layout. The
+  // mount frames the *starting* positions, which a settling simulation then
+  // pushes past the edges — a two-note vault opened with clipped circles.
+  const fitted = useRef(false);
   /**
    * Arm the simulation clock — idempotent.
    *
@@ -116,7 +120,13 @@ export function Graph(props: GraphProps) {
       if (engine === null) return;
       engine.tick();
       // Asleep: let the clock die. The next pin re-arms it.
-      if (!engine.awake()) return;
+      if (!engine.awake()) {
+        if (!fitted.current) {
+          fitted.current = true;
+          renderer.current?.fit();
+        }
+        return;
+      }
       renderer.current?.setPositions(engine.positions());
       clock.current = requestAnimationFrame(step);
     };

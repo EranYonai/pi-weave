@@ -91,6 +91,7 @@ export const NODE_FREE_CORE_MODULES: ReadonlySet<string> = new Set([
   "src/core/view/detail.ts",
   "src/core/view/focus.ts",
   "src/core/view/links.ts",
+  "src/core/view/rawTail.ts",
   "src/core/view/time.ts",
   "src/core/view/tree.ts",
   "src/core/view/types.ts",

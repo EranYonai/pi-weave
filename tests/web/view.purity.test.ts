@@ -69,6 +69,7 @@ import {
 // core: this is a Node-side test, not client-reachable code.
 import * as door from "../../src/web/shared/view";
 import * as coreCluster from "../../src/core/view/cluster";
+import * as coreRawTail from "../../src/core/view/rawTail";
 import * as coreDetail from "../../src/core/view/detail";
 import * as coreFocus from "../../src/core/view/focus";
 import * as coreLinks from "../../src/core/view/links";
@@ -138,6 +139,10 @@ describe("src/web/shared/view.ts opens a node-free closure (weave-workspace §2.
       ["focusNeighborhood", door.focusNeighborhood, coreFocus.focusNeighborhood],
       ["degreeOf", door.degreeOf, coreFocus.degreeOf],
       ["clusterAggregate", door.clusterAggregate, coreCluster.clusterAggregate],
+      // The note editor splits off the `## Raw` tail with the function the
+      // vault keeps it with, so the two cannot disagree about where it starts.
+      ["splitRawTail", door.splitRawTail, coreRawTail.splitRawTail],
+      ["joinRawTail", door.joinRawTail, coreRawTail.joinRawTail],
     ];
     for (const [name, viaDoor, viaCore] of bindings) {
       expect(typeof viaDoor, name).toBe("function");
