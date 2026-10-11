@@ -113,7 +113,7 @@ You: Start a note for this interview. I’m going to narrate; keep my words
 
 For each chunk, the agent:
 
-1. appends your words unchanged to the note’s `## Raw` tail;
+1. appends your words unchanged to the note’s `## Raw` tail, starting with the very first chunk;
 2. refreshes the structured summary above it;
 3. leaves the raw record untouched.
 

@@ -8,7 +8,7 @@ const noteInput = {
     text: { type: "string", description: "Markdown body (add), addition (append), or restructured body (finalize)" },
     tags: { type: "array", items: { type: "string" }, description: "Tags (add)" },
     slug: { type: "string", description: "Note slug (get, append, finalize)" },
-    raw: { type: "boolean", description: "append: preserve text verbatim in the ## Raw tail" },
+    raw: { type: "boolean", description: "add/append: preserve text verbatim in the ## Raw tail (use for the user's own words)" },
     source: { type: "string", enum: ["human", "agent"], description: "Provenance (add; defaults to agent)" },
     query: { type: "string", description: "Search query (search)" },
     fix: { type: "boolean", description: "links: apply unambiguous repairs" },

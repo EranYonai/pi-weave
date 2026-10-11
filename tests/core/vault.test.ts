@@ -67,6 +67,28 @@ describe("addNote / getNote", () => {
     expect(back?.created).toBe("2026-08-22T10:00:00.000Z");
   });
 
+  it("raw: true starts the note with its text as the first raw block", async () => {
+    const note = await addNote(vault, {
+      title: "Dictation",
+      body: "opening words",
+      source: "human",
+      raw: true,
+      now: new Date(2026, 7, 23, 8, 45, 0),
+    });
+    expect(note.body).toBe(
+      "---\n\n## Raw\n" + RAW_TAIL_NOTICE + "\n\n<!-- appended 2026-08-23 08:45 -->\n```\nopening words\n```",
+    );
+    expect(extractRawTail(note.body)).not.toBe("");
+    const finalized = await finalizeNote(vault, note.slug, { body: "**TLDR:** structured" });
+    expect(finalized?.body.startsWith("**TLDR:** structured")).toBe(true);
+    expect(extractRawTail(finalized!.body)).toBe(extractRawTail(note.body));
+  });
+
+  it("raw: true with an empty body creates no tail", async () => {
+    const note = await addNote(vault, { title: "Blank", body: "  ", raw: true });
+    expect(note.body).not.toContain("## Raw");
+  });
+
   it("defaults tags and source", async () => {
     const note = await addNote(vault, { title: "Plain", body: "b" });
     expect(note.tags).toEqual([]);
