@@ -223,6 +223,8 @@ export async function executeNoteAction(
           ...(params.tags ? { tags: params.tags } : {}),
           ...(params.source ? { source: params.source } : {}),
           ...(params.raw ? { raw: true, now: now() } : {}),
+          // The agent wrote the file even when the words are the user's.
+          by: "agent",
         }),
       );
       return {

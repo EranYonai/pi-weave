@@ -165,6 +165,8 @@ unsaved drafts last only while the browser stays open.
 
 Use **Settings** for themes, fonts, layout, and a manual vault ZIP backup. Press `?` for keyboard shortcuts.
 
+Every change to a note is saved to `<vault>/history/`, whether you, your agent, or another editor made it. Press **History** on a note and drag the slider (or press play) to watch it being written, Raw tail included. Turn this off in **Settings → Editor → Note history**.
+
 ## Remember sessions
 
 ```bash

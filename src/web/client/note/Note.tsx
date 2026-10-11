@@ -40,7 +40,7 @@
 
 import DOMPurify from "dompurify";
 import { useEffect, useId, useLayoutEffect, useMemo, useRef, useState } from "preact/hooks";
-import type { GraphPayload, NotePayload } from "../../shared/wire";
+import type { GraphPayload, HistoryPayload, NotePayload } from "../../shared/wire";
 import {
   CREATED_WORD,
   artifactKeyOfNode,
@@ -75,6 +75,9 @@ import {
 import type { NoteHeaderView, PreviewElement, PreviewEvent } from "./note.model";
 import { createDraftStore } from "./drafts";
 import type { DraftStore } from "./drafts";
+import { ReplayBar, wrapMarks } from "./Replay";
+import type { ReplayState } from "./Replay";
+import { HISTORY_CLOSE_LABEL, HISTORY_LABEL, PLAY_INTERVAL_MS, nextStep, replayStep } from "./replay.model";
 
 /**
  * The custom properties the preview card is placed with, written by the
@@ -100,6 +103,11 @@ export interface NoteProps {
    * error-reporting gesture the client has.
    */
   onSave: (slug: string, body: string) => Promise<boolean>;
+  /**
+   * Load the note's saved revisions for the history slider. The History
+   * control is shown only when this is provided.
+   */
+  onHistory?: (slug: string) => Promise<{ ok: true; data: HistoryPayload } | { ok: false; message: string }>;
   /** Shared across Note instances so duplicate tabs edit one in-memory body. */
   drafts?: DraftStore;
   /** Stable per view; distinct when the same note is mounted more than once. */
@@ -126,6 +134,8 @@ function Header({
   taskSaving,
   onToggle,
   onSave,
+  replaying,
+  onHistory,
 }: {
   view: NoteHeaderView;
   open: () => void;
@@ -134,6 +144,8 @@ function Header({
   taskSaving: boolean;
   onToggle: () => void;
   onSave: () => void;
+  replaying: boolean;
+  onHistory: (() => void) | null;
 }) {
   return (
     <header class="weave-note-head">
@@ -146,7 +158,12 @@ function Header({
             </button>
             <button type="button" class="weave-note-edit" disabled={taskSaving} onClick={onToggle}>{DONE_LABEL}</button>
           </>
-        ) : <button type="button" class="weave-note-edit" disabled={taskSaving} onClick={onToggle}>{EDIT_LABEL}</button>}
+        ) : replaying ? null : <button type="button" class="weave-note-edit" disabled={taskSaving} onClick={onToggle}>{EDIT_LABEL}</button>}
+        {editing || onHistory === null ? null : (
+          <button type="button" class="weave-note-edit weave-note-history" aria-pressed={replaying} onClick={onHistory}>
+            {replaying ? HISTORY_CLOSE_LABEL : HISTORY_LABEL}
+          </button>
+        )}
         <button type="button" class="weave-note-open" title="Open in $EDITOR" aria-label="Open in $EDITOR" onClick={open}>
           <span class="weave-note-open-mark" aria-hidden="true">↗</span>
         </button>
@@ -279,6 +296,54 @@ export function Note(props: NoteProps) {
     editor.setSelectionRange(editor.value.length, editor.value.length);
   }, [draft !== null]);
 
+  // The history slider. Held per column, like the preview card: it is a view
+  // of the note on screen, and closes when the note changes.
+  const [replay, setReplay] = useState<ReplayState | null>(null);
+  const replaySlug = useRef<string | null>(null);
+  const loadHistory = props.onHistory;
+  const toggleHistory = (): void => {
+    if (note === null || loadHistory === undefined) return;
+    if (replay !== null) {
+      replaySlug.current = null;
+      setReplay(null);
+      return;
+    }
+    const slug = note.slug;
+    replaySlug.current = slug;
+    setReplay({ revisions: null, enabled: true, index: 0, playing: false, error: null });
+    void loadHistory(slug).then((result) => {
+      if (replaySlug.current !== slug) return;
+      setReplay(result.ok
+        ? { revisions: result.data.revisions, enabled: result.data.enabled, index: Math.max(0, result.data.revisions.length - 1), playing: false, error: null }
+        : { revisions: null, enabled: true, index: 0, playing: false, error: `Could not load history: ${result.message}` });
+    });
+  };
+  const step = replay?.revisions == null ? null : replayStep(replay.revisions, replay.index);
+  const replayHtml = useMemo(
+    () => (step === null || index === null ? null : renderNote(DOMPurify, step.marked, index)),
+    [step?.marked, index],
+  );
+  useLayoutEffect(() => {
+    replaySlug.current = null;
+    setReplay(null);
+  }, [note === null ? null : note.slug]);
+  useLayoutEffect(() => {
+    if (replayHtml === null || bodyRef.current === null) return;
+    wrapMarks(bodyRef.current)?.scrollIntoView?.({ block: "nearest" });
+  }, [replayHtml]);
+  useEffect(() => {
+    if (replay === null || !replay.playing || replay.revisions === null) return;
+    const count = replay.revisions.length;
+    const timer = window.setTimeout(() => {
+      setReplay((state) => {
+        if (state === null) return state;
+        const next = nextStep(state.index, count);
+        return next === null ? { ...state, playing: false } : { ...state, index: next };
+      });
+    }, PLAY_INTERVAL_MS);
+    return () => window.clearTimeout(timer);
+  }, [replay]);
+
   useLayoutEffect(() => {
     if (note !== null) drafts.taskBody(note.slug, note.body, props.loadVersion);
   }, [drafts, note === null ? null : note.slug, note?.body, props.loadVersion]);
@@ -377,7 +442,22 @@ export function Note(props: NoteProps) {
         taskSaving={taskSaving}
         onToggle={toggleEdit}
         onSave={() => void save()}
+        replaying={replay !== null}
+        onHistory={loadHistory === undefined ? null : toggleHistory}
       />
+      {replay === null ? null : (
+        <ReplayBar
+          state={replay}
+          onIndex={(value) => setReplay((state) => state === null ? state : { ...state, index: value, playing: false })}
+          onPlay={() => setReplay((state) => {
+            if (state === null || state.revisions === null) return state;
+            if (state.playing) return { ...state, playing: false };
+            // Playing from the end starts over: that is what "watch it being written" means.
+            const restart = state.index >= state.revisions.length - 1;
+            return { ...state, index: restart ? 0 : state.index, playing: true };
+          })}
+        />
+      )}
       {draft !== null ? (
         <>
         <textarea
@@ -441,6 +521,11 @@ export function Note(props: NoteProps) {
           onClick={(event) => {
             const checkbox = event.target as HTMLInputElement;
             const taskIndex = taskCheckboxIndexOf(checkbox);
+            // A past version is read-only: its checkboxes must not write to the note.
+            if (taskIndex !== null && replayHtml !== null) {
+              event.preventDefault();
+              return;
+            }
             if (taskIndex !== null) {
               void saveTask(checkbox, taskIndex);
               return;
@@ -472,7 +557,7 @@ export function Note(props: NoteProps) {
             props.onSelect(target, event.metaKey || event.ctrlKey || event.shiftKey);
           }}
           // Sanitised by `renderNote`'s three layers — see note.model.ts.
-          dangerouslySetInnerHTML={{ __html: html }}
+          dangerouslySetInnerHTML={{ __html: replayHtml ?? html }}
         />
       )}
       {card === null ? null : (

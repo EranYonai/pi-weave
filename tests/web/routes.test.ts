@@ -45,7 +45,7 @@ import {
   type StartWorkspaceServerOptions,
   type WorkspaceServer,
 } from "../../src/web/server/server";
-import type { GraphPayload, NotePayload, OkfFilePayload, SearchPayload } from "../../src/web/shared/wire";
+import type { GraphPayload, HistoryPayload, NotePayload, OkfFilePayload, SearchPayload } from "../../src/web/shared/wire";
 import { WIRE_MODEL_OMITTED_KEYS } from "../../src/web/shared/wire";
 import { commitAll, gitInit, makeTempDir, withVaultEnv, writeFixture } from "../helpers";
 
@@ -1399,3 +1399,43 @@ async function rawSocket(port: number, request: string): Promise<string> {
     socket.on("error", reject);
   });
 }
+
+describe("note history", () => {
+  it("serves a note's revisions, ending on what the note says now", async () => {
+    const { server, vaultRoot } = await bootFresh();
+    expect((await post(server, "/api/note/alpha-note", { body: "first edit" })).status).toBe(200);
+    expect((await post(server, "/api/note/alpha-note", { body: "second edit" })).status).toBe(200);
+    const res = await get(server, "/api/history/alpha-note");
+    expect(res.status).toBe(200);
+    expect(res.headers.get("cache-control")).toBe("no-store");
+    const payload = await res.json() as HistoryPayload;
+    expect(payload.slug).toBe("alpha-note");
+    expect(payload.enabled).toBe(true);
+    expect(payload.revisions.map((r) => [r.by, r.op, r.body])).toEqual([
+      ["human", "create", "the body of alpha"],
+      ["human", "edit", "first edit"],
+      ["human", "edit", "second edit"],
+    ]);
+
+    // An edit made in another editor shows up as the last step.
+    const file = join(vaultRoot, "notes", "alpha-note.md");
+    await fs.writeFile(file, (await fs.readFile(file, "utf8")).replace("second edit", "edited elsewhere"));
+    const after = await (await get(server, "/api/history/alpha-note")).json() as HistoryPayload;
+    expect(after.revisions.at(-1)).toMatchObject({ by: "outside", op: "outside", body: "edited elsewhere" });
+  });
+
+  it("404s for a missing or unsafe note", async () => {
+    const { server } = await bootFresh();
+    expect((await get(server, "/api/history/missing")).status).toBe(404);
+    expect((await get(server, "/api/history/..%2f..%2fetc%2fhosts")).status).toBe(404);
+  });
+
+  it("reads and sets the history switch", async () => {
+    const { server, vaultRoot } = await bootFresh();
+    expect(await (await get(server, "/api/history-settings")).json()).toEqual({ enabled: true });
+    expect(await (await post(server, "/api/history-settings", { enabled: false })).json()).toEqual({ enabled: false });
+    expect(JSON.parse(await fs.readFile(join(vaultRoot, "okf.json"), "utf8"))).toMatchObject({ history: false });
+    expect((await get(server, "/api/history/alpha-note").then((r) => r.json()) as HistoryPayload).enabled).toBe(false);
+    for (const body of [null, {}, { enabled: "no" }]) expect((await post(server, "/api/history-settings", body)).status).toBe(400);
+  });
+});

@@ -144,6 +144,30 @@ export interface NotePayload {
   note: ViewNote;
 }
 
+/** One saved revision of a note, body included. */
+export interface HistoryRevision {
+  /** ISO-8601 time of the change. */
+  at: string;
+  /** Who made it: `outside` is any editor other than pi-weave. */
+  by: "human" | "agent" | "outside" | "system";
+  /** What kind of change: create, edit, append, raw, finalize, generate, repair, outside, baseline. */
+  op: string;
+  body: string;
+}
+
+/** `GET /api/history/:slug`. Oldest first; the last revision is the note as it is now. */
+export interface HistoryPayload {
+  slug: string;
+  /** Whether new revisions are being recorded. */
+  enabled: boolean;
+  revisions: HistoryRevision[];
+}
+
+/** `GET` and `POST /api/history-settings`. */
+export interface HistorySettingsPayload {
+  enabled: boolean;
+}
+
 /** `GET /api/okf/:rel`. */
 export interface OkfFilePayload {
   /** The requested path, relative to `<cwd>/.okf`. Echoed, never resolved. */

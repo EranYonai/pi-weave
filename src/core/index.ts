@@ -93,6 +93,14 @@ export {
   type LinkFix,
   type UnresolvableLink,
 } from "./links/repair";
+export {
+  historyEnabled,
+  readHistory,
+  setHistoryEnabled,
+  type HistoryAuthor,
+  type HistoryOp,
+  type NoteRevision,
+} from "./history";
 export type { HtmlArtifact } from "./types";
 export { withMutationQueue } from "./mutex";
 export { formatDashboard, formatStatusLine, getWorkspaceStatus } from "./workspace";

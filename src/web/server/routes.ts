@@ -15,6 +15,9 @@
  * | POST   | `/api/folder/:path`        | create a vault folder                      |
  * | POST   | `/api/folder/:path/rename` | rename a vault folder                      |
  * | DELETE | `/api/folder/:path`      | delete a vault folder                        |
+ * | GET    | `/api/history/:slug`     | {@link HistoryPayload}                       |
+ * | GET    | `/api/history-settings`  | {@link HistorySettingsPayload}               |
+ * | POST   | `/api/history-settings`  | turn note history on or off                  |
  * | GET    | `/api/okf/:rel`          | {@link OkfFilePayload}                       |
  * | GET    | `/api/artifact/:rel`     | sandboxed HTML artifact                     |
  * | GET    | `/api/search?q=`         | {@link SearchPayload}                        |
@@ -54,13 +57,16 @@ import type { WorkspaceSnapshot } from "../../core/cache/workspace";
 import { WorkspaceCache } from "../../core/cache/workspace";
 import { readOkfFileForView } from "../../core/graph/current";
 import type { GraphModel as CoreGraphModel } from "../../core/graph/model";
+import { historyEnabled, setHistoryEnabled } from "../../core/history";
 import { openNoteInEditor } from "../../core/openInEditor";
 import type { Note } from "../../core/types";
 import type { VaultMutationResult } from "../../core/vault";
-import { addNote, createFolder, deleteFolder, deleteNote, getNote, moveNote, renameFolder, renameNote, resolveHtmlPath, searchNotes, setNoteBody } from "../../core/vault";
+import { addNote, createFolder, deleteFolder, deleteNote, getNote, moveNote, renameFolder, readNoteHistory, renameNote, resolveHtmlPath, searchNotes, setNoteBody } from "../../core/vault";
 import { deriveTagIndex, type TaggedNote } from "../../core/view/links";
 import type {
   GraphPayload,
+  HistoryPayload,
+  HistorySettingsPayload,
   NotePayload,
   OkfFilePayload,
   OpenResult,
@@ -413,6 +419,8 @@ async function route(
     const handled = await routeNote(deps, method, path.slice("/api/note/".length), req, res);
     if (handled) return;
   }
+  if (method === "GET" && path.startsWith("/api/history/")) return sendHistory(deps, path.slice("/api/history/".length), res);
+  if (path === "/api/history-settings" && (method === "GET" || method === "POST")) return historySettings(deps, method, req, res);
   if (method === "GET" && path.startsWith("/api/okf/")) {
     return sendOkf(deps, path.slice("/api/okf/".length), res);
   }
@@ -698,6 +706,34 @@ function notePayload(note: Note): NotePayload {
     source: note.source,
   };
   return { note: view };
+}
+
+/**
+ * Every saved revision of a note. The note's current body is passed in so an
+ * edit made outside pi-weave since the last write shows as the final step.
+ */
+async function sendHistory(deps: RouteDeps, slug: string, res: ServerResponse): Promise<void> {
+  const revisions = await readNoteHistory(deps.vaultRoot, slug);
+  if (revisions === null) {
+    sendJson(res, 404, { error: "no such note" });
+    return;
+  }
+  const payload: HistoryPayload = { slug, enabled: await historyEnabled(deps.vaultRoot), revisions };
+  sendJson(res, 200, payload, { "cache-control": "no-store" });
+}
+
+async function historySettings(deps: RouteDeps, method: string, req: IncomingMessage, res: ServerResponse): Promise<void> {
+  if (method === "POST") {
+    const body = await readJsonBody(req);
+    const enabled = typeof body === "object" && body !== null ? (body as { enabled?: unknown }).enabled : undefined;
+    if (typeof enabled !== "boolean") {
+      sendJson(res, 400, { error: "expected { enabled: boolean }" });
+      return;
+    }
+    await setHistoryEnabled(deps.vaultRoot, enabled);
+  }
+  const payload: HistorySettingsPayload = { enabled: await historyEnabled(deps.vaultRoot) };
+  sendJson(res, 200, payload, { "cache-control": "no-store" });
 }
 
 async function sendOkf(deps: RouteDeps, rel: string, res: ServerResponse): Promise<void> {
