@@ -152,7 +152,7 @@ function describe(facts: { url: string; started: boolean; opened: boolean; wants
   const where = facts.started ? "workspace running at" : "workspace already running at";
   if (facts.opened) return `pi-weave: ${where} ${facts.url} — opened in your browser.`;
   if (facts.wantsBrowser) {
-    return `pi-weave: ${where} ${facts.url} — could not launch a browser; open the URL yourself (falling back to the in-terminal explorer).`;
+    return `pi-weave: ${where} ${facts.url} — could not launch a browser; open the URL yourself.`;
   }
   return `pi-weave: ${where} ${facts.url} — open it in a browser.`;
 }

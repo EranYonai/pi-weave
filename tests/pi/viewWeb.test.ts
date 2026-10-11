@@ -495,6 +495,8 @@ describe("browser launch failure", () => {
     expect(controller.port()).not.toBeNull();
     expect(ctx.ui.notifications.some((n) => n.message.includes("could not launch a browser"))).toBe(true);
     expect(urlFrom(ctx)).toContain(`:${controller.port()}/`);
+    // The retired terminal explorer is never promised (#61).
+    expect(ctx.ui.notifications.some((n) => n.message.includes("explorer"))).toBe(false);
   });
 
   it("a throwing exec (no such binary) is reported, not a crash", async () => {
