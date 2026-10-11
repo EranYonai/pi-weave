@@ -263,6 +263,31 @@ body{font-size:var(--weave-px-base)}
 /* Save is the row's only affirmative action, so the only one with the accent. */
 .weave-note-save{color:var(--weave-accent);border-color:var(--weave-accent)}
 .weave-note-save:disabled{color:var(--weave-faint);border-color:var(--weave-line-strong);cursor:default}
+/* History: a slim bar under the header. The step's added text is marked in
+   the accent tint, the same strength the selected rows use. */
+.weave-note-history[aria-pressed="true"]{color:var(--weave-accent);border-color:var(--weave-accent)}
+.weave-replay{
+  margin:0 var(--weave-note-gutter);padding:8px 0 10px;border-bottom:1px solid var(--weave-line);
+  font-size:var(--weave-px-ui);color:var(--weave-dim);
+}
+.weave-replay-controls{display:flex;align-items:center;gap:6px}
+.weave-replay-controls button{
+  font:inherit;line-height:1;min-width:26px;height:24px;padding:0 6px;cursor:pointer;
+  color:var(--weave-dim);background:var(--weave-panel);
+  border:1px solid var(--weave-line-strong);border-radius:var(--weave-radius);
+}
+.weave-replay-controls button:hover:not(:disabled){color:var(--weave-fg);border-color:var(--weave-accent)}
+.weave-replay-controls button:disabled{color:var(--weave-faint);cursor:default}
+.weave-replay-play{color:var(--weave-accent)}
+.weave-replay-slider{flex:1;min-width:80px;accent-color:var(--weave-accent)}
+.weave-replay-position{color:var(--weave-faint);white-space:nowrap;font-variant-numeric:tabular-nums}
+.weave-replay-caption{margin:6px 0 0;display:flex;gap:8px;flex-wrap:wrap}
+.weave-replay-who{color:var(--weave-fg)}
+.weave-replay-human{color:var(--weave-ok)}
+.weave-replay-agent{color:var(--weave-accent)}
+.weave-replay-change{color:var(--weave-faint);font-variant-numeric:tabular-nums}
+.weave-replay-hint{margin:6px 0 0;color:var(--weave-faint)}
+.weave-replay-mark{background:var(--weave-new);color:inherit}
 /* Mono and a tighter line than the prose: this is Markdown source, where
    alignment carries meaning proportional text throws away. */
 .weave-note-editor{

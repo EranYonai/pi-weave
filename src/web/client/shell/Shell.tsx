@@ -4,7 +4,7 @@ import type { GraphPayload, NotePayload } from "../../shared/wire";
 import { activePane, activeTab, activateTab, closePane, closeTab, focusDocument, initialLayout, reorderTab, moveTab, navigateTab, openDocument, openWithPreferences, restoreWorkspace, openGraph, parseWorkspaceLayout, splitPane, tabDropSource, tabSelection } from "../../shared/workspace";
 import type { Pane, WorkspaceLayout, WorkspaceTab } from "../../shared/workspace";
 import { fetchJson } from "../api.dom";
-import { createNote, fetchGraph, openNote, saveNote } from "../api";
+import { createNote, fetchGraph, fetchHistory, openNote, saveNote } from "../api";
 import { Graph } from "../graph/Graph";
 import { schemeOf, watchScheme } from "../graph/scheme";
 import { createSigmaRenderer } from "../graph/renderer.dom";
@@ -110,7 +110,7 @@ function DocumentView(props: {
   }}><Note spellcheck={props.preferences.spellcheck} defaultEdit={props.preferences.defaultEdit} note={payload?.note ?? null} loadFailed={payload?.failed ?? false} loadVersion={payload?.version ?? 0} graph={props.graph} selectedId={id}
     onSelect={props.onSelect} onOpen={(noteSlug) => void openNote(fetchJson, noteSlug).then((result) => {
       if (!result.ok) window.alert(result.message); else if (!result.data.opened) window.alert("Could not open the note in an editor.");
-    })} onSave={props.onSave} drafts={props.drafts} idPrefix={props.tab.id} now={props.now} /></div>;
+    })} onSave={props.onSave} onHistory={(noteSlug) => fetchHistory(fetchJson, noteSlug)} drafts={props.drafts} idPrefix={props.tab.id} now={props.now} /></div>;
 }
 
 export function Shell(props: ShellProps) {

@@ -222,6 +222,8 @@ export async function executeNoteAction(
           body: params.text!,
           ...(params.tags ? { tags: params.tags } : {}),
           ...(params.source ? { source: params.source } : {}),
+          // The agent wrote the file even when the words are the user's.
+          by: "agent",
         }),
       );
       return { text: `Note created: ${note.slug} (${vault})`, details: { action: "add", note } };

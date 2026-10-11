@@ -36,7 +36,16 @@
  * fortnight.
  */
 
-import type { GraphPayload, MutationResult, NotePayload, OpenResult, SearchPayload, ViewNote } from "../shared/wire";
+import type {
+  GraphPayload,
+  HistoryPayload,
+  HistorySettingsPayload,
+  MutationResult,
+  NotePayload,
+  OpenResult,
+  SearchPayload,
+  ViewNote,
+} from "../shared/wire";
 
 // --- the injected HTTP port ------------------------------------------------------
 
@@ -229,6 +238,24 @@ export function isOpenResult(value: unknown): value is OpenResult {
   return isObject(value) && typeof value["opened"] === "boolean";
 }
 
+const HISTORY_AUTHORS: ReadonlySet<unknown> = new Set(["human", "agent", "outside", "system"]);
+
+/** `HistoryPayload`. Every revision is rendered, so every revision is checked. */
+export function isHistoryPayload(value: unknown): value is HistoryPayload {
+  if (!isObject(value) || typeof value["slug"] !== "string" || typeof value["enabled"] !== "boolean") return false;
+  const revisions = value["revisions"];
+  return Array.isArray(revisions) && revisions.every((revision) =>
+    isObject(revision) &&
+    typeof revision["at"] === "string" &&
+    HISTORY_AUTHORS.has(revision["by"]) &&
+    typeof revision["op"] === "string" &&
+    typeof revision["body"] === "string");
+}
+
+export function isHistorySettings(value: unknown): value is HistorySettingsPayload {
+  return isObject(value) && typeof value["enabled"] === "boolean";
+}
+
 export function isMutationResult(value: unknown): value is MutationResult {
   return isObject(value) && value["ok"] === true && (value["id"] === undefined || typeof value["id"] === "string");
 }
@@ -342,3 +369,15 @@ export const deleteNote = (fetchImpl: FetchLike, slug: string) => mutation(fetch
 export const createFolder = (fetchImpl: FetchLike, path: string) => mutation(fetchImpl, folderUrl(path), "POST");
 export const renameFolder = (fetchImpl: FetchLike, path: string, name: string) => mutation(fetchImpl, folderUrl(path, "/rename"), "POST", { name });
 export const deleteFolder = (fetchImpl: FetchLike, path: string) => mutation(fetchImpl, folderUrl(path), "DELETE");
+
+/** `GET /api/history/:slug` — every saved revision of a note, oldest first. */
+export function fetchHistory(fetchImpl: FetchLike, slug: string): Promise<ApiResult<HistoryPayload>> {
+  return request(fetchImpl, `/api/history/${encodeURIComponent(slug)}`, isHistoryPayload);
+}
+
+/** `GET /api/history-settings`, or `POST` it with `enabled` to turn recording on or off. */
+export function historySettings(fetchImpl: FetchLike, enabled?: boolean): Promise<ApiResult<HistorySettingsPayload>> {
+  return request(fetchImpl, "/api/history-settings", isHistorySettings, enabled === undefined ? undefined : {
+    method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ enabled }),
+  });
+}
