@@ -194,9 +194,7 @@ export interface VaultStatus {
 export interface RepoStatus {
   root: string;
   name: string;
-  indexed: boolean;
-  staleness: StalenessReport;
-  /** Deep-scan summaries on disk (docs/scan-modes.md); 0 when none indexed. */
+  /** Deep-scan summaries on disk (docs/scan-modes.md); 0 before the first /weave-scan. */
   summaryCount: number;
 }
 

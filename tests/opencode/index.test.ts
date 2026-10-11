@@ -1,4 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
+import { basename } from "node:path";
 import weave from "../../src/opencode";
 import { commitAll, gitInit, makeTempDir, withVaultEnv, writeFixture } from "../helpers";
 
@@ -78,13 +79,10 @@ describe("OpenCode plugin", () => {
       );
       expect(added.content).toContain("Note created: opencode");
       expect(added.metadata?.action).toBe("add");
-      expect(statusEvents.at(-1)?.text).toContain("vault:1");
+      expect(statusEvents.at(-1)?.text).toBe("🕸️ 1 note");
 
-      await commands.get("weave-scan")!.execute({ sessionID: "session-1", prompt: { text: "" }, delivery: "queue" });
-      await vi.waitFor(() => expect(statusEvents.at(-1)?.text).toMatch(/:ok$/));
-
-      const repo = await tools.get("weave_repo")!.execute({ action: "status" }, toolContext);
-      expect(repo.content).toContain(sessionCwd);
+      const repo = await tools.get("weave_repo")!.execute({ action: "overview" }, toolContext);
+      expect(repo.content).toContain(basename(sessionCwd));
       expect(repo.metadata?.inRepo).toBe(true);
       await cleanup?.();
     });

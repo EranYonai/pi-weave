@@ -2,13 +2,11 @@ import type { ExtensionAPI, ExtensionCommandContext, ExtensionContext } from "@e
 import { homedir } from "node:os";
 import { join, resolve } from "node:path";
 import {
-  buildRepoIndex,
+  ensureRepoIndex,
   findGitRoot,
   formatDashboard,
   formatStatusLine,
   getWorkspaceStatus,
-  summarizeIndex,
-  writeRepoIndex,
   type WorkspaceStatus,
 } from "../core";
 import { registerNoteTool } from "./tools/noteTool";
@@ -112,18 +110,6 @@ export default function piWeave(pi: ExtensionAPI): void {
   pi.on("session_start", async (_event, ctx) => {
     const status = await getWorkspaceStatus(ctx.cwd);
     updateStatus(ctx, formatStatusLine(status));
-
-    if (!ctx.hasUI) return;
-    const repo = status.repository;
-    if (repo && !repo.indexed) {
-      ctx.ui.notify(
-        "pi-weave: this repository has no knowledge index yet — ask pi to explore it, or run /weave-scan.",
-        "info",
-      );
-    } else if (repo && repo.staleness.state === "stale") {
-      const reason = repo.staleness.reasons[0] ?? "index is stale";
-      ctx.ui.notify(`pi-weave: repository index is stale (${reason}). Run /weave-scan to refresh.`, "warning");
-    }
   });
 
   pi.registerCommand("weave", {
@@ -160,7 +146,7 @@ export default function piWeave(pi: ExtensionAPI): void {
 
   pi.registerCommand("weave-scan", {
     description:
-      "Build or refresh the repository index; 'deep' summarizes files; 'sessions [dir]' summarizes session history",
+      "Summarize this repository's files with the session model; 'sessions [dir]' summarizes session history",
     handler: async (args, ctx) => {
       const input = args.trim();
       const [mode = "", ...rest] = input.split(/\s+/);
@@ -176,38 +162,33 @@ export default function piWeave(pi: ExtensionAPI): void {
         return; // the background scan owns the status line until it settles
       }
 
+      if (mode !== "" && mode.toLowerCase() !== "deep") {
+        ctx.ui.notify(WEAVE_SCAN_USAGE, "warning");
+        return;
+      }
+
       const root = await findGitRoot(ctx.cwd);
       if (!root) {
         ctx.ui.notify("pi-weave: not inside a git repository.", "warning");
         return;
       }
-      const index = await buildRepoIndex(root);
-      if (!index) {
-        ctx.ui.notify("pi-weave: cannot index — the repository has no commits yet.", "warning");
+      if (inFlightDeepScans.has(root)) {
+        ctx.ui.notify("pi-weave: a deep scan is already running for this repository — run /weave-scan-cancel to stop it.", "warning");
         return;
       }
-      await writeRepoIndex(root, index);
-      ctx.ui.notify(`pi-weave: index refreshed\n${summarizeIndex(index).join("\n")}`, "info");
-
-      if (mode.toLowerCase() === "deep") {
-        if (inFlightDeepScans.has(root)) {
-          ctx.ui.notify("pi-weave: a deep scan is already running for this repository — run /weave-scan-cancel to stop it.", "warning");
-        } else {
-          // Compute the settled status here (no git-lock contention) and let
-          // the background scan restore it when it finishes.
-          const status = await getWorkspaceStatus(ctx.cwd);
-          startDeepScan(root, ctx, status, updateStatus);
-        }
-        return; // the background scan owns the status line until it settles
+      // The structure index is plumbing the deep scan and graph rely on;
+      // refresh it silently rather than reporting it as a result.
+      if (!(await ensureRepoIndex(root))) {
+        ctx.ui.notify("pi-weave: nothing to scan — the repository has no commits yet.", "warning");
+        return;
       }
-
       const status = await getWorkspaceStatus(ctx.cwd);
-      updateStatus(ctx, formatStatusLine(status));
+      startDeepScan(root, ctx, status, updateStatus);
     },
   });
 
   pi.registerCommand("weave-scan-cancel", {
-    description: "Cancel an in-flight /weave-scan deep or sessions run",
+    description: "Cancel an in-flight /weave-scan run",
     handler: async (_args, ctx) => {
       const root = await findGitRoot(ctx.cwd);
       const deep = root ? inFlightDeepScans.get(root) : undefined;
@@ -240,6 +221,8 @@ export function resolveHistoryPath(cwd: string, input: string): string {
   if (trimmed.startsWith("~/")) return join(homedir(), trimmed.slice(2));
   return resolve(cwd, trimmed);
 }
+
+export const WEAVE_SCAN_USAGE = "usage: /weave-scan [sessions [dir]]";
 
 export const WEAVE_VIEW_USAGE = "usage: /weave-view [tui|web] [--no-open]";
 
@@ -365,7 +348,7 @@ function startBackgroundScan(
 
 /**
  * Kick off a deep scan in the background. `baseStatus` is the workspace
- * status captured before the scan and restored when it settles.
+ * status captured before the scan, the fallback if recounting fails.
  */
 function startDeepScan(
   root: string,
@@ -387,7 +370,7 @@ function startDeepScan(
     }
     if (outcome.kind === "no-model") {
       return {
-        text: "pi-weave: deep scan needs an active session model — none configured. Light index only.",
+        text: "pi-weave: deep scan needs an active session model — none configured.",
         level: "warning",
       };
     }
@@ -395,7 +378,9 @@ function startDeepScan(
       return { text: `pi-weave: deep scan complete — ${formatDeepScanResult(outcome.result)}`, level: "info" };
     }
     return null;
-  });
+  },
+  // The status line counts summaries, so recount them once the scan settles.
+  () => getWorkspaceStatus(ctx.cwd));
 }
 
 /**
@@ -439,9 +424,7 @@ function startSessionScan(
       }
       return { text: `pi-weave: session scan complete — ${formatSessionScanResult(result)}`, level: "info" };
     },
-    // Unlike the deep scan (whose settled status is precomputed to avoid git
-    // contention), the session scan writes vault notes and takes no git lock:
-    // recompute the workspace status so the settled line counts the notes it
+    // Recompute the workspace status so the settled line counts the notes it
     // just wrote.
     () => getWorkspaceStatus(ctx.cwd),
   );

@@ -1,5 +1,5 @@
 import { findGitRoot } from "./git";
-import { assessStaleness, readRepoIndex } from "./repoIndex";
+import { readRepoIndex } from "./repoIndex";
 import { readSummaries } from "./summaries";
 import { basename } from "node:path";
 import { resolveVaultRoot } from "./paths";
@@ -35,24 +35,27 @@ export async function getWorkspaceStatus(cwd: string, options: WorkspaceOptions 
   if (!repoRoot) return status;
 
   const index = await readRepoIndex(repoRoot);
-  const staleness = await assessStaleness(repoRoot);
   status.repository = {
     root: repoRoot,
     name: index?.identity.name ?? basename(repoRoot),
-    indexed: index !== null,
-    staleness,
-    summaryCount: index === null ? 0 : (await readSummaries(repoRoot)).length,
+    summaryCount: (await readSummaries(repoRoot)).length,
   };
   return status;
 }
 
-/** One-line status string for footers/status bars. */
+/**
+ * One-line status string for footers/status bars. It counts notes; the
+ * repository appears only once a deep scan has written summaries, because
+ * the structure index is plumbing the user never has to think about.
+ */
 export function formatStatusLine(status: WorkspaceStatus): string {
-  const vault = `vault:${status.vault.noteCount}`;
-  if (!status.repository) return `🕸️ ${vault}`;
-  if (!status.repository.indexed) return `🕸️ ${vault} · repo:unindexed`;
-  const mark = status.repository.staleness.state === "fresh" ? "ok" : status.repository.staleness.state;
-  return `🕸️ ${vault} · ${status.repository.name}:${mark}`;
+  const notes = plural(status.vault.noteCount, "note", "notes");
+  const summaries = status.repository?.summaryCount ?? 0;
+  return summaries > 0 ? `🕸️ ${notes} · ${plural(summaries, "summary", "summaries")}` : `🕸️ ${notes}`;
+}
+
+function plural(count: number, one: string, many: string): string {
+  return `${count} ${count === 1 ? one : many}`;
 }
 
 /** Multi-line dashboard used by the /weave command and notifications. */
@@ -64,22 +67,13 @@ export function formatDashboard(status: WorkspaceStatus): string {
       ? `  ${status.vault.noteCount} note(s)`
       : "  not initialized — add a note to create it",
   );
-  if (!status.repository) {
-    lines.push("Repository: none (not inside a git repository)");
-    return lines.join("\n");
-  }
   const repo = status.repository;
+  if (!repo) return lines.join("\n");
   lines.push(`Repository (${repo.name} @ ${repo.root}):`);
-  if (!repo.indexed) {
-    lines.push("  not indexed — run /weave-scan or ask your agent to explore");
-    return lines.join("\n");
-  }
-  lines.push(`  index: ${repo.staleness.state}`);
-  for (const reason of repo.staleness.reasons) {
-    lines.push(`    - ${reason}`);
-  }
-  if (repo.summaryCount > 0) {
-    lines.push(`  summaries: ${repo.summaryCount} file(s) — run /weave-scan deep to refresh`);
-  }
+  lines.push(
+    repo.summaryCount > 0
+      ? `  summaries: ${repo.summaryCount} file(s) — run /weave-scan to refresh`
+      : "  no file summaries yet — run /weave-scan to write them with your session model",
+  );
   return lines.join("\n");
 }

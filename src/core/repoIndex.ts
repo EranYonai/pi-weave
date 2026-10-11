@@ -369,6 +369,26 @@ export async function assessStaleness(repoRoot: string): Promise<StalenessReport
 }
 
 /**
+ * The index as plumbing: read it, and rebuild it on disk when it is missing
+ * or stale. Nothing asks the user to run a structure scan any more; whoever
+ * needs the index (deep scan, graph, `weave_repo overview`) calls this.
+ * Null when the repository has no commits yet.
+ */
+export async function ensureRepoIndex(
+  root: string,
+): Promise<{ index: RepoIndex; staleness: StalenessReport } | null> {
+  const staleness = await assessStaleness(root);
+  if (staleness.state === "fresh") {
+    const index = await readRepoIndex(root);
+    if (index) return { index, staleness };
+  }
+  const index = await buildRepoIndex(root);
+  if (!index) return null;
+  await writeRepoIndex(root, index);
+  return { index, staleness: { state: "fresh", reasons: [] } };
+}
+
+/**
  * Read a manifest provenance field, defaulting unknown/missing values to
  * "generated": every repository index written before the field existed was
  * still machine-written.

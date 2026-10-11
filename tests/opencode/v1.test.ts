@@ -1,4 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
+import { basename } from "node:path";
 import { tool, type Hooks, type PluginInput } from "@opencode-ai/plugin";
 import weave from "../../src/opencode";
 import { v1SessionDigest } from "../../src/opencode/v1";
@@ -61,7 +62,7 @@ describe("OpenCode V1 1.18.29", () => {
       expect(Object.keys((empty as any).command)).toEqual(["weave", "weave-scan", "weave-scan-cancel", "weave-view"]);
       expect(await invoke(hooks, "unrelated")).toBe("template");
       expect(await invoke(hooks, "weave")).toContain("Vault");
-      expect(await invoke(hooks, "weave-scan")).toContain("index refreshed");
+      expect(await invoke(hooks, "weave-scan", "nonsense")).toContain("usage: /weave-scan");
       expect(await invoke(hooks, "weave-scan-cancel")).toContain("no scan");
       const toolContext = { directory: cwd, metadata: vi.fn() } as never;
       const note = hooks.tool!.weave_note!;
@@ -70,8 +71,8 @@ describe("OpenCode V1 1.18.29", () => {
       expect(schema.safeParse({ action: "add", raw: "true" }).success).toBe(false);
       const result = await note.execute(schema.parse({ action: "add", title: "V1", text: "Shared", tags: ["e2e"], source: "agent" }), toolContext);
       expect(result).toMatchObject({ output: expect.stringContaining("Note created"), metadata: { action: "add" } });
-      const repo = await hooks.tool!.weave_repo!.execute({ action: "scan" }, toolContext);
-      expect(repo).toMatchObject({ output: expect.stringContaining(cwd) });
+      const repo = await hooks.tool!.weave_repo!.execute({ action: "overview" }, toolContext);
+      expect(repo).toMatchObject({ output: expect.stringContaining(basename(cwd)) });
       const view = await invoke(hooks, "weave-view");
       expect(view).toContain("opening when");
       const url = view.match(/http:\/\/\S+/)![0];
@@ -89,7 +90,7 @@ describe("OpenCode V1 1.18.29", () => {
     });
     await withVaultEnv(await makeTempDir(), async () => {
       const hooks = await weave.server(mock.input);
-      await invoke(hooks, "weave-scan", "deep");
+      await invoke(hooks, "weave-scan");
       await vi.waitFor(() => expect(mock.notices.some((text) => text.includes("deep scan complete"))).toBe(true));
       expect(mock.client.session.create).toHaveBeenCalledWith(expect.objectContaining({ body: {
         parentID: "s1", title: "pi-weave scan", permission: [{ permission: "*", pattern: "*", action: "deny" }],

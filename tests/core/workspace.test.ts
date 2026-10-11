@@ -2,7 +2,8 @@ import { describe, expect, it } from "vitest";
 import { addNote } from "../../src/core/vault";
 import { buildRepoIndex, writeRepoIndex } from "../../src/core/repoIndex";
 import { formatDashboard, formatStatusLine, getWorkspaceStatus } from "../../src/core/workspace";
-import { commitAll, gitExec, gitInit, makeTempDir, writeFixture } from "../helpers";
+import { writeSummary } from "../../src/core/summaries";
+import { commitAll, gitInit, makeTempDir, writeFixture } from "../helpers";
 
 async function makeRepo(): Promise<string> {
   const dir = await makeTempDir();
@@ -33,53 +34,50 @@ describe("getWorkspaceStatus", () => {
     expect(status.vault.noteCount).toBe(2);
   });
 
-  it("reports an unindexed repository", async () => {
+  it("names a repository without an index after its folder and counts no summaries", async () => {
     const repo = await makeRepo();
     const status = await getWorkspaceStatus(repo, { vaultRoot: await makeTempDir() });
-    expect(status.repository?.indexed).toBe(false);
-    expect(status.repository?.staleness.state).toBe("missing");
     expect(status.repository?.name).toMatch(/piweave-test-/);
+    expect(status.repository?.summaryCount).toBe(0);
   });
 
-  it("reports an indexed fresh repository, discovering from a subdirectory", async () => {
+  it("uses the indexed name and counts summaries, discovering from a subdirectory", async () => {
     const repo = await makeRepo();
     const index = (await buildRepoIndex(repo))!;
     await writeRepoIndex(repo, index);
+    await writeSummary(repo, {
+      target: "src/index.ts",
+      source: "generated",
+      contentHash: "abc",
+      model: "fake/model",
+      at: "2026-10-11T00:00:00.000Z",
+      summary: "Entry point.",
+    });
     const status = await getWorkspaceStatus(`${repo}/src`, { vaultRoot: await makeTempDir() });
-    expect(status.repository?.indexed).toBe(true);
-    expect(status.repository?.staleness.state).toBe("fresh");
     expect(status.repository?.name).toBe(index.identity.name);
-  });
-
-  it("reports staleness once the repo moves", async () => {
-    const repo = await makeRepo();
-    await writeRepoIndex(repo, (await buildRepoIndex(repo))!);
-    gitExec(repo, ["checkout", "-b", "feature"]);
-    const status = await getWorkspaceStatus(repo, { vaultRoot: await makeTempDir() });
-    expect(status.repository?.staleness.state).toBe("stale");
+    expect(status.repository?.summaryCount).toBe(1);
   });
 });
 
 describe("formatStatusLine", () => {
   const vault = { root: "/v", exists: true, noteCount: 3 };
 
-  it("vault only", () => {
-    expect(formatStatusLine({ cwd: "/x", vault, repository: null })).toBe("🕸️ vault:3");
+  it("counts notes outside a repository", () => {
+    expect(formatStatusLine({ cwd: "/x", vault, repository: null })).toBe("🕸️ 3 notes");
   });
 
-  it("unindexed repo", () => {
-    const repo = { root: "/r", name: "r", indexed: false, staleness: { state: "missing" as const, reasons: [] }, summaryCount: 0 };
-    expect(formatStatusLine({ cwd: "/r", vault, repository: repo })).toBe("🕸️ vault:3 · repo:unindexed");
+  it("uses the singular for one note", () => {
+    expect(formatStatusLine({ cwd: "/x", vault: { ...vault, noteCount: 1 }, repository: null })).toBe("🕸️ 1 note");
   });
 
-  it("indexed fresh repo", () => {
-    const repo = { root: "/r", name: "r", indexed: true, staleness: { state: "fresh" as const, reasons: [] }, summaryCount: 0 };
-    expect(formatStatusLine({ cwd: "/r", vault, repository: repo })).toBe("🕸️ vault:3 · r:ok");
+  it("says nothing about a repository without summaries", () => {
+    const repo = { root: "/r", name: "r", summaryCount: 0 };
+    expect(formatStatusLine({ cwd: "/r", vault, repository: repo })).toBe("🕸️ 3 notes");
   });
 
-  it("indexed stale repo", () => {
-    const repo = { root: "/r", name: "r", indexed: true, staleness: { state: "stale" as const, reasons: [] }, summaryCount: 0 };
-    expect(formatStatusLine({ cwd: "/r", vault, repository: repo })).toBe("🕸️ vault:3 · r:stale");
+  it("adds the summary count once a deep scan has written some", () => {
+    const repo = { root: "/r", name: "r", summaryCount: 40 };
+    expect(formatStatusLine({ cwd: "/r", vault, repository: repo })).toBe("🕸️ 3 notes · 40 summaries");
   });
 });
 
@@ -91,33 +89,26 @@ describe("formatDashboard", () => {
       repository: null,
     });
     expect(text).toContain("not initialized");
-    expect(text).toContain("not inside a git repository");
+    expect(text).not.toContain("Repository");
   });
 
-  it("covers the unindexed repo case", () => {
+  it("points a repository without summaries at /weave-scan", () => {
     const text = formatDashboard({
       cwd: "/r",
       vault: { root: "/v", exists: true, noteCount: 5 },
-      repository: { root: "/r", name: "r", indexed: false, staleness: { state: "missing", reasons: [] }, summaryCount: 0 },
+      repository: { root: "/r", name: "r", summaryCount: 0 },
     });
     expect(text).toContain("5 note(s)");
-    expect(text).toContain("not indexed");
+    expect(text).toContain("no file summaries yet — run /weave-scan");
+    expect(text).not.toMatch(/index|stale/);
   });
 
-  it("covers the indexed case with staleness reasons", () => {
+  it("counts summaries when present", () => {
     const text = formatDashboard({
       cwd: "/r",
       vault: { root: "/v", exists: true, noteCount: 1 },
-      repository: {
-        root: "/r",
-        name: "r",
-        indexed: true,
-        staleness: { state: "stale", reasons: ["HEAD moved: a -> b"] },
-        summaryCount: 2,
-      },
+      repository: { root: "/r", name: "r", summaryCount: 2 },
     });
-    expect(text).toContain("index: stale");
-    expect(text).toContain("summaries: 2 file(s)");
-    expect(text).toContain("HEAD moved");
+    expect(text).toContain("summaries: 2 file(s) — run /weave-scan to refresh");
   });
 });

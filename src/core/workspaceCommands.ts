@@ -2,7 +2,7 @@ import { homedir } from "node:os";
 import { join, resolve } from "node:path";
 import { findGitRoot } from "./git";
 import { resolveVaultRoot } from "./paths";
-import { buildRepoIndex, summarizeIndex, writeRepoIndex } from "./repoIndex";
+import { ensureRepoIndex } from "./repoIndex";
 import { formatDashboard, getWorkspaceStatus } from "./workspace";
 import { DEEP_SCAN_SYSTEM_PROMPT, formatDeepScanResult, runDeepScan, type SummarizeFn } from "./summaries";
 import { formatSessionScanResult, renderSessionDigest, runSessionDigestScan, runSessionScan, SESSION_SCAN_SYSTEM_PROMPT, type SessionDigest } from "./sessions";
@@ -91,7 +91,7 @@ export function createWorkspaceCommands(
 
   commands.push({
     name: "weave-scan",
-    description: "Refresh the index; use 'deep' or 'sessions [path]' for model-backed scans",
+    description: "Summarize this repository's files with the session model; 'sessions [path]' summarizes session history",
     async execute(sessionID, args) {
       const [mode = "", ...rest] = args.trim().split(/\s+/).filter(Boolean);
       const key = String(sessionID);
@@ -141,24 +141,24 @@ export function createWorkspaceCommands(
         return;
       }
 
+      if (mode !== "" && mode.toLowerCase() !== "deep") {
+        await output(sessionID, "usage: /weave-scan [sessions [path]]");
+        return;
+      }
       const root = await findGitRoot(cwd);
       if (!root) {
         await output(sessionID, "pi-weave: not inside a git repository.");
         return;
       }
-      const index = await buildRepoIndex(root);
-      if (!index) {
-        await output(sessionID, "pi-weave: cannot index — the repository has no commits yet.");
-        return;
-      }
-      await writeRepoIndex(root, index);
-      await output(sessionID, `pi-weave: index refreshed\n${summarizeIndex(index).join("\n")}`);
-      onStatus({ sessionID: key, text: "pi-weave: index refreshed", active: false });
-      if (mode.toLowerCase() !== "deep") return;
-
       const session = await host.getSession(sessionID);
       if (!session.model) {
-        await output(sessionID, "pi-weave: deep scan needs an active session model — none configured. Light index only.");
+        await output(sessionID, "pi-weave: deep scan needs an active session model — none configured.");
+        return;
+      }
+      // The structure index is plumbing the deep scan and graph rely on;
+      // refresh it silently rather than reporting it as a result.
+      if (!(await ensureRepoIndex(root))) {
+        await output(sessionID, "pi-weave: nothing to scan — the repository has no commits yet.");
         return;
       }
       start(sessionID, async (signal) => {
@@ -182,7 +182,7 @@ export function createWorkspaceCommands(
 
   commands.push({
     name: "weave-scan-cancel",
-    description: "Cancel the active pi-weave deep or session scan",
+    description: "Cancel the active pi-weave scan",
     async execute(sessionID) {
       const scan = running.get(String(sessionID));
       if (!scan) {

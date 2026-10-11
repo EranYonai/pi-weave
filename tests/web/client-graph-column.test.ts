@@ -340,7 +340,7 @@ describe("the control strip (§1.2)", () => {
 describe("graphEmptyMessage", () => {
   it("distinguishes loading from empty from collapsed-to-nothing", () => {
     expect(graphEmptyMessage(null, 0)).toBe("Loading…");
-    expect(graphEmptyMessage(payloadOf([], []), 0)).toContain("weave-scan");
+    expect(graphEmptyMessage(payloadOf([], []), 0)).toContain("add a note");
     expect(graphEmptyMessage(SMALL, 0)).toContain("expansion");
     expect(graphEmptyMessage(SMALL, 6)).toBeNull();
   });
@@ -521,7 +521,7 @@ describe("graphColumnModel", () => {
   it("reports an empty payload honestly", () => {
     const model = graphColumnModel(payloadOf([], []), null, ALL_SHUT, storage(), "dark");
     expect(model.visible).toBe(0);
-    expect(model.empty).toContain("weave-scan");
+    expect(model.empty).toContain("add a note");
   });
 });
 

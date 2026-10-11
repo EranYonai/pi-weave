@@ -235,7 +235,7 @@ export function graphCountLabel(visible: number, total: number): string {
 /** What the column says instead of a canvas. `null` means "there is a graph". */
 export function graphEmptyMessage(payload: GraphPayload | null, visible: number): string | null {
   if (payload === null) return "Loading…";
-  if (payload.model.nodes.length === 0) return "Nothing indexed yet — add a note or run /weave-scan.";
+  if (payload.model.nodes.length === 0) return "Nothing here yet — add a note to get started.";
   // A payload with nodes but nothing visible cannot happen through the UI
   // (`clusterAggregate` always keeps the roots), but a truncated response
   // could produce it, and a blank canvas with no explanation reads as a crash.

@@ -64,8 +64,8 @@ pi -e ./src/pi/index.ts                                   # quick manual test
 pi --mode rpc -e ./src/pi/index.ts                        # machine-driven smoke test
 ```
 
-Smoke expectation: on session start pi's status line shows `🕸️ vault:N · repo:unindexed|ok|stale` and, in an unindexed repo, an info
-notification suggests exploring.
+Smoke expectation: on session start pi's status line shows `🕸️ N notes` (plus `· M summaries` once `/weave-scan` has run), and no
+notification nudges the user to scan.
 
 **Graph layout settings** live under **Settings → Interface**, alongside group colors. The seven constants in
 `src/web/shared/layout.ts` apply live and persist with workspace preferences; Reset graph layout restores the shipped values.

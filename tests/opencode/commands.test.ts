@@ -129,7 +129,7 @@ describe("OpenCode commands", () => {
     expect(result.tools.unknown).toBe(1);
   });
 
-  it("runs dashboard, shallow/deep, and current-session scans", async () => {
+  it("runs dashboard, deep (the default), and current-session scans", async () => {
     const cwd = await makeTempDir();
     const vault = await makeTempDir();
     gitInit(cwd);
@@ -150,8 +150,13 @@ describe("OpenCode commands", () => {
       await invoke(mock.commands.get("weave")!);
       expect(mock.output.at(-1)).toContain("Vault");
 
+      await invoke(mock.commands.get("weave-scan")!, "nonsense");
+      expect(mock.output.at(-1)).toContain("usage: /weave-scan");
+
       await invoke(mock.commands.get("weave-scan")!);
-      expect(mock.output.at(-1)).toContain("index refreshed");
+      await registered.done("session-1");
+      expect(mock.output.at(-1)).toContain("deep scan complete");
+      expect(mock.output.some((text) => text.includes("index refreshed"))).toBe(false);
 
       await invoke(mock.commands.get("weave-scan")!, "deep");
       await registered.done("session-1");
@@ -231,6 +236,7 @@ describe("OpenCode commands", () => {
     gitInit(cwd);
     await invoke(mock.commands.get("weave-scan")!);
     expect(mock.output.at(-1)).toContain("no commits");
+    expect(mock.output.at(-1)).toContain("nothing to scan");
 
     await writeFixture(cwd, "file.ts", "x\n");
     commitAll(cwd);

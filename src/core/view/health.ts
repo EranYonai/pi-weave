@@ -51,7 +51,7 @@ export function healthModel(model: GraphModel): HealthModel {
       if (count) summarized += Number(count);
     }
     if (summarized > 0) {
-      rows.push({ id: "health:repo:summarized", text: `summarized files: ${summarized} (run /weave-scan deep)` });
+      rows.push({ id: "health:repo:summarized", text: `summarized files: ${summarized} (run /weave-scan)` });
     }
     sections.push({ heading: "Repository", rows });
   }

@@ -21,7 +21,7 @@ const noteInput = {
 const repoInput = {
   type: "object",
   properties: {
-    action: { type: "string", enum: ["status", "scan", "overview"] },
+    action: { type: "string", enum: ["overview"] },
   },
   required: ["action"],
   additionalProperties: false,
@@ -38,6 +38,6 @@ export const weaveTools = [
     name: "weave_repo",
     description: WEAVE_REPO_DESCRIPTION,
     input: repoInput,
-    execute: (input: unknown, cwd: string, progress?: (text: string) => Promise<void>) => executeRepoAction(input as RepoActionInput, cwd, progress),
+    execute: (input: unknown, cwd: string) => executeRepoAction(input as RepoActionInput, cwd),
   },
 ];

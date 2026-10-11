@@ -9,17 +9,15 @@ Use `weave_repo`. Without the tool, read `<repo>/.okf/` directly. The index is a
 
 ## Workflow
 
-1. Check `action=status`: if missing, offer a scan or scan when exploration was requested; if stale, rescan; if fresh, read
-   `action=overview`.
+1. Read `action=overview`. It builds or refreshes the structure index itself, so there is nothing to scan first.
 2. Use the overview's languages, packages, modules, and entry points to select relevant paths instead of listing the whole repository.
 3. Read available `.okf/repository/summaries/` sidecars before opening full files.
 4. Inspect the relevant code and cite indexed paths in your answer.
 
 ## Commands
 
-- `/weave-scan` refreshes the index (`weave_repo` action=scan).
-- `/weave-scan deep` generates file summaries using the session model. Offer it when summaries are missing or stale; never run it
-  implicitly. Only changed content is summarized again.
+- `/weave-scan` generates file summaries using the session model. Offer it when summaries would help and the overview shows none;
+  never run it implicitly. Only changed content is summarized again.
 - `/weave-view` opens the browser workspace.
 - `/weave-scan sessions [path]` writes session memories to the vault, not the repository index; see `weave-notepad`.
 

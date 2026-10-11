@@ -12,15 +12,12 @@ export function registerRepoTool(pi: ExtensionAPI): void {
     promptSnippet: "Explore the repository's structure via its .okf knowledge index",
     promptGuidelines: [
       "Use weave_repo action=overview to learn repository structure before broad code exploration instead of scanning files one by one.",
-      "Use weave_repo action=scan when the user asks to explore or index this repository.",
     ],
     parameters: Type.Object({
-      action: StringEnum(["status", "scan", "overview"] as const),
+      action: StringEnum(["overview"] as const),
     }),
-    async execute(_toolCallId, params, _signal, onUpdate, ctx) {
-      const result = await executeRepoAction(params, ctx.cwd, (text) => {
-        onUpdate?.({ content: [{ type: "text", text }], details: {} });
-      });
+    async execute(_toolCallId, params, _signal, _onUpdate, ctx) {
+      const result = await executeRepoAction(params, ctx.cwd);
       return { content: [{ type: "text", text: result.text }], details: result.details };
     },
   });
