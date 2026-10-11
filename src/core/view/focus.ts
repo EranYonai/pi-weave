@@ -1,8 +1,8 @@
 /**
  * focusModel — the 1-hop neighborhood of a node, grouped (weave-workspace §3).
  *
- * The TUI renders this as the Focus surface; the browser workspace uses
- * `focusNeighborhood` for the graph's neighborhood highlight.
+ * The browser workspace uses `focusNeighborhood` for the graph's
+ * neighborhood highlight.
  */
 
 import type { GraphEdge, GraphModel, GraphNode, NodeKind } from "../graph/model";

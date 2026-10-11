@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { openNoteCommand, openNoteInEditor } from "../../src/pi/viewer/tui/openNote";
+import { openNoteCommand, openNoteInEditor } from "../../src/core/openInEditor";
 import { addNote } from "../../src/core/vault";
 import { makeTempDir } from "../helpers";
 

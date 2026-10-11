@@ -11,7 +11,7 @@
 import type { HtmlArtifact, Note, RepoIndex, StalenessReport, VaultStatus } from "../types";
 import { createHash } from "node:crypto";
 import type { SummaryRecord } from "../summaries";
-import type { EdgeKind, GraphEdge, GraphModel, GraphNode } from "./model";
+import type { GraphEdge, GraphModel, GraphNode } from "./model";
 import { buildPathIndex, resolveMentions, type PathIndex } from "./mentions";
 import { extractWikilinks } from "./wikilinks";
 

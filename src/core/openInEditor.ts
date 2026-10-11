@@ -1,14 +1,9 @@
 /**
  * Open a vault note in the user's editor.
  *
- * Originally `src/pi/viewer/tui/openNote.ts`, promoted into core because the
- * browser workspace needs it too and `src/web/server/**` may not import
- * `src/pi` (weave-workspace §2). It belongs here on the merits regardless:
- * it is a pure fan-out over `core/vault` plus one `execFile`, with no
- * harness and no terminal concept in it, and the same reasoning that put
- * `readNoteForView` in core applies unchanged.
- *
- * The old path re-exports these two names, so no TUI file changed.
+ * Lives in core because the browser workspace's server uses it and
+ * `src/web/server/**` may not import `src/pi`. It is a pure fan-out over
+ * `core/vault` plus one `execFile`, with no harness in it.
  *
  * Security: the slug is validated against the vault (traversal-safe) before
  * any shell-out, and the command is invoked with `execFile`, not a shell, so

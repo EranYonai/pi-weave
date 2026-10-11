@@ -83,11 +83,8 @@ export function graphPalette(theme: GraphTheme): Readonly<Record<ColorSlot, stri
  * - `note` keeps `text` — notes are the product (§1.1), and their identity
  *   is carried by the provenance badge, not by a hue.
  * - Generated code — modules, packages, entry points, git, externals, files
- *   — takes `dim`, the same grey a `generated` row takes in the tree. The
- *   TUI's `kindStyle` (src/pi/viewer/tui/theme.ts) still maps these kinds to
- *   success/warning; the two media disagree on purpose, because a pi theme
- *   has no dark/light stylesheet to violate and a terminal can restyle
- *   everything. Here the sheet decides, and the sheet says calm.
+ *   — takes `dim`, the same grey a `generated` row takes in the tree. Here
+ *   the sheet decides, and the sheet says calm.
  */
 export const KIND_SLOT: Readonly<Record<WireNodeKind, ColorSlot>> = {
   vault: "accent",

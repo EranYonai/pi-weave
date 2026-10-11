@@ -71,14 +71,12 @@ export interface RunWebOutcome {
   session: WebWorkspaceSession;
   /** True when this call booted the server rather than reusing one. */
   started: boolean;
-  /** True when a browser was actually launched successfully. */
-  opened: boolean;
   /**
-   * True when the caller should fall back to the in-terminal explorer:
-   * a browser was wanted, was attempted, and did not launch. The server
-   * stays up regardless — the URL is still the user's way back in.
+   * True when a browser was actually launched successfully. When one was
+   * wanted and did not launch, the server stays up regardless — the URL in
+   * the notification is still the user's way back in.
    */
-  fallbackToTui: boolean;
+  opened: boolean;
 }
 
 /**
@@ -126,7 +124,7 @@ export class WebWorkspaceController {
 
     ctx.ui.notify(describe({ url: session.server.entryUrl, started, opened, wantsBrowser }), "info");
 
-    return { session, started, opened, fallbackToTui: wantsBrowser && !opened };
+    return { session, started, opened };
   }
 
   /** Stop the workspace server. Idempotent. */

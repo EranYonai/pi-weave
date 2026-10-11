@@ -61,10 +61,9 @@
  * ## Why this is a small list
  *
  * Deliberately not `export * from "../../core/view"`. The barrel pulls in
- * `health.ts` (a TUI surface) and `links.ts`'s tag index (derived server-side
- * into `GraphPayload.tags`), neither of which any browser column consumes
- * today — and each one it pulled in would be a module the purity guard then
- * has to defend forever.
+ * `links.ts`'s tag index (derived server-side into `GraphPayload.tags`),
+ * which no browser column consumes today — and each module it pulled in
+ * would be one the purity guard then has to defend forever.
  *
  * So this is an allowlist, on the same principle as the `npm` column in
  * `tests/web/tiers.test.ts`: the surface the columns actually use, and nothing

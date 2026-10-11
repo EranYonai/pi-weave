@@ -25,7 +25,7 @@
 import { afterEach, describe, expect, it } from "vitest";
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { join } from "node:path";
-import piWeave, { parseWeaveViewArgs, WEAVE_VIEW_USAGE } from "../../src/pi/index";
+import piWeave, { parseWeaveViewArgs, WEAVE_VIEW_TUI_RETIRED, WEAVE_VIEW_USAGE } from "../../src/pi/index";
 import { browserOpenCommand, WebWorkspaceController } from "../../src/pi/viewer/web/run";
 import { addNote } from "../../src/core/vault";
 import { createMockCtx, createMockPi, makeTempDir, withVaultEnv, type MockCtx } from "../helpers";
@@ -74,25 +74,25 @@ function urlFrom(ctx: MockCtx): string {
 
 describe("parseWeaveViewArgs", () => {
   it.each([
-    ["", { surface: "web", open: true }],
-    ["   ", { surface: "web", open: true }],
-    ["web", { surface: "web", open: true }],
-    ["WEB", { surface: "web", open: true }],
-    ["tui", { surface: "tui", open: true }],
-    ["  TUI  ", { surface: "tui", open: true }],
-    ["--no-open", { surface: "web", open: false }],
-    ["web --no-open", { surface: "web", open: false }],
-    ["--no-open web", { surface: "web", open: false }],
-    ["web    --no-open", { surface: "web", open: false }],
+    ["", { open: true }],
+    ["   ", { open: true }],
+    ["web", { open: true }],
+    ["WEB", { open: true }],
+    ["--no-open", { open: false }],
+    ["web --no-open", { open: false }],
+    ["--no-open web", { open: false }],
+    ["web    --no-open", { open: false }],
   ])("%o parses", (args, expected) => {
     expect(parseWeaveViewArgs(args as string)).toEqual(expected);
   });
 
+  it.each([["tui"], ["  TUI  "], ["web tui"], ["tui --no-open"]])("%o is the retired explorer", (args) => {
+    expect(parseWeaveViewArgs(args as string)).toBe("retired-tui");
+  });
+
   it.each([
     ["nope"],
-    ["web tui"],
-    ["tui tui"],
-    ["tui --no-open"], // the TUI never opens a browser; ignoring the flag would be a lie
+    ["web web"],
     ["--no-open --no-open"],
     ["web --noopen"],
     ["web extra"],
@@ -158,9 +158,6 @@ describe("/weave-view (bare) — browser workspace by default", () => {
 
       expect(ctx.ui.notifications.some((n) => n.message.includes("opened in your browser"))).toBe(true);
       expect(urlFrom(ctx)).toBe(url);
-
-      // No TUI: the browser handled it.
-      expect(ctx.ui.customCalls).toHaveLength(0);
     });
   });
 
@@ -293,30 +290,18 @@ describe("/weave-view web --no-open", () => {
 });
 
 // ---------------------------------------------------------------------------
-// The TUI path stays untouched
+// The retired terminal explorer (#61)
 // ---------------------------------------------------------------------------
 
 describe("/weave-view tui", () => {
-  it("opens the explorer and starts no server", async () => {
-    const vault = await makeTempDir();
-    await withVaultEnv(vault, async () => {
-      const ctx = createMockCtx(await makeTempDir());
-      const mock = buildExtension();
-
-      const handler = view(mock, "tui", ctx);
-      for (let i = 0; i < 100 && ctx.ui.customCalls.length === 0; i++) {
-        await new Promise((r) => setTimeout(r, 5));
-      }
-      ctx.ui.resolveCustom(null);
-      await handler;
-
-      expect(ctx.ui.customCalls).toHaveLength(1);
-      expect(mock.api.execCalls).toEqual([]);
-      // No `web:` marker: nothing was started.
-      expect(ctx.ui.statuses["weave"]).not.toContain("web:");
-      // And shutdown remains a no-op for this path.
-      await mock.emit("session_shutdown", {}, ctx);
-    });
+  it("explains the explorer was retired and starts nothing", async () => {
+    const ctx = createMockCtx(await makeTempDir());
+    const mock = buildExtension();
+    await view(mock, "tui", ctx);
+    expect(ctx.ui.notifications).toEqual([{ message: WEAVE_VIEW_TUI_RETIRED, level: "warning" }]);
+    expect(mock.api.execCalls).toEqual([]);
+    expect(ctx.ui.customCalls).toHaveLength(0);
+    expect(ctx.ui.statuses["weave"]).toBeUndefined();
   });
 });
 
@@ -471,13 +456,12 @@ describe("no UI (--mode rpc, headless)", () => {
     });
   });
 
-  it("does not fall back to the TUI in rpc mode", async () => {
+  it("leaves the URL as the answer in rpc mode", async () => {
     const vault = await makeTempDir();
     await withVaultEnv(vault, async () => {
       const ctx = createMockCtx(await makeTempDir(), false, "rpc");
       const mock = track(ctx);
       await view(mock, "", ctx);
-      // The TUI needs a terminal it does not have; the URL is the answer.
       expect(ctx.ui.customCalls).toHaveLength(0);
       expect(
         ctx.ui.notifications.some((n) => n.message.includes("needs an interactive terminal")),
@@ -502,33 +486,31 @@ describe("browser launch failure", () => {
     return { controller, ctx };
   }
 
-  it("a non-zero exit leaves the server up and reports the fallback", async () => {
+  it("a non-zero exit leaves the server up and reports the URL", async () => {
     const { controller, ctx } = await controllerOver(async () => ({ code: 1, stderr: "no display" }));
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const outcome = await controller.run(ctx as any, { open: true });
     expect(outcome.opened).toBe(false);
-    expect(outcome.fallbackToTui).toBe(true);
     expect(outcome.started).toBe(true);
     expect(controller.port()).not.toBeNull();
     expect(ctx.ui.notifications.some((n) => n.message.includes("could not launch a browser"))).toBe(true);
     expect(urlFrom(ctx)).toContain(`:${controller.port()}/`);
   });
 
-  it("a throwing exec (no such binary) is a fallback, not a crash", async () => {
+  it("a throwing exec (no such binary) is reported, not a crash", async () => {
     const { controller, ctx } = await controllerOver(async () => {
       throw new Error("spawn xdg-open ENOENT");
     });
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const outcome = await controller.run(ctx as any, { open: true });
     expect(outcome.opened).toBe(false);
-    expect(outcome.fallbackToTui).toBe(true);
     expect(controller.port()).not.toBeNull();
   });
 
-  it("falls back to the TUI through the command when the browser will not open", async () => {
+  it("keeps the server advertised through the command when the browser will not open", async () => {
     const vault = await makeTempDir();
     await withVaultEnv(vault, async () => {
-      const ctx = createMockCtx(await makeTempDir()); // tui + hasUI
+      const ctx = createMockCtx(await makeTempDir());
       const mock = track(ctx);
       // Make every exec fail, as a machine with no opener would.
       mock.api.exec = async (command: string, args: string[]) => {
@@ -536,16 +518,11 @@ describe("browser launch failure", () => {
         return { code: 127, stdout: "", stderr: "command not found" };
       };
 
-      const handler = view(mock, "", ctx);
-      for (let i = 0; i < 200 && ctx.ui.customCalls.length === 0; i++) {
-        await new Promise((r) => setTimeout(r, 5));
-      }
-      expect(ctx.ui.customCalls).toHaveLength(1);
-      ctx.ui.resolveCustom(null);
-      await handler;
+      await view(mock, "", ctx);
 
-      // The browser was attempted, the server stayed up, and the status line
-      // still advertises it after the TUI wrote its own line on close.
+      // The browser was attempted, no explorer opened, the server stayed up,
+      // and the status line advertises it.
+      expect(ctx.ui.customCalls).toHaveLength(0);
       expect(mock.api.execCalls).toHaveLength(1);
 
       // The port is advertised, and the assertion is on the *port* rather
