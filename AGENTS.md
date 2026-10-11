@@ -55,6 +55,12 @@ npm run check       # typecheck + coverage — run before committing
 - The vault location is overridable via `PI_WEAVE_VAULT`; adapter tests use `withVaultEnv(...)` from helpers. Don't touch a developer's real
   `~/.okf` from a test.
 
+## End-to-end tests
+
+`npm run e2e` drives real pi (in tmux, with a stub model) and the `/weave-view` workspace (headless Chromium) through a baseline journey.
+Run it on your branch for any change a person would see in pi or the workspace, add steps for your feature, and look at the screenshots
+it leaves in `e2e/.artifacts/`. How-to: `docs/e2e.md`.
+
 ## Trying the extension in pi
 
 ```bash
