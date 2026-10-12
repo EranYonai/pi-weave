@@ -134,6 +134,20 @@ describe("baseline: pi + pi-weave + /weave-view", () => {
     await page.keyboard.press("Escape");
   });
 
+  it("search can light its results up in the graph", async () => {
+    await page.getByRole("button", { name: "Search notes and repository" }).click();
+    await page.keyboard.type("Launch");
+    await page.getByText(NOTE_TITLE).first().waitFor();
+    await page.keyboard.press("Shift+Enter");
+    const field = page.getByRole("searchbox", { name: "Light up in graph" });
+    await field.waitFor();
+    expect(await field.inputValue()).toBe("Launch");
+    await page.getByText("1 lit").waitFor();
+    // Labels are drawn on a canvas, so this step's proof is its screenshot.
+    await page.waitForTimeout(800);
+    await field.press("Escape");
+  });
+
   it("settings open", async () => {
     await page.getByRole("button", { name: "Settings" }).click();
     await page.getByText("Appearance").first().waitFor();
