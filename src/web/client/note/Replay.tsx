@@ -6,7 +6,7 @@
 
 import { useLayoutEffect, useRef } from "preact/hooks";
 import type { HistoryRevision } from "../../shared/wire";
-import { HISTORY_EMPTY, HISTORY_OFF_HINT, HISTORY_TRIMMED, MARK_CLOSE, MARK_OPEN, replayStep, splitMarked } from "./replay.model";
+import { HISTORY_EMPTY, HISTORY_OFF_HINT, HISTORY_TRIMMED, MARK_CLOSE, MARK_OPEN, changeBars, dayMarks, replayStep, splitMarked } from "./replay.model";
 
 /** What the column holds while replaying. `null` revisions means still loading. */
 export interface ReplayState {
@@ -52,8 +52,8 @@ export function wrapMarks(root: HTMLElement): HTMLElement | null {
   return first;
 }
 
-/** Past this many versions the track shows no per-version dots: they would touch. */
-const MAX_TICKS = 80;
+/** Past this many versions the band shows no per-version bars: they would be hairlines. */
+const MAX_BARS = 160;
 
 const Icon = (props: { d: string; fill?: boolean }) => (
   <svg width="14" height="14" viewBox="0 0 18 18" aria-hidden="true"
@@ -65,6 +65,8 @@ const Icon = (props: { d: string; fill?: boolean }) => (
 
 export function ReplayBar(props: {
   state: ReplayState;
+  /** Epoch ms, for the "Today" / "Yesterday" day labels. */
+  now: number;
   onIndex: (index: number) => void;
   onPlay: () => void;
 }) {
@@ -101,10 +103,19 @@ export function ReplayBar(props: {
           <Icon d="m7 4 5 5-5 5" />
         </button>
         <div class="weave-replay-track" ref={track}>
-          {revisions.length > MAX_TICKS || last === 0 ? null : (
-            <span class="weave-replay-ticks" aria-hidden="true">
-              {revisions.map((revision, at) => (
-                <span key={at} class={`weave-replay-tick weave-replay-${revision.by}${at > index ? " weave-replay-ahead" : ""}`} />
+          {revisions.length > MAX_BARS || last === 0 ? null : (
+            <span class="weave-replay-bars" aria-hidden="true" style={{ "--weave-bars": `${revisions.length}` }}>
+              {changeBars(revisions).map((bar, at) => (
+                // Placed where the slider's thumb sits for this version, so a bar and its stop line up.
+                <span key={at} style={{ "--weave-bar": `${Math.round(bar.height * 100)}%`, "--weave-bar-at": `${(at / last) * 100}%` }}
+                  class={`weave-replay-bar weave-replay-${bar.by}${at > index ? " weave-replay-ahead" : ""}${at === index ? " weave-replay-current" : ""}`} />
+              ))}
+            </span>
+          )}
+          {last === 0 ? null : (
+            <span class="weave-replay-days" aria-hidden="true">
+              {dayMarks(revisions, props.now).map((mark) => (
+                <span key={mark.at} class="weave-replay-day" style={{ "--weave-day-at": `${mark.at * 100}%` }}>{mark.label}</span>
               ))}
             </span>
           )}

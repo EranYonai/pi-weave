@@ -78,7 +78,10 @@ export const CONTEXT_EMPTY: EmptyStateCopy = {
  */
 export interface StatusBarModel {
   readonly cwd: string;
+  /** The selection as a reader names it: a note's file path, not its node id. */
   readonly selection: string;
+  /** The quiet hint at the far end, "⌘K search"; empty when none is given. */
+  readonly hint: string;
 }
 
 /** The `—` shown where a value is genuinely absent, not zero. */
@@ -88,11 +91,20 @@ export const NO_VALUE = "—";
 export function statusBarModel(
   cwd: string,
   selectedId: string | null,
+  shortcut = "",
 ): StatusBarModel {
   return {
     cwd: cwd === "" ? NO_VALUE : cwd,
-    selection: selectedId ?? "nothing selected",
+    selection: selectionLabel(selectedId),
+    hint: shortcut === "" ? "" : `${shortcut} search`,
   };
+}
+
+/** `note:projects/launch` reads as the file it is, `projects/launch.md`. */
+function selectionLabel(selectedId: string | null): string {
+  if (selectedId === null) return "nothing selected";
+  if (selectedId.startsWith("note:") && selectedId.length > "note:".length) return `${selectedId.slice("note:".length)}.md`;
+  return selectedId;
 }
 
 /**

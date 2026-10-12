@@ -386,6 +386,7 @@ describe("runShellAction", () => {
       fitGraph: () => void log.push("fit"),
       clearSelection: () => void log.push("clear"),
       toggleTheme: () => void log.push("toggleTheme"),
+      toggleContext: () => void log.push("toggleContext"),
       closeTab: () => void log.push("closeTab"),
     };
   }
@@ -406,6 +407,7 @@ describe("runShellAction", () => {
       [{ type: "fitGraph" }, "fit"],
       [{ type: "clearSelection" }, "clear"],
       [{ type: "toggleTheme" }, "toggleTheme"],
+      [{ type: "toggleContext" }, "toggleContext"],
       [{ type: "closeTab" }, "closeTab"],
     ];
     for (const [action, expected] of cases) {
@@ -450,6 +452,7 @@ describe("every action is reachable from a key", () => {
         "closeOverlay",
         "closeTab",
         "toggleTheme",
+        "toggleContext",
         "filterTree",
         "fitGraph",
         "focusColumn",
@@ -565,7 +568,7 @@ describe("keyHelp", () => {
     // Scoped to the letters, deliberately: the arrows in the Tree and Search
     // groups belong to `treeKey` and `searchKey`, which the global map is
     // *supposed* to answer `null` for — that is how those handlers get them.
-    const letters = combos.filter((c) => /^[a-z/?]$/.test(c));
+    const letters = combos.filter((c) => /^[a-z/?\]]$/.test(c));
     for (const combo of letters) {
       expect(shellKey(key({ key: combo }), IDLE), combo).not.toBeNull();
     }

@@ -221,7 +221,7 @@ describe("THEME_CSS", () => {
     // token, and every `font-size:` in the sheet is one of them. A literal px
     // here is a size the ramp does not govern — the exact drift
     // (9/10/11/11.5/…) this gate exists to stop.
-    const steps = ["9.5px", "10.5px", "11.5px", "12px", "13px", "13.5px", "14px", "15px", "20px"];
+    const steps = ["9.5px", "10.5px", "11.5px", "12px", "13px", "13.5px", "14px", "15px", "26px"];
     const declared = [...THEME_CSS.matchAll(/--weave-px-([a-z]+):(\d+(?:\.\d+)?px)/g)].map((m) => m[2]!);
     expect(new Set(declared)).toEqual(new Set(steps));
     const stray = [...THEME_CSS.matchAll(/font-size:\s*([^;}]+)/g)]

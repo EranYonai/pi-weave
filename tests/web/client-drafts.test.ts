@@ -11,6 +11,7 @@ describe("shared note drafts", () => {
     drafts.open("one", `Body text.\n\n${tail}\n`);
     expect(drafts.get("one")).toEqual({
       body: "Body text.", baseline: "Body text.", tail, raw: "```\nhi\n```", rawBaseline: "```\nhi\n```", saving: false,
+      original: "Body text.", originalRaw: "```\nhi\n```", savedAt: null, failed: false,
     });
     drafts.taskBody("one", `Body text.\n\n${tail}`, drafts.nextLoadVersion());
     drafts.edit("one", "Body text, edited.");
@@ -78,7 +79,7 @@ describe("shared note drafts", () => {
     const firstView = drafts.get("one");
     const secondView = drafts.get("one");
     expect(firstView).toBe(secondView);
-    expect(drafts.get("one")).toEqual({ body: "original", baseline: "original", tail: "", raw: "", rawBaseline: "", saving: false });
+    expect(drafts.get("one")).toEqual({ body: "original", baseline: "original", tail: "", raw: "", rawBaseline: "", saving: false, original: "original", originalRaw: "", savedAt: null, failed: false });
     drafts.edit("one", "edited");
     expect(secondView?.body).toBe("edited");
     expect(drafts.isDirty("one")).toBe(true);
@@ -106,7 +107,7 @@ describe("shared note drafts", () => {
     resolveSave(true);
     await saving;
 
-    expect(drafts.get("one")).toEqual({ body: "typed while saving", baseline: "sent", tail: "", raw: "", rawBaseline: "", saving: false });
+    expect(drafts.get("one")).toMatchObject({ body: "typed while saving", baseline: "sent", tail: "", raw: "", rawBaseline: "", saving: false, failed: false });
     expect(drafts.isDirty("one")).toBe(true);
 
     let resolveSecond!: (ok: boolean) => void;
@@ -116,7 +117,7 @@ describe("shared note drafts", () => {
     drafts.edit("two", "original");
     resolveSecond(true);
     await secondSave;
-    expect(drafts.get("two")).toEqual({ body: "original", baseline: "sent", tail: "", raw: "", rawBaseline: "", saving: false });
+    expect(drafts.get("two")).toMatchObject({ body: "original", baseline: "sent", tail: "", raw: "", rawBaseline: "", saving: false });
     expect(drafts.isDirty("two")).toBe(true);
   });
 
@@ -127,6 +128,7 @@ describe("shared note drafts", () => {
     await drafts.save("one", async () => false);
     expect(drafts.get("one")?.body).toBe("failed save");
     expect(drafts.get("one")?.saving).toBe(false);
+    expect(drafts.get("one")?.failed).toBe(true);
 
     let resolveSave!: (ok: boolean) => void;
     const saving = drafts.save("one", () => new Promise<boolean>((resolve) => { resolveSave = resolve; }));
@@ -134,7 +136,7 @@ describe("shared note drafts", () => {
     drafts.open("one", "replacement");
     resolveSave(true);
     await saving;
-    expect(drafts.get("one")).toEqual({ body: "replacement", baseline: "replacement", tail: "", raw: "", rawBaseline: "", saving: false });
+    expect(drafts.get("one")).toEqual({ body: "replacement", baseline: "replacement", tail: "", raw: "", rawBaseline: "", saving: false, original: "replacement", originalRaw: "", savedAt: null, failed: false });
   });
 });
 
@@ -354,4 +356,35 @@ describe("tree mutation draft guard", () => {
     expect(confirm).not.toHaveBeenCalled();
     expect(drafts.get("clean")).toBeNull();
   });
+
+  it("autosaves without closing the editor, and passes quiet so the shell does not alert", async () => {
+    const drafts = createDraftStore();
+    drafts.open("one", "original");
+    drafts.edit("one", "typed");
+    const onSave = vi.fn(async () => true);
+    await drafts.save("one", onSave, { keepOpen: true });
+    expect(onSave).toHaveBeenCalledWith("one", "typed", { quiet: true });
+    const draft = drafts.get("one");
+    expect(draft).toMatchObject({ body: "typed", baseline: "typed", original: "original", failed: false });
+    expect(draft?.savedAt).toEqual(expect.any(Number));
+    expect(drafts.isDirty("one")).toBe(false);
+
+    await drafts.save("one", async () => false, { keepOpen: true });
+    expect(drafts.get("one")?.failed).toBe(true);
+  });
+
+  it("reverts to the opening body, and says whether disk now differs", async () => {
+    const drafts = createDraftStore();
+    expect(drafts.revert("missing")).toBe(false);
+    drafts.open("one", "original");
+    drafts.edit("one", "typed");
+    // Nothing written yet: going back is just closing.
+    expect(drafts.revert("one")).toBe(false);
+    drafts.edit("one", "typed");
+    await drafts.save("one", async () => true, { keepOpen: true });
+    // The edits are on disk, so the original has to be written back.
+    expect(drafts.revert("one")).toBe(true);
+    expect(drafts.get("one")?.body).toBe("original");
+  });
 });
+

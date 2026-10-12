@@ -67,8 +67,9 @@ export const THEME_CSS = `
   --weave-note-gutter:18px;
   /* The desk-and-page split. The workspace is a desk of instruments — tree,
      graph, rail, bars — on the --weave-bg ground; the note column is the one
-     *page* lying on it: crust in both Catppuccin schemes, the ground that
-     sits furthest from the desk (deep under dark, bright over light). Two
+     *page* lying on it: crust under dark, plain white under Latte (the
+     refresh's "quiet page": paper reads as paper), the ground that sits
+     furthest from the desk. Two
      voices in total: sans for instruments and prose alike, mono for data — a
      third face was tried (serif prose) and withdrawn at the user's call; two
      voices read calmer than three. The CSP allows nothing fetched, and both
@@ -79,7 +80,7 @@ export const THEME_CSS = `
      two overlays that float above the grid. Tag pills are 999px — a capsule
      shape, not a scale step. The gate test below refuses any literal px
      radius so the scale cannot drift back. */
-  --weave-radius:4px;--weave-radius-pop:7px;
+  --weave-radius:6px;--weave-radius-pop:10px;
   /* The type ramp, role-named because sizes drift and roles stick. Nine
      steps; every font-size in this sheet is one of these vars — that is a
      gate, not a convention:
@@ -91,7 +92,7 @@ export const THEME_CSS = `
        body     13.5  the note column's prose
        subhead  14    palette input, note-body h2, ribbon icon buttons
        title    15    note-body h1
-       display  20    the note's page title
+       display  26    the note's page title (20 before the refresh)
      Two earlier sizes were merged into neighbours: 9px glyphs to prov, and
      the 10px column overlines to caption (caps plus .09em tracking already
      read larger than their point size suggests). \`display\` and \`body\` are
@@ -106,7 +107,7 @@ export const THEME_CSS = `
      rubber stamp. */
   --weave-px-prov:9.5px;--weave-px-caption:10.5px;--weave-px-ui:11.5px;
   --weave-px-row:12px;--weave-px-base:13px;--weave-px-body:13.5px;
-  --weave-px-subhead:14px;--weave-px-title:15px;--weave-px-display:20px;
+  --weave-px-subhead:14px;--weave-px-title:15px;--weave-px-display:26px;
 }
 @media (prefers-color-scheme: light){
   :root:not([data-weave-theme]){${paletteTokens("light")}}
@@ -245,7 +246,7 @@ body{font-size:var(--weave-px-base)}
 .weave-note-head{position:sticky;top:0;z-index:2;padding:14px var(--weave-note-gutter) 9px;background:var(--weave-page);border-bottom:1px solid var(--weave-line)}
 /* The page's largest voice, and the point of the review's headline finding:
    a 15px title sat 1.5px above the body it named. --weave-px-display puts the
-   title where a page's title belongs, weight 650 for presence at 20px (600
+   title where a page's title belongs, weight 650 for presence at 26px (600
    reads thin at that size, 700 reads as a poster), tracking pulled in by a
    hair because large sans needs it. */
 .weave-note-title{margin:0 0 4px;font-size:var(--weave-px-display);font-weight:650;line-height:1.25;letter-spacing:-.005em;color:var(--weave-fg)}
@@ -262,20 +263,67 @@ body{font-size:var(--weave-px-base)}
 }
 .weave-note-open:hover{color:var(--weave-fg);background:var(--weave-line)}
 .weave-note-open-mark{display:inline-flex;line-height:0}
-/* Save / Done, chip-shaped: the same quiet row, and a control in a reading
-   column should not outweigh the title. */
-.weave-note-edit,.weave-note-save{
+/* The note's own actions, at the end of the meta line. History is a quiet
+   word with an icon; Edit is the one bordered control, and neither outweighs
+   the title. */
+.weave-note-actions{margin-left:auto;display:inline-flex;align-items:center;gap:4px}
+.weave-note-meta .weave-note-action{
+  display:inline-flex;align-items:center;gap:5px;
   font:inherit;font-size:var(--weave-px-caption);line-height:1;white-space:nowrap;cursor:pointer;
-  color:var(--weave-dim);background:var(--weave-panel);padding:4px 7px;
-  border:1px solid var(--weave-line-strong);border-radius:var(--weave-radius);
+  color:var(--weave-dim);background:none;padding:5px 8px;
+  border:1px solid transparent;border-radius:var(--weave-radius);
 }
-.weave-note-edit:hover,.weave-note-save:hover{color:var(--weave-fg);border-color:var(--weave-accent)}
-/* Save is the row's only affirmative action, so the only one with the accent. */
-.weave-note-save{color:var(--weave-accent);border-color:var(--weave-accent)}
-.weave-note-save:disabled{color:var(--weave-faint);border-color:var(--weave-line-strong);cursor:default}
-/* History: a slim bar under the header. The step's added text is marked in
-   the accent tint, the same strength the selected rows use. */
-.weave-note-history[aria-pressed="true"]{color:var(--weave-accent);border-color:var(--weave-accent)}
+.weave-note-meta .weave-note-action .weave-icon{width:13px;height:13px}
+.weave-note-meta .weave-note-action:hover{color:var(--weave-fg);background:var(--weave-new)}
+.weave-note-meta .weave-note-action:disabled{color:var(--weave-faint);background:none;cursor:default}
+.weave-note-meta .weave-note-edit{color:var(--weave-fg);background:var(--weave-page);border-color:var(--weave-line-strong)}
+.weave-note-meta .weave-note-edit:hover{border-color:var(--weave-accent);background:var(--weave-page)}
+.weave-note-meta .weave-note-history[aria-pressed="true"]{color:var(--weave-accent);background:var(--weave-new)}
+/* Where the note lives, above its title: a crumb, not a heading. */
+.weave-note-crumb{margin:0 0 6px;display:flex;align-items:center;gap:5px;font-size:var(--weave-px-caption);color:var(--weave-faint)}
+.weave-note-crumb .weave-icon{width:12px;height:12px}
+/* Who wrote it, in words, with the spine's colour as a dot. */
+.weave-note-meta .weave-prov{display:inline-flex;align-items:center;gap:6px;font-size:var(--weave-px-ui);color:var(--weave-dim)}
+.weave-prov-dot{width:7px;height:7px;border-radius:999px;background:var(--weave-spine,var(--weave-accent))}
+/* The edit bar (E1): one row while editing, pinned over the text it edits.
+   Formatting on the left, where the words are; the save state and the two
+   ways out on the right. Saving is automatic, so Done is the only
+   affirmative control and the only one in the accent. */
+.weave-editbar{
+  position:sticky;top:0;z-index:3;display:flex;align-items:center;gap:6px;flex-wrap:wrap;
+  min-height:40px;padding:5px 12px;font-size:var(--weave-px-ui);
+  background:var(--weave-page);border-bottom:1px solid var(--weave-line);
+}
+.weave-editbar .weave-icon{width:14px;height:14px}
+.weave-editbar-badge{
+  display:inline-flex;align-items:center;gap:5px;padding:3px 9px;border-radius:999px;
+  font-size:var(--weave-px-caption);font-weight:600;color:var(--weave-accent);background:var(--weave-new);
+}
+.weave-editbar-badge .weave-icon{width:12px;height:12px}
+.weave-editbar-tools{display:inline-flex;align-items:center;gap:1px;margin-left:4px;padding-left:8px;border-left:1px solid var(--weave-line)}
+.weave-editbar .weave-editbar-tool{
+  display:inline-grid;place-items:center;width:28px;height:28px;padding:0;cursor:pointer;
+  color:var(--weave-dim);background:none;border:0;border-radius:var(--weave-radius);
+}
+.weave-editbar .weave-editbar-tool:hover{color:var(--weave-fg);background:var(--weave-new)}
+.weave-editbar-status{margin-left:auto;display:inline-flex;align-items:center;gap:5px;white-space:nowrap;font-size:var(--weave-px-caption);color:var(--weave-faint)}
+.weave-editbar-pending,.weave-editbar-saving{color:var(--weave-dim)}
+.weave-editbar-saved{color:var(--weave-ok)}
+.weave-editbar-failed{color:var(--weave-bad);font-weight:600}
+.weave-editbar .weave-editbar-retry{font:inherit;color:var(--weave-accent);background:none;border:0;padding:2px 4px;cursor:pointer;text-decoration:underline;text-underline-offset:2px}
+.weave-editbar .weave-editbar-discard,.weave-editbar .weave-editbar-done{font:inherit;font-size:var(--weave-px-caption);line-height:1;white-space:nowrap;cursor:pointer;border-radius:var(--weave-radius)}
+.weave-editbar .weave-editbar-discard{padding:7px 9px;color:var(--weave-dim);background:none;border:1px solid transparent}
+.weave-editbar .weave-editbar-discard:hover{color:var(--weave-fg);background:var(--weave-new)}
+.weave-editbar .weave-editbar-done{padding:7px 14px;font-weight:600;color:var(--weave-page);background:var(--weave-accent);border:1px solid var(--weave-accent)}
+.weave-editbar .weave-editbar-done:hover{filter:brightness(1.08)}
+.weave-editbar .weave-editbar-discard:disabled,.weave-editbar .weave-editbar-done:disabled{opacity:.5;cursor:default;filter:none}
+/* A finalized note's opening TLDR, set apart as the first thing to read.
+   The label is the card's own; task boxes keep their row and lose the bullet. */
+.weave-tldr{margin:0 0 18px;padding:12px 16px;background:var(--weave-new);border:1px solid var(--weave-line-strong);border-radius:var(--weave-radius)}
+.weave-tldr>p,.weave-tldr>ul,.weave-tldr>ol{margin:0 0 6px}
+.weave-tldr>*:last-child{margin-bottom:0}
+.weave-tldr ul:has(>li>input[type="checkbox"]){list-style:none;padding-left:2px}
+.weave-tldr-label{display:block;margin-bottom:3px;font-size:var(--weave-px-prov);font-weight:700;letter-spacing:.08em;color:var(--weave-accent)}
 /* The replay band sits under the header like the header itself: full width,
    the note's gutter, one line of words, one line of controls. Dots on the
    track are the versions, coloured by who made them. */
@@ -306,25 +354,28 @@ body{font-size:var(--weave-px-base)}
 .weave-replay-controls button:disabled{color:var(--weave-faint);cursor:default;opacity:.6}
 .weave-replay-controls .weave-replay-play{color:var(--weave-page);background:var(--weave-accent);border-color:var(--weave-accent)}
 .weave-replay-controls .weave-replay-play:hover:not(:disabled){filter:brightness(1.08)}
-.weave-replay-track{--weave-replay-at:100%;position:relative;flex:1;min-width:80px;height:28px;margin-left:8px}
+/* The change bars (the refresh's H2): one bar per version, as tall as the
+   change was big, coloured by who made it; the version on screen is ringed.
+   The day labels sit under the band. Heights and label positions arrive as
+   custom properties through Preact's CSSOM style path, never an attribute. */
+.weave-replay-track{--weave-replay-at:100%;position:relative;flex:1;min-width:80px;height:46px;margin-left:8px}
 .weave-replay-track::before{
-  content:"";position:absolute;left:7px;right:7px;top:13px;height:2px;border-radius:999px;
+  content:"";position:absolute;left:7px;right:7px;top:31px;height:2px;border-radius:999px;
   background:linear-gradient(to right,color-mix(in srgb,var(--weave-accent) 55%,transparent) var(--weave-replay-at),var(--weave-line-strong) var(--weave-replay-at));
 }
-.weave-replay-ticks{position:absolute;left:7px;right:7px;top:0;bottom:0;display:flex;justify-content:space-between;align-items:center;pointer-events:none}
-.weave-replay-tick{position:relative;width:0;height:0}
-.weave-replay-tick::before{
-  content:"";position:absolute;left:-6px;top:-6px;width:12px;height:12px;box-sizing:border-box;border-radius:999px;
-  background:var(--weave-who);border:2px solid var(--weave-panel);
-}
-.weave-replay-ahead::before{opacity:.4}
+.weave-replay-bars{position:absolute;left:7px;right:7px;top:2px;height:26px;pointer-events:none}
+.weave-replay-bar{position:absolute;bottom:0;left:var(--weave-bar-at,0);width:max(1px,min(8px,calc(100% / var(--weave-bars,1) - 2px)));transform:translateX(-50%);height:var(--weave-bar,14%);border-radius:var(--weave-radius);background:var(--weave-who);opacity:.85}
+.weave-replay-ahead{opacity:.35}
+.weave-replay-current{opacity:1;outline:2px solid var(--weave-accent);outline-offset:1px}
+.weave-replay-days{position:absolute;left:7px;right:7px;top:34px;height:12px;pointer-events:none}
+.weave-replay-day{position:absolute;left:var(--weave-day-at,0);transform:translateX(-2px);font-size:var(--weave-px-prov);line-height:12px;color:var(--weave-faint);white-space:nowrap}
 .weave-replay-slider{position:absolute;inset:0;width:100%;height:100%;margin:0;background:transparent;-webkit-appearance:none;appearance:none;cursor:pointer}
 .weave-replay-slider:disabled{cursor:default}
 .weave-replay-slider:focus{outline:none}
-.weave-replay-slider::-webkit-slider-runnable-track{height:28px;background:transparent}
-.weave-replay-slider::-moz-range-track{height:28px;background:transparent}
+.weave-replay-slider::-webkit-slider-runnable-track{height:46px;background:transparent}
+.weave-replay-slider::-moz-range-track{height:46px;background:transparent}
 .weave-replay-slider::-webkit-slider-thumb{
-  -webkit-appearance:none;appearance:none;width:14px;height:14px;margin-top:7px;border-radius:999px;
+  -webkit-appearance:none;appearance:none;width:14px;height:14px;margin-top:25px;border-radius:999px;
   background:var(--weave-page);border:2px solid var(--weave-accent);box-sizing:border-box;
 }
 .weave-replay-slider::-moz-range-thumb{
@@ -342,7 +393,7 @@ body{font-size:var(--weave-px-base)}
   display:block;width:100%;flex:1 0 auto;min-height:12em;resize:none;
   padding:12px var(--weave-note-gutter) 28px;box-sizing:border-box;
   font-family:var(--weave-mono);font-size:var(--weave-px-row);line-height:1.6;
-  color:var(--weave-fg);background:var(--weave-bg);border:0;outline:0;
+  color:var(--weave-fg);background:var(--weave-page);border:0;outline:0;
 }
 /* The \`## Raw\` box under the editor: folded by default so a long
    dictation never outgrows the note, a dashed edge to say "captured, not
@@ -596,6 +647,7 @@ body{font-size:var(--weave-px-base)}
 .weave-status-cwd,.weave-status-sel{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .weave-status-cwd{max-width:38%;color:var(--weave-faint)}
 .weave-status-sel{color:var(--weave-fg)}
+.weave-status-hint{margin-left:auto;padding-left:8px;white-space:nowrap;color:var(--weave-faint)}
 
 /* overlays: the ⌘K palette and the ? help sheet (P4) --------------------- */
 /* The scrim is a click target that closes, and the reason both overlays sit

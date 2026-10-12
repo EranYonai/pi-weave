@@ -124,14 +124,18 @@ describe("editor polish: Raw tail, focus, Esc, small graph", () => {
     expect(await page.getByRole("textbox", { name: "Raw notes text" }).count()).toBe(0);
   });
 
-  it("typing and saving keeps the Raw tail on disk", async () => {
+  it("a pause in typing saves by itself and keeps the Raw tail on disk", async () => {
     await page.keyboard.type(TYPED);
-    await page.keyboard.press("Control+s");
-    await page.getByRole("button", { name: "Edit", exact: true }).waitFor();
+    const bar = page.getByRole("toolbar", { name: "Editing" });
+    await bar.getByText("Unsaved changes").waitFor();
+    await bar.getByText(/^Saved /).waitFor();
     const text = noteText();
     expect(text).toContain(`${NOTE_BODY}${TYPED}`);
     expect(text.indexOf(TYPED)).toBeLessThan(text.indexOf("## Raw"));
     expect(text).toContain(DICTATION);
+    // Still editing until Done (or Esc).
+    await page.keyboard.press("Escape");
+    await page.getByRole("button", { name: "Edit", exact: true }).waitFor();
   });
 
   it("opening Raw shows its words in their own box, capped in height", async () => {
@@ -147,10 +151,12 @@ describe("editor polish: Raw tail, focus, Esc, small graph", () => {
     expect(box!.height).toBeLessThan(320);
   });
 
-  it("editing Raw and saving writes the change to disk", async () => {
+  it("editing Raw and pressing ⌘S writes the change to disk", async () => {
     const raw = page.getByRole("textbox", { name: "Raw notes text" });
     await raw.fill((await raw.inputValue()).replace(DICTATION, EDITED));
     await page.keyboard.press("Control+s");
+    await page.getByRole("toolbar", { name: "Editing" }).getByText(/^Saved /).waitFor();
+    await page.getByRole("button", { name: "Done", exact: true }).click();
     await page.getByRole("button", { name: "Edit", exact: true }).waitFor();
     const text = noteText();
     expect(text).toContain(EDITED);
@@ -159,6 +165,18 @@ describe("editor polish: Raw tail, focus, Esc, small graph", () => {
     expect(text).toContain("line 24 of a long dictated ramble");
     expect(text.indexOf(TYPED)).toBeLessThan(text.indexOf("## Raw"));
     expect(text.indexOf("## Raw")).toBeLessThan(text.indexOf(EDITED));
+  });
+
+  it("Context floats as a card that folds to a pill and docks as a column", async () => {
+    const card = page.locator(".weave-context-float");
+    await card.getByText("Context", { exact: true }).waitFor();
+    await page.getByRole("button", { name: "Hide context sidebar" }).click();
+    await page.getByRole("button", { name: /^Show context/ }).click();
+    await card.getByRole("button", { name: "Dock context as a column" }).click();
+    await page.getByRole("button", { name: "Float context over the page" }).waitFor();
+    expect(await page.locator(".weave-context-float").count()).toBe(0);
+    await page.getByRole("button", { name: "Float context over the page" }).click();
+    await card.waitFor();
   });
 
   it("a two-note graph opens fitted with every node labelled", async () => {

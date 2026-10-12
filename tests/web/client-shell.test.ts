@@ -120,7 +120,18 @@ describe("statusBarModel", () => {
   it("shows the cwd and the selection", () => {
     const model = statusBarModel("/repo", "note:alpha");
     expect(model.cwd).toBe("/repo");
-    expect(model.selection).toBe("note:alpha");
+    expect(model.selection).toBe("alpha.md");
+    expect(model.hint).toBe("");
+  });
+
+  it("names a note by its file and leaves other selections as they are", () => {
+    expect(statusBarModel("/repo", "note:projects/launch").selection).toBe("projects/launch.md");
+    expect(statusBarModel("/repo", "note:").selection).toBe("note:");
+    expect(statusBarModel("/repo", "artifact:docs/a.html").selection).toBe("artifact:docs/a.html");
+  });
+
+  it("ends with the search shortcut when one is given", () => {
+    expect(statusBarModel("/repo", null, "⌘K").hint).toBe("⌘K search");
   });
 
   it("says so when nothing is selected", () => {

@@ -160,6 +160,66 @@ export function replayStep(revisions: readonly HistoryRevision[], index: number)
   };
 }
 
+/** One bar of the history band: how much a version changed, and who changed it. */
+export interface ChangeBar {
+  /** 0–1 of the band's height; never so small that a version disappears. */
+  height: number;
+  by: HistoryRevision["by"];
+}
+
+/** The shortest bar, so a one-character fix still reads as a version. */
+export const MIN_BAR = 0.14;
+
+/**
+ * Bar heights for the history band (the refresh's "change bars"). Height
+ * follows how many characters a version added and removed, on a log scale so
+ * one big rewrite does not flatten every other bar into the floor. The first
+ * version counts its whole body.
+ */
+export function changeBars(revisions: readonly HistoryRevision[]): ChangeBar[] {
+  const sizes = revisions.map((revision, i) => {
+    const range = changedRange(i === 0 ? "" : (revisions[i - 1] as HistoryRevision).body, revision.body);
+    return range.end - range.start + range.removed;
+  });
+  const top = Math.log1p(Math.max(0, ...sizes));
+  return revisions.map((revision, i) => ({
+    height: top === 0 ? MIN_BAR : MIN_BAR + (1 - MIN_BAR) * (Math.log1p(sizes[i] as number) / top),
+    by: revision.by,
+  }));
+}
+
+/** A day label under the band, at a fraction of its width. */
+export interface DayMark {
+  /** 0–1 along the band: version index over the last index. */
+  at: number;
+  label: string;
+}
+
+/**
+ * Where each day starts along the band, labelled "Today", "Yesterday" or a
+ * short date. The first version always gets a label, so the band says when
+ * the history begins.
+ */
+export function dayMarks(revisions: readonly HistoryRevision[], now: number): DayMark[] {
+  const today = new Date(now);
+  const yesterday = new Date(now - 86_400_000);
+  const last = Math.max(1, revisions.length - 1);
+  const marks: DayMark[] = [];
+  let previous = "";
+  revisions.forEach((revision, i) => {
+    const date = new Date(revision.at);
+    if (Number.isNaN(date.getTime())) return;
+    const day = date.toDateString();
+    if (day === previous) return;
+    previous = day;
+    const label = day === today.toDateString() ? "Today"
+      : day === yesterday.toDateString() ? "Yesterday"
+      : date.toLocaleDateString(undefined, { month: "short", day: "numeric" });
+    marks.push({ at: revisions.length === 1 ? 0 : i / last, label });
+  });
+  return marks;
+}
+
 /** The next index while playing, or null at the end. */
 export function nextStep(index: number, count: number): number | null {
   return index + 1 < count ? index + 1 : null;

@@ -15,11 +15,29 @@ export interface NoteDraft {
   raw: string;
   rawBaseline: string;
   saving: boolean;
+  /** The body and Raw entries as they were when the editor opened: what Discard returns to. */
+  original: string;
+  originalRaw: string;
+  /** When an autosave last landed (epoch ms); null until one has. */
+  savedAt: number | null;
+  /** The last save attempt failed; cleared by the next one that lands. */
+  failed: boolean;
 }
 
 /** How a save should treat the `## Raw` tail; `raw` means the person edited it. */
 export interface SaveOptions {
   raw?: boolean;
+  /** An autosave: the shell reports a failure in the edit bar, not with an alert. */
+  quiet?: boolean;
+}
+
+/** How a draft save behaves. */
+export interface DraftSaveOptions {
+  /**
+   * Keep the editor open after the write lands (autosave). Without it a save
+   * that catches up with the editor closes it, which is what Done does.
+   */
+  keepOpen?: boolean;
 }
 
 export type SaveNote = (slug: string, body: string, options?: SaveOptions) => Promise<boolean>;
@@ -42,7 +60,13 @@ export interface DraftStore {
   discard(slug: string): void;
   isDirty(slug: string): boolean;
   dirtySlugs(): string[];
-  save(slug: string, onSave: SaveNote): Promise<void>;
+  save(slug: string, onSave: SaveNote, options?: DraftSaveOptions): Promise<void>;
+  /**
+   * Put the body and Raw entries back to how they were when the editor
+   * opened. Returns whether that differs from what is on disk now (an
+   * autosave already wrote the edits), in which case the caller saves.
+   */
+  revert(slug: string): boolean;
   nextLoadVersion(): number;
   getTaskBody(slug: string, fallback: string): string;
   taskBody(slug: string, serverBody: string, loadVersion: number): string;
@@ -69,19 +93,22 @@ export function createDraftStore(): DraftStore {
       if (drafts.has(slug)) return;
       const { head, tail } = splitRawTail(body);
       const { entries } = splitRawOpening(tail);
-      drafts.set(slug, { body: head, baseline: head, tail, raw: entries, rawBaseline: entries, saving: false });
+      drafts.set(slug, { body: head, baseline: head, tail, raw: entries, rawBaseline: entries, saving: false, original: head, originalRaw: entries, savedAt: null, failed: false });
       notify();
     },
     edit(slug, body) {
       const draft = drafts.get(slug);
       if (draft === undefined || draft.body === body) return;
       draft.body = body;
+      // New words get a fresh autosave attempt; a failure says so until then.
+      draft.failed = false;
       notify();
     },
     editRaw(slug, raw) {
       const draft = drafts.get(slug);
       if (draft === undefined || draft.raw === raw) return;
       draft.raw = raw;
+      draft.failed = false;
       notify();
     },
     discard(slug) {
@@ -94,7 +121,15 @@ export function createDraftStore(): DraftStore {
     dirtySlugs() {
       return [...drafts].filter(([, draft]) => dirty(draft)).map(([slug]) => slug);
     },
-    async save(slug, onSave) {
+    revert(slug) {
+      const draft = drafts.get(slug);
+      if (draft === undefined) return false;
+      draft.body = draft.original;
+      draft.raw = draft.originalRaw;
+      notify();
+      return dirty(draft);
+    },
+    async save(slug, onSave, options) {
       const draft = drafts.get(slug);
       if (draft === undefined || draft.saving || taskSources.get(slug)?.saving) return;
       const sent = draft.body;
@@ -109,7 +144,8 @@ export function createDraftStore(): DraftStore {
       notify();
       let ok = false;
       try {
-        ok = await onSave(slug, full, rawEdited ? { raw: true } : undefined);
+        const saveOptions: SaveOptions = { ...(rawEdited ? { raw: true } : {}), ...(options?.keepOpen ? { quiet: true } : {}) };
+        ok = await onSave(slug, full, Object.keys(saveOptions).length === 0 ? undefined : saveOptions);
       } finally {
         // Discard/reopen during an in-flight request gives the new draft a new identity.
         if (drafts.get(slug) === draft) {
@@ -119,13 +155,15 @@ export function createDraftStore(): DraftStore {
             source.version = ++loadVersion;
             delete source.pending;
           }
-          if (ok && draft.body === sent && draft.raw === sentRaw) drafts.delete(slug);
+          if (ok && !options?.keepOpen && draft.body === sent && draft.raw === sentRaw) drafts.delete(slug);
           else {
             if (ok) {
               draft.baseline = sent;
               draft.rawBaseline = sentRaw;
               draft.tail = tail;
+              draft.savedAt = Date.now();
             }
+            draft.failed = !ok;
             draft.saving = false;
           }
           notify();

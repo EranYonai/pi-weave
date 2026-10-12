@@ -79,7 +79,7 @@ it("opens settings with Command or Control comma and closes with Escape", () => 
   expect(shellKey({ ...event, ctrl: true, meta: false }, { overlay: null, hasSelection: false })).toEqual({ type: "openSettings" });
   expect(shellKey({ ...event, key: "Escape" }, { overlay: "settings", hasSelection: false })).toEqual({ type: "closeOverlay" });
   const events: unknown[] = [];
-  runShellAction({ type: "openSettings" }, { setOverlay: (overlay) => events.push(overlay), focusSelector: () => false, fitGraph: () => {}, clearSelection: () => {}, closeTab: () => {}, toggleTheme: () => {} });
+  runShellAction({ type: "openSettings" }, { setOverlay: (overlay) => events.push(overlay), focusSelector: () => false, fitGraph: () => {}, clearSelection: () => {}, closeTab: () => {}, toggleTheme: () => {}, toggleContext: () => {} });
   expect(events).toEqual(["settings"]);
 });
 

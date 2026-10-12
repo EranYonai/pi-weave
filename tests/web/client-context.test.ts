@@ -18,6 +18,7 @@ import {
   HEADINGS,
   RAIL_COLLAPSE_THRESHOLD,
   RAIL_EMPTY,
+  contextCount,
   contextModel,
   emptyRailToggles,
   incomingMentions,
@@ -125,6 +126,13 @@ describe("contextModel empty states", () => {
 describe("contextModel groups", () => {
   it("names the subject, so the rail says what it is describing", () => {
     expect(contextModel(GRAPH, "note:alpha").subject).toBe("Alpha");
+  });
+
+  it("counts every row and tag, for the folded card's badge", () => {
+    const model = contextModel(GRAPH, "note:alpha");
+    expect(contextCount(model)).toBe(model.groups.reduce((sum, group) => sum + group.rows.length, 0) + model.tags.length);
+    expect(contextCount(model)).toBeGreaterThan(0);
+    expect(contextCount(contextModel(GRAPH, null))).toBe(0);
   });
 
   it("shows everything related to a note at once — the §1.1 principle", () => {
