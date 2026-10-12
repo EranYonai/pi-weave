@@ -6,12 +6,14 @@
 
 import { useLayoutEffect, useRef } from "preact/hooks";
 import type { HistoryRevision } from "../../shared/wire";
-import { HISTORY_EMPTY, HISTORY_OFF_HINT, MARK_CLOSE, MARK_OPEN, replayStep, splitMarked } from "./replay.model";
+import { HISTORY_EMPTY, HISTORY_OFF_HINT, HISTORY_TRIMMED, MARK_CLOSE, MARK_OPEN, replayStep, splitMarked } from "./replay.model";
 
 /** What the column holds while replaying. `null` revisions means still loading. */
 export interface ReplayState {
   revisions: HistoryRevision[] | null;
   enabled: boolean;
+  /** Older revisions were dropped to keep the history file small. */
+  trimmed: boolean;
   index: number;
   playing: boolean;
   error: string | null;
@@ -66,7 +68,7 @@ export function ReplayBar(props: {
   onIndex: (index: number) => void;
   onPlay: () => void;
 }) {
-  const { revisions, index, playing, enabled, error } = props.state;
+  const { revisions, index, playing, enabled, trimmed, error } = props.state;
   const track = useRef<HTMLDivElement>(null);
   const last = revisions === null ? 0 : revisions.length - 1;
   // CSSOM, not a style attribute (the CSP forbids those): how far along the
@@ -86,6 +88,7 @@ export function ReplayBar(props: {
         <span class={`weave-replay-who weave-replay-${step.by}`}>{step.action}</span>
         <span class="weave-replay-time" title={step.atIso}>{step.at}</span>
         {step.change === "" ? null : <span class="weave-replay-change">{step.change}</span>}
+        {trimmed && index === 0 ? <span class="weave-replay-time">{HISTORY_TRIMMED}</span> : null}
       </p>
       <div class="weave-replay-controls">
         <button type="button" aria-label="Previous version" disabled={index <= 0} onClick={() => props.onIndex(index - 1)}>

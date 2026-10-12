@@ -1,4 +1,4 @@
-import { existsSync, readFileSync } from "node:fs";
+import { existsSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import type { Browser, Page } from "playwright-core";
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it } from "vitest";
@@ -7,6 +7,7 @@ import { launchBrowser } from "./harness/browser";
 import { PiSession } from "./harness/piSession";
 import { createSandbox, type Sandbox } from "./harness/sandbox";
 import { lastMessageText, startStubModel, type StubModel } from "./harness/stubModel";
+import { COMPACT_TO, encodeRevisions, MAX_REVISIONS } from "../src/core/history";
 
 /**
  * Note history, end to end: the agent writes a note in three steps (add, a
@@ -164,6 +165,39 @@ describe("note history: every change saved, replayed in /weave-view", () => {
     await page.getByRole("button", { name: "Close history" }).click();
     await page.getByRole("group", { name: "Note history" }).waitFor({ state: "detached" });
     await page.getByRole("button", { name: "Edit", exact: true }).waitFor();
+  });
+
+  it("a long history is capped on disk, sent as deltas, and says it was trimmed", async () => {
+    // 600 saved versions, written straight into the log: more than the cap.
+    const now = readFileSync(join(sandbox.vault, "notes", `${SLUG}.md`), "utf8");
+    const body = now.slice(now.indexOf("\n---", 3) + 4).replace(/^\n+/, "");
+    const versions = Array.from({ length: 600 }, (_, i) => ({
+      at: new Date(Date.UTC(2026, 9, 1, 0, i)).toISOString(), by: "agent" as const, op: "append" as const,
+      body: i === 599 ? body : `${body}\n\nDraft line ${i}.`,
+    }));
+    writeFileSync(logPath(), encodeRevisions(versions).map((entry) => JSON.stringify(entry)).join("\n") + "\n");
+    // The next save compacts it.
+    await page.getByRole("button", { name: "Edit", exact: true }).click();
+    await page.getByRole("textbox", { name: "Note body" }).press("End");
+    await page.keyboard.type(" Capped.");
+    await page.getByRole("button", { name: "Save", exact: true }).click();
+    await page.getByRole("button", { name: "Edit", exact: true }).waitFor();
+    const kept = Math.floor(MAX_REVISIONS * COMPACT_TO);
+    expect(log()).toHaveLength(kept);
+    expect(log()[0]).toMatchObject({ trimmed: true });
+    // Deltas on the wire, not a full body per version.
+    const wire = await page.evaluate(async (slug) => (await fetch(`/api/history/${slug}`)).text(), SLUG);
+    const sent = JSON.parse(wire) as { trimmed: boolean; revisions: Array<{ full?: string }> };
+    expect(sent.trimmed).toBe(true);
+    expect(sent.revisions.filter((revision) => revision.full !== undefined).length).toBeLessThan(kept / 16);
+    await page.getByRole("button", { name: "History", exact: true }).click();
+    const group = page.getByRole("group", { name: "Note history" });
+    await group.getByText(`${kept} of ${kept}`).waitFor();
+    await page.getByRole("slider", { name: "Version" }).fill("0");
+    await group.getByText(`1 of ${kept}`).waitFor();
+    await group.getByText("Older versions were trimmed").waitFor();
+    await snapPage(artifacts, "trimmed-history-open", page);
+    await page.getByRole("button", { name: "Close history" }).click();
   });
 
   it("Settings turns history off, in the vault's okf.json", async () => {

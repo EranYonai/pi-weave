@@ -321,12 +321,12 @@ export function Note(props: NoteProps) {
     }
     const slug = note.slug;
     replaySlug.current = slug;
-    setReplay({ revisions: null, enabled: true, index: 0, playing: false, error: null });
+    setReplay({ revisions: null, enabled: true, trimmed: false, index: 0, playing: false, error: null });
     void loadHistory(slug).then((result) => {
       if (replaySlug.current !== slug) return;
       setReplay(result.ok
-        ? { revisions: result.data.revisions, enabled: result.data.enabled, index: Math.max(0, result.data.revisions.length - 1), playing: false, error: null }
-        : { revisions: null, enabled: true, index: 0, playing: false, error: `Could not load history: ${result.message}` });
+        ? { revisions: result.data.revisions, enabled: result.data.enabled, trimmed: result.data.trimmed, index: Math.max(0, result.data.revisions.length - 1), playing: false, error: null }
+        : { revisions: null, enabled: true, trimmed: false, index: 0, playing: false, error: `Could not load history: ${result.message}` });
     });
   };
   const step = replay?.revisions == null ? null : replayStep(replay.revisions, replay.index);

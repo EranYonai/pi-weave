@@ -3,8 +3,13 @@ import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import {
   KEYFRAME_EVERY,
+  COMPACT_TO,
   diffBodies,
+  encodeRevisions,
   historyEnabled,
+  historyTrimmed,
+  MAX_LOG_BYTES,
+  MAX_REVISIONS,
   historyPath,
   moveHistory,
   readHistory,
@@ -225,5 +230,64 @@ describe("readNoteHistory", () => {
     expect((await readHistory(root, note.slug)).map((r) => r.by)).toEqual(["agent", "human"]);
     expect(await readNoteHistory(root, "missing")).toBeNull();
     expect(await readNoteHistory(root, "../escape")).toBeNull();
+  });
+});
+
+describe("note history size limits", () => {
+  const lineCount = async (root: string, slug: string): Promise<number> =>
+    (await fs.readFile(historyPath(root, slug)!, "utf8")).trim().split("\n").length;
+
+  it("keeps at most MAX_REVISIONS, dropping the oldest and marking the log trimmed", async () => {
+    const root = await makeTempDir();
+    const note = await addNote(root, { title: "Long dictation", body: "start", now: at(0) });
+    expect(await historyTrimmed(root, note.slug)).toBe(false);
+    for (let i = 1; i <= MAX_REVISIONS; i++) await appendToNote(root, note.slug, `piece ${i}`, at(1), { raw: true });
+    // 501 revisions: one over the limit, so the log was compacted to COMPACT_TO of it.
+    const kept = Math.floor(MAX_REVISIONS * COMPACT_TO);
+    expect(await lineCount(root, note.slug)).toBe(kept);
+    expect(await historyTrimmed(root, note.slug)).toBe(true);
+    const history = await readHistory(root, note.slug);
+    expect(history).toHaveLength(kept);
+    // The newest revision is the note as it is now; the oldest kept is a later one.
+    expect(history.at(-1)!.body).toBe((await getNote(root, note.slug))!.body);
+    expect(history[0]!.body).toContain(`piece ${MAX_REVISIONS - kept + 1}`);
+    // Recording carries on from the compacted log.
+    await appendToNote(root, note.slug, "after compaction", at(2), { raw: true });
+    expect(await lineCount(root, note.slug)).toBe(kept + 1);
+    expect((await readHistory(root, note.slug)).at(-1)!.body).toContain("after compaction");
+  }, 60_000);
+
+  it("compacts a log that passes MAX_LOG_BYTES, always keeping the newest revision", async () => {
+    const root = await makeTempDir();
+    const big = (char: string) => char.repeat(Math.ceil(MAX_LOG_BYTES / 3));
+    const note = await addNote(root, { title: "Huge", body: big("a"), now: at(0) });
+    for (const char of ["b", "c", "d"]) await setNoteBody(root, note.slug, big(char), at(1));
+    const size = (await fs.stat(historyPath(root, note.slug)!)).size;
+    expect(size).toBeLessThanOrEqual(MAX_LOG_BYTES * COMPACT_TO);
+    expect(await historyTrimmed(root, note.slug)).toBe(true);
+    const history = await readHistory(root, note.slug);
+    expect(history.at(-1)!.body).toBe(big("d"));
+    expect(history.length).toBeLessThan(4);
+    // A single body bigger than the whole budget still keeps that one revision.
+    await setNoteBody(root, note.slug, "e".repeat(MAX_LOG_BYTES + 10), at(2));
+    expect((await readHistory(root, note.slug)).map((r) => r.body.length)).toEqual([MAX_LOG_BYTES + 10]);
+  }, 60_000);
+
+  it("encodes revisions as a full copy and deltas, marking the first when trimmed", () => {
+    const revs = ["one", "one two", "one two three"].map((body) => ({ at: "t", by: "agent" as const, op: "append" as const, body }));
+    const plain = encodeRevisions(revs);
+    expect(plain[0]).toEqual({ at: "t", by: "agent", op: "append", full: "one" });
+    expect(plain[1]).toEqual({ at: "t", by: "agent", op: "append", keep: [3, 0], text: " two" });
+    expect(encodeRevisions(revs, true)[0]).toMatchObject({ full: "one", trimmed: true });
+    expect(encodeRevisions(revs, true)[1]).not.toHaveProperty("trimmed");
+  });
+
+  it("reads a damaged or missing log as not trimmed", async () => {
+    const root = await makeTempDir();
+    expect(await historyTrimmed(root, "missing")).toBe(false);
+    expect(await historyTrimmed(root, "../escape")).toBe(false);
+    await fs.mkdir(join(root, "history"), { recursive: true });
+    await fs.writeFile(historyPath(root, "bad")!, "not json");
+    expect(await historyTrimmed(root, "bad")).toBe(false);
   });
 });

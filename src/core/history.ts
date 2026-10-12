@@ -33,6 +33,15 @@ import { OKF_MANIFEST } from "./paths";
  * or replays the note: the body on disk no longer matches the last revision,
  * so it is recorded as an `outside` revision before anything else.
  *
+ * ## Size limits
+ *
+ * A note's log is compacted once it holds more than {@link MAX_REVISIONS}
+ * revisions or {@link MAX_LOG_BYTES} bytes. Compaction drops the oldest
+ * revisions until the log is back under {@link COMPACT_TO} of both limits
+ * (so it does not run again on the next write), rewrites what is left with
+ * a full copy first, and marks that line `trimmed`. The newest revision is
+ * always kept, however large the note.
+ *
  * ## Off switch
  *
  * `"history": false` in the vault's `okf.json` stops recording. Existing logs
@@ -43,6 +52,12 @@ export const HISTORY_DIR = "history";
 const LOG_EXT = ".jsonl";
 /** A full copy every this many revisions bounds the damage of a bad line. */
 export const KEYFRAME_EVERY = 32;
+/** Most revisions one note's log keeps. */
+export const MAX_REVISIONS = 500;
+/** Largest one note's log may grow, in bytes, before it is compacted. */
+export const MAX_LOG_BYTES = 4 * 1024 * 1024;
+/** Compaction brings a log back to this share of both limits. */
+export const COMPACT_TO = 0.8;
 
 /** Who made a change. `outside` is any editor other than pi-weave. */
 export type HistoryAuthor = "human" | "agent" | "outside" | "system";
@@ -80,14 +95,16 @@ export interface NoteRevision {
   body: string;
 }
 
-/** A line of the log, as stored. */
-interface LogEntry {
+/** A line of the log, as stored, and the shape the viewer receives. */
+export interface LogEntry {
   at: string;
   by: HistoryAuthor;
   op: HistoryOp;
   full?: string;
   keep?: [number, number];
   text?: string;
+  /** On the first line only: older revisions were dropped to keep the log small. */
+  trimmed?: true;
 }
 
 /** The note body as it stood before a write, and when it got that way. */
@@ -257,6 +274,59 @@ async function appendEntries(
   }
   await fs.mkdir(dirname(path), { recursive: true });
   await fs.appendFile(path, lines.join("\n") + "\n", "utf8");
+  if (index > MAX_REVISIONS || (await fs.stat(path)).size > MAX_LOG_BYTES) await compact(path);
+}
+
+/**
+ * Encode revisions as log lines: a full copy first, deltas after, a full
+ * copy every {@link KEYFRAME_EVERY}. The viewer receives the same shape, so
+ * the download is about as small as the file.
+ */
+export function encodeRevisions(revisions: readonly NoteRevision[], trimmed = false): LogEntry[] {
+  let previous: string | null = null;
+  return revisions.map(({ body, ...meta }, index) => {
+    const entry = entryFor(meta, previous, body, index);
+    previous = body;
+    return index === 0 && trimmed ? { ...entry, trimmed: true } : entry;
+  });
+}
+
+/** Whether a log's oldest revisions were dropped by compaction. */
+function isTrimmed(text: string): boolean {
+  const first = text.slice(0, text.indexOf("\n") + 1 || text.length);
+  try {
+    return (JSON.parse(first) as { trimmed?: unknown }).trimmed === true;
+  } catch {
+    return false;
+  }
+}
+
+/** Drop the oldest revisions until the log fits {@link COMPACT_TO} of both limits. */
+async function compact(path: string): Promise<void> {
+  const revisions = replay(await fs.readFile(path, "utf8"));
+  const maxBytes = MAX_LOG_BYTES * COMPACT_TO;
+  let keep = Math.min(revisions.length, Math.floor(MAX_REVISIONS * COMPACT_TO));
+  let text = "";
+  for (;;) {
+    text = encodeRevisions(revisions.slice(-keep), true).map((entry) => JSON.stringify(entry)).join("\n") + "\n";
+    if (keep === 1 || Buffer.byteLength(text, "utf8") <= maxBytes) break;
+    keep = Math.max(1, Math.floor(keep * 0.75));
+  }
+  // A temporary file and a rename: a crash mid-write leaves the old log, not half a new one.
+  const temp = `${path}.compact`;
+  await fs.writeFile(temp, text, "utf8");
+  await fs.rename(temp, path);
+}
+
+/** Whether a note's history has had its oldest revisions dropped. */
+export async function historyTrimmed(root: string, slug: string): Promise<boolean> {
+  const path = historyPath(root, slug);
+  if (path === null) return false;
+  try {
+    return isTrimmed(await fs.readFile(path, "utf8"));
+  } catch {
+    return false;
+  }
 }
 
 /**

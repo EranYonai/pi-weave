@@ -45,7 +45,8 @@ import {
   type StartWorkspaceServerOptions,
   type WorkspaceServer,
 } from "../../src/web/server/server";
-import type { GraphPayload, HistoryPayload, NotePayload, OkfFilePayload, SearchPayload, TrailPayload } from "../../src/web/shared/wire";
+import type { GraphPayload, HistoryWirePayload, NotePayload, OkfFilePayload, SearchPayload, TrailPayload } from "../../src/web/shared/wire";
+import { expandHistory } from "../../src/web/client/api";
 import { WIRE_MODEL_OMITTED_KEYS } from "../../src/web/shared/wire";
 import { commitAll, gitInit, makeTempDir, withVaultEnv, writeFixture } from "../helpers";
 
@@ -1423,7 +1424,12 @@ describe("note history", () => {
     const res = await get(server, "/api/history/alpha-note");
     expect(res.status).toBe(200);
     expect(res.headers.get("cache-control")).toBe("no-store");
-    const payload = await res.json() as HistoryPayload;
+    const wire = await res.json() as HistoryWirePayload;
+    // Deltas on the wire, full bodies once expanded.
+    expect(wire.revisions[0]).toHaveProperty("full");
+    expect(wire.revisions[1]).toHaveProperty("keep");
+    expect(wire.trimmed).toBe(false);
+    const payload = expandHistory(wire)!;
     expect(payload.slug).toBe("alpha-note");
     expect(payload.enabled).toBe(true);
     expect(payload.revisions.map((r) => [r.by, r.op, r.body])).toEqual([
@@ -1435,7 +1441,7 @@ describe("note history", () => {
     // An edit made in another editor shows up as the last step.
     const file = join(vaultRoot, "notes", "alpha-note.md");
     await fs.writeFile(file, (await fs.readFile(file, "utf8")).replace("second edit", "edited elsewhere"));
-    const after = await (await get(server, "/api/history/alpha-note")).json() as HistoryPayload;
+    const after = expandHistory(await (await get(server, "/api/history/alpha-note")).json() as HistoryWirePayload)!;
     expect(after.revisions.at(-1)).toMatchObject({ by: "outside", op: "outside", body: "edited elsewhere" });
   });
 
@@ -1450,7 +1456,7 @@ describe("note history", () => {
     expect(await (await get(server, "/api/history-settings")).json()).toEqual({ enabled: true });
     expect(await (await post(server, "/api/history-settings", { enabled: false })).json()).toEqual({ enabled: false });
     expect(JSON.parse(await fs.readFile(join(vaultRoot, "okf.json"), "utf8"))).toMatchObject({ history: false });
-    expect((await get(server, "/api/history/alpha-note").then((r) => r.json()) as HistoryPayload).enabled).toBe(false);
+    expect((await get(server, "/api/history/alpha-note").then((r) => r.json()) as HistoryWirePayload).enabled).toBe(false);
     for (const body of [null, {}, { enabled: "no" }]) expect((await post(server, "/api/history-settings", body)).status).toBe(400);
   });
 });

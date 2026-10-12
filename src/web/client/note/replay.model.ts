@@ -168,4 +168,6 @@ export function nextStep(index: number, count: number): number | null {
 export const HISTORY_LABEL = "History";
 export const HISTORY_CLOSE_LABEL = "Close history";
 export const HISTORY_OFF_HINT = "History is off, so new changes are not being saved. Turn it on in Settings → Editor.";
+/** Shown on the oldest version kept, once older ones were dropped (the file holds at most 500). */
+export const HISTORY_TRIMMED = "Older versions were trimmed";
 export const HISTORY_EMPTY = "No saved versions yet. Changes are saved from now on.";

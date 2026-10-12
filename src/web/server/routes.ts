@@ -16,7 +16,7 @@
  * | POST   | `/api/folder/:path`        | create a vault folder                      |
  * | POST   | `/api/folder/:path/rename` | rename a vault folder                      |
  * | DELETE | `/api/folder/:path`      | delete a vault folder                        |
- * | GET    | `/api/history/:slug`     | {@link HistoryPayload}                       |
+ * | GET    | `/api/history/:slug`     | {@link HistoryWirePayload}                   |
  * | GET    | `/api/history-settings`  | {@link HistorySettingsPayload}               |
  * | POST   | `/api/history-settings`  | turn note history on or off                  |
  * | GET    | `/api/okf/:rel`          | {@link OkfFilePayload}                       |
@@ -59,7 +59,7 @@ import type { WorkspaceSnapshot } from "../../core/cache/workspace";
 import { WorkspaceCache } from "../../core/cache/workspace";
 import { readOkfFileForView } from "../../core/graph/current";
 import type { GraphModel as CoreGraphModel } from "../../core/graph/model";
-import { historyEnabled, setHistoryEnabled } from "../../core/history";
+import { encodeRevisions, historyEnabled, historyTrimmed, setHistoryEnabled } from "../../core/history";
 import { openNoteInEditor } from "../../core/openInEditor";
 import { recallTrail, type RecallTrail } from "../../core/trail";
 import type { Note } from "../../core/types";
@@ -68,7 +68,7 @@ import { addNote, createFolder, deleteFolder, deleteNote, getNote, moveNote, ren
 import { deriveTagIndex, type TaggedNote } from "../../core/view/links";
 import type {
   GraphPayload,
-  HistoryPayload,
+  HistoryWirePayload,
   HistorySettingsPayload,
   NotePayload,
   OkfFilePayload,
@@ -754,7 +754,15 @@ async function sendHistory(deps: RouteDeps, slug: string, res: ServerResponse): 
     sendJson(res, 404, { error: "no such note" });
     return;
   }
-  const payload: HistoryPayload = { slug, enabled: await historyEnabled(deps.vaultRoot), revisions };
+  // Deltas, as on disk: full bodies for every revision would grow with the
+  // square of the note's length.
+  const trimmed = await historyTrimmed(deps.vaultRoot, slug);
+  const payload: HistoryWirePayload = {
+    slug,
+    enabled: await historyEnabled(deps.vaultRoot),
+    trimmed,
+    revisions: encodeRevisions(revisions, trimmed),
+  };
   sendJson(res, 200, payload, { "cache-control": "no-store" });
 }
 

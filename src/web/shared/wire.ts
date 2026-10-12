@@ -180,12 +180,36 @@ export interface HistoryRevision {
   body: string;
 }
 
-/** `GET /api/history/:slug`. Oldest first; the last revision is the note as it is now. */
+/** A history payload as the client works with it: every body rebuilt. */
 export interface HistoryPayload {
   slug: string;
   /** Whether new revisions are being recorded. */
   enabled: boolean;
+  /** Older revisions were dropped to keep the note's history file small. */
+  trimmed: boolean;
   revisions: HistoryRevision[];
+}
+
+/**
+ * One revision on the wire: a full body, or a delta against the one before
+ * (keep `keep[0]` characters from the start and `keep[1]` from the end, and
+ * put `text` between them). The first revision is always full.
+ */
+export interface HistoryWireRevision {
+  at: string;
+  by: HistoryRevision["by"];
+  op: string;
+  full?: string;
+  keep?: [number, number];
+  text?: string;
+}
+
+/** `GET /api/history/:slug`. Oldest first; the last revision is the note as it is now. */
+export interface HistoryWirePayload {
+  slug: string;
+  enabled: boolean;
+  trimmed: boolean;
+  revisions: HistoryWireRevision[];
 }
 
 /** `GET` and `POST /api/history-settings`. */

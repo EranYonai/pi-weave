@@ -27,19 +27,42 @@ const rev = (body: string, by: HistoryRevision["by"] = "agent", op = "append", a
 
 describe("history API", () => {
   it("fetches a note's revisions with the slug encoded, and checks every revision", async () => {
-    const payload = { slug: "a/b", enabled: true, revisions: [rev("x")] };
+    const wire = (body: string) => ({ at: "2026-10-11T09:00:00.000Z", by: "agent", op: "append", full: body });
+    const payload = { slug: "a/b", enabled: true, trimmed: false, revisions: [wire("x")] };
     const fetch = respondsWith(payload);
-    expect(await fetchHistory(fetch, "a/b")).toMatchObject({ ok: true, data: payload });
+    expect(await fetchHistory(fetch, "a/b")).toMatchObject({ ok: true, data: { slug: "a/b", enabled: true, trimmed: false, revisions: [rev("x")] } });
     expect(fetch.calls[0]?.url).toBe("/api/history/a%2Fb");
-    expect(isHistoryPayload({ ...payload, revisions: [{ ...rev("x"), by: "someone" }] })).toBe(false);
-    expect(isHistoryPayload({ ...payload, revisions: [{ ...rev("x"), body: 1 }] })).toBe(false);
-    expect(isHistoryPayload({ ...payload, revisions: [{ ...rev("x"), at: 1 }] })).toBe(false);
-    expect(isHistoryPayload({ ...payload, revisions: [{ ...rev("x"), op: 1 }] })).toBe(false);
+    expect(isHistoryPayload({ ...payload, revisions: [{ ...wire("x"), by: "someone" }] })).toBe(false);
+    expect(isHistoryPayload({ ...payload, revisions: [{ ...wire("x"), full: 1 }] })).toBe(false);
+    expect(isHistoryPayload({ ...payload, revisions: [{ ...wire("x"), at: 1 }] })).toBe(false);
+    expect(isHistoryPayload({ ...payload, revisions: [{ ...wire("x"), op: 1 }] })).toBe(false);
+    expect(isHistoryPayload({ ...payload, revisions: [{ at: "t", by: "agent", op: "edit", keep: [0, -1], text: "" }] })).toBe(false);
+    expect(isHistoryPayload({ ...payload, revisions: [{ at: "t", by: "agent", op: "edit", keep: [0], text: "" }] })).toBe(false);
+    expect(isHistoryPayload({ ...payload, revisions: [{ at: "t", by: "agent", op: "edit", keep: [0, 0] }] })).toBe(false);
     expect(isHistoryPayload({ ...payload, revisions: [null] })).toBe(false);
     expect(isHistoryPayload({ ...payload, revisions: null })).toBe(false);
     expect(isHistoryPayload({ ...payload, enabled: "yes" })).toBe(false);
+    expect(isHistoryPayload({ ...payload, trimmed: "no" })).toBe(false);
     expect(isHistoryPayload({ ...payload, slug: 1 })).toBe(false);
     expect(isHistoryPayload(null)).toBe(false);
+  });
+
+  it("rebuilds bodies from deltas, and refuses a delta that does not fit", async () => {
+    const base = { at: "2026-10-11T09:00:00.000Z", by: "agent", op: "append" };
+    const payload = {
+      slug: "n",
+      enabled: true,
+      trimmed: true,
+      revisions: [{ ...base, full: "one" }, { ...base, keep: [3, 0], text: " two" }, { ...base, keep: [0, 3], text: "zero, " }],
+    };
+    const result = await fetchHistory(respondsWith(payload), "n");
+    expect(result.ok && result.data.revisions.map((r) => r.body)).toEqual(["one", "one two", "zero, two"]);
+    expect(result.ok && result.data.trimmed).toBe(true);
+    const broken = { ...payload, revisions: [{ ...base, keep: [0, 0], text: "orphan" }] };
+    expect(await fetchHistory(respondsWith(broken), "n")).toMatchObject({ ok: false, kind: "malformed" });
+    const overrun = { ...payload, revisions: [{ ...base, full: "ab" }, { ...base, keep: [2, 1], text: "" }] };
+    expect(await fetchHistory(respondsWith(overrun), "n")).toMatchObject({ ok: false });
+    expect(await fetchHistory(() => Promise.reject(new Error("down")), "n")).toMatchObject({ ok: false, kind: "network" });
   });
 
   it("reads and sets the history switch", async () => {
