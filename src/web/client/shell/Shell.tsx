@@ -318,8 +318,11 @@ export function Shell(props: ShellProps) {
   }, [trailGlowing]);
   const glows = useMemo(() => trailMarks(trail, trailNow, replay), [trail, trailNow, replay]);
   const turns = useMemo(() => trailTurns(trail, data.graph), [trail, data.graph]);
-  // A floating card with nothing to say (no selection, no agent turn) stays out of the way.
-  const contextIdle = contextFloating && selectedId === null && turns.length === 0;
+  // A floating card stays out of the way when it has nothing to say (no
+  // selection, no agent turn), and over the graph, whose own sheet is its context.
+  const coveredPane = layout.split === "down" ? layout.panes[0] : layout.panes.at(-1);
+  const graphUnderCard = coveredPane?.tabs.find((entry) => entry.id === coveredPane.activeTab)?.kind === "graph";
+  const contextIdle = contextFloating && (graphUnderCard || selectedId === null && turns.length === 0);
   const contextOpen = contextVisible && !contextIdle;
   const replayTurn = (turn: number): void => { const at = Date.now(); setTrailNow(at); setReplay({ turn, startedAt: at }); };
   useEffect(() => {
@@ -535,7 +538,7 @@ export function Shell(props: ShellProps) {
       {drafts.dirtySlugs().length ? <span>{drafts.dirtySlugs().length} unsaved</span> : null}
       {width < 850 && layout.panes.length > 1 ? <button type="button" onClick={() => setLayout({ ...layout, activePane: layout.panes.find((group) => group.id !== pane.id)!.id })}>Switch pane</button> : null}
     </div>
-    {overlay === "search" ? <SearchPalette graph={data.graph} onSelect={select} onClose={() => setOverlay(null)} ports={{ fetch: fetchJson }} /> : null}
+    {overlay === "search" ? <SearchPalette graph={data.graph} onSelect={select} onLightUp={lightUp} onClose={() => setOverlay(null)} ports={{ fetch: fetchJson }} /> : null}
     {overlay === "settings" ? <Settings compact={width <= 650} layout={layout} info={info} cwd={props.cwd} shortcut={searchShortcut(looksApple(props.platform))} onChange={(next) => { change(next); setCompactContext(next.contextVisible); }} onRefresh={() => { workspace.current?.refresh(); setRevision((value) => value + 1); }} onClose={() => setOverlay(null)} /> : null}
     {overlay === "help" ? <HelpOverlay shortcut={searchShortcut(looksApple(props.platform))} onClose={() => setOverlay(null)} /> : null}
   </>;
