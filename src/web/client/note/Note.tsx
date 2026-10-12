@@ -487,7 +487,10 @@ export function Note(props: NoteProps) {
   }, [replay]);
 
   useLayoutEffect(() => {
-    if (note !== null) drafts.taskBody(note.slug, note.body, props.loadVersion);
+    if (note === null) return;
+    drafts.taskBody(note.slug, note.body, props.loadVersion);
+    // Each load is the note as it is on disk now, after an autosave included.
+    drafts.syncTail(note.slug, note.body);
   }, [drafts, note === null ? null : note.slug, note?.body, props.loadVersion]);
 
   // A card whose target note left the screen is a claim about a document that

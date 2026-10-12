@@ -57,6 +57,13 @@ export interface DraftStore {
   edit(slug: string, body: string): void;
   /** Edit the `## Raw` entries. */
   editRaw(slug: string, raw: string): void;
+  /**
+   * Catch an open editor's Raw box up with the note on disk. Entries an
+   * agent appended while the editor was open (and survived an autosave,
+   * which keeps the server's tail) would otherwise be missing from it, and
+   * the next save of an edited Raw would write them away.
+   */
+  syncTail(slug: string, serverBody: string): void;
   discard(slug: string): void;
   isDirty(slug: string): boolean;
   dirtySlugs(): string[];
@@ -75,7 +82,8 @@ export interface DraftStore {
   clearTaskSources(slugs: readonly string[]): void;
 }
 
-export function createDraftStore(): DraftStore {
+/** `now` is the clock behind "Saved 12:04"; tests pass a fixed one. */
+export function createDraftStore(now: () => number = Date.now): DraftStore {
   const drafts = new Map<string, NoteDraft>();
   const taskSources = new Map<string, TaskSource>();
   const listeners = new Set<() => void>();
@@ -109,6 +117,23 @@ export function createDraftStore(): DraftStore {
       if (draft === undefined || draft.raw === raw) return;
       draft.raw = raw;
       draft.failed = false;
+      notify();
+    },
+    syncTail(slug, serverBody) {
+      const draft = drafts.get(slug);
+      // A write in flight answers for itself, and Raw edits not yet saved are
+      // the person's to keep: only an untouched box follows the disk.
+      if (draft === undefined || draft.saving || draft.raw !== draft.rawBaseline) return;
+      const { tail } = splitRawTail(serverBody);
+      if (tail === draft.tail) return;
+      const { entries } = splitRawOpening(tail);
+      // Discard returns to how the note was when the editor opened, plus what
+      // was appended since: an agent's entry is not the person's edit to undo.
+      if (draft.originalRaw === draft.rawBaseline) draft.originalRaw = entries;
+      else if (entries.startsWith(draft.rawBaseline)) draft.originalRaw += entries.slice(draft.rawBaseline.length);
+      draft.tail = tail;
+      draft.raw = entries;
+      draft.rawBaseline = entries;
       notify();
     },
     discard(slug) {
@@ -161,7 +186,7 @@ export function createDraftStore(): DraftStore {
               draft.baseline = sent;
               draft.rawBaseline = sentRaw;
               draft.tail = tail;
-              draft.savedAt = Date.now();
+              draft.savedAt = now();
             }
             draft.failed = !ok;
             draft.saving = false;

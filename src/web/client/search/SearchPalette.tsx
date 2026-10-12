@@ -29,8 +29,8 @@ export interface SearchPaletteProps {
   graph: GraphPayload | null;
   onSelect: (id: string, newTab?: boolean) => void;
   onClose: () => void;
-  /** Light the query's matches up in the graph. The footer offers it only when this is given. */
-  onLightUp?: (query: string) => void;
+  /** Light the query's matches (`ids`, the results) up in the graph. The footer offers it only when this is given. */
+  onLightUp?: (query: string, ids: readonly string[]) => void;
   ports: { fetch: FetchLike };
 }
 
@@ -112,7 +112,7 @@ export function SearchPalette(props: SearchPaletteProps) {
   const model = paletteModel(state, props.graph, Date.now());
   const run = (intent: PaletteIntent): void => {
     if (intent.type === "open") props.onSelect(intent.id, intent.newTab);
-    if (intent.type === "lightUp") props.onLightUp?.(intent.query);
+    if (intent.type === "lightUp") props.onLightUp?.(intent.query, intent.ids);
     if (closesPalette(intent)) props.onClose();
     else setState((current) => nextState(current, intent));
     if (intent.type === "scope" || intent.type === "tag") input.current?.focus();
@@ -181,9 +181,9 @@ export function SearchPalette(props: SearchPaletteProps) {
         )}
         <p class="weave-palette-foot">
           <span>{PALETTE_HINT}</span>
-          {props.onLightUp && model.lightUp > 0 ? (
+          {props.onLightUp && model.lightUp.length > 0 ? (
             <button type="button" class="weave-palette-light" onClick={() => run(lightUpIntent(model))}>
-              {lightUpLabel(model.lightUp)} <kbd class="weave-palette-kbd">{LIGHT_UP_KEY}</kbd>
+              {lightUpLabel(model.lightUp.length)} <kbd class="weave-palette-kbd">{LIGHT_UP_KEY}</kbd>
             </button>
           ) : null}
         </p>

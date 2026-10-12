@@ -44,6 +44,7 @@ import {
   CONNECTED_LIMIT,
   CRUMB_DEPTH,
   SHEET_TEXT_LIMIT,
+  SEARCH_REASON,
   SPOTLIGHT_LEGEND,
   SPOTLIGHT_PLACEHOLDER,
   connectedMore,
@@ -285,6 +286,20 @@ describe("spotlightOf", () => {
   it("counts a duplicated node id once", () => {
     const twice = payloadOf([node("note:a", "note", "Alpha"), node("note:a", "note", "Alpha")], []);
     expect(spotlightOf(twice, "alpha")!.count).toBe(1);
+  });
+
+  it("also lights what search found by a note's text, the same set the palette showed", () => {
+    // "demo" is only in the checklist's body: the payload alone finds nothing.
+    expect(spotlightOf(VAULT, "demo")!.count).toBe(0);
+    const spot = spotlightOf(VAULT, "demo", ["note:projects/launch-checklist", "note:gone"])!;
+    expect([...spot.lit]).toEqual(["note:projects/launch-checklist"]);
+    expect(spot.count).toBe(1);
+    expect(litBecause(spot, "note:projects/launch-checklist")).toBe(SEARCH_REASON);
+    // A node the spotlight matched on its own keeps the better reason.
+    const both = spotlightOf(VAULT, "launch", ["note:projects/launch-post-draft", "note:inbox"])!;
+    expect(both.count).toBe(4);
+    expect(both.reasons.get("note:projects/launch-post-draft")).toEqual(["title"]);
+    expect(both.reasons.get("note:inbox")).toEqual(["search match"]);
   });
 });
 

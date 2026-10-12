@@ -50,6 +50,12 @@ export const SPOTLIGHT_CLEAR_HINT = "Clear the spotlight (Esc)";
 /** The legend while a spotlight is up, replacing the neighbourhood's. */
 export const SPOTLIGHT_LEGEND = { lit: "lit", dimmed: "not lit" } as const;
 
+/**
+ * Why a node lit when only the search palette found it: its words are in the
+ * note's text, which the graph payload does not carry.
+ */
+export const SEARCH_REASON = "search match";
+
 /** The count chip: `5 lit`, or a plain sentence when nothing matched. */
 export function litLabel(count: number): string {
   return count === 0 ? "no matches" : `${count} lit`;
@@ -136,7 +142,7 @@ export interface Spotlight {
   readonly terms: readonly SpotlightTerm[];
   /** Lit node ids, from the full payload — collapsed nodes included. */
   readonly lit: ReadonlySet<string>;
-  /** Lit node id → why it lit: `title`, `tag #x`, `path`. */
+  /** Lit node id → why it lit: `title`, `tag #x`, `path`, `search match`. */
   readonly reasons: ReadonlyMap<string, readonly string[]>;
   /** How many nodes lit. The chip's number. */
   readonly count: number;
@@ -150,12 +156,18 @@ export interface Spotlight {
  * payload rather than the drawn graph, so the count is the same whatever is
  * expanded — {@link litOnCanvas} maps the answer onto the canvas.
  *
+ * `found` is what the search palette listed for this same query, when the
+ * spotlight came from its "Light up in graph". Search reads note text the
+ * payload does not have, so a note it found by a word in its body lights too
+ * ({@link SEARCH_REASON}), and the graph never says "no matches" for results
+ * the palette just showed. Ids not in the payload are skipped.
+ *
  * `null` for an empty (or whitespace, or bare `#`) query: no spotlight, which
  * the column renders as the ordinary graph. A query that matches nothing is
  * *not* `null` — it is an empty set, and the canvas dims entirely, which is
  * the honest picture of "nothing here is called that".
  */
-export function spotlightOf(payload: GraphPayload | null, query: string): Spotlight | null {
+export function spotlightOf(payload: GraphPayload | null, query: string, found: readonly string[] = []): Spotlight | null {
   const terms = spotlightTerms(query);
   if (terms.length === 0) return null;
   const lit = new Set<string>();
@@ -168,6 +180,12 @@ export function spotlightOf(payload: GraphPayload | null, query: string): Spotli
       if (why === null) continue;
       lit.add(node.id);
       reasons.set(node.id, why);
+    }
+    const searched = new Set(found);
+    for (const node of payload.model.nodes) {
+      if (lit.has(node.id) || !searched.has(node.id)) continue;
+      lit.add(node.id);
+      reasons.set(node.id, [SEARCH_REASON]);
     }
   }
   return { terms, lit, reasons, count: lit.size };

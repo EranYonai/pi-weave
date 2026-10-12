@@ -439,7 +439,7 @@ describe("paletteModel", () => {
     expect(model.groups.flatMap((group) => group.rows)).toEqual(model.rows);
     expect(model.count).toBe(4);
     expect(model.query).toBe("launch");
-    expect(model.lightUp).toBe(3);
+    expect(model.lightUp).toEqual(["note:projects/launch-checklist", "note:launch-post", "module:src/launch"]);
     expect(model.status).toBeNull();
   });
 
@@ -471,7 +471,7 @@ describe("paletteModel", () => {
     expect(code.scope).toBe("code");
     expect(code.rows.map((row) => row.id)).toEqual(["module:src/launch"]);
     expect(code.rows[0]?.domId).toBe(rowDomId(0));
-    expect(code.lightUp).toBe(3);
+    expect(code.lightUp).toHaveLength(3);
     const gone = paletteModel({ ...initialSearchState(), query: "zz", scope: "code" }, payload([]), NOW);
     expect(gone.scope).toBe("all");
     expect(gone.scopes).toEqual([{ scope: "all", label: "All", count: 0, active: true }]);
@@ -523,11 +523,11 @@ describe("intents", () => {
   });
 
   it("lights up with Shift+Enter only when the shell offers it and there is something to light", () => {
-    expect(paletteKey(model, keyIn("Enter", { shift: true }), true)).toEqual({ type: "lightUp", query: "launch" });
+    expect(paletteKey(model, keyIn("Enter", { shift: true }), true)).toEqual({ type: "lightUp", query: "launch", ids: model.lightUp });
     expect(paletteKey(model, keyIn("Enter", { shift: true }), false)).toEqual({ type: "open", id: "note:projects/launch-checklist", newTab: false });
-    expect(lightUpIntent({ query: "", lightUp: 3 })).toBe(NO_INTENT);
-    expect(lightUpIntent({ query: "launch", lightUp: 0 })).toBe(NO_INTENT);
-    expect(lightUpIntent({ query: "launch", lightUp: 1 })).toEqual({ type: "lightUp", query: "launch" });
+    expect(lightUpIntent({ query: "", lightUp: ["note:a"] })).toBe(NO_INTENT);
+    expect(lightUpIntent({ query: "launch", lightUp: [] })).toBe(NO_INTENT);
+    expect(lightUpIntent({ query: "launch", lightUp: ["note:a"] })).toEqual({ type: "lightUp", query: "launch", ids: ["note:a"] });
   });
 
   it("updates state for intents that keep the palette open", () => {
@@ -543,7 +543,7 @@ describe("intents", () => {
 
   it("knows which intents close the palette", () => {
     expect(closesPalette({ type: "open", id: "x", newTab: false })).toBe(true);
-    expect(closesPalette({ type: "lightUp", query: "x" })).toBe(true);
+    expect(closesPalette({ type: "lightUp", query: "x", ids: [] })).toBe(true);
     expect(closesPalette({ type: "close" })).toBe(true);
     expect(closesPalette({ type: "move", cursor: 0 })).toBe(false);
     expect(closesPalette({ type: "scope", scope: "all" })).toBe(false);

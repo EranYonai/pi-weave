@@ -139,6 +139,9 @@ export function Shell(props: ShellProps) {
   // The graph spotlight's query (`graph/spotlight.model.ts`). Held here, not
   // in the column, so other UI can light the graph up — see `lightUp`.
   const [graphQuery, setGraphQuery] = useState("");
+  // What the search palette listed when it lit the graph up, for that query.
+  // Typing a different query in the spotlight leaves these behind.
+  const [graphFound, setGraphFound] = useState<{ query: string; ids: readonly string[] } | null>(null);
   const draggedTab = useRef<string | null>(null);
   const [dropTab, setDropTab] = useState<{ paneId: string; before: string | null } | null>(null);
   const [dropPane, setDropPane] = useState<string | null>(null);
@@ -220,9 +223,11 @@ export function Shell(props: ShellProps) {
   /**
    * Open the graph view with `query` lit up in its spotlight. The entry point
    * for other UI (the search palette's "light up in graph"); `""` clears it.
+   * `ids` are the palette's results, so a note found by its text lights too.
    */
-  const lightUp = (query: string): void => {
+  const lightUp = (query: string, ids: readonly string[] = []): void => {
     setGraphQuery(query);
+    setGraphFound({ query, ids });
     showGraph();
   };
   live.current = { layout, overlay, selectedId, graphPreviewId, select };
@@ -530,7 +535,7 @@ export function Shell(props: ShellProps) {
         aria-hidden={!graphVisible} inert={!graphVisible} role={contextGraphActive ? "region" : undefined} aria-label={contextGraphActive ? "Note graph" : undefined}
         style={{ ...graphBox, visibility: graphVisible ? "visible" : "hidden", pointerEvents: graphVisible ? "auto" : "none" }}>
         <Graph graph={data.graph} selectedId={selectedId} previewId={graphPreviewId} onSelect={selectGraph} onOpen={openGraphNode} renderer={createSigmaRenderer} storage={localStorage} host={window} scheme={graphTheme} forces={layout.preferences.forces} groupColors={layout.preferences.groupColors} bootFailed={data.graphFailed} fit={fit} trail={glows}
-          {...(contextGraphActive ? {} : { query: graphQuery, onQuery: setGraphQuery, onOpenSplit: openGraphNodeInSplit })} now={now} />
+          {...(contextGraphActive ? {} : { query: graphQuery, ...(graphFound?.query === graphQuery ? { found: graphFound.ids } : {}), onQuery: setGraphQuery, onOpenSplit: openGraphNodeInSplit })} now={now} />
       </div> : null}
     </div>
     <div class="weave-footer"><StatusBar model={statusBarModel(props.cwd, selectedId, searchShortcut(looksApple(props.platform)))} />

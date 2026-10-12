@@ -531,8 +531,12 @@ export interface PaletteModel {
   readonly activeDomId: string | null;
   /** The trimmed query. */
   readonly query: string;
-  /** Results that are graph nodes, whatever the scope: what lighting up would show. */
-  readonly lightUp: number;
+  /**
+   * The ids of results that are graph nodes, whatever the scope: what lighting
+   * up shows. They go to the graph with the query, so a note found by its text
+   * lights too, not only one whose title or tags carry the words.
+   */
+  readonly lightUp: readonly string[];
 }
 
 export function rowDomId(index: number): string {
@@ -582,7 +586,7 @@ export function paletteModel(state: SearchState, payload: GraphPayload | null, n
     cursor,
     activeDomId: rows.length ? rowDomId(cursor) : null,
     query,
-    lightUp: results.filter((result) => result.kind !== "tag").length,
+    lightUp: results.filter((result) => result.kind !== "tag").map((result) => result.id),
   };
 }
 
@@ -595,7 +599,7 @@ export type PaletteIntent =
   | { readonly type: "scope"; readonly scope: SearchScope }
   | { readonly type: "open"; readonly id: string; readonly newTab: boolean }
   | { readonly type: "tag"; readonly query: string }
-  | { readonly type: "lightUp"; readonly query: string }
+  | { readonly type: "lightUp"; readonly query: string; readonly ids: readonly string[] }
   | { readonly type: "close" };
 
 export const NO_INTENT: PaletteIntent = { type: "none" };
@@ -610,7 +614,7 @@ export function rowIntent(row: Pick<SearchRowView, "id" | "kind">, newTab: boole
 
 /** Lighting up the results, when there is a query and something to light. */
 export function lightUpIntent(model: Pick<PaletteModel, "query" | "lightUp">): PaletteIntent {
-  return model.query && model.lightUp > 0 ? { type: "lightUp", query: model.query } : NO_INTENT;
+  return model.query && model.lightUp.length > 0 ? { type: "lightUp", query: model.query, ids: model.lightUp } : NO_INTENT;
 }
 
 export interface PaletteKeyInput {

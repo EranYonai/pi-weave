@@ -122,6 +122,11 @@ export interface GraphProps {
    */
   query?: string;
   /**
+   * Node ids the search palette found for `query`, when it lit the graph up.
+   * They light alongside the spotlight's own matches; omitted means none.
+   */
+  found?: readonly string[];
+  /**
    * Where the spotlight field writes. **Its presence is what makes this the
    * full graph view**: with it the column shows the floating spotlight field
    * and the side sheet; without it (the context rail's note graph, a narrow
@@ -198,7 +203,7 @@ export function Graph(props: GraphProps) {
   // note graph keeps the compact card. See `GraphProps.onQuery`.
   const full = props.onQuery !== undefined;
   const query = full ? props.query ?? "" : "";
-  const spot = useMemo(() => spotlightOf(props.graph, query), [props.graph, query]);
+  const spot = useMemo(() => spotlightOf(props.graph, query, props.found), [props.graph, query, props.found]);
   // Same identity contract as `model` above: the highlight effect keys on the
   // picture's identity, so each step is memoized on exactly what it reads.
   const lit = useMemo(() => litOnCanvas(spot, model.representative), [spot, model.representative]);
