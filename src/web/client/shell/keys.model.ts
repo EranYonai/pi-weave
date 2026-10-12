@@ -449,6 +449,8 @@ export function keyHelp(cmd: string): readonly KeyHelpGroup[] {
         { combo: "↑ / ↓", what: "Move through results" },
         { combo: "↵", what: "Open the highlighted result" },
         { combo: `${cmd}↵`, what: "Open the highlighted result in a new tab" },
+        { combo: "Tab / ⇧Tab", what: "Switch between All, Notes, Code and Tags" },
+        { combo: "⇧↵", what: "Light up the matches in the graph" },
         { combo: "Esc", what: "Close the palette" },
       ],
     },

@@ -167,7 +167,7 @@ body{font-size:var(--weave-px-base)}
    so the selected row is always readable. */
 .weave-row-on .weave-twisty,.weave-row-on .weave-kind,.weave-row-on .weave-prov,
 .weave-row-on .weave-meta,.weave-row-on .weave-label{color:var(--weave-fg)}
-.weave-hit-on .weave-hit-badge,.weave-hit-on .weave-hit-detail{color:var(--weave-fg)}
+.weave-hit-on .weave-hit-icon,.weave-hit-on .weave-hit-detail,.weave-hit-on .weave-hit-meta{color:var(--weave-fg)}
 /* A newly-arrived node (a file or note added since the last update, ):
    one short highlight that fades while the label settles from bold back to
    normal. The class is computed from the frame diff in workspace.ts and
@@ -663,31 +663,76 @@ body{font-size:var(--weave-px-base)}
   overflow:hidden;background:var(--weave-panel);color:var(--weave-fg);
   border:1px solid var(--weave-line-strong);border-radius:var(--weave-radius-pop);
 }
-.weave-palette-input{
-  flex:none;height:34px;padding:0 11px;font:inherit;font-size:var(--weave-px-subhead);
-  color:var(--weave-fg);background:transparent;border:0;
-  border-bottom:1px solid var(--weave-line);border-radius:0;
+/* The ⌘K palette, grouped and compact: an input row (glyph, query, Esc), a
+   scope row of pills that Tab cycles, one line per result under small
+   capitals group heads, and a footer of key hints. Wider than the help sheet
+   because a row carries a title, a snippet and a meta column side by side. */
+.weave-palette{max-width:640px}
+.weave-palette-bar{
+  flex:none;display:flex;align-items:center;gap:8px;padding:0 11px;
+  border-bottom:1px solid var(--weave-line);
 }
-.weave-palette-input:focus-visible{outline-offset:-2px}
-.weave-hits{flex:1;min-height:0;overflow:auto;margin:0;padding:3px 0;list-style:none}
+.weave-palette-glyph{color:var(--weave-faint)}
+.weave-palette-input{
+  flex:1;min-width:0;height:36px;padding:0;font:inherit;font-size:var(--weave-px-subhead);
+  color:var(--weave-fg);background:transparent;border:0;border-radius:0;
+}
+.weave-palette-input:focus-visible{outline:0}
+.weave-palette-input::-webkit-search-cancel-button{display:none}
+.weave-palette-bar:focus-within{box-shadow:inset 0 -1px 0 var(--weave-accent)}
+.weave-palette-kbd{
+  flex:none;padding:0 4px;font-family:inherit;font-size:var(--weave-px-prov);line-height:14px;
+  color:var(--weave-faint);border:1px solid var(--weave-line-strong);border-radius:var(--weave-radius);
+}
+.weave-palette-scopes{
+  flex:none;display:flex;flex-wrap:wrap;gap:3px;padding:5px 8px;
+  border-bottom:1px solid var(--weave-line);
+}
+.weave-palette-scope{
+  font:inherit;font-size:var(--weave-px-caption);line-height:1;padding:3px 9px;cursor:pointer;
+  color:var(--weave-dim);background:none;border:0;border-radius:999px;
+}
+.weave-palette-scope:hover{color:var(--weave-fg);background:var(--weave-line)}
+.weave-palette-scope[aria-pressed="true"]{color:var(--weave-panel);background:var(--weave-fg);font-weight:600}
+.weave-palette-scope-count{font-variant-numeric:tabular-nums}
+.weave-hits{flex:1;min-height:0;overflow:auto;margin:0;padding:0 0 4px;list-style:none}
+.weave-hit-section{list-style:none}
+.weave-hit-group{
+  padding:7px 11px 2px;font-size:var(--weave-px-prov);font-weight:700;letter-spacing:.08em;
+  text-transform:uppercase;color:var(--weave-faint);
+}
+.weave-hit-rows{margin:0;padding:0;list-style:none}
 .weave-hit{
-  display:flex;align-items:baseline;gap:7px;padding:3px 11px;cursor:pointer;
-  min-width:0;white-space:nowrap;
+  display:flex;align-items:center;gap:8px;padding:3px 11px;cursor:pointer;
+  min-width:0;white-space:nowrap;font-size:var(--weave-px-row);
 }
 .weave-hit-on{background:var(--weave-new);box-shadow:inset 2px 0 0 var(--weave-accent)}
-.weave-hit-badge{
-  flex:none;font-size:var(--weave-px-prov);letter-spacing:.06em;text-transform:uppercase;color:var(--weave-faint);
-  min-width:56px;
-}
-.weave-hit-note .weave-hit-badge{color:var(--weave-accent)}
-.weave-hit-label{flex:none;max-width:46%;overflow:hidden;text-overflow:ellipsis}
+.weave-hit-icon{color:var(--weave-faint)}
+.weave-hit-notes .weave-hit-icon{color:var(--weave-accent)}
+.weave-hit-label{flex:none;max-width:46%;overflow:hidden;text-overflow:ellipsis;font-weight:600;color:var(--weave-fg)}
+.weave-hit-mono{font-family:var(--weave-mono);font-size:var(--weave-px-ui);font-weight:500}
 .weave-hit-detail{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;font-size:var(--weave-px-ui);color:var(--weave-dim)}
+/* The match mark is a find-in-page amber. Dark themes tint their own light
+   --weave-warn; a light theme's --weave-warn is a deep brown that tints to
+   mud, so light schemes take a fixed amber instead. */
+.weave-hit-mark{
+  color:var(--weave-fg);background:color-mix(in srgb,var(--weave-warn) 32%,transparent);
+  border-radius:var(--weave-radius);padding:0 1px;
+}
+:root[data-weave-scheme="light"] .weave-hit-mark{background:color-mix(in srgb,#f2a93b 34%,transparent)}
+.weave-hit-meta{flex:none;margin-left:auto;font-size:var(--weave-px-caption);color:var(--weave-faint);font-variant-numeric:tabular-nums}
 .weave-palette-status{margin:0;padding:14px 11px;color:var(--weave-dim);line-height:1.5}
 .weave-palette-foot,.weave-help-foot{
   display:flex;gap:12px;margin:0;padding:4px 11px;font-size:var(--weave-px-caption);color:var(--weave-faint);
   border-top:1px solid var(--weave-line);
 }
-.weave-palette-hint,.weave-help-hint{margin-left:auto}
+.weave-palette-foot{align-items:center;flex-wrap:wrap;row-gap:2px;min-height:26px;box-sizing:border-box;background:var(--weave-bg)}
+.weave-palette-light{
+  margin-left:auto;display:flex;align-items:center;gap:6px;padding:0;cursor:pointer;white-space:nowrap;
+  font:inherit;font-weight:600;color:var(--weave-accent);background:none;border:0;
+}
+.weave-palette-light .weave-palette-kbd{color:inherit;border-color:currentColor}
+.weave-help-hint{margin-left:auto}
 .weave-help-title{margin:0;padding:9px 11px;font-size:var(--weave-px-base);font-weight:600;border-bottom:1px solid var(--weave-line)}
 .weave-keys{flex:1;min-height:0;overflow:auto;margin:0;padding:5px 11px}
 .weave-key-group{margin:0 0 3px;font-size:var(--weave-px-prov);letter-spacing:.09em;text-transform:uppercase;color:var(--weave-faint)}
