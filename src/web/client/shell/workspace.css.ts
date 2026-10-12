@@ -74,6 +74,8 @@ export const WORKSPACE_CSS = `
 .weave-document .weave-note-body h2{font-size:var(--weave-px-title);margin-top:28px}
 .weave-document .weave-note-editor{padding:14px max(24px,calc((100% - var(--weave-reading-width,760px))/2));min-height:220px;flex:1;font-size:var(--weave-note-size,var(--weave-px-subhead))}
 .weave-document .weave-note-tags{margin-top:12px}
+.weave-document .weave-replay{padding:12px max(24px,calc((100% - var(--weave-reading-width,760px))/2)) 14px}
+.weave-document .weave-raw{margin:0 max(24px,calc((100% - var(--weave-reading-width,760px))/2)) 28px}
 .weave-document .weave-note-edit,.weave-document .weave-note-save{padding:5px 10px;border-radius:var(--weave-radius);font-size:var(--weave-px-caption)}
 .weave-document .weave-note-edit{color:var(--weave-dim);background:transparent;border-color:transparent}
 .weave-document .weave-note-edit:hover{color:var(--weave-accent);background:var(--weave-new);border-color:transparent}
@@ -128,6 +130,8 @@ export const WORKSPACE_CSS = `
   .weave-panes{grid-template-columns:minmax(0,1fr)!important;grid-template-rows:minmax(0,1fr)!important}
   .weave-document .weave-note-head{padding:20px}
   .weave-document .weave-note-body{padding:10px 20px 40px}
+  .weave-document .weave-replay{padding:12px 20px}
+  .weave-document .weave-raw{margin:0 20px 24px}
 }
 @media(prefers-reduced-motion:reduce){
   .weave-sidebar-dock,.weave-sidebar-dock[data-open=false],.weave-sidebar-dock>.weave-sidebar{transition:none}

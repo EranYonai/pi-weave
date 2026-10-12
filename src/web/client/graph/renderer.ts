@@ -1,7 +1,7 @@
 import type { GraphTheme } from "../../shared/themes";
 import type { Point } from "../../shared/layout";
-import type { EdgeDisplayOverride, GraphSettings, NodeDisplayOverride, RenderEdge, RenderGraph, RenderNode, ViewBox } from "./graph.model";
-import { edgeReducer, fadeStep, frameBox, graphSettings, nodeReducer } from "./graph.model";
+import type { EdgeDisplayOverride, GraphSettings, NodeDisplayOverride, RenderEdge, RenderGraph, RenderNode, TrailGlow, ViewBox } from "./graph.model";
+import { edgeReducer, fadeStep, frameBox, graphSettings, labelThreshold, nodeReducer, trailOverride } from "./graph.model";
 import type { ProjectedGraph } from "./project";
 import { positionsOf, project, syncPositions } from "./project";
 
@@ -56,6 +56,7 @@ export interface SigmaLike {
   setSetting(key: "nodeReducer", value: (id: string, data: RenderNode) => NodeDisplayOverride): unknown;
   setSetting(key: "edgeReducer", value: (key: string, data: RenderEdge, scheme: GraphTheme) => EdgeDisplayOverride): unknown;
   setSetting(key: "enableCameraPanning", value: boolean): unknown;
+  setSetting(key: "labelRenderedSizeThreshold", value: number): unknown;
   setGraph(graph: ProjectedGraph): unknown;
   /**
    * Freeze the graph→viewport normalization onto a fixed box.
@@ -129,6 +130,8 @@ export function sigmaRenderer(
   let highlight: ReadonlySet<string> | null = null;
   /** The selection inside that neighbourhood — see `nodeReducer`. */
   let selected: string | null = null;
+  /** Recall-trail glows, layered over the selection — see `trailOverride`. */
+  let trail: ReadonlyMap<string, TrailGlow> = new Map();
   /**
    * How present the highlight currently *looks*, and where it is heading.
    *
@@ -175,7 +178,11 @@ export function sigmaRenderer(
   const applyReducers = (instance: SigmaLike): void => {
     const nodes = nodeReducer(highlight, selected, fade);
     const edges = edgeReducer(highlight, selected, fade);
-    instance.setSetting("nodeReducer", (id, data) => ({ ...data, ...nodes(id, data, scheme) }));
+    const glows = trail;
+    instance.setSetting("nodeReducer", (id, data) => {
+      const reduced = { ...data, ...nodes(id, data, scheme) };
+      return { ...reduced, ...trailOverride(glows.get(id), reduced, scheme, data.label) };
+    });
     instance.setSetting("edgeReducer", (key, data) => ({ ...data, ...edges(key, data, scheme) }));
   };
 
@@ -246,6 +253,7 @@ export function sigmaRenderer(
       instance.on("upNode", () => endDrag(dragging));
       instance.on("upStage", () => endDrag(null));
       applyReducers(instance);
+      instance.setSetting("labelRenderedSizeThreshold", labelThreshold(graph.order));
       // Freeze the view box for whatever graph arrived before mount, so the
       // first frame is already framed and stable — see `SigmaLike.setCustomBBox`.
       instance.setCustomBBox(boxOf());
@@ -255,6 +263,8 @@ export function sigmaRenderer(
     setGraph(next: RenderGraph) {
       graph = project(next);
       sigma?.setGraph(graph);
+      // A graph that crossed the small-graph line gains or loses its labels.
+      sigma?.setSetting("labelRenderedSizeThreshold", labelThreshold(graph.order));
       // Re-frame on a shape change: new nodes legitimately change the extent,
       // and the box is what keeps the *drag* frames from also changing it.
       // Deliberately not touched by `setPositions` — a settling simulation
@@ -294,6 +304,12 @@ export function sigmaRenderer(
       }
       if (sigma !== null) applyReducers(sigma);
       if (fade !== fadeTo) armFade();
+    },
+
+    /** Replace the recall-trail glows. The caller re-sends as the fade ticks. */
+    setTrail(next: ReadonlyMap<string, TrailGlow>) {
+      trail = next;
+      if (sigma !== null) applyReducers(sigma);
     },
 
     onSelect(handler: (id: string | null) => void) {

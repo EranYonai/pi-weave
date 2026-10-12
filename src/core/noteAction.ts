@@ -16,12 +16,13 @@ import {
 import { relatedNotes, suggestLinks, type RelatedNote, type SuggestionReport } from "./links/similar";
 import { NOTES_DIR, resolveVaultRoot } from "./paths";
 import { withMutationQueue } from "./mutex";
+import { recallTrail, type RecallTrail, type TrailEntry } from "./trail";
 import type { Note, NoteSearchHit } from "./types";
 
 export const WEAVE_NOTE_DESCRIPTION =
   "Read and write notes in the pi-weave vault — a persistent, human-readable knowledge base " +
   "of Markdown notes. Actions: list (all notes — avoid on large vaults, prefer search), get (one note by slug), add (new note), " +
-  "append (extend a note; raw=true appends verbatim dictation into the ## Raw tail), " +
+  "append (extend a note; raw=true appends verbatim dictation into the ## Raw tail; add with raw=true starts the note there), " +
   "finalize (restructure a note above its raw tail), search (ranked slug/title/tags/body matches plus linked, tagged, and lexically related notes; returns the full note when one result or one exact identity resolves), " +
   "links (audit stale [[wiki-links]]; fix=true repairs the unambiguous ones), " +
   "suggest (rank unlinked notes that share distinctive vocabulary; reports only, never writes). " +
@@ -186,10 +187,71 @@ function formatLinkReport(result: LinkRepairResult, applied: boolean): string {
   return lines.join("\n");
 }
 
+/**
+ * Run one `weave_note` action and record what it touched on the recall trail
+ * (`./trail.ts`). Recording never fails the action: the trail is presentation,
+ * and a tool call must not break because a viewer would have liked to know.
+ */
 export async function executeNoteAction(
   params: NoteActionInput,
   vault = resolveVaultRoot(),
   now: () => Date = () => new Date(),
+  trail: RecallTrail | null = recallTrail,
+): Promise<NoteActionResult> {
+  const result = await runNoteAction(params, vault, now);
+  if (trail !== null) {
+    const at = now();
+    for (const step of trailSteps(params, result)) trail.record({ ...step, vault, at });
+  }
+  return result;
+}
+
+type TrailStep = Omit<TrailEntry, "vault" | "at">;
+
+function slugOf(value: unknown): string | null {
+  return typeof value === "object" && value !== null && typeof (value as { slug?: unknown }).slug === "string"
+    ? (value as { slug: string }).slug
+    : null;
+}
+
+/** What an action's result says it touched. List and suggest touch nothing worth showing. */
+export function trailSteps(params: NoteActionInput, result: NoteActionResult): TrailStep[] {
+  const { details } = result;
+  switch (params.action) {
+    case "get": {
+      const slug = slugOf(details.note);
+      return slug === null ? [] : [{ kind: "read", action: "get", slugs: [slug] }];
+    }
+    case "search": {
+      const hits = Array.isArray(details.hits) ? details.hits : [];
+      const slugs = hits.flatMap((hit: unknown) => {
+        const slug = slugOf((hit as { summary?: unknown }).summary);
+        return slug === null ? [] : [slug];
+      });
+      const steps: TrailStep[] = [{ kind: "searched", action: "search", slugs, query: params.query }];
+      const resolved = slugOf(details.resolved);
+      if (resolved !== null) steps.push({ kind: "read", action: "search", slugs: [resolved] });
+      return steps;
+    }
+    case "add":
+    case "append":
+    case "finalize": {
+      const slug = slugOf(details.note);
+      return slug === null ? [] : [{ kind: "wrote", action: params.action, slugs: [slug] }];
+    }
+    case "links": {
+      const notes = Array.isArray(details.notes) ? details.notes.filter((slug): slug is string => typeof slug === "string") : [];
+      return notes.length === 0 ? [] : [{ kind: "wrote", action: "links", slugs: notes }];
+    }
+    default:
+      return [];
+  }
+}
+
+async function runNoteAction(
+  params: NoteActionInput,
+  vault: string,
+  now: () => Date,
 ): Promise<NoteActionResult> {
   switch (params.action) {
     case "list": {
@@ -222,9 +284,17 @@ export async function executeNoteAction(
           body: params.text!,
           ...(params.tags ? { tags: params.tags } : {}),
           ...(params.source ? { source: params.source } : {}),
+          ...(params.raw ? { raw: true, now: now() } : {}),
+          // The agent wrote the file even when the words are the user's.
+          by: "agent",
         }),
       );
-      return { text: `Note created: ${note.slug} (${vault})`, details: { action: "add", note } };
+      return {
+        text: params.raw
+          ? `Note created: ${note.slug} (${vault}), text preserved verbatim in its ## Raw tail.`
+          : `Note created: ${note.slug} (${vault})`,
+        details: { action: "add", note },
+      };
     }
 
     case "append": {

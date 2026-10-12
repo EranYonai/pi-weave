@@ -40,7 +40,7 @@
  * contract.
  */
 
-import type { WireGraphModel, WireNoteSearchHit, WireNoteSource, WireViewNote } from "./graph";
+import type { WireGraphModel, WireNoteSearchHit, WireViewNote } from "./graph";
 import type { Point } from "./metrics";
 
 /**
@@ -140,8 +140,81 @@ export interface GraphPayload {
 }
 
 /** `GET /api/note/:slug`. */
+/** How the agent touched a note — see `src/core/trail.ts`. */
+export type WireTrailKind = "searched" | "read" | "wrote";
+
+/** One recall-trail step. `at` is ISO; `slugs` may be empty for a search with no hits. */
+export interface WireTrailEvent {
+  seq: number;
+  turn: number;
+  at: string;
+  kind: WireTrailKind;
+  action: string;
+  slugs: string[];
+  query?: string;
+}
+
+/**
+ * `GET /api/trail` — the notes the agent searched, read and wrote this
+ * session, oldest first, filtered to this workspace's vault. ETag'd on
+ * `stamp`, like the graph, so polling it is a `304` while the agent is idle.
+ */
+export interface TrailPayload {
+  stamp: string;
+  turn: number;
+  events: WireTrailEvent[];
+}
+
 export interface NotePayload {
   note: ViewNote;
+}
+
+/** One saved revision of a note, body included. */
+export interface HistoryRevision {
+  /** ISO-8601 time of the change. */
+  at: string;
+  /** Who made it: `outside` is any editor other than pi-weave. */
+  by: "human" | "agent" | "outside" | "system";
+  /** What kind of change: create, edit, append, raw, finalize, generate, repair, outside, baseline. */
+  op: string;
+  body: string;
+}
+
+/** A history payload as the client works with it: every body rebuilt. */
+export interface HistoryPayload {
+  slug: string;
+  /** Whether new revisions are being recorded. */
+  enabled: boolean;
+  /** Older revisions were dropped to keep the note's history file small. */
+  trimmed: boolean;
+  revisions: HistoryRevision[];
+}
+
+/**
+ * One revision on the wire: a full body, or a delta against the one before
+ * (keep `keep[0]` characters from the start and `keep[1]` from the end, and
+ * put `text` between them). The first revision is always full.
+ */
+export interface HistoryWireRevision {
+  at: string;
+  by: HistoryRevision["by"];
+  op: string;
+  full?: string;
+  keep?: [number, number];
+  text?: string;
+}
+
+/** `GET /api/history/:slug`. Oldest first; the last revision is the note as it is now. */
+export interface HistoryWirePayload {
+  slug: string;
+  enabled: boolean;
+  trimmed: boolean;
+  revisions: HistoryWireRevision[];
+}
+
+/** `GET` and `POST /api/history-settings`. */
+export interface HistorySettingsPayload {
+  enabled: boolean;
 }
 
 /** `GET /api/okf/:rel`. */

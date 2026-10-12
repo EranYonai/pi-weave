@@ -229,7 +229,7 @@ describe("/weave-scan sessions command", () => {
           expect(ctx.ui.notifications.some((n) => n.message.includes("session scan complete"))).toBe(true);
           expect((await getNote(vault, "sessions/build-the-memory-feature"))!.body).toContain("Remembered.");
           // The settled status line reflects the vault the scan just grew.
-          expect(ctx.ui.statuses.weave).toContain("vault:1");
+          expect(ctx.ui.statuses.weave).toContain("1 note");
         }),
       );
     } finally {

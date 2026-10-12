@@ -9,6 +9,7 @@ export { findGitRoot } from "./git";
 export {
   assessStaleness,
   buildRepoIndex,
+  ensureRepoIndex,
   readRepoIndex,
   summarizeIndex,
   writeRepoIndex,
@@ -92,6 +93,14 @@ export {
   type LinkFix,
   type UnresolvableLink,
 } from "./links/repair";
+export {
+  historyEnabled,
+  readHistory,
+  setHistoryEnabled,
+  type HistoryAuthor,
+  type HistoryOp,
+  type NoteRevision,
+} from "./history";
 export type { HtmlArtifact } from "./types";
 export { withMutationQueue } from "./mutex";
 export { formatDashboard, formatStatusLine, getWorkspaceStatus } from "./workspace";
@@ -102,6 +111,16 @@ export {
   type NoteActionInput,
   type NoteActionResult,
 } from "./noteAction";
+export {
+  RecallTrail,
+  recallTrail,
+  TRAIL_CAPACITY,
+  TURN_GAP_MS,
+  type TrailEntry,
+  type TrailEvent,
+  type TrailKind,
+  type TrailSnapshot,
+} from "./trail";
 export {
   executeRepoAction,
   WEAVE_REPO_DESCRIPTION,

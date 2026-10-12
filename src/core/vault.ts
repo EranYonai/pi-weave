@@ -10,7 +10,19 @@ import {
   unquoteField,
   upsertFrontMatterFields,
 } from "./frontmatter";
-import { auditLinks, fenceRanges, rawTailStart, rewriteLinks, RAW_NOTES_HEADING, type LinkAudit, type LinkFix } from "./links/repair";
+import { auditLinks, rewriteLinks, RAW_NOTES_HEADING, type LinkAudit, type LinkFix } from "./links/repair";
+import { joinRawTail, rawTailBoundary, splitRawTail } from "./view/rawTail";
+import {
+  moveHistory,
+  readHistory,
+  moveHistoryFolder,
+  recordRevision,
+  removeHistory,
+  removeHistoryFolder,
+  type HistoryAuthor,
+  type HistoryOp,
+  type NoteRevision,
+} from "./history";
 import { withMutationQueue } from "./mutex";
 import { NOTES_DIR, OKF_MANIFEST } from "./paths";
 import { slugify, uniqueSlug } from "./slug";
@@ -37,6 +49,14 @@ export interface AddNoteInput {
   body: string;
   tags?: string[];
   source?: NoteSource;
+  /**
+   * Start the note with `body` as its first verbatim block in the `## Raw`
+   * tail instead of as editorial body. Dictation starts here, so a later
+   * `finalize` cannot replace the user's opening words.
+   */
+  raw?: boolean;
+  /** Who is creating it, for note history. Defaults from `source`. */
+  by?: HistoryAuthor;
   /** Injectable clock for tests. */
   now?: Date;
 }
@@ -104,7 +124,8 @@ export function resolveNotePath(root: string, slug: string): string | null {
 export async function addNote(root: string, input: AddNoteInput): Promise<Note> {
   await ensureVault(root);
   return withVaultLock(root, async () => {
-    const now = (input.now ?? new Date()).toISOString();
+    const date = input.now ?? new Date();
+    const now = date.toISOString();
     const base = slugify(input.title);
     const slug = uniqueSlug(base, (candidate) => existsSync(notePath(root, candidate)));
 
@@ -117,7 +138,12 @@ export async function addNote(root: string, input: AddNoteInput): Promise<Note> 
     };
     // No `frontMatter`: a brand-new note has no prior layout to respect, so
     // the serializer writes its canonical block.
-    return writeNote(notePath(root, slug), slug, meta, input.body, undefined);
+    const body = input.raw && input.body.trim() !== ""
+      ? `${rawTailOpening()}\n\n${formatRawAppend(input.body, date)}\n`
+      : input.body;
+    const note = await writeNote(notePath(root, slug), slug, meta, body, undefined);
+    await record(root, note, input.by ?? (meta.source === "human" ? "human" : "agent"), "create", null, now);
+    return note;
   });
 }
 
@@ -175,6 +201,24 @@ async function writeNote(
   return { slug, ...parsed.meta, body: parsed.body, frontMatter: parsed.frontMatter };
 }
 
+/** The body a write is about to replace, and when it was last written. */
+async function priorBody(path: string, note: Note): Promise<{ body: string; at: string }> {
+  const st = await fs.stat(path).catch(() => null);
+  return { body: note.body, at: st?.mtime.toISOString() ?? note.updated };
+}
+
+/** Add the written note to its history (see `history.ts`). */
+function record(
+  root: string,
+  note: Note,
+  by: HistoryAuthor,
+  op: HistoryOp,
+  before: { body: string; at: string } | null,
+  at: string,
+): Promise<void> {
+  return recordRevision(root, note.slug, { by, op, before, after: note.body, at: new Date(at) });
+}
+
 /**
  * Namespace prefix for this module's mutation-queue keys.
  *
@@ -213,6 +257,8 @@ export interface AppendToNoteOptions {
    * editorial body above the tail.
    */
   raw?: boolean;
+  /** Who is appending, for note history. Defaults to `agent`. */
+  by?: HistoryAuthor;
 }
 
 /** Append Markdown to an existing note and bump `updated`. */
@@ -228,6 +274,7 @@ export async function appendToNote(
   return withVaultLock(root, async () => {
     const note = await getNote(root, slug);
     if (!note) return null;
+    const before = await priorBody(path, note);
     const tail = extractRawTail(note.body);
     let body: string;
     if (options.raw) {
@@ -248,7 +295,9 @@ export async function appendToNote(
       const head = note.body.slice(0, idx).replace(/\s+$/, "");
       body = (head ? head + "\n\n" : "") + addition.trim() + "\n\n" + tail + "\n";
     }
-    return writeNote(path, slug, { ...note, updated: now.toISOString() }, body, note.frontMatter);
+    const written = await writeNote(path, slug, { ...note, updated: now.toISOString() }, body, note.frontMatter);
+    await record(root, written, options.by ?? "agent", options.raw ? "raw" : "append", before, written.updated);
+    return written;
   });
 }
 
@@ -321,6 +370,8 @@ export interface FinalizeNoteInput {
    * entities, links). The `## Raw` tail is preserved verbatim beneath it.
    */
   body: string;
+  /** Who is finalizing, for note history. Defaults to `agent`. */
+  by?: HistoryAuthor;
   /** Injectable clock for tests. */
   now?: Date;
 }
@@ -354,7 +405,10 @@ export async function finalizeNote(
           ? ""
           : `\n\n${rawTailOpening()}\n\n${fenceFor(note.body)}\n${note.body.trim()}\n${fenceFor(note.body)}`);
     const meta: NoteMeta = { ...note, updated: (input.now ?? new Date()).toISOString() };
-    return writeNote(path, slug, meta, body, note.frontMatter);
+    const before = await priorBody(path, note);
+    const written = await writeNote(path, slug, meta, body, note.frontMatter);
+    await record(root, written, input.by ?? "agent", "finalize", before, meta.updated);
+    return written;
   });
 }
 
@@ -373,7 +427,8 @@ export interface UpsertNoteInput {
 export async function upsertNote(root: string, input: UpsertNoteInput): Promise<Note> {
   await ensureVault(root);
   return withVaultLock(root, async () => {
-    const now = (input.now ?? new Date()).toISOString();
+    const date = input.now ?? new Date();
+    const now = date.toISOString();
     const identity = input.identity;
     let existing = await getNote(root, input.slug);
     if (existing !== null && identity && frontMatterField(existing.frontMatter, identity.field) !== identity.value) {
@@ -400,7 +455,9 @@ export async function upsertNote(root: string, input: UpsertNoteInput): Promise<
         `source: ${meta.source}`,
         ...upsertFrontMatterFields([], fields),
       ];
-      return writeNote(notePath(root, slug), slug, meta, input.body, frontMatter);
+      const created = await writeNote(notePath(root, slug), slug, meta, input.body, frontMatter);
+      await record(root, created, "agent", "generate", null, now);
+      return created;
     }
     const fields = safeGeneratedFields(input.fields);
     const frontMatter = upsertFrontMatterFields(existing.frontMatter ?? [], fields);
@@ -410,13 +467,16 @@ export async function upsertNote(root: string, input: UpsertNoteInput): Promise<
     // verbatim tail.
     const tail = extractRawTail(existing.body);
     const body = tail === "" ? input.body.trim() : `${input.body.trim()}\n\n${tail}`;
-    return writeNote(
+    const before = await priorBody(notePath(root, input.slug), existing);
+    const refreshed = await writeNote(
       notePath(root, input.slug),
       input.slug,
       { ...existing, updated: now },
       body,
       frontMatter,
     );
+    await record(root, refreshed, "agent", "generate", before, now);
+    return refreshed;
   });
 }
 
@@ -515,6 +575,7 @@ async function rewriteVaultLinks(
     } catch {
       continue; // raced a delete
     }
+    const before = await priorBody(path, note);
     const at = original.lastIndexOf(note.body);
     if (at === -1) continue; // body not found verbatim; refuse rather than guess
     const next = original.slice(0, at) + body + original.slice(at + note.body.length);
@@ -532,6 +593,8 @@ async function rewriteVaultLinks(
       await fs.writeFile(tmp, next, "utf8");
       await fs.rename(tmp, path);
     }
+    const repaired = await getNote(root, slug);
+    if (repaired !== null) await record(root, repaired, "system", "repair", before, new Date().toISOString());
     touched.push(slug);
     links += changed;
   }
@@ -598,30 +661,24 @@ export async function repairVaultLinks(root: string, options: { apply?: boolean 
 
 /**
  * Keep the on-disk `## Raw` tail whatever the body says — it is append-only.
- * `rawTailStart`, not `extractRawTail`: fence-aware, for untrusted input.
+ * `rawTailBoundary`, not `extractRawTail`: fence-aware, for untrusted input.
  */
 function preserveRawTail(currentBody: string, nextBody: string): string {
-  const tail = currentBody.slice(tailBoundary(currentBody)).trimEnd();
-  const head = nextBody.slice(0, tailBoundary(nextBody)).trim();
-  if (tail === "") return head;
-  // An emptied head leaves the tail alone, not a leading blank line.
-  return head === "" ? tail : `${head}\n\n${tail}`;
+  const tail = currentBody.slice(rawTailBoundary(currentBody)).trimEnd();
+  return joinRawTail(nextBody.slice(0, rawTailBoundary(nextBody)).trim(), tail);
 }
 
-/** A `---` rule, alone on the line, with only blank space after it. */
-const TAIL_RULE_RE = /(?:^|\n)-{3,}[ \t]*\r?\n\s*$/;
-
 /**
- * Where the tail's text begins — the `---` rule, not the heading
- * `rawTailStart` returns. Splitting at the heading orphans the rule.
+ * What a body save does with the `## Raw` tail. `keep` (the default) holds
+ * the on-disk tail whatever the body says. `replace` writes the body's own
+ * tail: the person editing the note changed their own Raw words on purpose.
  */
-function tailBoundary(body: string): number {
-  const heading = rawTailStart(body, fenceRanges(body));
-  if (heading === body.length) return heading;
-  const rule = TAIL_RULE_RE.exec(body.slice(0, heading));
-  if (rule === null) return heading;
-  // `index` is the newline before the rule when there is one; step over it.
-  return rule.index === 0 && !body.startsWith("\n") ? 0 : rule.index + 1;
+export type RawTailMode = "keep" | "replace";
+
+/** The body as sent, its tail included, with the same spacing `preserveRawTail` writes. */
+function normalizeRawTail(body: string): string {
+  const { head, tail } = splitRawTail(body);
+  return joinRawTail(head.trim(), tail);
 }
 
 /**
@@ -629,15 +686,40 @@ function tailBoundary(body: string): number {
  * `note.frontMatter` and only `updated` moves. Last write wins — no
  * `expectedRevision`; docs/weave-workspace.md §11 P5.3 argues the trade.
  */
-export async function setNoteBody(root: string, slug: string, body: string, now = new Date()): Promise<VaultMutationResult> {
+export async function setNoteBody(
+  root: string,
+  slug: string,
+  body: string,
+  now = new Date(),
+  by: HistoryAuthor = "human",
+  raw: RawTailMode = "keep",
+): Promise<VaultMutationResult> {
   const path = resolveNotePath(root, slug);
   if (path === null) return { ok: false, reason: "invalid" };
   return withVaultLock(root, async () => {
     const note = await getNote(root, slug);
     if (note === null) return { ok: false, reason: "missing" };
-    const next = preserveRawTail(note.body, body);
-    await writeNote(path, slug, { ...note, updated: now.toISOString() }, next, note.frontMatter);
+    const next = raw === "replace" ? normalizeRawTail(body) : preserveRawTail(note.body, body);
+    const before = await priorBody(path, note);
+    const written = await writeNote(path, slug, { ...note, updated: now.toISOString() }, next, note.frontMatter);
+    await record(root, written, by, "edit", before, written.updated);
     return { ok: true, slug };
+  });
+}
+
+/**
+ * Every saved revision of a note, ending on what the note says now, or null
+ * when the note is missing. Under the vault lock, so a write cannot land
+ * between reading the note and comparing it with its log: that window would
+ * record the old body as an outside edit.
+ */
+export async function readNoteHistory(root: string, slug: string): Promise<NoteRevision[] | null> {
+  const path = resolveNotePath(root, slug);
+  if (path === null) return null;
+  return withVaultLock(root, async () => {
+    const note = await getNote(root, slug);
+    if (note === null) return null;
+    return readHistory(root, slug, await priorBody(path, note));
   });
 }
 
@@ -656,6 +738,7 @@ export async function renameNote(root: string, slug: string, name: string, now =
     if (from !== to && await exists(to)) return { ok: false, reason: "collision" };
     if (from !== to) await fs.rename(from, to);
     await writeNote(to, target, { ...note, title, updated: now.toISOString() }, note.body, note.frontMatter);
+    if (from !== to) await moveHistory(root, slug, target);
     if (from !== to) await repointBacklinks(root, new Map([[slug, target]]));
     return { ok: true, slug: target };
   });
@@ -675,6 +758,7 @@ export async function moveNote(root: string, slug: string, folder: string | null
     if (from === to) return { ok: true, slug };
     if (await exists(to)) return { ok: false, reason: "collision" };
     await fs.rename(from, to);
+    await moveHistory(root, slug, target);
     await repointBacklinks(root, new Map([[slug, target]]));
     return { ok: true, slug: target };
   });
@@ -687,6 +771,7 @@ export async function deleteNote(root: string, slug: string): Promise<VaultMutat
   return withVaultLock(root, async () => {
     if (!(await exists(path))) return { ok: false, reason: "missing" };
     await fs.unlink(path);
+    await removeHistory(root, slug);
     return { ok: true };
   });
 }
@@ -711,6 +796,7 @@ export async function renameFolder(root: string, folder: string, name: string): 
       .filter((f) => isMarkdown(f) && f.startsWith(`${folder}/`))
       .map((f) => f.slice(0, -".md".length));
     await fs.rename(from, to);
+    await moveHistoryFolder(root, folder, target);
     await repointBacklinks(root, new Map(moved.map((s) => [s, `${target}/${s.slice(folder.length + 1)}`])));
     return { ok: true, path: target };
   });
@@ -723,6 +809,7 @@ export async function deleteFolder(root: string, folder: string): Promise<VaultM
   return withVaultLock(root, async () => {
     if (!(await isDirectory(path))) return { ok: false, reason: "missing" };
     await fs.rm(path, { recursive: true });
+    await removeHistoryFolder(root, folder);
     return { ok: true };
   });
 }

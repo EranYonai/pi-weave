@@ -1,10 +1,28 @@
+import { joinRawOpening, joinRawTail, splitRawOpening, splitRawTail } from "../../shared/view";
 import { tabSelection, type WorkspaceLayout } from "../../shared/workspace";
 
+/**
+ * An open editor. `body` is only the part above the `## Raw` tail, and the
+ * tail's entries get their own box (`raw`): one textarea holding both used
+ * to drop anything typed below the heading on save, without a word.
+ */
 export interface NoteDraft {
   body: string;
   baseline: string;
+  /** The verbatim `## Raw` tail as it was when the editor opened; "" when none. */
+  tail: string;
+  /** The tail's entries, below its heading and notice, as edited. */
+  raw: string;
+  rawBaseline: string;
   saving: boolean;
 }
+
+/** How a save should treat the `## Raw` tail; `raw` means the person edited it. */
+export interface SaveOptions {
+  raw?: boolean;
+}
+
+export type SaveNote = (slug: string, body: string, options?: SaveOptions) => Promise<boolean>;
 
 interface TaskSource {
   body: string;
@@ -16,17 +34,20 @@ interface TaskSource {
 export interface DraftStore {
   get(slug: string): Readonly<NoteDraft> | null;
   subscribe(listener: () => void): () => void;
+  /** Open an editor on a full note body; the `## Raw` tail is split off. */
   open(slug: string, body: string): void;
   edit(slug: string, body: string): void;
+  /** Edit the `## Raw` entries. */
+  editRaw(slug: string, raw: string): void;
   discard(slug: string): void;
   isDirty(slug: string): boolean;
   dirtySlugs(): string[];
-  save(slug: string, onSave: (slug: string, body: string) => Promise<boolean>): Promise<void>;
+  save(slug: string, onSave: SaveNote): Promise<void>;
   nextLoadVersion(): number;
   getTaskBody(slug: string, fallback: string): string;
   taskBody(slug: string, serverBody: string, loadVersion: number): string;
   isTaskSaving(slug: string): boolean;
-  saveTask(slug: string, body: string, onSave: (slug: string, body: string) => Promise<boolean>): Promise<boolean>;
+  saveTask(slug: string, body: string, onSave: SaveNote): Promise<boolean>;
   clearTaskSources(slugs: readonly string[]): void;
 }
 
@@ -36,6 +57,7 @@ export function createDraftStore(): DraftStore {
   const listeners = new Set<() => void>();
   let loadVersion = 0;
   const notify = (): void => listeners.forEach((listener) => listener());
+  const dirty = (draft: NoteDraft): boolean => draft.body !== draft.baseline || draft.raw !== draft.rawBaseline;
 
   return {
     get: (slug) => drafts.get(slug) ?? null,
@@ -45,7 +67,9 @@ export function createDraftStore(): DraftStore {
     },
     open(slug, body) {
       if (drafts.has(slug)) return;
-      drafts.set(slug, { body, baseline: body, saving: false });
+      const { head, tail } = splitRawTail(body);
+      const { entries } = splitRawOpening(tail);
+      drafts.set(slug, { body: head, baseline: head, tail, raw: entries, rawBaseline: entries, saving: false });
       notify();
     },
     edit(slug, body) {
@@ -54,37 +78,54 @@ export function createDraftStore(): DraftStore {
       draft.body = body;
       notify();
     },
+    editRaw(slug, raw) {
+      const draft = drafts.get(slug);
+      if (draft === undefined || draft.raw === raw) return;
+      draft.raw = raw;
+      notify();
+    },
     discard(slug) {
       if (drafts.delete(slug)) notify();
     },
     isDirty(slug) {
       const draft = drafts.get(slug);
-      return draft !== undefined && draft.body !== draft.baseline;
+      return draft !== undefined && dirty(draft);
     },
     dirtySlugs() {
-      return [...drafts].filter(([, draft]) => draft.body !== draft.baseline).map(([slug]) => slug);
+      return [...drafts].filter(([, draft]) => dirty(draft)).map(([slug]) => slug);
     },
     async save(slug, onSave) {
       const draft = drafts.get(slug);
       if (draft === undefined || draft.saving || taskSources.get(slug)?.saving) return;
       const sent = draft.body;
+      const sentRaw = draft.raw;
+      // An untouched Raw is sent as it was and kept by the server, so an
+      // entry dictated while this editor was open survives the save. An
+      // edited one is sent as the person left it, and replaces the tail.
+      const rawEdited = sentRaw !== draft.rawBaseline;
+      const tail = rawEdited ? joinRawOpening(splitRawOpening(draft.tail).opening, sentRaw) : draft.tail;
+      const full = joinRawTail(sent, tail);
       draft.saving = true;
       notify();
       let ok = false;
       try {
-        ok = await onSave(slug, sent);
+        ok = await onSave(slug, full, rawEdited ? { raw: true } : undefined);
       } finally {
         // Discard/reopen during an in-flight request gives the new draft a new identity.
         if (drafts.get(slug) === draft) {
           const source = taskSources.get(slug);
           if (ok && source !== undefined) {
-            source.body = sent;
+            source.body = full;
             source.version = ++loadVersion;
             delete source.pending;
           }
-          if (ok && draft.body === sent) drafts.delete(slug);
+          if (ok && draft.body === sent && draft.raw === sentRaw) drafts.delete(slug);
           else {
-            if (ok) draft.baseline = sent;
+            if (ok) {
+              draft.baseline = sent;
+              draft.rawBaseline = sentRaw;
+              draft.tail = tail;
+            }
             draft.saving = false;
           }
           notify();

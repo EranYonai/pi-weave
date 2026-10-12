@@ -45,7 +45,8 @@ import {
   type StartWorkspaceServerOptions,
   type WorkspaceServer,
 } from "../../src/web/server/server";
-import type { GraphPayload, NotePayload, OkfFilePayload, SearchPayload } from "../../src/web/shared/wire";
+import type { GraphPayload, HistoryWirePayload, NotePayload, OkfFilePayload, SearchPayload, TrailPayload } from "../../src/web/shared/wire";
+import { expandHistory } from "../../src/web/client/api";
 import { WIRE_MODEL_OMITTED_KEYS } from "../../src/web/shared/wire";
 import { commitAll, gitInit, makeTempDir, withVaultEnv, writeFixture } from "../helpers";
 
@@ -912,6 +913,21 @@ describe("vault tree mutations", () => {
     expect(payload.note.body).toBe("rewritten by the browser");
   });
 
+  it("keeps the on-disk Raw tail unless the save says Raw was edited", async () => {
+    const { server, vaultRoot } = await bootFresh();
+    const tail = "---\n\n## Raw\n<!-- NEVER edit below this line. Verbatim user input preserved here. -->\n\n```\nsaid it\n```";
+    expect((await post(server, "/api/note/alpha-note", { body: "kept", raw: true })).status).toBe(200);
+    const file = join(vaultRoot, "notes", "alpha-note.md");
+    await fs.writeFile(file, (await fs.readFile(file, "utf8")).replace("kept", `kept\n\n${tail}`));
+    expect((await post(server, "/api/note/alpha-note", { body: `kept\n\n${tail.replace("said it", "forged")}` })).status).toBe(200);
+    expect(await fs.readFile(file, "utf8")).toContain("said it");
+    expect((await post(server, "/api/note/alpha-note", { body: `kept\n\n${tail.replace("said it", "fixed typo")}`, raw: true })).status).toBe(200);
+    const after = await fs.readFile(file, "utf8");
+    expect(after).toContain("fixed typo");
+    expect(after).not.toContain("said it");
+    expect((await post(server, "/api/note/alpha-note", { body: "x", raw: "yes" })).status).toBe(400);
+  });
+
   it("refuses a save with no string body, a missing note, or a foreign Origin", async () => {
     const { server } = await bootFresh();
     expect((await post(server, "/api/note/alpha-note", {})).status).toBe(400);
@@ -1399,3 +1415,87 @@ async function rawSocket(port: number, request: string): Promise<string> {
     socket.on("error", reject);
   });
 }
+
+describe("note history", () => {
+  it("serves a note's revisions, ending on what the note says now", async () => {
+    const { server, vaultRoot } = await bootFresh();
+    expect((await post(server, "/api/note/alpha-note", { body: "first edit" })).status).toBe(200);
+    expect((await post(server, "/api/note/alpha-note", { body: "second edit" })).status).toBe(200);
+    const res = await get(server, "/api/history/alpha-note");
+    expect(res.status).toBe(200);
+    expect(res.headers.get("cache-control")).toBe("no-store");
+    const wire = await res.json() as HistoryWirePayload;
+    // Deltas on the wire, full bodies once expanded.
+    expect(wire.revisions[0]).toHaveProperty("full");
+    expect(wire.revisions[1]).toHaveProperty("keep");
+    expect(wire.trimmed).toBe(false);
+    const payload = expandHistory(wire)!;
+    expect(payload.slug).toBe("alpha-note");
+    expect(payload.enabled).toBe(true);
+    expect(payload.revisions.map((r) => [r.by, r.op, r.body])).toEqual([
+      ["human", "create", "the body of alpha"],
+      ["human", "edit", "first edit"],
+      ["human", "edit", "second edit"],
+    ]);
+
+    // An edit made in another editor shows up as the last step.
+    const file = join(vaultRoot, "notes", "alpha-note.md");
+    await fs.writeFile(file, (await fs.readFile(file, "utf8")).replace("second edit", "edited elsewhere"));
+    const after = expandHistory(await (await get(server, "/api/history/alpha-note")).json() as HistoryWirePayload)!;
+    expect(after.revisions.at(-1)).toMatchObject({ by: "outside", op: "outside", body: "edited elsewhere" });
+  });
+
+  it("404s for a missing or unsafe note", async () => {
+    const { server } = await bootFresh();
+    expect((await get(server, "/api/history/missing")).status).toBe(404);
+    expect((await get(server, "/api/history/..%2f..%2fetc%2fhosts")).status).toBe(404);
+  });
+
+  it("reads and sets the history switch", async () => {
+    const { server, vaultRoot } = await bootFresh();
+    expect(await (await get(server, "/api/history-settings")).json()).toEqual({ enabled: true });
+    expect(await (await post(server, "/api/history-settings", { enabled: false })).json()).toEqual({ enabled: false });
+    expect(JSON.parse(await fs.readFile(join(vaultRoot, "okf.json"), "utf8"))).toMatchObject({ history: false });
+    expect((await get(server, "/api/history/alpha-note").then((r) => r.json()) as HistoryWirePayload).enabled).toBe(false);
+    for (const body of [null, {}, { enabled: "no" }]) expect((await post(server, "/api/history-settings", body)).status).toBe(400);
+  });
+});
+
+// --- GET /api/trail (issue #78) -------------------------------------------------
+
+describe("GET /api/trail", () => {
+  it("serves this vault's recall trail, ETag'd on the buffer stamp", async () => {
+    const { recallTrail } = await import("../../src/core/trail");
+    const { server, vaultRoot } = await bootFresh();
+    recallTrail.clear();
+    recallTrail.beginTurn();
+    recallTrail.record({ kind: "read", action: "get", slugs: ["alpha-note"], vault: vaultRoot, at: new Date("2026-10-11T05:00:00Z") });
+    recallTrail.record({ kind: "wrote", action: "append", slugs: ["elsewhere"], vault: "/some/other/vault", at: new Date("2026-10-11T05:00:01Z") });
+
+    const res = await get(server, "/api/trail");
+    expect(res.status).toBe(200);
+    const etag = res.headers.get("etag");
+    expect(etag).toBe('"1.2"');
+    expect(res.headers.get("access-control-allow-origin")).toBeNull();
+    const payload = (await res.json()) as TrailPayload;
+    expect(payload).toEqual({
+      stamp: "1.2",
+      turn: 1,
+      events: [{ seq: 1, turn: 1, at: "2026-10-11T05:00:00.000Z", kind: "read", action: "get", slugs: ["alpha-note"] }],
+    });
+
+    const cached = await get(server, "/api/trail", { headers: { "if-none-match": etag! } });
+    expect(cached.status).toBe(304);
+
+    recallTrail.record({ kind: "searched", action: "search", slugs: [], query: "beta", vault: vaultRoot, at: new Date("2026-10-11T05:00:02Z") });
+    const moved = await get(server, "/api/trail", { headers: { "if-none-match": etag! } });
+    expect(moved.status).toBe(200);
+    expect(((await moved.json()) as TrailPayload).events.map((event) => event.query)).toEqual([undefined, "beta"]);
+    recallTrail.clear();
+  });
+
+  it("requires the session cookie like every other route", async () => {
+    const { server } = await boot();
+    expect((await raw(server, "/api/trail")).status).toBe(403);
+  });
+});

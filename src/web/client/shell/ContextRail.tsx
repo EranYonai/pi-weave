@@ -19,6 +19,8 @@ import type { GraphPayload } from "../../shared/wire";
 import { CONTEXT_EMPTY } from "./shell.model";
 import { Icon } from "../tree/Tree";
 import { ResizeHandle } from "./ResizeHandle";
+import { TrailStrip } from "../trail/TrailStrip";
+import type { TrailTurnView } from "../trail/trail.model";
 
 export interface ContextRailProps {
   graph: GraphPayload | null;
@@ -26,6 +28,10 @@ export interface ContextRailProps {
   onSelect: (id: string, newTab?: boolean) => void;
   tagHeight: number;
   onTagResize: (height: number) => void;
+  /** The recall trail's turns, newest first. Omitted means no strip. */
+  trail?: readonly TrailTurnView[];
+  trailTurn?: number | null;
+  onReplay?: (turn: number) => void;
 }
 
 function Row({ row, onSelect }: { row: ContextRow; onSelect: (newTab: boolean) => void }) {
@@ -106,6 +112,7 @@ export function ContextRail(props: ContextRailProps) {
   const tags = railTagsView(model.tags, toggles);
   return (
     <div class="weave-rail" aria-label={CONTEXT_EMPTY.title}>
+      {props.trail === undefined ? null : <TrailStrip turns={props.trail} shownTurn={props.trailTurn ?? null} onSelect={props.onSelect} onReplay={(turn) => props.onReplay?.(turn)} />}
       {model.empty === null ? null : <p class="weave-ctx-empty">{model.empty}</p>}
       {model.groups.map((group) => {
         const view = railSectionView(group, toggles);

@@ -15,3 +15,4 @@ dist/
 
 # local pi harness config (see AGENTS.md smoke instructions)
 .pi/
+e2e/.artifacts/

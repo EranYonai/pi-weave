@@ -6,6 +6,7 @@
  * | GET    | `/`                      | the HTML shell, with its per-response nonce  |
  * | GET    | `/app.js`                | the committed bundle, `Cache-Control: no-store` |
  * | GET    | `/api/graph`             | {@link GraphPayload}, ETag'd on `stamp`      |
+ * | GET    | `/api/trail`             | {@link TrailPayload}, ETag'd on `stamp`      |
  * | GET    | `/api/note/:slug`        | {@link NotePayload}                          |
  * | POST   | `/api/note/:slug`        | save a note's Markdown body                  |
  * | POST   | `/api/notes`            | create an empty human-authored vault note    |
@@ -15,6 +16,9 @@
  * | POST   | `/api/folder/:path`        | create a vault folder                      |
  * | POST   | `/api/folder/:path/rename` | rename a vault folder                      |
  * | DELETE | `/api/folder/:path`      | delete a vault folder                        |
+ * | GET    | `/api/history/:slug`     | {@link HistoryWirePayload}                   |
+ * | GET    | `/api/history-settings`  | {@link HistorySettingsPayload}               |
+ * | POST   | `/api/history-settings`  | turn note history on or off                  |
  * | GET    | `/api/okf/:rel`          | {@link OkfFilePayload}                       |
  * | GET    | `/api/artifact/:rel`     | sandboxed HTML artifact                     |
  * | GET    | `/api/search?q=`         | {@link SearchPayload}                        |
@@ -49,22 +53,28 @@ import { createReadStream } from "node:fs";
 import { pipeline } from "node:stream/promises";
 import { createVaultBackup } from "./backup";
 import { readFile } from "node:fs/promises";
+import { resolve as resolvePath } from "node:path";
 import type { IncomingMessage, ServerResponse } from "node:http";
 import type { WorkspaceSnapshot } from "../../core/cache/workspace";
 import { WorkspaceCache } from "../../core/cache/workspace";
 import { readOkfFileForView } from "../../core/graph/current";
 import type { GraphModel as CoreGraphModel } from "../../core/graph/model";
+import { encodeRevisions, historyEnabled, historyTrimmed, setHistoryEnabled } from "../../core/history";
 import { openNoteInEditor } from "../../core/openInEditor";
+import { recallTrail, type RecallTrail } from "../../core/trail";
 import type { Note } from "../../core/types";
 import type { VaultMutationResult } from "../../core/vault";
-import { addNote, createFolder, deleteFolder, deleteNote, getNote, moveNote, renameFolder, renameNote, resolveHtmlPath, searchNotes, setNoteBody } from "../../core/vault";
+import { addNote, createFolder, deleteFolder, deleteNote, getNote, moveNote, renameFolder, readNoteHistory, renameNote, resolveHtmlPath, searchNotes, setNoteBody } from "../../core/vault";
 import { deriveTagIndex, type TaggedNote } from "../../core/view/links";
 import type {
   GraphPayload,
+  HistoryWirePayload,
+  HistorySettingsPayload,
   NotePayload,
   OkfFilePayload,
   OpenResult,
   SearchPayload,
+  TrailPayload,
   ViewNote,
 } from "../shared/wire";
 import { WIRE_MODEL_OMITTED_KEYS } from "../shared/wire";
@@ -85,6 +95,8 @@ export interface RouteDeps {
   /** Test seam for `POST /api/open`; defaults to the real editor shell-out. */
   openNote?: ((slug: string) => Promise<boolean>) | undefined;
   workspaceState: WorkspaceStateStore;
+  /** The recall trail to serve. Defaults to the process-wide one the tools write. */
+  trail?: RecallTrail | undefined;
 }
 
 const JSON_TYPE = "application/json; charset=utf-8";
@@ -383,6 +395,7 @@ async function route(
   if (method === "GET" && path === "/") return sendShell(deps, res);
   if (method === "GET" && path === "/app.js") return sendBundle(deps, res);
   if (method === "GET" && path === "/api/graph") return sendGraph(deps, req, res);
+  if (method === "GET" && path === "/api/trail") return sendTrail(deps, req, res);
   if (method === "GET" && path === "/api/backup") {
     const backup = await createVaultBackup(deps.vaultRoot);
     try {
@@ -413,6 +426,8 @@ async function route(
     const handled = await routeNote(deps, method, path.slice("/api/note/".length), req, res);
     if (handled) return;
   }
+  if (method === "GET" && path.startsWith("/api/history/")) return sendHistory(deps, path.slice("/api/history/".length), res);
+  if (path === "/api/history-settings" && (method === "GET" || method === "POST")) return historySettings(deps, method, req, res);
   if (method === "GET" && path.startsWith("/api/okf/")) {
     return sendOkf(deps, path.slice("/api/okf/".length), res);
   }
@@ -559,6 +574,29 @@ async function sendGraph(deps: RouteDeps, req: IncomingMessage, res: ServerRespo
 }
 
 /**
+ * `GET /api/trail`. The trail is process-wide, so it is filtered to this
+ * server's vault; the stamp is the buffer's own, which moves on every record.
+ */
+function sendTrail(deps: RouteDeps, req: IncomingMessage, res: ServerResponse): void {
+  const snapshot = (deps.trail ?? recallTrail).snapshot();
+  const etag = `"${snapshot.stamp}"`;
+  const conditional = req.headers["if-none-match"];
+  if (matchesEtag(etag, typeof conditional === "string" ? conditional : undefined)) {
+    res.writeHead(304, { ...baseHeaders(), etag, "cache-control": "no-cache" });
+    res.end();
+    return;
+  }
+  const payload: TrailPayload = {
+    stamp: snapshot.stamp,
+    turn: snapshot.turn,
+    events: snapshot.events
+      .filter((event) => resolvePath(event.vault) === resolvePath(deps.vaultRoot))
+      .map(({ vault: _vault, ...event }) => event),
+  };
+  sendJson(res, 200, payload, { etag, "cache-control": "no-cache" });
+}
+
+/**
  * `If-None-Match` matching, weak-comparison style.
  *
  * A `*` matches anything with a representation, and a list is comma-
@@ -615,11 +653,17 @@ async function routeNote(
       sendJson(res, 400, { error: "expected JSON object" });
       return true;
     }
-    const fields = body as { body?: unknown; name?: unknown; folder?: unknown };
+    const fields = body as { body?: unknown; raw?: unknown; name?: unknown; folder?: unknown };
     // The payload decides, not the suffix: slugs nest, so `archive/rename` is
     // a real note and only `{name}`/`{folder}` mean the action.
     if (typeof fields.body === "string") {
-      sendMutation(res, await setNoteBody(deps.vaultRoot, target, fields.body));
+      // `raw: true` is the editor saying the person changed their own Raw
+      // words; without it the on-disk tail is kept, whatever the body says.
+      if (fields.raw !== undefined && typeof fields.raw !== "boolean") {
+        sendJson(res, 400, { error: "expected raw: boolean" });
+        return true;
+      }
+      sendMutation(res, await setNoteBody(deps.vaultRoot, target, fields.body, new Date(), "human", fields.raw === true ? "replace" : "keep"));
       return true;
     }
     if (action === null) {
@@ -698,6 +742,42 @@ function notePayload(note: Note): NotePayload {
     source: note.source,
   };
   return { note: view };
+}
+
+/**
+ * Every saved revision of a note. The note's current body is passed in so an
+ * edit made outside pi-weave since the last write shows as the final step.
+ */
+async function sendHistory(deps: RouteDeps, slug: string, res: ServerResponse): Promise<void> {
+  const revisions = await readNoteHistory(deps.vaultRoot, slug);
+  if (revisions === null) {
+    sendJson(res, 404, { error: "no such note" });
+    return;
+  }
+  // Deltas, as on disk: full bodies for every revision would grow with the
+  // square of the note's length.
+  const trimmed = await historyTrimmed(deps.vaultRoot, slug);
+  const payload: HistoryWirePayload = {
+    slug,
+    enabled: await historyEnabled(deps.vaultRoot),
+    trimmed,
+    revisions: encodeRevisions(revisions, trimmed),
+  };
+  sendJson(res, 200, payload, { "cache-control": "no-store" });
+}
+
+async function historySettings(deps: RouteDeps, method: string, req: IncomingMessage, res: ServerResponse): Promise<void> {
+  if (method === "POST") {
+    const body = await readJsonBody(req);
+    const enabled = typeof body === "object" && body !== null ? (body as { enabled?: unknown }).enabled : undefined;
+    if (typeof enabled !== "boolean") {
+      sendJson(res, 400, { error: "expected { enabled: boolean }" });
+      return;
+    }
+    await setHistoryEnabled(deps.vaultRoot, enabled);
+  }
+  const payload: HistorySettingsPayload = { enabled: await historyEnabled(deps.vaultRoot) };
+  sendJson(res, 200, payload, { "cache-control": "no-store" });
 }
 
 async function sendOkf(deps: RouteDeps, rel: string, res: ServerResponse): Promise<void> {

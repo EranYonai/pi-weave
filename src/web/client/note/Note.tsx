@@ -40,7 +40,7 @@
 
 import DOMPurify from "dompurify";
 import { useEffect, useId, useLayoutEffect, useMemo, useRef, useState } from "preact/hooks";
-import type { GraphPayload, NotePayload } from "../../shared/wire";
+import type { GraphPayload, HistoryPayload, NotePayload } from "../../shared/wire";
 import {
   CREATED_WORD,
   artifactKeyOfNode,
@@ -49,6 +49,7 @@ import {
   EDIT_LABEL,
   EDITED_WORD,
   EDITOR_ARIA_LABEL,
+  EDITOR_PLACEHOLDER,
   EMPTY_PREVIEW,
   SAVE_LABEL,
   SAVING_LABEL,
@@ -60,6 +61,10 @@ import {
   previewAnchorOf,
   previewCard,
   previewPlacement,
+  RAW_EDITOR_ARIA_LABEL,
+  RAW_TAIL_ARIA_LABEL,
+  RAW_TITLE,
+  rawSummary,
   reducePreview,
   renderNote,
   selectedArtifactPath,
@@ -72,7 +77,10 @@ import {
 } from "./note.model";
 import type { NoteHeaderView, PreviewElement, PreviewEvent } from "./note.model";
 import { createDraftStore } from "./drafts";
-import type { DraftStore } from "./drafts";
+import type { DraftStore, SaveNote } from "./drafts";
+import { ReplayBar, wrapMarks } from "./Replay";
+import type { ReplayState } from "./Replay";
+import { HISTORY_CLOSE_LABEL, HISTORY_LABEL, PLAY_INTERVAL_MS, nextStep, replayStep } from "./replay.model";
 
 /**
  * The custom properties the preview card is placed with, written by the
@@ -97,7 +105,12 @@ export interface NoteProps {
    * has already been reported to the user by the shell, which owns the one
    * error-reporting gesture the client has.
    */
-  onSave: (slug: string, body: string) => Promise<boolean>;
+  onSave: SaveNote;
+  /**
+   * Load the note's saved revisions for the history slider. The History
+   * control is shown only when this is provided.
+   */
+  onHistory?: (slug: string) => Promise<{ ok: true; data: HistoryPayload } | { ok: false; message: string }>;
   /** Shared across Note instances so duplicate tabs edit one in-memory body. */
   drafts?: DraftStore;
   /** Stable per view; distinct when the same note is mounted more than once. */
@@ -124,6 +137,8 @@ function Header({
   taskSaving,
   onToggle,
   onSave,
+  replaying,
+  onHistory,
 }: {
   view: NoteHeaderView;
   open: () => void;
@@ -132,6 +147,8 @@ function Header({
   taskSaving: boolean;
   onToggle: () => void;
   onSave: () => void;
+  replaying: boolean;
+  onHistory: (() => void) | null;
 }) {
   return (
     <header class="weave-note-head">
@@ -144,7 +161,12 @@ function Header({
             </button>
             <button type="button" class="weave-note-edit" disabled={taskSaving} onClick={onToggle}>{DONE_LABEL}</button>
           </>
-        ) : <button type="button" class="weave-note-edit" disabled={taskSaving} onClick={onToggle}>{EDIT_LABEL}</button>}
+        ) : replaying ? null : <button type="button" class="weave-note-edit" disabled={taskSaving} onClick={onToggle}>{EDIT_LABEL}</button>}
+        {editing || onHistory === null ? null : (
+          <button type="button" class="weave-note-edit weave-note-history" aria-pressed={replaying} onClick={onHistory}>
+            {replaying ? HISTORY_CLOSE_LABEL : HISTORY_LABEL}
+          </button>
+        )}
         <button type="button" class="weave-note-open" title="Open in $EDITOR" aria-label="Open in $EDITOR" onClick={open}>
           <span class="weave-note-open-mark" aria-hidden="true">↗</span>
         </button>
@@ -201,7 +223,16 @@ export function Note(props: NoteProps) {
   const dispatch = (event: PreviewEvent): void => void sendPreview((state) => reducePreview(state, event));
   const bodyRef = useRef<HTMLDivElement | null>(null);
   const cardRef = useRef<HTMLDivElement | null>(null);
+  const editorRef = useRef<HTMLTextAreaElement | null>(null);
+  // Set by the gesture that opened the editor *in this column*, consumed by
+  // the layout effect below once the textarea exists. A flag rather than
+  // "focus whenever a draft appears": the same note open in a second pane
+  // shares the draft, and must not take the cursor away from this one.
+  const focusEditor = useRef(false);
   const draft = note === null ? null : drafts.get(note.slug);
+  // The `## Raw` box under the editor starts folded: a long dictation would
+  // otherwise outgrow the note it belongs to.
+  const [rawOpen, setRawOpen] = useState(false);
   const taskSaving = note !== null && drafts.isTaskSaving(note.slug);
   const save = async (): Promise<void> => {
     if (note !== null && !drafts.isTaskSaving(note.slug)) await drafts.save(note.slug, props.onSave);
@@ -239,16 +270,91 @@ export function Note(props: NoteProps) {
   useEffect(() => {
     if (note !== null && defaultOpened.current !== note.slug) {
       defaultOpened.current = note.slug;
-      if (props.defaultEdit && drafts.get(note.slug) === null) drafts.open(note.slug, body);
+      if (props.defaultEdit && drafts.get(note.slug) === null) {
+        focusEditor.current = true;
+        drafts.open(note.slug, body);
+      }
     }
   }, [note?.slug, props.defaultEdit]);
 
   const toggleEdit = (): void => {
     if (note === null || drafts.isTaskSaving(note.slug)) return;
-    if (drafts.get(note.slug) === null) drafts.open(note.slug, body);
-    else if (!drafts.isDirty(note.slug) || window.confirm(DISCARD_PROMPT)) drafts.discard(note.slug);
+    if (drafts.get(note.slug) === null) {
+      focusEditor.current = true;
+      drafts.open(note.slug, body);
+    } else if (!drafts.isDirty(note.slug) || window.confirm(DISCARD_PROMPT)) drafts.discard(note.slug);
+  };
+  // Both editor boxes: bound here, not in `keys.model.ts`, because a global
+  // binding is a workspace-wide claim and Escape must not reach the shell.
+  const editorKeys = (event: KeyboardEvent): void => {
+    if (event.key === "Escape") {
+      event.stopPropagation();
+      toggleEdit();
+      return;
+    }
+    if (event.key.toLowerCase() !== "s" || !(event.metaKey || event.ctrlKey)) return;
+    event.preventDefault();
+    void save();
   };
   const card = preview.anchor === null ? null : previewCard(props.graph, preview.anchor);
+
+  // Cursor in the textarea, after the last word, the moment it appears.
+  useLayoutEffect(() => {
+    const editor = editorRef.current;
+    if (editor === null || !focusEditor.current) return;
+    focusEditor.current = false;
+    editor.focus();
+    editor.setSelectionRange(editor.value.length, editor.value.length);
+  }, [draft !== null]);
+
+  // The history slider. Held per column, like the preview card: it is a view
+  // of the note on screen, and closes when the note changes.
+  const [replay, setReplay] = useState<ReplayState | null>(null);
+  const replaySlug = useRef<string | null>(null);
+  const loadHistory = props.onHistory;
+  const toggleHistory = (): void => {
+    if (note === null || loadHistory === undefined) return;
+    if (replay !== null) {
+      replaySlug.current = null;
+      setReplay(null);
+      return;
+    }
+    const slug = note.slug;
+    replaySlug.current = slug;
+    setReplay({ revisions: null, enabled: true, trimmed: false, index: 0, playing: false, error: null });
+    void loadHistory(slug).then((result) => {
+      if (replaySlug.current !== slug) return;
+      setReplay(result.ok
+        ? { revisions: result.data.revisions, enabled: result.data.enabled, trimmed: result.data.trimmed, index: Math.max(0, result.data.revisions.length - 1), playing: false, error: null }
+        : { revisions: null, enabled: true, trimmed: false, index: 0, playing: false, error: `Could not load history: ${result.message}` });
+    });
+  };
+  const step = replay?.revisions == null ? null : replayStep(replay.revisions, replay.index);
+  const replayHtml = useMemo(
+    () => (step === null || index === null ? null : renderNote(DOMPurify, step.marked, index)),
+    [step?.marked, index],
+  );
+  useLayoutEffect(() => {
+    replaySlug.current = null;
+    setReplay(null);
+    setRawOpen(false);
+  }, [note === null ? null : note.slug]);
+  useLayoutEffect(() => {
+    if (replayHtml === null || bodyRef.current === null) return;
+    wrapMarks(bodyRef.current)?.scrollIntoView?.({ block: "nearest" });
+  }, [replayHtml]);
+  useEffect(() => {
+    if (replay === null || !replay.playing || replay.revisions === null) return;
+    const count = replay.revisions.length;
+    const timer = window.setTimeout(() => {
+      setReplay((state) => {
+        if (state === null) return state;
+        const next = nextStep(state.index, count);
+        return next === null ? { ...state, playing: false } : { ...state, index: next };
+      });
+    }, PLAY_INTERVAL_MS);
+    return () => window.clearTimeout(timer);
+  }, [replay]);
 
   useLayoutEffect(() => {
     if (note !== null) drafts.taskBody(note.slug, note.body, props.loadVersion);
@@ -348,27 +454,67 @@ export function Note(props: NoteProps) {
         taskSaving={taskSaving}
         onToggle={toggleEdit}
         onSave={() => void save()}
+        replaying={replay !== null}
+        onHistory={loadHistory === undefined ? null : toggleHistory}
       />
+      {replay === null ? null : (
+        <ReplayBar
+          state={replay}
+          onIndex={(value) => setReplay((state) => state === null ? state : { ...state, index: value, playing: false })}
+          onPlay={() => setReplay((state) => {
+            if (state === null || state.revisions === null) return state;
+            if (state.playing) return { ...state, playing: false };
+            // Playing from the end starts over: that is what "watch it being written" means.
+            const restart = state.index >= state.revisions.length - 1;
+            return { ...state, index: restart ? 0 : state.index, playing: true };
+          })}
+        />
+      )}
       {draft !== null ? (
+        <>
         <textarea
+          ref={editorRef}
           class="weave-note-editor"
           aria-label={EDITOR_ARIA_LABEL}
+          placeholder={EDITOR_PLACEHOLDER}
           spellcheck={props.spellcheck ?? true}
           value={draft.body}
           onInput={(event) => drafts.edit(note.slug, (event.target as HTMLTextAreaElement).value)}
-          onKeyDown={(event) => {
-            // Bound here, not in `keys.model.ts`: a global binding is a
-            // workspace-wide claim, and Escape must not reach the shell.
-            if (event.key === "Escape") {
-              event.stopPropagation();
-              toggleEdit();
-              return;
-            }
-            if (event.key.toLowerCase() !== "s" || !(event.metaKey || event.ctrlKey)) return;
-            event.preventDefault();
-            void save();
-          }}
+          onKeyDown={editorKeys}
         />
+        {/* A box of its own, never the body's textarea: text typed below
+            the heading there used to be dropped on save without a word. */}
+        {draft.tail === "" ? null : (
+          <section class="weave-raw" aria-label={RAW_TAIL_ARIA_LABEL} data-open={rawOpen ? "" : undefined}>
+            <div class="weave-raw-head">
+              <button
+                type="button"
+                class="weave-raw-toggle"
+                aria-expanded={rawOpen}
+                aria-controls={`${props.idPrefix ?? generatedId}-weave-raw`}
+                onClick={() => setRawOpen((open) => !open)}
+              >
+                <svg class="weave-raw-chevron" width="12" height="12" viewBox="0 0 12 12" aria-hidden="true">
+                  <path d="M4.5 2.5 8 6l-3.5 3.5" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" />
+                </svg>
+                {RAW_TITLE}
+              </button>
+              <span class="weave-raw-hint">{rawSummary(draft.raw, rawOpen)}</span>
+            </div>
+            {rawOpen ? (
+              <textarea
+                id={`${props.idPrefix ?? generatedId}-weave-raw`}
+                class="weave-raw-editor"
+                aria-label={RAW_EDITOR_ARIA_LABEL}
+                spellcheck={props.spellcheck ?? true}
+                value={draft.raw}
+                onInput={(event) => drafts.editRaw(note.slug, (event.target as HTMLTextAreaElement).value)}
+                onKeyDown={editorKeys}
+              />
+            ) : null}
+          </section>
+        )}
+        </>
       ) : (
       <div
           ref={bodyRef}
@@ -403,6 +549,11 @@ export function Note(props: NoteProps) {
           onClick={(event) => {
             const checkbox = event.target as HTMLInputElement;
             const taskIndex = taskCheckboxIndexOf(checkbox);
+            // A past version is read-only: its checkboxes must not write to the note.
+            if (taskIndex !== null && replayHtml !== null) {
+              event.preventDefault();
+              return;
+            }
             if (taskIndex !== null) {
               void saveTask(checkbox, taskIndex);
               return;
@@ -434,7 +585,7 @@ export function Note(props: NoteProps) {
             props.onSelect(target, event.metaKey || event.ctrlKey || event.shiftKey);
           }}
           // Sanitised by `renderNote`'s three layers — see note.model.ts.
-          dangerouslySetInnerHTML={{ __html: html }}
+          dangerouslySetInnerHTML={{ __html: replayHtml ?? html }}
         />
       )}
       {card === null ? null : (

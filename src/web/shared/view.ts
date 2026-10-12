@@ -61,10 +61,9 @@
  * ## Why this is a small list
  *
  * Deliberately not `export * from "../../core/view"`. The barrel pulls in
- * `health.ts` (a TUI surface) and `links.ts`'s tag index (derived server-side
- * into `GraphPayload.tags`), neither of which any browser column consumes
- * today — and each one it pulled in would be a module the purity guard then
- * has to defend forever.
+ * `links.ts`'s tag index (derived server-side into `GraphPayload.tags`),
+ * which no browser column consumes today — and each module it pulled in
+ * would be one the purity guard then has to defend forever.
  *
  * So this is an allowlist, on the same principle as the `npm` column in
  * `tests/web/tiers.test.ts`: the surface the columns actually use, and nothing
@@ -130,6 +129,13 @@ export type { TreeRow, TreeState } from "../../core/view/tree";
  * why the structured type comes across too and not only the formatter.
  */
 export { formatTreeMeta, relTime } from "../../core/view/time";
+
+/**
+ * The note editor holds only the head of a body; the `## Raw` tail is shown
+ * read-only beneath it and rejoined on save. The vault splits with the same
+ * function, so the editor can never hide text the server would overwrite.
+ */
+export { joinRawOpening, joinRawTail, splitRawOpening, splitRawTail } from "../../core/view/rawTail";
 
 // --- context rail (§1.2, P2) --------------------------------------------------
 

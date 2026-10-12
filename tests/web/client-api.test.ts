@@ -104,6 +104,14 @@ describe("vault mutations", () => {
     expect(isMutationResult({ ok: true, id: 1 })).toBe(false);
   });
 
+  it("marks a save that edited Raw, and only that one", async () => {
+    const fetch = respondsWith({ ok: true });
+    await saveNote(fetch, "a", "body", true);
+    await saveNote(fetch, "a", "body");
+    expect(JSON.parse(String(fetch.calls[0]?.init?.body))).toEqual({ body: "body", raw: true });
+    expect(JSON.parse(String(fetch.calls[1]?.init?.body))).toEqual({ body: "body" });
+  });
+
   it("posts a body save to the note's own URL, slug encoded", async () => {
     const fetch = respondsWith({ ok: true });
     await saveNote(fetch, "folder/a", "new body");

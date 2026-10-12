@@ -36,7 +36,19 @@
  * fortnight.
  */
 
-import type { GraphPayload, MutationResult, NotePayload, OpenResult, SearchPayload, ViewNote } from "../shared/wire";
+import type {
+  GraphPayload,
+  HistoryPayload,
+  HistoryRevision,
+  HistorySettingsPayload,
+  HistoryWirePayload,
+  MutationResult,
+  NotePayload,
+  OpenResult,
+  SearchPayload,
+  TrailPayload,
+  ViewNote,
+} from "../shared/wire";
 
 // --- the injected HTTP port ------------------------------------------------------
 
@@ -205,6 +217,21 @@ export function isGraphPayload(value: unknown): value is GraphPayload {
   return isObject(value["tags"]) && isObject(value["dangling"]);
 }
 
+/** `TrailPayload`. Events are rendered as links, so each one's shape is checked. */
+export function isTrailPayload(value: unknown): value is TrailPayload {
+  if (!isObject(value) || typeof value["stamp"] !== "string" || typeof value["turn"] !== "number") return false;
+  const events = value["events"];
+  return Array.isArray(events) && events.every((event: unknown) =>
+    isObject(event)
+    && typeof event["seq"] === "number"
+    && typeof event["turn"] === "number"
+    && typeof event["at"] === "string"
+    && (event["kind"] === "searched" || event["kind"] === "read" || event["kind"] === "wrote")
+    && typeof event["action"] === "string"
+    && isStringArray(event["slugs"])
+    && (event["query"] === undefined || typeof event["query"] === "string"));
+}
+
 /** `ViewNote`. Every field is rendered, so every field is checked. */
 export function isViewNote(value: unknown): value is ViewNote {
   if (!isObject(value)) return false;
@@ -229,6 +256,47 @@ export function isOpenResult(value: unknown): value is OpenResult {
   return isObject(value) && typeof value["opened"] === "boolean";
 }
 
+const HISTORY_AUTHORS: ReadonlySet<unknown> = new Set(["human", "agent", "outside", "system"]);
+
+const isCount = (value: unknown): boolean => Number.isInteger(value) && (value as number) >= 0;
+
+/** `HistoryWirePayload`. Every revision is rebuilt and rendered, so every revision is checked. */
+export function isHistoryPayload(value: unknown): value is HistoryWirePayload {
+  if (!isObject(value) || typeof value["slug"] !== "string" || typeof value["enabled"] !== "boolean") return false;
+  if (typeof value["trimmed"] !== "boolean") return false;
+  const revisions = value["revisions"];
+  return Array.isArray(revisions) && revisions.every((revision) => {
+    if (!isObject(revision) || typeof revision["at"] !== "string" || !HISTORY_AUTHORS.has(revision["by"]) || typeof revision["op"] !== "string") return false;
+    if (typeof revision["full"] === "string") return true;
+    const keep = revision["keep"];
+    return Array.isArray(keep) && keep.length === 2 && keep.every(isCount) && typeof revision["text"] === "string";
+  });
+}
+
+/**
+ * Rebuild every body from the wire's full copies and deltas, or null when a
+ * delta does not fit the body before it: showing a guess would show the user
+ * text nobody wrote.
+ */
+export function expandHistory(payload: HistoryWirePayload): HistoryPayload | null {
+  const revisions: HistoryRevision[] = [];
+  let body: string | null = null;
+  for (const { at, by, op, full, keep, text } of payload.revisions) {
+    if (full !== undefined) body = full;
+    else {
+      const [head, tail] = keep!;
+      if (body === null || head + tail > body.length) return null;
+      body = body.slice(0, head) + text! + body.slice(body.length - tail);
+    }
+    revisions.push({ at, by, op, body });
+  }
+  return { slug: payload.slug, enabled: payload.enabled, trimmed: payload.trimmed, revisions };
+}
+
+export function isHistorySettings(value: unknown): value is HistorySettingsPayload {
+  return isObject(value) && typeof value["enabled"] === "boolean";
+}
+
 export function isMutationResult(value: unknown): value is MutationResult {
   return isObject(value) && value["ok"] === true && (value["id"] === undefined || typeof value["id"] === "string");
 }
@@ -242,12 +310,26 @@ export function isMutationResult(value: unknown): value is MutationResult {
  *   present its `stamp` is sent as `If-None-Match` and a `304` returns it
  *   back with `cached: true`.
  */
-export async function fetchGraph(fetchImpl: FetchLike, previous: GraphPayload | null = null): Promise<ApiResult<GraphPayload>> {
+export function fetchGraph(fetchImpl: FetchLike, previous: GraphPayload | null = null): Promise<ApiResult<GraphPayload>> {
+  return fetchConditional(fetchImpl, "/api/graph", previous, isGraphPayload);
+}
+
+/** `GET /api/trail` — the recall trail, revalidated on its stamp exactly like the graph. */
+export function fetchTrail(fetchImpl: FetchLike, previous: TrailPayload | null = null): Promise<ApiResult<TrailPayload>> {
+  return fetchConditional(fetchImpl, "/api/trail", previous, isTrailPayload);
+}
+
+async function fetchConditional<T extends { stamp: string }>(
+  fetchImpl: FetchLike,
+  url: string,
+  previous: T | null,
+  guard: (value: unknown) => value is T,
+): Promise<ApiResult<T>> {
   const headers = previous === null ? undefined : { "if-none-match": `"${previous.stamp}"` };
 
   let response: HttpResponse;
   try {
-    response = await fetchImpl("/api/graph", headers === undefined ? {} : { headers });
+    response = await fetchImpl(url, headers === undefined ? {} : { headers });
   } catch (error) {
     return failure("network", 0, error instanceof Error ? error.message : "network request failed");
   }
@@ -271,7 +353,7 @@ export async function fetchGraph(fetchImpl: FetchLike, previous: GraphPayload | 
   } catch {
     return failure("malformed", response.status, "response was not valid JSON");
   }
-  if (!isGraphPayload(body)) return failure("malformed", response.status, "response did not match the expected shape");
+  if (!guard(body)) return failure("malformed", response.status, "response did not match the expected shape");
   return success(body);
 }
 
@@ -335,10 +417,26 @@ const folderUrl = (path: string, suffix = ""): string => `/api/folder/${path.spl
  * (last-write-wins, see core's `setNoteBody`), and a `MutationResult` rather
  * than the note: the poll is what puts the new text back on screen.
  */
-export const saveNote = (fetchImpl: FetchLike, slug: string, body: string) => mutation(fetchImpl, noteUrl(slug), "POST", { body });
+export const saveNote = (fetchImpl: FetchLike, slug: string, body: string, raw = false) =>
+  mutation(fetchImpl, noteUrl(slug), "POST", raw ? { body, raw: true } : { body });
 export const renameNote = (fetchImpl: FetchLike, slug: string, name: string) => mutation(fetchImpl, noteUrl(slug, "/rename"), "POST", { name });
 export const moveNote = (fetchImpl: FetchLike, slug: string, folder: string | null) => mutation(fetchImpl, noteUrl(slug, "/move"), "POST", { folder });
 export const deleteNote = (fetchImpl: FetchLike, slug: string) => mutation(fetchImpl, noteUrl(slug), "DELETE");
 export const createFolder = (fetchImpl: FetchLike, path: string) => mutation(fetchImpl, folderUrl(path), "POST");
 export const renameFolder = (fetchImpl: FetchLike, path: string, name: string) => mutation(fetchImpl, folderUrl(path, "/rename"), "POST", { name });
 export const deleteFolder = (fetchImpl: FetchLike, path: string) => mutation(fetchImpl, folderUrl(path), "DELETE");
+
+/** `GET /api/history/:slug` — every saved revision of a note, oldest first. */
+export async function fetchHistory(fetchImpl: FetchLike, slug: string): Promise<ApiResult<HistoryPayload>> {
+  const result = await request(fetchImpl, `/api/history/${encodeURIComponent(slug)}`, isHistoryPayload);
+  if (!result.ok) return result;
+  const expanded = expandHistory(result.data);
+  return expanded === null ? failure("malformed", 200, "history did not fit together") : success(expanded, result.cached);
+}
+
+/** `GET /api/history-settings`, or `POST` it with `enabled` to turn recording on or off. */
+export function historySettings(fetchImpl: FetchLike, enabled?: boolean): Promise<ApiResult<HistorySettingsPayload>> {
+  return request(fetchImpl, "/api/history-settings", isHistorySettings, enabled === undefined ? undefined : {
+    method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ enabled }),
+  });
+}

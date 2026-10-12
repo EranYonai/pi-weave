@@ -74,7 +74,7 @@ it("invalidates cached geometry when force settings change", () => {
 });
 
 it("opens settings with Command or Control comma and closes with Escape", () => {
-  const event = { key: ",", ctrl: false, meta: true, shift: false, alt: false, typing: true };
+  const event = { key: ",", ctrl: false, meta: true, shift: false, alt: false, typing: true, navigating: false };
   expect(shellKey(event, { overlay: null, hasSelection: false })).toEqual({ type: "openSettings" });
   expect(shellKey({ ...event, ctrl: true, meta: false }, { overlay: null, hasSelection: false })).toEqual({ type: "openSettings" });
   expect(shellKey({ ...event, key: "Escape" }, { overlay: "settings", hasSelection: false })).toEqual({ type: "closeOverlay" });

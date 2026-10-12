@@ -1,9 +1,11 @@
-import { useState } from "preact/hooks";
+import { useEffect, useState } from "preact/hooks";
 import type { ComponentChildren } from "preact";
 import type { WorkspaceLayout } from "../../shared/workspace";
 import type { Preferences } from "../../shared/preferences";
 import { ACCENTS, THEMES } from "../../shared/themes";
 import type { AccentChoice, PaletteChoice } from "../../shared/themes";
+import { historySettings } from "../api";
+import { fetchJson } from "../api.dom";
 import { ForceTuner } from "../graph/ForceTuner";
 import { useFocusTrap } from "./FocusTrap";
 import { keyHelp } from "./keys.model";
@@ -20,6 +22,23 @@ export function Settings(props: {
   const [category, setCategory] = useState<typeof CATEGORIES[number]>("General");
   const [refreshCount, setRefreshCount] = useState(0);
   const trap = useFocusTrap();
+  // Note history lives in the vault, not in workspace preferences, so the
+  // agent's writes respect it too. `null` until the server has answered.
+  const [history, setHistory] = useState<boolean | null>(null);
+  // One change at a time: the control is disabled until the server answers,
+  // so a late response can never overwrite a newer choice.
+  const [historySaving, setHistorySaving] = useState(false);
+  useEffect(() => {
+    void historySettings(fetchJson).then((result) => { if (result.ok) setHistory(result.data.enabled); });
+  }, []);
+  const toggleHistory = (enabled: boolean): void => {
+    setHistory(enabled);
+    setHistorySaving(true);
+    void historySettings(fetchJson, enabled).then((result) => {
+      setHistory(result.ok ? result.data.enabled : !enabled);
+      setHistorySaving(false);
+    });
+  };
   const p = props.layout.preferences;
   const update = (values: Partial<Preferences>): void => props.onChange({ ...props.layout, preferences: { ...p, ...values } });
   return <div class="weave-scrim weave-settings-scrim" onClick={props.onClose}>
@@ -55,6 +74,7 @@ export function Settings(props: {
           <Row name="Spellcheck" hint="Use your browser or device’s spellchecker while editing."><input type="checkbox" checked={p.spellcheck} onChange={(event) => update({ spellcheck: event.currentTarget.checked })} /></Row>
           <Row name="Readable line length" hint="Keep note text in a comfortable reading column."><input type="checkbox" checked={p.readable} onChange={(event) => update({ readable: event.currentTarget.checked })} /></Row>
           <Row name="Open notes in editing mode" hint="Newly opened notes start in the editor. Existing drafts are preserved."><input type="checkbox" checked={p.defaultEdit} onChange={(event) => update({ defaultEdit: event.currentTarget.checked })} /></Row>
+          <Row name="Note history" hint="Save a copy of a note after every change, by you or your agent, so History can replay how it was written. Turning it off keeps what is already saved."><input type="checkbox" disabled={history === null || historySaving} checked={history ?? false} onChange={(event) => toggleHistory(event.currentTarget.checked)} /></Row>
         </> : null}
         {category === "Files" ? <>
           <Row name="On startup" hint="Choose which tabs appear when you reopen this workspace."><select aria-label="On startup" value={p.startup} onChange={(event) => update({ startup: event.currentTarget.value as Preferences["startup"] })}><option value="restore">Restore open tabs</option><option value="empty">Start with an empty tab</option></select></Row>

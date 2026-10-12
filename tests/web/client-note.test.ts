@@ -29,6 +29,7 @@ import { describe, expect, it } from "vitest";
 import type { GraphPayload, ViewNote, WireGraphNode } from "../../src/web/shared/wire";
 import {
   EDITED_WORD,
+  rawSummary,
   artifactKeyOfNode,
   EMPTY_PREVIEW,
   EMPTY_WIKI_INDEX,
@@ -1260,5 +1261,17 @@ describe("reducePreview", () => {
   it("dismiss closes the card on Escape by the same route", () => {
     const open: PreviewState = { anchor: ANCHOR, pointerX: 1, pointerY: 2 };
     expect(reducePreview(open, { type: "dismiss" })).toBe(EMPTY_PREVIEW);
+  });
+});
+
+describe("rawSummary", () => {
+  it("counts captured entries while folded, and says what saving does while open", () => {
+    const entry = "<!-- appended 2026-10-12 09:00 -->\n```\nwords\n```";
+    expect(rawSummary(entry, false)).toBe("1 entry captured");
+    expect(rawSummary(`${entry}\n\n${entry}`, false)).toBe("2 entries captured");
+    expect(rawSummary("hand-written\nnotes", false)).toBe("2 lines");
+    expect(rawSummary("one", false)).toBe("1 line");
+    expect(rawSummary("", false)).toBe("0 lines");
+    expect(rawSummary(entry, true)).toMatch(/saved with the note/);
   });
 });

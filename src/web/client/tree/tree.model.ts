@@ -49,11 +49,8 @@ export type TreeViewState = TreeState;
 /**
  * The provenance filter cycle: all → human → agent → generated → all.
  *
- * The same order as the TUI's `p` key (`src/pi/viewer/tui/theme.ts`), and
- * declared again here because the client tier may not import `src/pi` and the
- * order is not part of `src/core/view`. That is a real, if small, duplication
- * — so it is one array with a test asserting its contents, rather than an
- * `if/else` chain in two places. If a fourth provenance is ever added, the
+ * The order is not part of `src/core/view`, so it is one array with a test
+ * asserting its contents, rather than an `if/else` chain in two places. If a fourth provenance is ever added, the
  * honest fix is to promote this into `src/core/view` and take it through the
  * door; today it is four literals and a promotion would be ceremony.
  */

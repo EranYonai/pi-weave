@@ -369,6 +369,44 @@ export async function assessStaleness(repoRoot: string): Promise<StalenessReport
 }
 
 /**
+ * The index as plumbing: read it, and rebuild it on disk when it is missing
+ * or stale. Nothing asks the user to run a structure scan any more; whoever
+ * needs the index (deep scan, graph, `weave_repo overview`) calls this.
+ * Null when the repository has no commits yet.
+ */
+export async function ensureRepoIndex(
+  root: string,
+): Promise<{ index: RepoIndex; staleness: StalenessReport } | null> {
+  const staleness = await assessStaleness(root);
+  if (staleness.state === "fresh") {
+    const index = await readRepoIndex(root);
+    // `.okf` is excluded from git, so summaries written or pruned by a deep
+    // scan never make the index stale; compare the derived-file inventory
+    // directly so the graph's `.okf` subtree keeps up.
+    if (index && sameFiles(index.structure.okFiles ?? [], await listOkfFiles(root))) return { index, staleness };
+  }
+  let index = await buildRepoIndex(root);
+  if (!index) return null;
+  try {
+    await writeRepoIndex(root, index);
+    // The first write creates the very files the inventory lists; capture
+    // them once more so the next call finds the index settled.
+    if (!sameFiles(index.structure.okFiles ?? [], await listOkfFiles(root))) {
+      index = (await buildRepoIndex(root)) ?? index;
+      await writeRepoIndex(root, index);
+    }
+  } catch {
+    // A read-only checkout still gets a current in-memory index; only the
+    // on-disk cache is skipped.
+  }
+  return { index, staleness: { state: "fresh", reasons: [] } };
+}
+
+function sameFiles(a: readonly string[], b: readonly string[]): boolean {
+  return a.length === b.length && a.every((file, i) => file === b[i]);
+}
+
+/**
  * Read a manifest provenance field, defaulting unknown/missing values to
  * "generated": every repository index written before the field existed was
  * still machine-written.

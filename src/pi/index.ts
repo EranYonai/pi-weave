@@ -2,20 +2,18 @@ import type { ExtensionAPI, ExtensionCommandContext, ExtensionContext } from "@e
 import { homedir } from "node:os";
 import { join, resolve } from "node:path";
 import {
-  buildRepoIndex,
+  ensureRepoIndex,
   findGitRoot,
   formatDashboard,
   formatStatusLine,
   getWorkspaceStatus,
-  summarizeIndex,
-  writeRepoIndex,
+  recallTrail,
   type WorkspaceStatus,
 } from "../core";
 import { registerNoteTool } from "./tools/noteTool";
 import { registerRepoTool } from "./tools/repoTool";
 import { formatSessionScanResult, scanPiSessions } from "./sessionScan";
 import { deepScanRepository, formatDeepScanResult } from "./summarize";
-import { runWeaveViewTui } from "./viewer/tui/run";
 import { WebWorkspaceController } from "./viewer/web/run";
 
 /**
@@ -31,10 +29,9 @@ export default function piWeave(pi: ExtensionAPI): void {
   registerNoteTool(pi);
   registerRepoTool(pi);
 
-  // /weave-view opens the browser workspace by default (weave-workspace §13);
-  // `tui` selects the in-terminal explorer. The browser workspace owns a
-  // server, a file watcher and live SSE streams for the rest of the session,
-  // so unlike the TUI it has a real teardown — see `session_shutdown` below.
+  // /weave-view opens the browser workspace. It owns a server, a file watcher
+  // and live SSE streams for the rest of the session, so it has a real
+  // teardown — see `session_shutdown` below.
   let lastCtx: ExtensionContext | ExtensionCommandContext | null = null;
   let lastStatusText: string | undefined = undefined;
   let isActive = false;
@@ -66,7 +63,11 @@ export default function piWeave(pi: ExtensionAPI): void {
     // server was listening. The browser-launch-failure path is exactly that
     // shape, which is why it was the case that caught it.
     const port = web.port();
-    const suffix = port === null ? "" : ` · web:${port}`;
+    // The recall trail's one terminal echo: how many notes this turn
+    // actually read or wrote. Resets when the next turn begins.
+    const used = recallTrail.usedThisTurn();
+    const recall = used === 0 ? "" : ` · used ${used} note${used === 1 ? "" : "s"}`;
+    const suffix = `${recall}${port === null ? "" : ` · web:${port}`}`;
 
     // Clear only when there is genuinely nothing to say: no base text *and*
     // no server.
@@ -91,8 +92,7 @@ export default function piWeave(pi: ExtensionAPI): void {
   }
 
   pi.on("session_shutdown", async () => {
-    // The TUI explorer owns nothing session-scoped, but the browser workspace
-    // owns an HTTP server, a recursive file watcher and any number of open SSE
+    // The browser workspace owns an HTTP server, a recursive file watcher and any number of open SSE
     // streams. `close()` releases all three (server.ts closes the hub and
     // awaits the watcher); a leaked listener outliving the pi session is a
     // real bug, not a tidiness concern.
@@ -100,30 +100,27 @@ export default function piWeave(pi: ExtensionAPI): void {
   });
 
   pi.on("agent_start", async (_event, ctx) => {
+    recallTrail.beginTurn();
     isActive = true;
     updateStatus(ctx);
   });
 
   pi.on("agent_end", async (_event, ctx) => {
     isActive = false;
-    updateStatus(ctx);
+    // The agent may have written notes this turn, so recount them — unless a
+    // background scan owns the status line with its progress, or no session
+    // ever seeded a status line to recount.
+    const cwd = ctx?.cwd ?? lastCtx?.cwd;
+    if (cwd && lastStatusText !== undefined && inFlightDeepScans.size === 0 && inFlightSessionScans.size === 0) {
+      updateStatus(ctx, formatStatusLine(await getWorkspaceStatus(cwd)));
+    } else {
+      updateStatus(ctx);
+    }
   });
 
   pi.on("session_start", async (_event, ctx) => {
     const status = await getWorkspaceStatus(ctx.cwd);
     updateStatus(ctx, formatStatusLine(status));
-
-    if (!ctx.hasUI) return;
-    const repo = status.repository;
-    if (repo && !repo.indexed) {
-      ctx.ui.notify(
-        "pi-weave: this repository has no knowledge index yet — ask pi to explore it, or run /weave-scan.",
-        "info",
-      );
-    } else if (repo && repo.staleness.state === "stale") {
-      const reason = repo.staleness.reasons[0] ?? "index is stale";
-      ctx.ui.notify(`pi-weave: repository index is stale (${reason}). Run /weave-scan to refresh.`, "warning");
-    }
   });
 
   pi.registerCommand("weave", {
@@ -135,32 +132,28 @@ export default function piWeave(pi: ExtensionAPI): void {
   });
 
   pi.registerCommand("weave-view", {
-    description: "Open the knowledge workspace in your browser ('tui' for the in-terminal explorer, '--no-open' to just print the URL)",
+    description: "Open the knowledge workspace in your browser ('--no-open' to just print the URL)",
     handler: async (args, ctx) => {
       const parsed = parseWeaveViewArgs(args);
+      if (parsed === "retired-tui") {
+        ctx.ui.notify(WEAVE_VIEW_TUI_RETIRED, "warning");
+        return;
+      }
       if (parsed === null) {
         ctx.ui.notify(WEAVE_VIEW_USAGE, "warning");
         return;
       }
-      if (parsed.surface === "tui") {
-        await runWeaveViewTui(ctx);
-        return;
-      }
-      const outcome = await web.run(ctx, { open: parsed.open });
-      // A browser that would not launch on a machine that has a terminal
-      // still leaves the user somewhere to go. The server stays up — the URL
-      // in the notification remains valid — and the TUI opens on top of it.
-      if (outcome.fallbackToTui && ctx.mode === "tui") await runWeaveViewTui(ctx);
-      // Unconditionally, and last: the TUI writes its own status line on
-      // close, which would otherwise drop the `· web:PORT` marker for a
-      // server that is still running.
+      // A browser that will not launch still leaves the URL in the
+      // notification, and the server stays up behind it.
+      await web.run(ctx, { open: parsed.open });
+      // Last, so the status line gains the `· web:PORT` marker.
       updateStatus(ctx);
     },
   });
 
   pi.registerCommand("weave-scan", {
     description:
-      "Build or refresh the repository index; 'deep' summarizes files; 'sessions [dir]' summarizes session history",
+      "Summarize this repository's files with the session model; 'sessions [dir]' summarizes session history",
     handler: async (args, ctx) => {
       const input = args.trim();
       const [mode = "", ...rest] = input.split(/\s+/);
@@ -176,38 +169,33 @@ export default function piWeave(pi: ExtensionAPI): void {
         return; // the background scan owns the status line until it settles
       }
 
+      if (mode !== "" && mode.toLowerCase() !== "deep") {
+        ctx.ui.notify(WEAVE_SCAN_USAGE, "warning");
+        return;
+      }
+
       const root = await findGitRoot(ctx.cwd);
       if (!root) {
         ctx.ui.notify("pi-weave: not inside a git repository.", "warning");
         return;
       }
-      const index = await buildRepoIndex(root);
-      if (!index) {
-        ctx.ui.notify("pi-weave: cannot index — the repository has no commits yet.", "warning");
+      if (inFlightDeepScans.has(root)) {
+        ctx.ui.notify("pi-weave: a deep scan is already running for this repository — run /weave-scan-cancel to stop it.", "warning");
         return;
       }
-      await writeRepoIndex(root, index);
-      ctx.ui.notify(`pi-weave: index refreshed\n${summarizeIndex(index).join("\n")}`, "info");
-
-      if (mode.toLowerCase() === "deep") {
-        if (inFlightDeepScans.has(root)) {
-          ctx.ui.notify("pi-weave: a deep scan is already running for this repository — run /weave-scan-cancel to stop it.", "warning");
-        } else {
-          // Compute the settled status here (no git-lock contention) and let
-          // the background scan restore it when it finishes.
-          const status = await getWorkspaceStatus(ctx.cwd);
-          startDeepScan(root, ctx, status, updateStatus);
-        }
-        return; // the background scan owns the status line until it settles
+      // The structure index is plumbing the deep scan and graph rely on;
+      // refresh it silently rather than reporting it as a result.
+      if (!(await ensureRepoIndex(root))) {
+        ctx.ui.notify("pi-weave: nothing to scan — the repository has no commits yet.", "warning");
+        return;
       }
-
       const status = await getWorkspaceStatus(ctx.cwd);
-      updateStatus(ctx, formatStatusLine(status));
+      startDeepScan(root, ctx, status, updateStatus);
     },
   });
 
   pi.registerCommand("weave-scan-cancel", {
-    description: "Cancel an in-flight /weave-scan deep or sessions run",
+    description: "Cancel an in-flight /weave-scan run",
     handler: async (_args, ctx) => {
       const root = await findGitRoot(ctx.cwd);
       const deep = root ? inFlightDeepScans.get(root) : undefined;
@@ -241,30 +229,33 @@ export function resolveHistoryPath(cwd: string, input: string): string {
   return resolve(cwd, trimmed);
 }
 
-export const WEAVE_VIEW_USAGE = "usage: /weave-view [tui|web] [--no-open]";
+export const WEAVE_SCAN_USAGE = "usage: /weave-scan [sessions [dir]]";
 
-/** Which explorer `/weave-view` was asked for. */
+export const WEAVE_VIEW_USAGE = "usage: /weave-view [--no-open]";
+
+/** Shown for the retired `/weave-view tui` argument (issue #61). */
+export const WEAVE_VIEW_TUI_RETIRED =
+  "pi-weave: the terminal explorer was retired. /weave-view opens the browser workspace; use /weave-view --no-open to print its URL (e.g. over SSH).";
+
+/** What `/weave-view` was asked to do. */
 export interface WeaveViewArgs {
-  surface: "tui" | "web";
-  /** `false` for `--no-open`. Meaningless for `tui`, which never opens one. */
+  /** `false` for `--no-open`. */
   open: boolean;
 }
 
 /**
- * Parse `/weave-view`'s argument string, or `null` for "print the usage".
+ * Parse `/weave-view`'s argument string: the options, `"retired-tui"` for the
+ * removed terminal explorer, or `null` for "print the usage".
  *
- * Bare `/weave-view` is the **browser** workspace (weave-workspace §13):
- * the default is the thing most people want most of the time, and `tui` is
- * one word away for the SSH case. `--no-open` is accepted on the web
- * surface only — silently ignoring it after `tui` would be a lie about what
- * happened.
+ * `web` is still accepted as a no-op so muscle memory from the two-surface
+ * days keeps working.
  *
  * Exported because a parser is exactly the kind of thing that should be
  * tested as a table rather than through eight command invocations.
  */
-export function parseWeaveViewArgs(args: string): WeaveViewArgs | null {
+export function parseWeaveViewArgs(args: string): WeaveViewArgs | "retired-tui" | null {
   const tokens = args.trim().toLowerCase().split(/\s+/).filter(Boolean);
-  let surface: "tui" | "web" = "web";
+  if (tokens.includes("tui")) return "retired-tui";
   let open = true;
   let sawSurface = false;
   for (const token of tokens) {
@@ -274,13 +265,10 @@ export function parseWeaveViewArgs(args: string): WeaveViewArgs | null {
       open = false;
       continue;
     }
-    if (sawSurface) return null;
-    if (token !== "tui" && token !== "web") return null;
-    surface = token;
+    if (sawSurface || token !== "web") return null;
     sawSurface = true;
   }
-  if (surface === "tui" && !open) return null;
-  return { surface, open };
+  return { open };
 }
 
 /* ------------------------------------------------------------------ */
@@ -365,7 +353,7 @@ function startBackgroundScan(
 
 /**
  * Kick off a deep scan in the background. `baseStatus` is the workspace
- * status captured before the scan and restored when it settles.
+ * status captured before the scan, the fallback if recounting fails.
  */
 function startDeepScan(
   root: string,
@@ -387,7 +375,7 @@ function startDeepScan(
     }
     if (outcome.kind === "no-model") {
       return {
-        text: "pi-weave: deep scan needs an active session model — none configured. Light index only.",
+        text: "pi-weave: deep scan needs an active session model — none configured.",
         level: "warning",
       };
     }
@@ -395,7 +383,9 @@ function startDeepScan(
       return { text: `pi-weave: deep scan complete — ${formatDeepScanResult(outcome.result)}`, level: "info" };
     }
     return null;
-  });
+  },
+  // The status line counts summaries, so recount them once the scan settles.
+  () => getWorkspaceStatus(ctx.cwd));
 }
 
 /**
@@ -439,9 +429,7 @@ function startSessionScan(
       }
       return { text: `pi-weave: session scan complete — ${formatSessionScanResult(result)}`, level: "info" };
     },
-    // Unlike the deep scan (whose settled status is precomputed to avoid git
-    // contention), the session scan writes vault notes and takes no git lock:
-    // recompute the workspace status so the settled line counts the notes it
+    // Recompute the workspace status so the settled line counts the notes it
     // just wrote.
     () => getWorkspaceStatus(ctx.cwd),
   );

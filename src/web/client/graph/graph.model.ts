@@ -83,11 +83,8 @@ export function graphPalette(theme: GraphTheme): Readonly<Record<ColorSlot, stri
  * - `note` keeps `text` — notes are the product (§1.1), and their identity
  *   is carried by the provenance badge, not by a hue.
  * - Generated code — modules, packages, entry points, git, externals, files
- *   — takes `dim`, the same grey a `generated` row takes in the tree. The
- *   TUI's `kindStyle` (src/pi/viewer/tui/theme.ts) still maps these kinds to
- *   success/warning; the two media disagree on purpose, because a pi theme
- *   has no dark/light stylesheet to violate and a terminal can restyle
- *   everything. Here the sheet decides, and the sheet says calm.
+ *   — takes `dim`, the same grey a `generated` row takes in the tree. Here
+ *   the sheet decides, and the sheet says calm.
  */
 export const KIND_SLOT: Readonly<Record<WireNodeKind, ColorSlot>> = {
   vault: "accent",
@@ -513,7 +510,8 @@ export interface ViewBox {
  * session: the node stays under the cursor, the canvas bounds the drag, and
  * `[fit]` re-frames onto whatever the current positions are.
  *
- * Use the position extent, with a minimum span of four collision radii.
+ * Use the position extent padded by the largest node size, so no circle
+ * at the edge is cut off, with a minimum span of four collision radii.
  * A single node (or coincident nodes) has no extent; Sigma scales layout-unit
  * node sizes by that span, so a near-zero box magnifies one node across the
  * canvas. Pixel-based `stagePadding` cannot prevent that.
@@ -536,7 +534,9 @@ export function frameBox(points: readonly Point[]): ViewBox | null {
     if (p.y > maxY) maxY = p.y;
   }
   if (seen === 0) return null;
-  const padding = Math.max(0, (COLLIDE_RADIUS * 4 - Math.max(maxX - minX, maxY - minY)) / 2);
+  // The extent is of node *centres*; the circles reach past it by up to a
+  // full node size, which clipped the outermost nodes on a small graph.
+  const padding = Math.max(MAX_NODE_SIZE, (COLLIDE_RADIUS * 4 - Math.max(maxX - minX, maxY - minY)) / 2);
   return { x: [minX - padding, maxX + padding], y: [minY - padding, maxY + padding] };
 }
 
@@ -882,6 +882,54 @@ export function edgeReducer(
   };
 }
 
+// --- the recall trail (issue #78) -----------------------------------------------------
+
+/** The slice of `trail.model.ts`'s `TrailMark` this layer reads, restated to keep this file import-free of it. */
+export interface TrailGlow {
+  readonly kind: "searched" | "read" | "wrote";
+  readonly strength: number;
+}
+
+/**
+ * How each kind of touch is painted: which slot it blends toward, how far, and
+ * how much the node grows. A search hit is a soft amber hint, a read is a
+ * filled glow, and a write is the accent at full presence — the one place
+ * this canvas spends the accent on a note, because a write is the event.
+ */
+export const TRAIL_STYLE: Readonly<Record<TrailGlow["kind"], { slot: ColorSlot; blend: number; growth: number }>> = {
+  searched: { slot: "warning", blend: 0.35, growth: 1.08 },
+  read: { slot: "success", blend: 0.85, growth: 1.3 },
+  wrote: { slot: "accent", blend: 1, growth: 1.5 },
+};
+
+/**
+ * The recall-trail layer, applied **over** the selection reducer's answer.
+ *
+ * Over, because the trail is the live event: a note the agent just wrote must
+ * read as such even when it sits in the receded cloud of an unrelated
+ * selection. It is handed the *reduced* node, and colour and size scale with
+ * the glow's strength, so the fade is a smooth return to whatever the
+ * selection layer said; the label is kept so a glowing node always names itself.
+ */
+export function trailOverride(
+  glow: TrailGlow | undefined,
+  /** The node as the selection layer left it, so the glow composes over recession and growth. */
+  data: Pick<RenderNode, "color" | "size" | "zIndex">,
+  scheme: GraphTheme,
+  /** The node's own label — the selection layer may have dropped it, and a glowing node always names itself. */
+  label: string,
+): NodeDisplayOverride {
+  if (glow === undefined || !(glow.strength > 0)) return {};
+  const style = TRAIL_STYLE[glow.kind];
+  const strength = Math.min(1, glow.strength);
+  return {
+    color: blendHex(data.color, graphPalette(scheme)[style.slot], style.blend * strength),
+    size: data.size * growth(style.growth, strength),
+    zIndex: data.zIndex + HIGHLIGHT_Z_LIFT * 3,
+    label,
+  };
+}
+
 // --- sigma settings (§7.4) -------------------------------------------------------------
 
 /**
@@ -928,6 +976,20 @@ export interface GraphSettings {
  * wants the labels to say: names for the places, not every leaf.
  */
 export const LABEL_SIZE_THRESHOLD = (MIN_NODE_SIZE + MAX_NODE_SIZE) / 2;
+
+/**
+ * Below this many nodes every node carries its name.
+ *
+ * The size threshold exists to keep a dense graph legible; on a vault of
+ * two or three notes it left all but one circle unnamed, and a small graph
+ * has no density to protect.
+ */
+export const SMALL_GRAPH_NODES = 30;
+
+/** `labelRenderedSizeThreshold` for a graph of `nodeCount` nodes. */
+export function labelThreshold(nodeCount: number): number {
+  return nodeCount < SMALL_GRAPH_NODES ? 0 : LABEL_SIZE_THRESHOLD;
+}
 
 /**
  * Label collision grid, in screen pixels.

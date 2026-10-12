@@ -178,6 +178,16 @@ body{font-size:var(--weave-px-base)}
   40%{font-weight:700}
   100%{background:transparent;font-weight:400}
 }
+/* Recall trail (issue #78): a note the agent searched, read or wrote. The
+   tint follows the graph's palette for the same kinds (warn → ok → accent)
+   and steps down through three strength buckets as the glow fades. */
+.weave-row-trail{--weave-trail:var(--weave-warn);box-shadow:inset 2px 0 0 color-mix(in srgb,var(--weave-trail) var(--weave-trail-mix),transparent);background:color-mix(in srgb,var(--weave-trail) calc(var(--weave-trail-mix) / 6),transparent)}
+.weave-row-trail-read{--weave-trail:var(--weave-ok)}
+.weave-row-trail-wrote{--weave-trail:var(--weave-accent)}
+.weave-row-trail-3{--weave-trail-mix:90%}
+.weave-row-trail-2{--weave-trail-mix:55%}
+.weave-row-trail-1{--weave-trail-mix:25%}
+.weave-row-trail-wrote.weave-row-trail-3 .weave-label{font-weight:600}
 .weave-twisty{width:16px;height:16px;flex:none;display:inline-flex;align-items:center;justify-content:center;color:var(--weave-faint);cursor:pointer}
 .weave-kind{flex:none;color:var(--weave-faint);font-size:var(--weave-px-ui)}
 .weave-prov{flex:none;font-size:var(--weave-px-prov)}
@@ -263,14 +273,103 @@ body{font-size:var(--weave-px-base)}
 /* Save is the row's only affirmative action, so the only one with the accent. */
 .weave-note-save{color:var(--weave-accent);border-color:var(--weave-accent)}
 .weave-note-save:disabled{color:var(--weave-faint);border-color:var(--weave-line-strong);cursor:default}
+/* History: a slim bar under the header. The step's added text is marked in
+   the accent tint, the same strength the selected rows use. */
+.weave-note-history[aria-pressed="true"]{color:var(--weave-accent);border-color:var(--weave-accent)}
+/* The replay band sits under the header like the header itself: full width,
+   the note's gutter, one line of words, one line of controls. Dots on the
+   track are the versions, coloured by who made them. */
+.weave-replay{
+  display:flex;flex-direction:column;gap:8px;padding:10px var(--weave-note-gutter) 12px;
+  background:var(--weave-panel);border-bottom:1px solid var(--weave-line);
+  font-size:var(--weave-px-ui);color:var(--weave-dim);
+}
+.weave-replay-note{color:var(--weave-faint)}
+.weave-replay-caption{margin:0;display:flex;align-items:center;gap:10px;flex-wrap:wrap;min-height:18px}
+.weave-replay-clock{display:inline-flex;color:var(--weave-dim)}
+.weave-replay-position{font-weight:650;color:var(--weave-fg);font-variant-numeric:tabular-nums}
+.weave-replay-who{display:inline-flex;align-items:center;gap:6px;color:var(--weave-dim)}
+.weave-replay-who::before{content:"";width:8px;height:8px;border-radius:999px;background:var(--weave-who)}
+.weave-replay-time{color:var(--weave-faint)}
+.weave-replay-change{color:var(--weave-ok);font-size:var(--weave-px-caption);font-variant-numeric:tabular-nums}
+.weave-replay-human{--weave-who:var(--weave-ok)}
+.weave-replay-agent{--weave-who:var(--weave-accent)}
+.weave-replay-outside,.weave-replay-system{--weave-who:var(--weave-faint)}
+.weave-replay-controls{display:flex;align-items:center;gap:6px}
+.weave-replay-controls button{
+  flex:none;display:inline-grid;place-items:center;width:28px;height:28px;padding:0;cursor:pointer;
+  color:var(--weave-fg);background:var(--weave-page);
+  border:1px solid var(--weave-line-strong);border-radius:var(--weave-radius-pop);
+}
+.weave-replay-controls button:hover:not(:disabled){border-color:var(--weave-accent)}
+.weave-replay-controls button:focus-visible{outline:2px solid var(--weave-accent);outline-offset:1px}
+.weave-replay-controls button:disabled{color:var(--weave-faint);cursor:default;opacity:.6}
+.weave-replay-controls .weave-replay-play{color:var(--weave-page);background:var(--weave-accent);border-color:var(--weave-accent)}
+.weave-replay-controls .weave-replay-play:hover:not(:disabled){filter:brightness(1.08)}
+.weave-replay-track{--weave-replay-at:100%;position:relative;flex:1;min-width:80px;height:28px;margin-left:8px}
+.weave-replay-track::before{
+  content:"";position:absolute;left:7px;right:7px;top:13px;height:2px;border-radius:999px;
+  background:linear-gradient(to right,color-mix(in srgb,var(--weave-accent) 55%,transparent) var(--weave-replay-at),var(--weave-line-strong) var(--weave-replay-at));
+}
+.weave-replay-ticks{position:absolute;left:7px;right:7px;top:0;bottom:0;display:flex;justify-content:space-between;align-items:center;pointer-events:none}
+.weave-replay-tick{position:relative;width:0;height:0}
+.weave-replay-tick::before{
+  content:"";position:absolute;left:-6px;top:-6px;width:12px;height:12px;box-sizing:border-box;border-radius:999px;
+  background:var(--weave-who);border:2px solid var(--weave-panel);
+}
+.weave-replay-ahead::before{opacity:.4}
+.weave-replay-slider{position:absolute;inset:0;width:100%;height:100%;margin:0;background:transparent;-webkit-appearance:none;appearance:none;cursor:pointer}
+.weave-replay-slider:disabled{cursor:default}
+.weave-replay-slider:focus{outline:none}
+.weave-replay-slider::-webkit-slider-runnable-track{height:28px;background:transparent}
+.weave-replay-slider::-moz-range-track{height:28px;background:transparent}
+.weave-replay-slider::-webkit-slider-thumb{
+  -webkit-appearance:none;appearance:none;width:14px;height:14px;margin-top:7px;border-radius:999px;
+  background:var(--weave-page);border:2px solid var(--weave-accent);box-sizing:border-box;
+}
+.weave-replay-slider::-moz-range-thumb{
+  width:14px;height:14px;border-radius:999px;box-sizing:border-box;
+  background:var(--weave-page);border:2px solid var(--weave-accent);
+}
+/* Focus fills the thumb: a ring would need an elevation shadow. */
+.weave-replay-slider:focus-visible::-webkit-slider-thumb{background:var(--weave-accent);border-color:var(--weave-page)}
+.weave-replay-slider:focus-visible::-moz-range-thumb{background:var(--weave-accent);border-color:var(--weave-page)}
+.weave-replay-hint{margin:0;color:var(--weave-faint)}
+.weave-replay-mark{background:var(--weave-new);color:inherit}
 /* Mono and a tighter line than the prose: this is Markdown source, where
    alignment carries meaning proportional text throws away. */
 .weave-note-editor{
-  display:block;width:100%;flex:1;min-height:0;resize:none;
+  display:block;width:100%;flex:1 0 auto;min-height:12em;resize:none;
   padding:12px var(--weave-note-gutter) 28px;box-sizing:border-box;
   font-family:var(--weave-mono);font-size:var(--weave-px-row);line-height:1.6;
   color:var(--weave-fg);background:var(--weave-bg);border:0;outline:0;
 }
+/* The \`## Raw\` box under the editor: folded by default so a long
+   dictation never outgrows the note, a dashed edge to say "captured, not
+   written", and a capped height once open. */
+.weave-raw{
+  flex:none;margin:0 var(--weave-note-gutter) 24px;
+  border:1px dashed var(--weave-line-strong);border-radius:var(--weave-radius-pop);background:var(--weave-panel);
+}
+.weave-raw-head{display:flex;align-items:center;gap:10px;padding:5px 8px;min-height:24px}
+.weave-raw[data-open] .weave-raw-head{border-bottom:1px dashed var(--weave-line-strong)}
+.weave-raw-toggle{
+  display:inline-flex;align-items:center;gap:6px;padding:3px 6px;cursor:pointer;
+  font:inherit;font-size:var(--weave-px-ui);font-weight:600;color:var(--weave-fg);
+  background:none;border:0;border-radius:var(--weave-radius);
+}
+.weave-raw-toggle:hover{background:var(--weave-line)}
+.weave-raw-toggle:focus-visible{outline:2px solid var(--weave-accent);outline-offset:1px}
+.weave-raw-chevron{flex:none;color:var(--weave-dim);transition:transform .12s ease}
+.weave-raw-toggle[aria-expanded="true"] .weave-raw-chevron{transform:rotate(90deg)}
+.weave-raw-hint{font-size:var(--weave-px-caption);color:var(--weave-faint)}
+.weave-raw-editor{
+  display:block;width:100%;box-sizing:border-box;min-height:7em;max-height:18em;
+  field-sizing:content;resize:vertical;padding:10px 14px 12px;
+  font-family:var(--weave-mono);font-size:var(--weave-px-row);line-height:1.6;
+  color:var(--weave-dim);background:transparent;border:0;outline:0;
+}
+.weave-raw-editor:focus{color:var(--weave-fg)}
 .weave-note-tags{margin:6px 0 0;display:flex;gap:5px;flex-wrap:wrap}
 .weave-tag{
   font-size:var(--weave-px-caption);color:var(--weave-accent);background:var(--weave-panel);
@@ -433,6 +532,24 @@ body{font-size:var(--weave-px-base)}
    border, cursor — plus a full-width flex row so the count badge lands on the
    right edge of the *column*, not of the text. */
 .weave-ctx-group{padding:2px var(--weave-gutter) 2px}
+.weave-trail{padding-top:6px;padding-bottom:6px;border-bottom:1px solid var(--weave-line)}
+.weave-trail-head{display:flex;align-items:center;gap:6px;font-size:var(--weave-px-caption);font-weight:600;letter-spacing:.09em;color:var(--weave-faint);text-transform:uppercase}
+.weave-trail-head .weave-ctx-count{margin-left:0}
+.weave-trail-replay,.weave-trail-turn{font:inherit;font-size:var(--weave-px-caption);letter-spacing:0;text-transform:none;color:var(--weave-dim);background:none;border:1px solid var(--weave-line);border-radius:var(--weave-radius);padding:0 6px;cursor:pointer}
+.weave-trail-replay{margin-left:auto}
+.weave-trail-replay:hover,.weave-trail-turn:hover{color:var(--weave-fg)}
+.weave-trail-turn-on{color:var(--weave-accent);border-color:var(--weave-accent)}
+.weave-trail-steps{margin:4px 0 0;padding:0;list-style:none;display:flex;flex-direction:column;gap:2px}
+.weave-trail-step{display:flex;flex-wrap:wrap;align-items:baseline;gap:4px;padding-left:10px;position:relative;line-height:1.45}
+.weave-trail-step::before{content:"";position:absolute;left:0;top:.55em;width:6px;height:6px;border-radius:999px;background:var(--weave-warn)}
+.weave-trail-read::before{background:var(--weave-ok)}
+.weave-trail-wrote::before{background:var(--weave-accent)}
+.weave-trail-verb{color:var(--weave-dim)}
+.weave-trail-detail{color:var(--weave-faint);font-family:var(--weave-mono);font-size:var(--weave-px-caption)}
+.weave-trail-note{font:inherit;color:var(--weave-fg);background:none;border:0;padding:0;cursor:pointer;text-decoration:underline;text-decoration-color:var(--weave-line-strong);text-underline-offset:2px}
+.weave-trail-note:hover{color:var(--weave-accent)}
+.weave-trail-empty{margin:4px 0 0;color:var(--weave-faint)}
+.weave-trail-turns{display:flex;flex-wrap:wrap;gap:4px;margin-top:6px}
 .weave-ctx-head{margin:0}
 .weave-ctx-heading{
   display:flex;align-items:center;gap:5px;width:100%;margin:0;padding:2px 0;

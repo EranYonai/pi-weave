@@ -42,15 +42,14 @@
 
 import { slugify } from "../slug";
 import type { HtmlArtifact, Note } from "../types";
+import { fenceRanges, rawTailStart } from "../view/rawTail";
 
 /**
- * The append-only tail heading.
- *
- * Defined here rather than in `vault.ts` (which re-exports it, so its public
- * API is unchanged) because repair is the module that must *not* cross it,
- * and vault imports repair. One definition, no cycle.
+ * The tail helpers live in `../view/rawTail`, a node-free module the browser
+ * editor can reach through `src/web/shared/view.ts`. Re-exported here so
+ * repair's public surface is unchanged.
  */
-export const RAW_NOTES_HEADING = "## Raw";
+export { RAW_NOTES_HEADING, fenceRanges, rawTailStart } from "../view/rawTail";
 
 /** One `[[wiki-link]]` found in a body, with enough context to rewrite it. */
 export interface LinkOccurrence {
@@ -85,68 +84,6 @@ export function normalizeTarget(raw: string): string {
 }
 
 const WIKILINK_RE = /\[\[([^\][|]+)(?:\|([^\]]*))?\]\]/g;
-const FENCE_RE = /^[ \t]*(`{3,}|~{3,})(.*)$/gm;
-/** A `## Raw` heading on a line of its own — not `## Rawhide`. */
-const RAW_HEADING_RE = new RegExp(`^${RAW_NOTES_HEADING}[ \\t]*\\r?$`, "m");
-
-/**
- * Half-open `[start, end)` ranges covering fenced code blocks.
- *
- * CommonMark, not "every third-backtick-line toggles": a fence is closed only
- * by the **same marker character**, at **at least the opening length**, and
- * with no info string. Treating fences as a blind alternation gets two cases
- * backwards — a `~~~` nested inside a ``` block would close it, and a ```
- * inside a ```` block would too — and each mistake ends the protected region
- * early, exposing example links in documentation to rewriting.
- */
-export function fenceRanges(body: string): [number, number][] {
-  const ranges: [number, number][] = [];
-  let open: { at: number; marker: string; length: number } | null = null;
-  for (const match of body.matchAll(FENCE_RE)) {
-    const run = match[1]!;
-    // Group 2 is `(.*)`, which always participates: the info string.
-    const info = match[2]!;
-    if (open === null) {
-      open = { at: match.index, marker: run[0]!, length: run.length };
-    } else if (run[0] === open.marker && run.length >= open.length && info.trim() === "") {
-      ranges.push([open.at, match.index + match[0].length]);
-      open = null;
-    }
-  }
-  // An unterminated fence runs to the end of the body, the way a renderer
-  // treats it.
-  if (open !== null) ranges.push([open.at, body.length]);
-  return ranges;
-}
-
-/**
- * The byte offset where the `## Raw` tail begins, or the body length when
- * there is none.
- *
- * The tail is append-only and verbatim — "NEVER edit below this line" is
- * written into every note that has one. A link inside a user's dictation is
- * *their* text, quoted; repairing it would edit words the vault promises not
- * to touch.
- *
- * Fence-aware, and for the opposite reason to everything else here: a note
- * *documenting* the raw-tail convention contains `## Raw` inside a code
- * sample, and treating that as the real tail would silently protect — and so
- * refuse to repair — every link below it. Matching a whole heading line also
- * keeps `## Rawhide` from starting a tail.
- */
-export function rawTailStart(body: string, fences: readonly [number, number][]): number {
-  let from = 0;
-  for (;;) {
-    const rest = body.slice(from);
-    const hit = RAW_HEADING_RE.exec(rest);
-    if (hit === null) return body.length;
-    const at = from + hit.index;
-    const fence = fences.find(([a, b]) => at >= a && at < b);
-    if (fence === undefined) return at;
-    from = fence[1]; // skip the whole fenced block and keep looking
-  }
-}
-
 /**
  * Every repairable `[[wiki-link]]` in a body, in order.
  *

@@ -243,7 +243,7 @@ export function renderPage(opts: RenderPageOptions): RenderedPage {
     "</head>",
     "<body>",
     `<div id="app" data-cwd="${escapeAttr(opts.bootstrap.cwd)}">`,
-    "<noscript>pi-weave needs JavaScript. Use <code>/weave-view tui</code> instead.</noscript>",
+    "<noscript>pi-weave needs JavaScript to show the workspace.</noscript>",
     "</div>",
     `<script type="application/json" id="${escapeAttr(BOOTSTRAP_ELEMENT_ID)}" nonce="${escapeAttr(nonce)}">`,
     jsonScriptBody(opts.bootstrap),

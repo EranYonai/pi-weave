@@ -59,6 +59,7 @@
     "typecheck": "tsc --noEmit && tsc --noEmit -p tsconfig.web.json",
     "build:web": "node scripts/build-web.mjs",
     "build:web:check": "node scripts/build-web.mjs --check",
+    "e2e": "vitest run --config vitest.e2e.config.ts",
     "check": "npm run typecheck && npm run build:web:check && npm run coverage",
     "eval:notepad": "node scripts/eval-notepad-search.mjs",
     "rewrap:md": "node scripts/rewrap-md.mjs",
@@ -68,14 +69,13 @@
   "peerDependencies": {
     "@earendil-works/pi-ai": "*",
     "@earendil-works/pi-coding-agent": "*",
-    "@earendil-works/pi-tui": "*",
     "typebox": "*"
   },
   "devDependencies": {
     "@earendil-works/pi-ai": "^0.84.2",
     "@earendil-works/pi-coding-agent": "^0.84.2",
-    "@earendil-works/pi-tui": "^0.84.2",
     "@opencode-ai/plugin": "1.18.29",
+    "@opencode-ai/sdk": "1.18.29",
     "@opencode/plugin": "^2.0.19",
     "@types/d3-force": "^3.0.10",
     "@types/node": "^24.0.0",
@@ -86,6 +86,7 @@
     "graphology": "^0.26.0",
     "graphology-types": "^0.24.8",
     "marked": "^18.0.10",
+    "playwright-core": "1.56.1",
     "preact": "^10.29.8",
     "sigma": "^3.0.3",
     "typebox": "1.3.7",

@@ -91,7 +91,7 @@ describe("OpenCode terminal companion", () => {
     const handlers = new Map<string, (event: { data: Record<string, unknown> }) => void | Promise<void>>();
     const toasts: { message: string; variant?: string; sessionID?: string }[] = [];
     const rpc = {
-      async status() { return { text: "🕸️ vault:0 · repo:unindexed", active: false }; },
+      async status() { return { text: "🕸️ 0 notes", active: false }; },
       events: {
         on(name: string, handler: (event: { data: Record<string, unknown> }) => void | Promise<void>) {
           handlers.set(name, handler);
@@ -109,7 +109,7 @@ describe("OpenCode terminal companion", () => {
     };
 
     const cleanup = await weaveTui.setup(context as never);
-    expect(toasts[0]?.message).toContain("not indexed");
+    expect(toasts).toEqual([]); // no nudge to scan the repository
 
     const now = vi.spyOn(Date, "now").mockReturnValue(5_000);
     await handlers.get("status")!({ data: { text: "🕸️ deep scan: 1/3", active: true, sessionID: "s1" } });
@@ -137,7 +137,7 @@ describe("OpenCode terminal companion", () => {
     const handlers = new Map<string, (event: { data: Record<string, unknown> }) => void | Promise<void>>();
     const toasts: { message: string }[] = [];
     const rpc = {
-      async status() { return { text: "🕸️ vault:1 · repo:stale", active: false }; },
+      async status() { return { text: "🕸️ 1 note", active: false }; },
       events: {
         on(name: string, handler: (event: { data: Record<string, unknown> }) => void | Promise<void>) {
           handlers.set(name, handler);
@@ -154,7 +154,7 @@ describe("OpenCode terminal companion", () => {
       },
     };
     await weaveTui.setup(context as never);
-    expect(toasts[0]?.message).toContain("stale");
+    expect(toasts).toEqual([]);
     vi.mocked(execFile).mockClear();
     await handlers.get("status")!({ data: null as never });
     await handlers.get("status")!({ data: { text: "🕸️ deep scan: 1/2", active: true } });
