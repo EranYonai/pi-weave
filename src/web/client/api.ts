@@ -392,7 +392,8 @@ const folderUrl = (path: string, suffix = ""): string => `/api/folder/${path.spl
  * (last-write-wins, see core's `setNoteBody`), and a `MutationResult` rather
  * than the note: the poll is what puts the new text back on screen.
  */
-export const saveNote = (fetchImpl: FetchLike, slug: string, body: string) => mutation(fetchImpl, noteUrl(slug), "POST", { body });
+export const saveNote = (fetchImpl: FetchLike, slug: string, body: string, raw = false) =>
+  mutation(fetchImpl, noteUrl(slug), "POST", raw ? { body, raw: true } : { body });
 export const renameNote = (fetchImpl: FetchLike, slug: string, name: string) => mutation(fetchImpl, noteUrl(slug, "/rename"), "POST", { name });
 export const moveNote = (fetchImpl: FetchLike, slug: string, folder: string | null) => mutation(fetchImpl, noteUrl(slug, "/move"), "POST", { folder });
 export const deleteNote = (fetchImpl: FetchLike, slug: string) => mutation(fetchImpl, noteUrl(slug), "DELETE");

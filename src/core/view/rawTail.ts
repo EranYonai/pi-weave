@@ -118,3 +118,36 @@ export function joinRawTail(head: string, tail: string): string {
   // An emptied head leaves the tail alone, not a leading blank line.
   return head === "" ? tail : `${head}\n\n${tail}`;
 }
+
+/** A tail split below its heading: the fixed `opening`, and the `entries` a person may edit. */
+export interface RawOpeningSplit {
+  opening: string;
+  entries: string;
+}
+
+/** The notice comment written under the heading; `<!-- appended … -->` starts an entry instead. */
+const NOTICE_RE = /^<!--(?! appended\b).*-->[ \t]*\r?$/;
+
+/**
+ * Split a tail (as {@link splitRawTail} returns it) after its `## Raw`
+ * heading and the notice line under it. The editor shows only `entries`, so
+ * clearing the box cannot leave an orphaned rule or heading in the body.
+ */
+export function splitRawOpening(tail: string): RawOpeningSplit {
+  const heading = rawTailStart(tail, fenceRanges(tail));
+  if (heading === tail.length) return { opening: tail, entries: "" };
+  let end = tail.indexOf("\n", heading);
+  if (end !== -1) {
+    const next = tail.indexOf("\n", end + 1);
+    const line = tail.slice(end + 1, next === -1 ? tail.length : next);
+    if (NOTICE_RE.test(line)) end = next;
+  }
+  if (end === -1) return { opening: tail.trimEnd(), entries: "" };
+  return { opening: tail.slice(0, end).trimEnd(), entries: tail.slice(end).replace(/^\s*\n/, "").trimEnd() };
+}
+
+/** Put edited entries back under their opening; no entries means no tail at all. */
+export function joinRawOpening(opening: string, entries: string): string {
+  const text = entries.trim();
+  return text === "" ? "" : `${opening}\n\n${entries.replace(/^\s*\n/, "").trimEnd()}`;
+}

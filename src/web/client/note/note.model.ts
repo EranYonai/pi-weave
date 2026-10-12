@@ -846,8 +846,22 @@ export const SAVE_LABEL = "Save";
 export const SAVING_LABEL = "Saving…";
 export const EDITOR_ARIA_LABEL = "Note body";
 export const EDITOR_PLACEHOLDER = "Start writing…";
-/** Names the read-only `## Raw` tail shown beneath the editor. */
-export const RAW_TAIL_ARIA_LABEL = "Raw notes, read-only";
+/** Names the `## Raw` section beneath the editor, and its own text box. */
+export const RAW_TAIL_ARIA_LABEL = "Raw notes";
+export const RAW_EDITOR_ARIA_LABEL = "Raw notes text";
+export const RAW_TITLE = "Raw";
+
+/**
+ * The quiet line beside the Raw toggle. Closed, it says how much is folded
+ * away; open, it says what saving does with the words.
+ */
+export function rawSummary(entries: string, open: boolean): string {
+  if (open) return "Your words as captured. Edits here are saved with the note.";
+  const count = entries.match(/^<!-- appended\b/gm)?.length ?? 0;
+  if (count > 0) return `${count} ${count === 1 ? "entry" : "entries"} captured`;
+  const lines = entries === "" ? 0 : entries.split("\n").length;
+  return `${lines} ${lines === 1 ? "line" : "lines"}`;
+}
 export const DISCARD_PROMPT = "Discard unsaved changes to this note?";
 
 /** The note header: title, provenance badge, relative time, tags. */

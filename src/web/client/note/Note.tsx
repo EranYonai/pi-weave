@@ -61,7 +61,10 @@ import {
   previewAnchorOf,
   previewCard,
   previewPlacement,
+  RAW_EDITOR_ARIA_LABEL,
   RAW_TAIL_ARIA_LABEL,
+  RAW_TITLE,
+  rawSummary,
   reducePreview,
   renderNote,
   selectedArtifactPath,
@@ -74,7 +77,7 @@ import {
 } from "./note.model";
 import type { NoteHeaderView, PreviewElement, PreviewEvent } from "./note.model";
 import { createDraftStore } from "./drafts";
-import type { DraftStore } from "./drafts";
+import type { DraftStore, SaveNote } from "./drafts";
 import { ReplayBar, wrapMarks } from "./Replay";
 import type { ReplayState } from "./Replay";
 import { HISTORY_CLOSE_LABEL, HISTORY_LABEL, PLAY_INTERVAL_MS, nextStep, replayStep } from "./replay.model";
@@ -102,7 +105,7 @@ export interface NoteProps {
    * has already been reported to the user by the shell, which owns the one
    * error-reporting gesture the client has.
    */
-  onSave: (slug: string, body: string) => Promise<boolean>;
+  onSave: SaveNote;
   /**
    * Load the note's saved revisions for the history slider. The History
    * control is shown only when this is provided.
@@ -227,13 +230,9 @@ export function Note(props: NoteProps) {
   // shares the draft, and must not take the cursor away from this one.
   const focusEditor = useRef(false);
   const draft = note === null ? null : drafts.get(note.slug);
-  // The read-only `## Raw` tail beneath the editor. Same pipeline as the
-  // body, so wikilinks and fenced dictation look exactly as they do in read
-  // mode.
-  const tailHtml = useMemo(
-    () => (draft === null || draft.tail === "" || index === null ? "" : renderNote(DOMPurify, draft.tail, index)),
-    [draft?.tail, index],
-  );
+  // The `## Raw` box under the editor starts folded: a long dictation would
+  // otherwise outgrow the note it belongs to.
+  const [rawOpen, setRawOpen] = useState(false);
   const taskSaving = note !== null && drafts.isTaskSaving(note.slug);
   const save = async (): Promise<void> => {
     if (note !== null && !drafts.isTaskSaving(note.slug)) await drafts.save(note.slug, props.onSave);
@@ -285,6 +284,18 @@ export function Note(props: NoteProps) {
       drafts.open(note.slug, body);
     } else if (!drafts.isDirty(note.slug) || window.confirm(DISCARD_PROMPT)) drafts.discard(note.slug);
   };
+  // Both editor boxes: bound here, not in `keys.model.ts`, because a global
+  // binding is a workspace-wide claim and Escape must not reach the shell.
+  const editorKeys = (event: KeyboardEvent): void => {
+    if (event.key === "Escape") {
+      event.stopPropagation();
+      toggleEdit();
+      return;
+    }
+    if (event.key.toLowerCase() !== "s" || !(event.metaKey || event.ctrlKey)) return;
+    event.preventDefault();
+    void save();
+  };
   const card = preview.anchor === null ? null : previewCard(props.graph, preview.anchor);
 
   // Cursor in the textarea, after the last word, the moment it appears.
@@ -326,6 +337,7 @@ export function Note(props: NoteProps) {
   useLayoutEffect(() => {
     replaySlug.current = null;
     setReplay(null);
+    setRawOpen(false);
   }, [note === null ? null : note.slug]);
   useLayoutEffect(() => {
     if (replayHtml === null || bodyRef.current === null) return;
@@ -468,23 +480,39 @@ export function Note(props: NoteProps) {
           spellcheck={props.spellcheck ?? true}
           value={draft.body}
           onInput={(event) => drafts.edit(note.slug, (event.target as HTMLTextAreaElement).value)}
-          onKeyDown={(event) => {
-            // Bound here, not in `keys.model.ts`: a global binding is a
-            // workspace-wide claim, and Escape must not reach the shell.
-            if (event.key === "Escape") {
-              event.stopPropagation();
-              toggleEdit();
-              return;
-            }
-            if (event.key.toLowerCase() !== "s" || !(event.metaKey || event.ctrlKey)) return;
-            event.preventDefault();
-            void save();
-          }}
+          onKeyDown={editorKeys}
         />
-        {/* Append-only, so never in the textarea: anything typed there used
-            to be dropped on save without a word. Sanitised by `renderNote`. */}
-        {tailHtml === "" ? null : (
-          <section class="weave-note-body weave-note-raw" aria-label={RAW_TAIL_ARIA_LABEL} dangerouslySetInnerHTML={{ __html: tailHtml }} />
+        {/* A box of its own, never the body's textarea: text typed below
+            the heading there used to be dropped on save without a word. */}
+        {draft.tail === "" ? null : (
+          <section class="weave-raw" aria-label={RAW_TAIL_ARIA_LABEL} data-open={rawOpen ? "" : undefined}>
+            <div class="weave-raw-head">
+              <button
+                type="button"
+                class="weave-raw-toggle"
+                aria-expanded={rawOpen}
+                aria-controls={`${props.idPrefix ?? generatedId}-weave-raw`}
+                onClick={() => setRawOpen((open) => !open)}
+              >
+                <svg class="weave-raw-chevron" width="12" height="12" viewBox="0 0 12 12" aria-hidden="true">
+                  <path d="M4.5 2.5 8 6l-3.5 3.5" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" />
+                </svg>
+                {RAW_TITLE}
+              </button>
+              <span class="weave-raw-hint">{rawSummary(draft.raw, rawOpen)}</span>
+            </div>
+            {rawOpen ? (
+              <textarea
+                id={`${props.idPrefix ?? generatedId}-weave-raw`}
+                class="weave-raw-editor"
+                aria-label={RAW_EDITOR_ARIA_LABEL}
+                spellcheck={props.spellcheck ?? true}
+                value={draft.raw}
+                onInput={(event) => drafts.editRaw(note.slug, (event.target as HTMLTextAreaElement).value)}
+                onKeyDown={editorKeys}
+              />
+            ) : null}
+          </section>
         )}
         </>
       ) : (

@@ -653,11 +653,17 @@ async function routeNote(
       sendJson(res, 400, { error: "expected JSON object" });
       return true;
     }
-    const fields = body as { body?: unknown; name?: unknown; folder?: unknown };
+    const fields = body as { body?: unknown; raw?: unknown; name?: unknown; folder?: unknown };
     // The payload decides, not the suffix: slugs nest, so `archive/rename` is
     // a real note and only `{name}`/`{folder}` mean the action.
     if (typeof fields.body === "string") {
-      sendMutation(res, await setNoteBody(deps.vaultRoot, target, fields.body));
+      // `raw: true` is the editor saying the person changed their own Raw
+      // words; without it the on-disk tail is kept, whatever the body says.
+      if (fields.raw !== undefined && typeof fields.raw !== "boolean") {
+        sendJson(res, 400, { error: "expected raw: boolean" });
+        return true;
+      }
+      sendMutation(res, await setNoteBody(deps.vaultRoot, target, fields.body, new Date(), "human", fields.raw === true ? "replace" : "keep"));
       return true;
     }
     if (action === null) {

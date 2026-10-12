@@ -11,7 +11,8 @@ import { lastMessageText, startStubModel, type StubModel } from "./harness/stubM
 /**
  * The browser editor (#77): Raw stays out of the textarea and survives a save,
  * Edit puts the cursor in the editor, Esc does not close the note being read,
- * and a two-note graph fits itself.
+ * and a two-note graph fits itself. Raw is editable in a folded box of its
+ * own, and an edit there reaches the disk.
  */
 
 const NOTE_TITLE = "Standup notes";
@@ -19,6 +20,9 @@ const NOTE_SLUG = "standup-notes";
 const NOTE_BODY = "Ship the editor polish first.";
 const DICTATION = "said out loud: raw stays below the editor";
 const TYPED = " Typed in the browser.";
+const EDITED = "said out loud: and fixed a typo in Raw";
+// A long dictation: Raw folds away so it never outgrows the note above it.
+const LONG_DICTATION = Array.from({ length: 24 }, (_, i) => `line ${i + 1} of a long dictated ramble about the launch`).join("\n");
 
 describe("editor polish: Raw tail, focus, Esc, small graph", () => {
   let model: StubModel;
@@ -40,6 +44,10 @@ describe("editor polish: Raw tail, focus, Esc, small graph", () => {
         // Dictation lands verbatim in the note's `## Raw` tail.
         match: (req) => lastMessageText(req).includes("please dictate:"),
         reply: { tool: { name: "weave_note", args: { action: "append", slug: NOTE_SLUG, text: DICTATION, raw: true } } },
+      },
+      {
+        match: (req) => lastMessageText(req).includes("please ramble:"),
+        reply: { tool: { name: "weave_note", args: { action: "append", slug: NOTE_SLUG, text: LONG_DICTATION, raw: true } } },
       },
       {
         match: (req) => lastMessageText(req).includes("please also note:"),
@@ -78,6 +86,8 @@ describe("editor polish: Raw tail, focus, Esc, small graph", () => {
     await pi.waitFor("stub: done", { label: "add turn" });
     await pi.submit("please dictate: something");
     await pi.waitFor(/Appended verbatim/, { label: "raw append" });
+    await pi.submit("please ramble: on");
+    await expect.poll(() => noteText().includes("line 24 of a long dictated ramble"), { timeout: 15_000 }).toBe(true);
     await pi.submit("please also note: second");
     await pi.waitFor(/Second note|second-note/, { label: "second note" });
     expect(noteText()).toContain("## Raw");
@@ -102,14 +112,16 @@ describe("editor polish: Raw tail, focus, Esc, small graph", () => {
     expect(await page.getByRole("heading", { name: NOTE_TITLE }).count()).toBe(1);
   });
 
-  it("Edit focuses an editor that holds only the body, with Raw read-only below", async () => {
+  it("Edit focuses an editor that holds only the body, with Raw folded below", async () => {
     await page.getByRole("button", { name: "Edit", exact: true }).click();
     const editor = page.getByRole("textbox", { name: "Note body" });
     await editor.waitFor();
     expect(await editor.inputValue()).toBe(NOTE_BODY);
     expect(await editor.evaluate((el) => el === el.ownerDocument.activeElement)).toBe(true);
-    const raw = page.getByRole("region", { name: "Raw notes, read-only" });
-    await raw.getByText(DICTATION).waitFor();
+    const raw = page.getByRole("region", { name: "Raw notes" });
+    await raw.getByText("2 entries captured").waitFor();
+    expect(await raw.getByRole("button", { name: "Raw" }).getAttribute("aria-expanded")).toBe("false");
+    expect(await page.getByRole("textbox", { name: "Raw notes text" }).count()).toBe(0);
   });
 
   it("typing and saving keeps the Raw tail on disk", async () => {
@@ -120,6 +132,33 @@ describe("editor polish: Raw tail, focus, Esc, small graph", () => {
     expect(text).toContain(`${NOTE_BODY}${TYPED}`);
     expect(text.indexOf(TYPED)).toBeLessThan(text.indexOf("## Raw"));
     expect(text).toContain(DICTATION);
+  });
+
+  it("opening Raw shows its words in their own box, capped in height", async () => {
+    await page.getByRole("button", { name: "Edit", exact: true }).click();
+    await page.getByRole("button", { name: "Raw" }).click();
+    const raw = page.getByRole("textbox", { name: "Raw notes text" });
+    await raw.waitFor();
+    expect(await raw.inputValue()).toContain(DICTATION);
+    expect(await raw.inputValue()).toContain("line 24 of a long dictated ramble");
+    // The opening (rule, heading, notice) is not in the box.
+    expect(await raw.inputValue()).not.toContain("## Raw");
+    const box = await raw.boundingBox();
+    expect(box!.height).toBeLessThan(320);
+  });
+
+  it("editing Raw and saving writes the change to disk", async () => {
+    const raw = page.getByRole("textbox", { name: "Raw notes text" });
+    await raw.fill((await raw.inputValue()).replace(DICTATION, EDITED));
+    await page.keyboard.press("Control+s");
+    await page.getByRole("button", { name: "Edit", exact: true }).waitFor();
+    const text = noteText();
+    expect(text).toContain(EDITED);
+    expect(text).not.toContain(DICTATION);
+    expect(text).toContain(`${NOTE_BODY}${TYPED}`);
+    expect(text).toContain("line 24 of a long dictated ramble");
+    expect(text.indexOf(TYPED)).toBeLessThan(text.indexOf("## Raw"));
+    expect(text.indexOf("## Raw")).toBeLessThan(text.indexOf(EDITED));
   });
 
   it("a two-note graph opens fitted with every node labelled", async () => {

@@ -10,7 +10,7 @@ import { schemeOf, watchScheme } from "../graph/scheme";
 import { createSigmaRenderer } from "../graph/renderer.dom";
 import { Note } from "../note/Note";
 import { createDraftStore, mayMutateDrafts, mayRemoveDrafts } from "../note/drafts";
-import type { DraftStore } from "../note/drafts";
+import type { DraftStore, SaveNote } from "../note/drafts";
 import { DISCARD_PROMPT } from "../note/note.model";
 import { SearchPalette } from "../search/SearchPalette";
 import { Icon, Tree } from "../tree/Tree";
@@ -54,7 +54,7 @@ function RecentList(props: { visits: readonly string[]; graph: GraphPayload | nu
 /** A tab view can unmount; the shared draft store outlives it. */
 function DocumentView(props: {
   preferences: Preferences; tab: WorkspaceTab; graph: GraphPayload | null; drafts: DraftStore; revision: number;
-  onSelect: (id: string, newTab?: boolean) => void; onSave: (slug: string, body: string) => Promise<boolean>;
+  onSelect: (id: string, newTab?: boolean) => void; onSave: SaveNote;
   now: number; onScroll: (value: number) => void; onSearch: () => void; onGraph: () => void; onCreate: (title: string) => Promise<boolean>;
 }) {
   const id = tabSelection(props.tab);
@@ -205,8 +205,8 @@ export function Shell(props: ShellProps) {
   };
   live.current = { layout, overlay, selectedId, graphPreviewId, select };
   const mayMutate = (slugs: readonly string[]): boolean => mayMutateDrafts(drafts, slugs, () => window.confirm("Discard unsaved changes to the affected notes before changing files?"));
-  const save = async (slug: string, body: string): Promise<boolean> => {
-    const result = await saveNote(fetchJson, slug, body);
+  const save: SaveNote = async (slug, body, options) => {
+    const result = await saveNote(fetchJson, slug, body, options?.raw === true);
     if (!result.ok) { window.alert(result.message); return false; }
     setRevision((value) => value + 1); workspace.current?.refresh(); return true;
   };

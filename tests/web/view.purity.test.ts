@@ -143,6 +143,9 @@ describe("src/web/shared/view.ts opens a node-free closure (weave-workspace §2.
       // vault keeps it with, so the two cannot disagree about where it starts.
       ["splitRawTail", door.splitRawTail, coreRawTail.splitRawTail],
       ["joinRawTail", door.joinRawTail, coreRawTail.joinRawTail],
+      // The Raw editor shows only the entries under the heading.
+      ["splitRawOpening", door.splitRawOpening, coreRawTail.splitRawOpening],
+      ["joinRawOpening", door.joinRawOpening, coreRawTail.joinRawOpening],
     ];
     for (const [name, viaDoor, viaCore] of bindings) {
       expect(typeof viaDoor, name).toBe("function");

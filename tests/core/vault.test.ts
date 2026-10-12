@@ -421,6 +421,19 @@ describe("setNoteBody", () => {
       expect(after.startsWith("---")).toBe(true); // no leading blank line
     });
 
+    it("replaces the tail when the person edited it on purpose", async () => {
+      const slug = await dictated("Typo", "teh launch is friday");
+      const body = (await getNote(vault, slug))!.body;
+      await setNoteBody(vault, slug, `  new summary\n\n${body.replace(/^summary\n\n/, "").replace("teh", "the")}\n\n`, new Date(), "human", "replace");
+      const after = (await getNote(vault, slug))!.body;
+      expect(after).toContain("the launch is friday");
+      expect(after).not.toContain("teh launch");
+      expect(after.startsWith("new summary\n\n---")).toBe(true);
+      // Clearing the tail removes it.
+      await setNoteBody(vault, slug, "only prose", new Date(), "human", "replace");
+      expect((await getNote(vault, slug))!.body).toBe("only prose");
+    });
+
     it("leaves a note that never had a tail alone", async () => {
       const note = await addNote(vault, { title: "Plain", body: "just prose", source: "human" });
       await setNoteBody(vault, note.slug, "replaced entirely");

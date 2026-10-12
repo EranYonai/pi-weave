@@ -9,14 +9,43 @@ describe("shared note drafts", () => {
     const drafts = createDraftStore();
     const tail = "---\n\n## Raw\n<!-- NEVER edit below this line. Verbatim user input preserved here. -->\n\n```\nhi\n```";
     drafts.open("one", `Body text.\n\n${tail}\n`);
-    expect(drafts.get("one")).toEqual({ body: "Body text.", baseline: "Body text.", tail, saving: false });
+    expect(drafts.get("one")).toEqual({
+      body: "Body text.", baseline: "Body text.", tail, raw: "```\nhi\n```", rawBaseline: "```\nhi\n```", saving: false,
+    });
     drafts.taskBody("one", `Body text.\n\n${tail}`, drafts.nextLoadVersion());
     drafts.edit("one", "Body text, edited.");
     const onSave = vi.fn(async () => true);
     await drafts.save("one", onSave);
-    expect(onSave).toHaveBeenCalledWith("one", `Body text, edited.\n\n${tail}`);
+    expect(onSave).toHaveBeenCalledWith("one", `Body text, edited.\n\n${tail}`, undefined);
     // The optimistic body under the read view keeps its tail too.
     expect(drafts.getTaskBody("one", "")).toBe(`Body text, edited.\n\n${tail}`);
+    expect(drafts.get("one")).toBeNull();
+  });
+
+  it("saves an edited Raw under its heading and marks the save as a Raw edit", async () => {
+    const drafts = createDraftStore();
+    const opening = "---\n\n## Raw\n<!-- NEVER edit below this line. Verbatim user input preserved here. -->";
+    drafts.open("one", `Body.\n\n${opening}\n\nteh words`);
+    drafts.editRaw("one", "teh words");
+    expect(drafts.isDirty("one")).toBe(false);
+    drafts.editRaw("missing", "x");
+    drafts.editRaw("one", "the words");
+    expect(drafts.isDirty("one")).toBe(true);
+    expect(drafts.dirtySlugs()).toEqual(["one"]);
+    let release: (ok: boolean) => void = () => {};
+    const onSave = vi.fn(() => new Promise<boolean>((resolve) => { release = resolve; }));
+    const saving = drafts.save("one", onSave);
+    // Typed while the save is in flight: the draft stays, with the sent Raw as its baseline.
+    drafts.editRaw("one", "the words, and more");
+    release(true);
+    await saving;
+    expect(onSave).toHaveBeenCalledWith("one", `Body.\n\n${opening}\n\nthe words`, { raw: true });
+    expect(drafts.get("one")).toMatchObject({ raw: "the words, and more", rawBaseline: "the words", tail: `${opening}\n\nthe words` });
+    // Clearing every entry drops the tail.
+    drafts.editRaw("one", "");
+    const clear = vi.fn(async () => true);
+    await drafts.save("one", clear);
+    expect(clear).toHaveBeenCalledWith("one", "Body.", { raw: true });
     expect(drafts.get("one")).toBeNull();
   });
 
@@ -49,7 +78,7 @@ describe("shared note drafts", () => {
     const firstView = drafts.get("one");
     const secondView = drafts.get("one");
     expect(firstView).toBe(secondView);
-    expect(drafts.get("one")).toEqual({ body: "original", baseline: "original", tail: "", saving: false });
+    expect(drafts.get("one")).toEqual({ body: "original", baseline: "original", tail: "", raw: "", rawBaseline: "", saving: false });
     drafts.edit("one", "edited");
     expect(secondView?.body).toBe("edited");
     expect(drafts.isDirty("one")).toBe(true);
@@ -77,7 +106,7 @@ describe("shared note drafts", () => {
     resolveSave(true);
     await saving;
 
-    expect(drafts.get("one")).toEqual({ body: "typed while saving", baseline: "sent", tail: "", saving: false });
+    expect(drafts.get("one")).toEqual({ body: "typed while saving", baseline: "sent", tail: "", raw: "", rawBaseline: "", saving: false });
     expect(drafts.isDirty("one")).toBe(true);
 
     let resolveSecond!: (ok: boolean) => void;
@@ -87,7 +116,7 @@ describe("shared note drafts", () => {
     drafts.edit("two", "original");
     resolveSecond(true);
     await secondSave;
-    expect(drafts.get("two")).toEqual({ body: "original", baseline: "sent", tail: "", saving: false });
+    expect(drafts.get("two")).toEqual({ body: "original", baseline: "sent", tail: "", raw: "", rawBaseline: "", saving: false });
     expect(drafts.isDirty("two")).toBe(true);
   });
 
@@ -105,7 +134,7 @@ describe("shared note drafts", () => {
     drafts.open("one", "replacement");
     resolveSave(true);
     await saving;
-    expect(drafts.get("one")).toEqual({ body: "replacement", baseline: "replacement", tail: "", saving: false });
+    expect(drafts.get("one")).toEqual({ body: "replacement", baseline: "replacement", tail: "", raw: "", rawBaseline: "", saving: false });
   });
 });
 

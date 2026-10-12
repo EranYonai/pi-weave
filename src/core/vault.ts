@@ -11,7 +11,7 @@ import {
   upsertFrontMatterFields,
 } from "./frontmatter";
 import { auditLinks, rewriteLinks, RAW_NOTES_HEADING, type LinkAudit, type LinkFix } from "./links/repair";
-import { joinRawTail, rawTailBoundary } from "./view/rawTail";
+import { joinRawTail, rawTailBoundary, splitRawTail } from "./view/rawTail";
 import {
   moveHistory,
   readHistory,
@@ -669,6 +669,19 @@ function preserveRawTail(currentBody: string, nextBody: string): string {
 }
 
 /**
+ * What a body save does with the `## Raw` tail. `keep` (the default) holds
+ * the on-disk tail whatever the body says. `replace` writes the body's own
+ * tail: the person editing the note changed their own Raw words on purpose.
+ */
+export type RawTailMode = "keep" | "replace";
+
+/** The body as sent, its tail included, with the same spacing `preserveRawTail` writes. */
+function normalizeRawTail(body: string): string {
+  const { head, tail } = splitRawTail(body);
+  return joinRawTail(head.trim(), tail);
+}
+
+/**
  * Replace a note's Markdown body; unknown front matter rides on
  * `note.frontMatter` and only `updated` moves. Last write wins — no
  * `expectedRevision`; docs/weave-workspace.md §11 P5.3 argues the trade.
@@ -679,13 +692,14 @@ export async function setNoteBody(
   body: string,
   now = new Date(),
   by: HistoryAuthor = "human",
+  raw: RawTailMode = "keep",
 ): Promise<VaultMutationResult> {
   const path = resolveNotePath(root, slug);
   if (path === null) return { ok: false, reason: "invalid" };
   return withVaultLock(root, async () => {
     const note = await getNote(root, slug);
     if (note === null) return { ok: false, reason: "missing" };
-    const next = preserveRawTail(note.body, body);
+    const next = raw === "replace" ? normalizeRawTail(body) : preserveRawTail(note.body, body);
     const before = await priorBody(path, note);
     const written = await writeNote(path, slug, { ...note, updated: now.toISOString() }, next, note.frontMatter);
     await record(root, written, by, "edit", before, written.updated);

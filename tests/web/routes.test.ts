@@ -912,6 +912,21 @@ describe("vault tree mutations", () => {
     expect(payload.note.body).toBe("rewritten by the browser");
   });
 
+  it("keeps the on-disk Raw tail unless the save says Raw was edited", async () => {
+    const { server, vaultRoot } = await bootFresh();
+    const tail = "---\n\n## Raw\n<!-- NEVER edit below this line. Verbatim user input preserved here. -->\n\n```\nsaid it\n```";
+    expect((await post(server, "/api/note/alpha-note", { body: "kept", raw: true })).status).toBe(200);
+    const file = join(vaultRoot, "notes", "alpha-note.md");
+    await fs.writeFile(file, (await fs.readFile(file, "utf8")).replace("kept", `kept\n\n${tail}`));
+    expect((await post(server, "/api/note/alpha-note", { body: `kept\n\n${tail.replace("said it", "forged")}` })).status).toBe(200);
+    expect(await fs.readFile(file, "utf8")).toContain("said it");
+    expect((await post(server, "/api/note/alpha-note", { body: `kept\n\n${tail.replace("said it", "fixed typo")}`, raw: true })).status).toBe(200);
+    const after = await fs.readFile(file, "utf8");
+    expect(after).toContain("fixed typo");
+    expect(after).not.toContain("said it");
+    expect((await post(server, "/api/note/alpha-note", { body: "x", raw: "yes" })).status).toBe(400);
+  });
+
   it("refuses a save with no string body, a missing note, or a foreign Origin", async () => {
     const { server } = await bootFresh();
     expect((await post(server, "/api/note/alpha-note", {})).status).toBe(400);
