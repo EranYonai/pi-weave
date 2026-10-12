@@ -127,21 +127,24 @@ describe("baseline: pi + pi-weave + /weave-view", () => {
     await page.locator("canvas").first().waitFor();
   });
 
+  // The note's title is also in the sidebar, so these wait for the palette's
+  // own row: typing before the palette has focus would otherwise go nowhere
+  // and still look like a pass.
   it("search finds the note", async () => {
     await page.getByRole("button", { name: "Search notes and repository" }).click();
-    await page.keyboard.type("Launch");
-    await page.getByText(NOTE_TITLE).first().waitFor();
+    await page.getByRole("combobox", { name: "Search the workspace" }).fill("Launch");
+    await page.getByRole("option", { name: new RegExp(NOTE_TITLE) }).first().waitFor();
     await page.keyboard.press("Escape");
   });
 
   it("search can light its results up in the graph", async () => {
     await page.getByRole("button", { name: "Search notes and repository" }).click();
-    await page.keyboard.type("Launch");
-    await page.getByText(NOTE_TITLE).first().waitFor();
+    await page.getByRole("combobox", { name: "Search the workspace" }).fill("Launch");
+    await page.getByRole("option", { name: new RegExp(NOTE_TITLE) }).first().waitFor();
+    await page.getByRole("button", { name: /^Light up \d+ in the graph/ }).waitFor();
     await page.keyboard.press("Shift+Enter");
     const field = page.getByRole("searchbox", { name: "Light up in graph" });
-    await field.waitFor();
-    expect(await field.inputValue()).toBe("Launch");
+    await expect.poll(() => field.inputValue()).toBe("Launch");
     await page.getByText("1 lit").waitFor();
     // Labels are drawn on a canvas, so this step's proof is its screenshot.
     await page.waitForTimeout(800);
