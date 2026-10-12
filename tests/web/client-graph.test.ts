@@ -931,6 +931,15 @@ describe("the hover label (§7.4)", () => {
     }
   });
 
+  it("draws nothing for a node whose label is forced to stand", () => {
+    // The spotlight forces lit nodes' labels; the hover would repeat the name.
+    const fake = fakeContext();
+    hoverLabelPainter("dark")(fake.context, { ...hovered, forceLabel: true }, settings);
+    expect(fake.calls).toEqual([]);
+    hoverLabelPainter("dark")(fake.context, { ...hovered, forceLabel: false }, settings);
+    expect(fake.drawn).toHaveLength(1);
+  });
+
   it("is what the settings hand sigma, per scheme", () => {
     const fake = fakeContext();
     graphSettings("light").defaultDrawNodeHover(fake.context, hovered, settings);

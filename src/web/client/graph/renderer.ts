@@ -1,6 +1,6 @@
 import type { GraphTheme } from "../../shared/themes";
 import type { Point } from "../../shared/layout";
-import type { EdgeDisplayOverride, GraphSettings, NodeDisplayOverride, RenderEdge, RenderGraph, RenderNode, TrailGlow, ViewBox } from "./graph.model";
+import type { EdgeDisplayOverride, GraphSettings, HighlightStyle, NodeDisplayOverride, RenderEdge, RenderGraph, RenderNode, TrailGlow, ViewBox } from "./graph.model";
 import { edgeReducer, fadeStep, frameBox, graphSettings, labelThreshold, nodeReducer, trailOverride } from "./graph.model";
 import type { ProjectedGraph } from "./project";
 import { positionsOf, project, syncPositions } from "./project";
@@ -130,6 +130,8 @@ export function sigmaRenderer(
   let highlight: ReadonlySet<string> | null = null;
   /** The selection inside that neighbourhood — see `nodeReducer`. */
   let selected: string | null = null;
+  /** Which treatment `highlight` gets — a neighbourhood or a spotlight. */
+  let style: HighlightStyle = "neighbourhood";
   /** Recall-trail glows, layered over the selection — see `trailOverride`. */
   let trail: ReadonlyMap<string, TrailGlow> = new Map();
   /**
@@ -176,8 +178,8 @@ export function sigmaRenderer(
    * until the next unrelated frame.
    */
   const applyReducers = (instance: SigmaLike): void => {
-    const nodes = nodeReducer(highlight, selected, fade);
-    const edges = edgeReducer(highlight, selected, fade);
+    const nodes = nodeReducer(highlight, selected, fade, style);
+    const edges = edgeReducer(highlight, selected, fade, style);
     const glows = trail;
     instance.setSetting("nodeReducer", (id, data) => {
       const reduced = { ...data, ...nodes(id, data, scheme) };
@@ -279,10 +281,11 @@ export function sigmaRenderer(
       sigma?.refresh();
     },
 
-    setHighlight(next: ReadonlySet<string> | null, selectedId: string | null = null) {
+    setHighlight(next: ReadonlySet<string> | null, selectedId: string | null = null, nextStyle: HighlightStyle = "neighbourhood") {
       if (clock === undefined) {
         highlight = next;
         selected = selectedId;
+        style = nextStyle;
         fade = next === null ? 0 : 1;
         fadeTo = fade;
         if (sigma !== null) applyReducers(sigma);
@@ -297,9 +300,11 @@ export function sigmaRenderer(
       } else {
         // A new neighbourhood replaces the old one immediately — a cross-fade
         // between two of them is a picture of neither — and only the *presence*
-        // of the highlight is animated.
+        // of the highlight is animated. The style swaps with the set; a clear
+        // (above) keeps the outgoing style so a spotlight fades out *as* one.
         highlight = next;
         selected = selectedId;
+        style = nextStyle;
         fadeTo = 1;
       }
       if (sigma !== null) applyReducers(sigma);

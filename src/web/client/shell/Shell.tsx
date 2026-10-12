@@ -32,7 +32,7 @@ import { watchKeys } from "./keys";
 import { COLUMN_FOCUS_SELECTORS, TREE_FILTER_SELECTOR, focusSelector, runShellAction } from "./keys.model";
 import { StatusBar } from "./StatusBar";
 import type { OverlayId } from "./shell.model";
-import { NOTE_DRAG_TYPE, noteDropId, TICK_MS, graphClickOpensTab, looksApple, recentEntries, recordVisit, searchHint, searchShortcut, statusBarModel } from "./shell.model";
+import { NOTE_DRAG_TYPE, noteDropId, TICK_MS, graphClickOpensTab, looksApple, openInSplit, recentEntries, recordVisit, searchHint, searchShortcut, statusBarModel } from "./shell.model";
 import { toggleTheme, effectiveScheme, loadTheme, saveTheme, themeButton } from "./theme.model";
 
 export interface ShellProps { cwd: string; initialWidth: number; platform: string }
@@ -136,6 +136,9 @@ export function Shell(props: ShellProps) {
   const [graphSelection, setGraphSelection] = useState<string | null>(null);
   const lastViewedDocument = useRef<string | null>(null);
   const [graphPreviewId, setGraphPreviewId] = useState<string | null>(null);
+  // The graph spotlight's query (`graph/spotlight.model.ts`). Held here, not
+  // in the column, so other UI can light the graph up — see `lightUp`.
+  const [graphQuery, setGraphQuery] = useState("");
   const draggedTab = useRef<string | null>(null);
   const [dropTab, setDropTab] = useState<{ paneId: string; before: string | null } | null>(null);
   const [dropPane, setDropPane] = useState<string | null>(null);
@@ -208,6 +211,19 @@ export function Shell(props: ShellProps) {
     if (!contextGraphActive) setGraphSelection(id);
     if (graphClickOpensTab(live.current.graphPreviewId, id)) openGraphNode(id);
     else previewGraphNode(id);
+  };
+  /** The graph sheet's "Open in split": beside the graph, which stays on screen. */
+  const openGraphNodeInSplit = (id: string): void => {
+    previewGraphNode(null);
+    change(openInSplit(layout, id, graphPane?.id));
+  };
+  /**
+   * Open the graph view with `query` lit up in its spotlight. The entry point
+   * for other UI (the search palette's "light up in graph"); `""` clears it.
+   */
+  const lightUp = (query: string): void => {
+    setGraphQuery(query);
+    showGraph();
   };
   live.current = { layout, overlay, selectedId, graphPreviewId, select };
   const mayMutate = (slugs: readonly string[]): boolean => mayMutateDrafts(drafts, slugs, () => window.confirm("Discard unsaved changes to the affected notes before changing files?"));
@@ -510,7 +526,8 @@ export function Shell(props: ShellProps) {
         onFocusCapture={() => { if (!contextGraphActive && graphPane) setLayout((current) => ({ ...current, activePane: graphPane.id })); }}
         aria-hidden={!graphVisible} inert={!graphVisible} role={contextGraphActive ? "region" : undefined} aria-label={contextGraphActive ? "Note graph" : undefined}
         style={{ ...graphBox, visibility: graphVisible ? "visible" : "hidden", pointerEvents: graphVisible ? "auto" : "none" }}>
-        <Graph graph={data.graph} selectedId={selectedId} previewId={graphPreviewId} onSelect={selectGraph} onOpen={openGraphNode} renderer={createSigmaRenderer} storage={localStorage} host={window} scheme={graphTheme} forces={layout.preferences.forces} groupColors={layout.preferences.groupColors} bootFailed={data.graphFailed} fit={fit} trail={glows} />
+        <Graph graph={data.graph} selectedId={selectedId} previewId={graphPreviewId} onSelect={selectGraph} onOpen={openGraphNode} renderer={createSigmaRenderer} storage={localStorage} host={window} scheme={graphTheme} forces={layout.preferences.forces} groupColors={layout.preferences.groupColors} bootFailed={data.graphFailed} fit={fit} trail={glows}
+          {...(contextGraphActive ? {} : { query: graphQuery, onQuery: setGraphQuery, onOpenSplit: openGraphNodeInSplit })} now={now} />
       </div> : null}
     </div>
     <div class="weave-footer"><StatusBar model={statusBarModel(props.cwd, selectedId, searchShortcut(looksApple(props.platform)))} />

@@ -567,6 +567,113 @@ body{font-size:var(--weave-px-base)}
   border-top:1px solid var(--weave-line);
 }
 
+/* graph spotlight (G1) ---------------------------------------------------
+   The field floating top-left over the canvas, and the side sheet top-right.
+   Both are overlays on the stage, so they sit on the panel ground with a
+   hairline and the pop radius — no elevation shadow, per the sheet's rule.
+   The spotlight's voice is --weave-warn: the highlighter colour the WebGL
+   side paints lit edges in (graph.model.ts SPOTLIGHT_EDGE_SLOT), so the chip,
+   the legend, the marked words and the lit dots all say "lit" in one hue.
+   The sheet stops short of the control strip and count line under the
+   canvas (about 54px together) and scrolls inside itself. Button rules are
+   qualified by their overlay (.weave-sheet .weave-sheet-open) because the
+   workspace sheet's \`.weave-workbench button{font:inherit;color:inherit}\`
+   reset is installed later and would outrank a single class. */
+.weave-spotlight{
+  position:absolute;z-index:3;top:10px;left:10px;width:min(330px,calc(100% - 20px));box-sizing:border-box;
+  display:flex;align-items:center;gap:6px;padding:3px 5px 3px 9px;
+  color:var(--weave-faint);background:var(--weave-panel);
+  border:1px solid var(--weave-line-strong);border-radius:var(--weave-radius-pop);
+}
+/* The pill is the focus ring: the input inside it drops the global outline
+   and the frame takes a 2px accent edge (border plus an inset hairline). */
+.weave-spotlight:focus-within{border-color:var(--weave-accent);box-shadow:inset 0 0 0 1px var(--weave-accent)}
+.weave-spotlight-input:focus-visible{outline:none}
+.weave-spotlight-on{color:var(--weave-warn)}
+.weave-spotlight-icon{flex:none;display:block}
+.weave-spotlight-input{
+  flex:1;min-width:0;height:24px;padding:0;font:inherit;font-size:var(--weave-px-row);
+  color:var(--weave-fg);background:transparent;border:0;outline:0;
+}
+.weave-spotlight-input::placeholder{color:var(--weave-faint)}
+.weave-spotlight-input::-webkit-search-cancel-button{-webkit-appearance:none;appearance:none}
+.weave-spotlight-count{
+  flex:none;padding:1px 7px;font-size:var(--weave-px-caption);font-weight:650;white-space:nowrap;
+  color:var(--weave-warn);background:color-mix(in srgb,var(--weave-warn) 16%,transparent);border-radius:999px;
+}
+.weave-spotlight-none{color:var(--weave-dim);background:var(--weave-line)}
+.weave-spotlight .weave-spotlight-clear{
+  flex:none;padding:1px 5px;cursor:pointer;font-family:var(--weave-mono);font-size:var(--weave-px-prov);
+  color:var(--weave-faint);background:transparent;border:1px solid var(--weave-line-strong);border-radius:var(--weave-radius);
+}
+.weave-spotlight .weave-spotlight-clear:hover{color:var(--weave-fg);border-color:var(--weave-accent)}
+.weave-legend-lit{color:var(--weave-warn)}
+.weave-sheet{
+  position:absolute;z-index:3;top:10px;right:10px;width:min(300px,calc(100% - 20px));max-height:calc(100% - 74px);
+  box-sizing:border-box;overflow:auto;padding:12px 14px 14px;
+  font-size:var(--weave-px-base);color:var(--weave-fg);background:var(--weave-panel);
+  border:1px solid var(--weave-line-strong);border-radius:var(--weave-radius-pop);
+}
+.weave-sheet .weave-sheet-close{
+  position:absolute;top:6px;right:6px;width:24px;height:24px;padding:0;cursor:pointer;
+  font-size:var(--weave-px-display);line-height:1;color:var(--weave-dim);
+  background:transparent;border:0;border-radius:var(--weave-radius);
+}
+.weave-sheet .weave-sheet-close:hover{color:var(--weave-fg);background:var(--weave-line)}
+.weave-sheet-crumb{
+  margin:0 28px 2px 0;display:flex;align-items:center;gap:5px;min-width:0;
+  font-size:var(--weave-px-caption);color:var(--weave-faint);
+}
+.weave-sheet-crumb span{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.weave-sheet-title{
+  margin:0 20px 4px 0;font-size:var(--weave-px-title);font-weight:650;line-height:1.3;overflow-wrap:anywhere;
+}
+.weave-sheet-meta{margin:0;display:flex;align-items:center;gap:5px;font-size:var(--weave-px-ui);color:var(--weave-dim);text-transform:capitalize}
+.weave-sheet-when{color:var(--weave-faint);text-transform:none}
+.weave-sheet-text{
+  margin:10px 0 0;padding:8px 10px;line-height:1.55;overflow-wrap:anywhere;
+  background:var(--weave-new);border:1px solid color-mix(in srgb,var(--weave-accent) 30%,transparent);
+  border-radius:var(--weave-radius-pop);
+}
+.weave-sheet-text-head{
+  display:block;margin:0 0 2px;font-size:var(--weave-px-prov);font-weight:700;letter-spacing:.09em;
+  text-transform:uppercase;color:var(--weave-accent);
+}
+.weave-sheet-mark{color:inherit;background:color-mix(in srgb,var(--weave-warn) 30%,transparent);border-radius:var(--weave-radius)}
+.weave-sheet-why{margin:8px 0 0;display:flex;gap:5px;font-size:var(--weave-px-caption);color:var(--weave-dim)}
+.weave-sheet-why span{color:var(--weave-warn)}
+.weave-sheet-section{margin:12px 0 0}
+.weave-sheet-heading{
+  margin:0 0 3px;display:flex;align-items:center;font-size:var(--weave-px-caption);font-weight:600;
+  letter-spacing:.09em;text-transform:uppercase;color:var(--weave-faint);
+}
+.weave-sheet-count{margin-left:auto;font-family:var(--weave-mono);letter-spacing:0}
+.weave-sheet-rows{margin:0;padding:0;list-style:none}
+.weave-sheet .weave-sheet-row{
+  display:flex;align-items:center;gap:7px;width:100%;padding:3px 0;cursor:pointer;text-align:left;
+  font:inherit;font-size:var(--weave-px-row);color:var(--weave-fg);background:none;border:0;
+}
+.weave-sheet .weave-sheet-row:hover{color:var(--weave-accent)}
+.weave-sheet-row-label{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.weave-sheet-dot{flex:none;width:6px;height:6px;border-radius:999px;background:var(--weave-faint)}
+.weave-sheet-dot-lit{background:var(--weave-warn)}
+.weave-sheet-more{margin:2px 0 0;font-size:var(--weave-px-caption);color:var(--weave-faint)}
+.weave-sheet-actions{margin:14px 0 0;display:flex;gap:6px;flex-wrap:wrap}
+.weave-sheet .weave-sheet-open,.weave-sheet .weave-sheet-split{
+  padding:5px 11px;cursor:pointer;font:inherit;font-size:var(--weave-px-ui);font-weight:600;
+  border:1px solid var(--weave-line-strong);border-radius:var(--weave-radius);
+}
+.weave-sheet .weave-sheet-open{color:var(--weave-page);background:var(--weave-accent);border-color:var(--weave-accent)}
+.weave-sheet .weave-sheet-open:hover{filter:brightness(1.08)}
+.weave-sheet .weave-sheet-split{color:var(--weave-fg);background:var(--weave-page)}
+.weave-sheet .weave-sheet-split:hover{border-color:var(--weave-accent)}
+/* Side by side the field (330) and the sheet (300) need about 660px of
+   stage; a narrower graph — a split pane, a small window — drops the sheet
+   under the field instead of letting the two overlap. */
+.weave-graph{container-type:inline-size}
+@container (max-width:680px){.weave-sheet{top:50px;max-height:calc(100% - 114px)}}
+/* end graph spotlight ---------------------------------------------------- */
+
 /* context rail ---------------------------------------------------------- */
 /* The \`.weave-empty\` block that used to sit above went with \`EmptyState.tsx\`
    in P3: every column now has its own empty state (\`treeEmptyMessage\`,
