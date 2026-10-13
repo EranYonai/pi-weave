@@ -46,7 +46,7 @@ import { clusterAggregate, focusNeighborhood } from "../../shared/view";
 import type { GraphPayload, WireGraphEdge } from "../../shared/wire";
 import { kindIcon, viewModel } from "../tree/tree.model";
 import type { IconName } from "../shell/icons.model";
-import type { RenderGraph } from "./graph.model";
+import type { HighlightStyle, RenderGraph } from "./graph.model";
 import { EMPTY_RENDER_GRAPH, renderGraph } from "./graph.model";
 import { groupNodeColors } from "./groups";
 import type { PositionStorage } from "./positions";
@@ -208,6 +208,55 @@ export function hoverHighlight(
   return hoveredId === null ? fallback : focusNeighborhood(hoveredId, edges);
 }
 
+// --- the picture: neighbourhood or spotlight ------------------------------------------------
+
+/**
+ * What the renderer is told to draw: a set, the node it is about, and which
+ * treatment the set gets (`graph.model.ts`'s {@link HighlightStyle}).
+ *
+ * The three travel together because they are one decision — the renderer's
+ * `setHighlight(highlight, selectedId, style)` takes exactly this, and a
+ * caller that passed them separately could pair a spotlight's set with a
+ * neighbourhood's treatment.
+ */
+export interface GraphPicture {
+  readonly highlight: Set<string> | null;
+  readonly selectedId: string | null;
+  readonly style: HighlightStyle;
+}
+
+/**
+ * The column's picture: **a spotlight wins over the selection's neighbourhood**.
+ *
+ * `lit` is the spotlight's set already mapped onto the canvas
+ * (`spotlight.model.ts`'s `litOnCanvas`), or `null` when no query is set — and
+ * then the picture is the selection's neighbourhood exactly as it was before
+ * the spotlight existed. The selection still rides along under a spotlight,
+ * because the node the side sheet is about has to stand out among the lit ones.
+ */
+export function graphPicture(neighbourhood: Set<string> | null, selectedId: string | null, lit: Set<string> | null): GraphPicture {
+  return lit === null
+    ? { highlight: neighbourhood, selectedId, style: "neighbourhood" }
+    : { highlight: lit, selectedId, style: "spotlight" };
+}
+
+/**
+ * The picture while the pointer is over a node.
+ *
+ * Without a spotlight, {@link hoverHighlight} as ever: hover wins and the
+ * hovered node is the subject. **Under a spotlight the lit set holds** — it is
+ * something the user typed, and moving the pointer across the canvas to reach
+ * a lit node must not keep swapping it for neighbourhoods. Only the subject
+ * moves: the hovered node takes the selection's place while the pointer is on
+ * it, so a faint dot answers with its full colour and its name (a dimmed
+ * node has no label for the hover painter to float), and leaving it hands the
+ * emphasis back to the selection.
+ */
+export function hoverPicture(edges: readonly WireGraphEdge[], hoveredId: string | null, picture: GraphPicture): GraphPicture {
+  if (picture.style === "spotlight") return hoveredId === null ? picture : { ...picture, selectedId: hoveredId };
+  return { highlight: hoverHighlight(edges, hoveredId, picture.highlight), selectedId: hoveredId ?? picture.selectedId, style: "neighbourhood" };
+}
+
 // --- the control strip (§1.2) ---------------------------------------------------------------
 
 /** The `[fit]` control. Constant, but named here so the component holds no copy. */
@@ -269,6 +318,12 @@ export interface GraphColumnModel {
   readonly cached: boolean;
   /** Every cluster in the *unreduced* model — what `[expand]` operates on. */
   readonly clusters: ReadonlyMap<string, ClusterInfo>;
+  /**
+   * Hidden id → the visible cluster standing in for it (`clusterAggregate`'s
+   * mapping), so a set computed over the whole payload — the spotlight's —
+   * can be retargeted onto what is drawn.
+   */
+  readonly representative: ReadonlyMap<string, string>;
   /** Visible / total, for the count line. */
   readonly visible: number;
   readonly total: number;
@@ -283,6 +338,7 @@ export const EMPTY_COLUMN: GraphColumnModel = {
   key: "",
   cached: false,
   clusters: new Map(),
+  representative: new Map(),
   visible: 0,
   total: 0,
   empty: "Loading…",
@@ -351,6 +407,7 @@ export function graphColumnModel(
     key: layout.key,
     cached: layout.cached,
     clusters: reduced.clusters,
+    representative: reduced.representative,
     visible: reduced.nodes.length,
     total: model.nodes.length,
     empty: graphEmptyMessage(payload, reduced.nodes.length),

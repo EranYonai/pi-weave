@@ -23,8 +23,10 @@ import {
   searchShortcut,
   statusBarModel,
 } from "../../src/web/client/shell/shell.model";
-import { COLUMNS } from "../../src/web/client/shell/shell.model";
+import { COLUMNS, openInSplit } from "../../src/web/client/shell/shell.model";
 import type { GraphPayload, WireGraphNode } from "../../src/web/shared/wire";
+import { activeTab, initialLayout, openDocument, openGraph, splitPane, tabSelection } from "../../src/web/shared/workspace";
+import type { WorkspaceLayout } from "../../src/web/shared/workspace";
 
 // --- fixtures ---------------------------------------------------------------------
 
@@ -34,6 +36,67 @@ it("opens a graph node only after selecting the same preview, never on first cli
   expect(graphClickOpensTab("note:a", "note:a")).toBe(true);
   expect(graphClickOpensTab("note:a", null)).toBe(false);
   expect(graphClickOpensTab(null, null)).toBe(false);
+});
+
+describe("openInSplit — the graph sheet's Open in split", () => {
+  /** The graph tab's pane, as the shell finds it: the pane whose active tab is the graph. */
+  const graphPaneOf = (layout: WorkspaceLayout) => layout.panes.find((pane) => pane.tabs.some((tab) => tab.id === pane.activeTab && tab.kind === "graph"));
+
+  it("splits a single pane, keeping the graph in front of its own pane", () => {
+    const layout = openGraph(openDocument(initialLayout(), "note:a"));
+    const graph = graphPaneOf(layout)!;
+    const next = openInSplit(layout, "note:b", graph.id);
+    expect(next.panes).toHaveLength(2);
+    // The graph's pane still shows the graph — the whole point of "beside".
+    const kept = next.panes.find((pane) => pane.id === graph.id)!;
+    expect(kept.tabs.find((tab) => tab.id === kept.activeTab)?.kind).toBe("graph");
+    expect(kept.lastDocumentTab).toBe(graph.lastDocumentTab);
+    // The note is alone in the new pane, which takes focus by default.
+    const opened = next.panes.find((pane) => pane.id !== graph.id)!;
+    expect(opened.tabs.map(tabSelection)).toEqual(["note:b"]);
+    expect(next.activePane).toBe(opened.id);
+    expect(tabSelection(activeTab(next))).toBe("note:b");
+    expect(next.split).toBe(layout.split);
+  });
+
+  it("splits a graph that is the pane's only tab", () => {
+    const layout = openGraph(initialLayout());
+    const alone = { ...layout, panes: layout.panes.map((pane) => ({ ...pane, tabs: pane.tabs.filter((tab) => tab.kind === "graph") })) };
+    const { lastDocumentTab: _dropped, ...pane } = alone.panes[0]!;
+    const graphOnly: WorkspaceLayout = { ...alone, panes: [pane] };
+    const next = openInSplit(graphOnly, "note:b", pane.id);
+    expect(next.panes.map((entry) => entry.tabs.map((tab) => tab.kind))).toEqual([["graph"], ["document"]]);
+    expect(next.panes[0]!.lastDocumentTab).toBeUndefined();
+  });
+
+  it("opens in the other pane when there already are two", () => {
+    const layout = splitPane(openGraph(openDocument(initialLayout(), "note:a")), "down");
+    const graph = graphPaneOf(layout)!;
+    const next = openInSplit(layout, "note:c", graph.id);
+    expect(next.panes).toHaveLength(2);
+    const other = next.panes.find((pane) => pane.id !== graph.id)!;
+    expect(other.tabs.map(tabSelection)).toContain("note:c");
+    expect(next.split).toBe("down");
+  });
+
+  it("keeps focus on the graph when new tabs are not focused", () => {
+    const base = openGraph(openDocument(initialLayout(), "note:a"));
+    const layout = { ...base, preferences: { ...base.preferences, focusNewTabs: false } };
+    const graph = graphPaneOf(layout)!;
+    expect(openInSplit(layout, "note:b", graph.id).activePane).toBe(graph.id);
+  });
+
+  it("falls back to the active pane when the graph pane is unknown", () => {
+    const layout = openGraph(openDocument(initialLayout(), "note:a"));
+    expect(openInSplit(layout, "note:b", undefined).panes).toHaveLength(2);
+  });
+
+  it("changes nothing when the tab budget is spent", () => {
+    let layout = openGraph(initialLayout());
+    for (let index = 0; index < 60; index++) layout = openDocument(layout, `note:${index}`, { newTab: true });
+    const full = openGraph(layout);
+    expect(openInSplit(full, "note:extra", graphPaneOf(full)!.id)).toBe(full);
+  });
 });
 
 it("accepts pane drops only for existing workspace notes", () => {
@@ -120,7 +183,18 @@ describe("statusBarModel", () => {
   it("shows the cwd and the selection", () => {
     const model = statusBarModel("/repo", "note:alpha");
     expect(model.cwd).toBe("/repo");
-    expect(model.selection).toBe("note:alpha");
+    expect(model.selection).toBe("alpha.md");
+    expect(model.hint).toBe("");
+  });
+
+  it("names a note by its file and leaves other selections as they are", () => {
+    expect(statusBarModel("/repo", "note:projects/launch").selection).toBe("projects/launch.md");
+    expect(statusBarModel("/repo", "note:").selection).toBe("note:");
+    expect(statusBarModel("/repo", "artifact:docs/a.html").selection).toBe("artifact:docs/a.html");
+  });
+
+  it("ends with the search shortcut when one is given", () => {
+    expect(statusBarModel("/repo", null, "⌘K").hint).toBe("⌘K search");
   });
 
   it("says so when nothing is selected", () => {

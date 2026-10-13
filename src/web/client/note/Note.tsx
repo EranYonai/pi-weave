@@ -51,8 +51,6 @@ import {
   EDITOR_ARIA_LABEL,
   EDITOR_PLACEHOLDER,
   EMPTY_PREVIEW,
-  SAVE_LABEL,
-  SAVING_LABEL,
   TASK_CHECKBOX_ATTR,
   WIKILINK_ATTR,
   hasTextSelection,
@@ -81,6 +79,20 @@ import type { DraftStore, SaveNote } from "./drafts";
 import { ReplayBar, wrapMarks } from "./Replay";
 import type { ReplayState } from "./Replay";
 import { HISTORY_CLOSE_LABEL, HISTORY_LABEL, PLAY_INTERVAL_MS, nextStep, replayStep } from "./replay.model";
+import {
+  AUTOSAVE_MS,
+  DISCARD_EDITS_LABEL,
+  EDITING_LABEL,
+  FORMAT_TOOLS,
+  REVERT_PROMPT,
+  RETRY_LABEL,
+  applyFormat,
+  editStatus,
+  formatForKey,
+  replacedSpan,
+} from "./editbar.model";
+import type { EditStatus, FormatKind } from "./editbar.model";
+import { Icon } from "../tree/Tree";
 
 /**
  * The custom properties the preview card is placed with, written by the
@@ -122,72 +134,131 @@ export interface NoteProps {
 }
 
 /**
- * Title, one quiet meta line, tags.
+ * Folder crumb, title, one quiet meta line, tags.
  *
  * The hierarchy is the point: the title is the page's largest voice and the
- * meta line is its footnote — provenance glyph and word, edited, created.
- * The Open in `$EDITOR` action sits at the end of that line as an icon, where
- * a workflow control belongs in a column whose job is reading.
+ * meta line is its footnote, in plain words: who wrote it and when it last
+ * changed. The note's own actions (History, Edit, Open in `$EDITOR`) sit at
+ * the end of that line, where a workflow control belongs in a column whose job
+ * is reading. While editing, the line gives way to the edit bar above.
  */
 function Header({
   view,
   open,
   editing,
-  saving,
   taskSaving,
-  onToggle,
-  onSave,
+  onEdit,
   replaying,
   onHistory,
 }: {
   view: NoteHeaderView;
   open: () => void;
   editing: boolean;
-  saving: boolean;
   taskSaving: boolean;
-  onToggle: () => void;
-  onSave: () => void;
+  onEdit: () => void;
   replaying: boolean;
   onHistory: (() => void) | null;
 }) {
   return (
     <header class="weave-note-head">
+      <p class="weave-note-crumb">
+        <Icon name="folder" class="weave-icon" />
+        {view.folder}
+      </p>
       <h3 class="weave-note-title">{view.title}</h3>
-      <p class="weave-note-meta">
-        {editing ? (
-          <>
-            <button type="button" class="weave-note-save" disabled={saving || taskSaving} onClick={onSave}>
-              {saving ? SAVING_LABEL : SAVE_LABEL}
-            </button>
-            <button type="button" class="weave-note-edit" disabled={taskSaving} onClick={onToggle}>{DONE_LABEL}</button>
-          </>
-        ) : replaying ? null : <button type="button" class="weave-note-edit" disabled={taskSaving} onClick={onToggle}>{EDIT_LABEL}</button>}
-        {editing || onHistory === null ? null : (
-          <button type="button" class="weave-note-edit weave-note-history" aria-pressed={replaying} onClick={onHistory}>
-            {replaying ? HISTORY_CLOSE_LABEL : HISTORY_LABEL}
-          </button>
-        )}
-        <button type="button" class="weave-note-open" title="Open in $EDITOR" aria-label="Open in $EDITOR" onClick={open}>
-          <span class="weave-note-open-mark" aria-hidden="true">↗</span>
-        </button>
-        <span class={`weave-prov weave-prov-${view.provenance}`} title={view.provenanceTitle}>
-          {view.provenanceGlyph} {view.provenance}
-        </span>
-        <span class="weave-note-time" title={view.updatedIso}>
-          {EDITED_WORD} {view.updated}
-        </span>
-        <span class="weave-note-time" title={view.createdIso}>
-          {CREATED_WORD} {view.created}
-        </span>
-      </p>
-      <p class="weave-note-tags">
-        {view.tags.map((tag) => (
-          <span key={tag} class="weave-tag">
-            {tagLabel(tag)}
+      {editing ? null : (
+        <p class="weave-note-meta">
+          <span class={`weave-prov weave-prov-${view.provenance}`} title={view.provenanceTitle}>
+            <span class="weave-prov-dot" aria-hidden="true" />
+            {view.byline}
           </span>
-        ))}
-      </p>
+          <span class="weave-note-time" title={`${CREATED_WORD} ${view.created} · ${view.createdIso}`}>
+            {EDITED_WORD} {view.updated}
+          </span>
+          <span class="weave-note-actions">
+            {onHistory === null ? null : (
+              <button type="button" class="weave-note-action weave-note-history" aria-pressed={replaying} onClick={onHistory}>
+                <Icon name="history" class="weave-icon" />
+                {replaying ? HISTORY_CLOSE_LABEL : HISTORY_LABEL}
+              </button>
+            )}
+            {replaying ? null : (
+              <button type="button" class="weave-note-action weave-note-edit" disabled={taskSaving} onClick={onEdit}>
+                <Icon name="edit" class="weave-icon" />
+                {EDIT_LABEL}
+              </button>
+            )}
+            <button type="button" class="weave-note-open" title="Open in $EDITOR" aria-label="Open in $EDITOR" onClick={open}>
+              <span class="weave-note-open-mark" aria-hidden="true">↗</span>
+            </button>
+          </span>
+        </p>
+      )}
+      {view.tags.length === 0 ? null : (
+        <p class="weave-note-tags">
+          {view.tags.map((tag) => (
+            <span key={tag} class="weave-tag">
+              {tagLabel(tag)}
+            </span>
+          ))}
+        </p>
+      )}
     </header>
+  );
+}
+
+/**
+ * The edit bar (E1): says the note is being edited, carries the formatting
+ * buttons, shows whether the words are on disk yet, and ends the session.
+ * Saving is automatic, so there is no Save button: Done catches up and closes.
+ */
+function EditBar({
+  status,
+  busy,
+  onFormat,
+  onRetry,
+  onDiscard,
+  onDone,
+}: {
+  status: EditStatus;
+  busy: boolean;
+  onFormat: (kind: FormatKind) => void;
+  onRetry: () => void;
+  onDiscard: () => void;
+  onDone: () => void;
+}) {
+  return (
+    <div class="weave-editbar" role="toolbar" aria-label={EDITING_LABEL}>
+      <span class="weave-editbar-badge">
+        <Icon name="edit" class="weave-icon" />
+        {EDITING_LABEL}
+      </span>
+      <span class="weave-editbar-tools">
+        {FORMAT_TOOLS.map((tool) => (
+          <button
+            key={tool.kind}
+            type="button"
+            class="weave-editbar-tool"
+            title={tool.key === null ? tool.label : `${tool.label} (⌘${tool.key.toUpperCase()})`}
+            aria-label={tool.label}
+            // Keep the cursor and selection in the text box the button acts on.
+            onMouseDown={(event) => event.preventDefault()}
+            onClick={() => onFormat(tool.kind)}
+          >
+            <Icon name={tool.icon} class="weave-icon" />
+          </button>
+        ))}
+      </span>
+      <span class={`weave-editbar-status weave-editbar-${status.kind}`} role="status">
+        {status.kind === "saved" ? <Icon name="check" class="weave-icon" /> : null}
+        {status.label}
+        {status.kind === "failed" ? (
+          <button type="button" class="weave-editbar-retry" onClick={onRetry}>{RETRY_LABEL}</button>
+        ) : null}
+      </span>
+      <button type="button" class="weave-editbar-discard" disabled={busy || status.kind === "saving"} onClick={onDiscard}>{DISCARD_EDITS_LABEL}</button>
+      <button type="button" class="weave-editbar-done" disabled={busy} onClick={onDone}>{DONE_LABEL}</button>
+    </div>
   );
 }
 
@@ -234,8 +305,9 @@ export function Note(props: NoteProps) {
   // otherwise outgrow the note it belongs to.
   const [rawOpen, setRawOpen] = useState(false);
   const taskSaving = note !== null && drafts.isTaskSaving(note.slug);
-  const save = async (): Promise<void> => {
-    if (note !== null && !drafts.isTaskSaving(note.slug)) await drafts.save(note.slug, props.onSave);
+  /** Write the draft and keep editing: autosave, ⌘S and Retry. */
+  const saveNow = (): void => {
+    if (note !== null && !drafts.isTaskSaving(note.slug)) void drafts.save(note.slug, props.onSave, { keepOpen: true });
   };
 
   const saveTask = async (checkbox: HTMLInputElement, taskIndex: number): Promise<void> => {
@@ -277,25 +349,89 @@ export function Note(props: NoteProps) {
     }
   }, [note?.slug, props.defaultEdit]);
 
-  const toggleEdit = (): void => {
-    if (note === null || drafts.isTaskSaving(note.slug)) return;
-    if (drafts.get(note.slug) === null) {
-      focusEditor.current = true;
-      drafts.open(note.slug, body);
+  const startEdit = (): void => {
+    if (note === null || drafts.isTaskSaving(note.slug) || drafts.get(note.slug) !== null) return;
+    focusEditor.current = true;
+    drafts.open(note.slug, body);
+  };
+  // Done while an autosave is in flight waits for it, then closes.
+  const closeWhenSaved = useRef(false);
+  /** Catch up and close. A failed write leaves the editor open, saying so. */
+  const done = (): void => {
+    if (note === null || draft === null || drafts.isTaskSaving(note.slug)) return;
+    if (draft.saving) {
+      closeWhenSaved.current = true;
+      return;
+    }
+    closeWhenSaved.current = false;
+    if (drafts.isDirty(note.slug)) void drafts.save(note.slug, props.onSave);
+    else drafts.discard(note.slug);
+  };
+  /**
+   * Back to the note as it was when editing began. Before any autosave that
+   * is dropping the draft; after one, it writes the opening version back.
+   */
+  const discardEdits = (): void => {
+    if (note === null || draft === null || draft.saving) return;
+    closeWhenSaved.current = false;
+    const autosaved = draft.baseline !== draft.original || draft.rawBaseline !== draft.originalRaw;
+    if (autosaved) {
+      if (!window.confirm(REVERT_PROMPT)) return;
+      if (drafts.revert(note.slug)) void drafts.save(note.slug, props.onSave);
+      else drafts.discard(note.slug);
     } else if (!drafts.isDirty(note.slug) || window.confirm(DISCARD_PROMPT)) drafts.discard(note.slug);
+  };
+  // The box the last formatting button or key acted on: the body, or Raw.
+  const rawEditorRef = useRef<HTMLTextAreaElement | null>(null);
+  const lastBox = useRef<"body" | "raw">("body");
+  const format = (kind: FormatKind): void => {
+    if (note === null) return;
+    const raw = lastBox.current === "raw" && rawEditorRef.current !== null;
+    const box = raw ? rawEditorRef.current : editorRef.current;
+    if (box === null) return;
+    const next = applyFormat({ value: box.value, start: box.selectionStart, end: box.selectionEnd }, kind);
+    // Insert only the changed span, through the browser, so ⌘Z undoes it.
+    // Where that is not supported, set the value (and lose undo) instead.
+    const span = replacedSpan(box.value, next.value);
+    box.focus();
+    box.setSelectionRange(span.start, span.end);
+    const inserted = typeof document.execCommand === "function"
+      && document.execCommand(span.text === "" ? "delete" : "insertText", false, span.text);
+    if (!inserted || box.value !== next.value) box.value = next.value;
+    if (raw) drafts.editRaw(note.slug, next.value);
+    else drafts.edit(note.slug, next.value);
+    // The selection is set now so typing replaces the placeholder the button inserted.
+    box.setSelectionRange(next.start, next.end);
   };
   // Both editor boxes: bound here, not in `keys.model.ts`, because a global
   // binding is a workspace-wide claim and Escape must not reach the shell.
   const editorKeys = (event: KeyboardEvent): void => {
     if (event.key === "Escape") {
       event.stopPropagation();
-      toggleEdit();
+      done();
       return;
     }
-    if (event.key.toLowerCase() !== "s" || !(event.metaKey || event.ctrlKey)) return;
+    if (!(event.metaKey || event.ctrlKey) || event.altKey) return;
+    if (event.key.toLowerCase() === "s") {
+      event.preventDefault();
+      if (note !== null && drafts.isDirty(note.slug)) saveNow();
+      return;
+    }
+    const kind = formatForKey(event.key);
+    if (kind === null || event.shiftKey) return;
     event.preventDefault();
-    void save();
+    format(kind);
   };
+  // Autosave: a pause in typing writes the draft. A failed write waits for
+  // new words or Retry rather than hammering a server that just said no.
+  useEffect(() => {
+    if (note === null || draft === null || draft.saving || draft.failed || !drafts.isDirty(note.slug)) return;
+    const timer = window.setTimeout(saveNow, AUTOSAVE_MS);
+    return () => window.clearTimeout(timer);
+  }, [note?.slug, draft, draft?.body, draft?.raw, draft?.saving, draft?.failed]);
+  useEffect(() => {
+    if (closeWhenSaved.current && draft !== null && !draft.saving) done();
+  }, [draft?.saving]);
   const card = preview.anchor === null ? null : previewCard(props.graph, preview.anchor);
 
   // Cursor in the textarea, after the last word, the moment it appears.
@@ -341,7 +477,9 @@ export function Note(props: NoteProps) {
   }, [note === null ? null : note.slug]);
   useLayoutEffect(() => {
     if (replayHtml === null || bodyRef.current === null) return;
-    wrapMarks(bodyRef.current)?.scrollIntoView?.({ block: "nearest" });
+    const first = wrapMarks(bodyRef.current);
+    // A Raw append is marked but not followed: see `ReplayStep.follow`.
+    if (step?.follow) first?.scrollIntoView?.({ block: "nearest" });
   }, [replayHtml]);
   useEffect(() => {
     if (replay === null || !replay.playing || replay.revisions === null) return;
@@ -357,7 +495,10 @@ export function Note(props: NoteProps) {
   }, [replay]);
 
   useLayoutEffect(() => {
-    if (note !== null) drafts.taskBody(note.slug, note.body, props.loadVersion);
+    if (note === null) return;
+    drafts.taskBody(note.slug, note.body, props.loadVersion);
+    // Each load is the note as it is on disk now, after an autosave included.
+    drafts.syncTail(note.slug, note.body);
   }, [drafts, note === null ? null : note.slug, note?.body, props.loadVersion]);
 
   // A card whose target note left the screen is a claim about a document that
@@ -446,20 +587,29 @@ export function Note(props: NoteProps) {
   const header = noteHeader(note, props.now);
   return (
     <article key={note.slug} class={`weave-note weave-note-${header.provenance}`}>
+      {draft === null ? null : (
+        <EditBar
+          status={editStatus({ saving: draft.saving, failed: draft.failed, dirty: drafts.isDirty(note.slug), savedAt: draft.savedAt })}
+          busy={taskSaving}
+          onFormat={format}
+          onRetry={saveNow}
+          onDiscard={discardEdits}
+          onDone={done}
+        />
+      )}
       <Header
         view={header}
         open={() => props.onOpen(note.slug)}
         editing={draft !== null}
-        saving={draft?.saving ?? false}
         taskSaving={taskSaving}
-        onToggle={toggleEdit}
-        onSave={() => void save()}
+        onEdit={startEdit}
         replaying={replay !== null}
         onHistory={loadHistory === undefined ? null : toggleHistory}
       />
       {replay === null ? null : (
         <ReplayBar
           state={replay}
+          now={props.now}
           onIndex={(value) => setReplay((state) => state === null ? state : { ...state, index: value, playing: false })}
           onPlay={() => setReplay((state) => {
             if (state === null || state.revisions === null) return state;
@@ -480,6 +630,7 @@ export function Note(props: NoteProps) {
           spellcheck={props.spellcheck ?? true}
           value={draft.body}
           onInput={(event) => drafts.edit(note.slug, (event.target as HTMLTextAreaElement).value)}
+          onFocus={() => { lastBox.current = "body"; }}
           onKeyDown={editorKeys}
         />
         {/* A box of its own, never the body's textarea: text typed below
@@ -508,7 +659,9 @@ export function Note(props: NoteProps) {
                 aria-label={RAW_EDITOR_ARIA_LABEL}
                 spellcheck={props.spellcheck ?? true}
                 value={draft.raw}
+                ref={rawEditorRef}
                 onInput={(event) => drafts.editRaw(note.slug, (event.target as HTMLTextAreaElement).value)}
+                onFocus={() => { lastBox.current = "raw"; }}
                 onKeyDown={editorKeys}
               />
             ) : null}

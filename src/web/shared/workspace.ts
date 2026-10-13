@@ -27,6 +27,11 @@ export interface WorkspaceLayout {
   readonly ratio: number;
   readonly treeVisible: boolean;
   readonly contextVisible: boolean;
+  /**
+   * Context as a docked column (true) or a card floating over the page's
+   * right margin (false, the default since the refresh).
+   */
+  readonly contextPinned: boolean;
   readonly treeWidth: number;
   readonly contextWidth: number;
   readonly contextGraphHeight: number;
@@ -50,6 +55,7 @@ export function initialLayout(): WorkspaceLayout {
     ratio: 0.5,
     treeVisible: true,
     contextVisible: true,
+    contextPinned: false,
     treeWidth: 240,
     contextWidth: 240,
     contextGraphHeight: 260,
@@ -246,11 +252,13 @@ function boundedId(value: unknown, prefix?: "pane" | "tab"): value is string {
 }
 
 export function parseWorkspaceLayout(value: unknown): WorkspaceLayout | null {
-  if (!record(value) || !exactKeys(value, ["version", "panes", "activePane", "split", "ratio", "treeVisible", "contextVisible", "treeWidth", "contextWidth", "theme", ...["preferences", "contextGraphHeight", "contextTagsHeight"].filter(key => Object.hasOwn(value, key))])) return null;
+  if (!record(value) || !exactKeys(value, ["version", "panes", "activePane", "split", "ratio", "treeVisible", "contextVisible", "treeWidth", "contextWidth", "theme", ...["preferences", "contextGraphHeight", "contextTagsHeight", "contextPinned"].filter(key => Object.hasOwn(value, key))])) return null;
   if (value["version"] !== 1 || !Array.isArray(value["panes"]) || value["panes"].length < 1 || value["panes"].length > 2 || !boundedId(value["activePane"], "pane")) return null;
   if (value["split"] !== "right" && value["split"] !== "down") return null;
   if (typeof value["ratio"] !== "number" || !Number.isFinite(value["ratio"]) || value["ratio"] < 0.1 || value["ratio"] > 0.9) return null;
   if (typeof value["treeVisible"] !== "boolean" || typeof value["contextVisible"] !== "boolean") return null;
+  const contextPinned = Object.hasOwn(value, "contextPinned") ? value["contextPinned"] : false;
+  if (typeof contextPinned !== "boolean") return null;
   if (typeof value["treeWidth"] !== "number" || !Number.isFinite(value["treeWidth"]) || value["treeWidth"] < 120 || value["treeWidth"] > 800) return null;
   if (typeof value["contextWidth"] !== "number" || !Number.isFinite(value["contextWidth"]) || value["contextWidth"] < 120 || value["contextWidth"] > 800) return null;
   const contextGraphHeight = Object.hasOwn(value, "contextGraphHeight") ? value["contextGraphHeight"] : 260;
@@ -292,7 +300,7 @@ export function parseWorkspaceLayout(value: unknown): WorkspaceLayout | null {
     panes.push({ id: rawPane["id"], tabs, activeTab: rawPane["activeTab"], ...(typeof lastDocumentTab === "string" ? { lastDocumentTab } : {}) });
   }
   if (count > MAX_TABS || graphs > 1 || !panes.some((pane) => pane.id === value["activePane"])) return null;
-  return { version: 1, panes, activePane: value["activePane"], split: value["split"], ratio: value["ratio"], treeVisible: value["treeVisible"], contextVisible: value["contextVisible"], treeWidth: value["treeWidth"], contextWidth: value["contextWidth"], contextGraphHeight, contextTagsHeight, theme: value["theme"], preferences };
+  return { version: 1, panes, activePane: value["activePane"], split: value["split"], ratio: value["ratio"], treeVisible: value["treeVisible"], contextVisible: value["contextVisible"], contextPinned, treeWidth: value["treeWidth"], contextWidth: value["contextWidth"], contextGraphHeight, contextTagsHeight, theme: value["theme"], preferences };
 }
 
 /** Startup choice resets navigation only; appearance and sidebar preferences survive. */

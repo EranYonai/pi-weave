@@ -60,6 +60,8 @@ export function themeAttr(choice: ThemeChoice): PaletteChoice | null {
 
 export interface ThemeButtonView {
   readonly glyph: "●" | "◐" | "○";
+  /** The ribbon's icon for the same state. */
+  readonly icon: "system" | "sun" | "moon";
   readonly label: string;
   readonly hint: string;
 }
@@ -71,6 +73,7 @@ function themeName(choice: ThemeChoice): string {
 export function themeButton(choice: ThemeChoice, systemScheme: ColorScheme = "dark", pair: ThemePair = DEFAULT_PREFERENCES): ThemeButtonView {
   return {
     glyph: choice === "system" ? "◐" : THEMES[choice].scheme === "light" ? "○" : "●",
+    icon: choice === "system" ? "system" : THEMES[choice].scheme === "light" ? "sun" : "moon",
     label: themeName(choice),
     hint: `Colour theme: ${themeName(choice)} — click for ${themeName(toggleTheme(choice, systemScheme, pair))}`,
   };

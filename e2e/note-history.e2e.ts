@@ -120,8 +120,8 @@ describe("note history: every change saved, replayed in /weave-view", () => {
     await page.getByText("TLDR: launch Friday.").waitFor();
     await page.getByRole("button", { name: "Edit", exact: true }).click();
     await page.getByRole("textbox", { name: "Note body" }).fill(EDITED);
-    await page.getByRole("button", { name: "Save", exact: true }).click();
-    // Saving closes the editor.
+    await page.getByRole("button", { name: "Done", exact: true }).click();
+    // Done saves and closes the editor.
     await page.getByText("TLDR: launch Monday.").waitFor();
     expect(log().at(-1)).toMatchObject({ by: "human", op: "edit" });
   });
@@ -180,7 +180,7 @@ describe("note history: every change saved, replayed in /weave-view", () => {
     await page.getByRole("button", { name: "Edit", exact: true }).click();
     await page.getByRole("textbox", { name: "Note body" }).press("End");
     await page.keyboard.type(" Capped.");
-    await page.getByRole("button", { name: "Save", exact: true }).click();
+    await page.getByRole("button", { name: "Done", exact: true }).click();
     await page.getByRole("button", { name: "Edit", exact: true }).waitFor();
     const kept = Math.floor(MAX_REVISIONS * COMPACT_TO);
     expect(log()).toHaveLength(kept);

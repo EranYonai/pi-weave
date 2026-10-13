@@ -22,6 +22,7 @@
  * rather than splitting `[[target]]` or `(url)`.
  */
 
+import { splitRawTail } from "../../shared/view";
 import type { HistoryRevision } from "../../shared/wire";
 
 export const MARK_OPEN = "";
@@ -129,6 +130,13 @@ export interface ReplayStep {
   /** The body to render, with the added text marked. */
   marked: string;
   by: HistoryRevision["by"];
+  /**
+   * Whether the column scrolls to the change. Not when it starts in the
+   * `## Raw` tail: dictation lands at the very end of the note, and following
+   * it dragged the reader to the bottom on every Raw step, then back up on the
+   * next edit. The added words are still marked where they are.
+   */
+  follow: boolean;
 }
 
 function shortTime(iso: string, previous: string | null): string {
@@ -137,6 +145,12 @@ function shortTime(iso: string, previous: string | null): string {
   const time = date.toLocaleTimeString(undefined, { hour: "2-digit", minute: "2-digit" });
   const sameDay = previous !== null && new Date(previous).toDateString() === date.toDateString();
   return sameDay ? time : `${date.toLocaleDateString(undefined, { month: "short", day: "numeric" })}, ${time}`;
+}
+
+/** Whether offset `at` of `body` falls in its `## Raw` tail (or the gap just above it). */
+export function inRawTail(body: string, at: number): boolean {
+  const { head, tail } = splitRawTail(body);
+  return tail !== "" && at >= head.length;
 }
 
 /** Describe revision `index`. Clamped, so a stale index after a refetch still shows something. */
@@ -157,7 +171,68 @@ export function replayStep(revisions: readonly HistoryRevision[], index: number)
     change,
     marked: markChange(previous?.body ?? null, revision.body),
     by: revision.by,
+    follow: !inRawTail(revision.body, range.start),
   };
+}
+
+/** One bar of the history band: how much a version changed, and who changed it. */
+export interface ChangeBar {
+  /** 0–1 of the band's height; never so small that a version disappears. */
+  height: number;
+  by: HistoryRevision["by"];
+}
+
+/** The shortest bar, so a one-character fix still reads as a version. */
+export const MIN_BAR = 0.14;
+
+/**
+ * Bar heights for the history band (the refresh's "change bars"). Height
+ * follows how many characters a version added and removed, on a log scale so
+ * one big rewrite does not flatten every other bar into the floor. The first
+ * version counts its whole body.
+ */
+export function changeBars(revisions: readonly HistoryRevision[]): ChangeBar[] {
+  const sizes = revisions.map((revision, i) => {
+    const range = changedRange(i === 0 ? "" : (revisions[i - 1] as HistoryRevision).body, revision.body);
+    return range.end - range.start + range.removed;
+  });
+  const top = Math.log1p(Math.max(0, ...sizes));
+  return revisions.map((revision, i) => ({
+    height: top === 0 ? MIN_BAR : MIN_BAR + (1 - MIN_BAR) * (Math.log1p(sizes[i] as number) / top),
+    by: revision.by,
+  }));
+}
+
+/** A day label under the band, at a fraction of its width. */
+export interface DayMark {
+  /** 0–1 along the band: version index over the last index. */
+  at: number;
+  label: string;
+}
+
+/**
+ * Where each day starts along the band, labelled "Today", "Yesterday" or a
+ * short date. The first version always gets a label, so the band says when
+ * the history begins.
+ */
+export function dayMarks(revisions: readonly HistoryRevision[], now: number): DayMark[] {
+  const today = new Date(now);
+  const yesterday = new Date(now - 86_400_000);
+  const last = Math.max(1, revisions.length - 1);
+  const marks: DayMark[] = [];
+  let previous = "";
+  revisions.forEach((revision, i) => {
+    const date = new Date(revision.at);
+    if (Number.isNaN(date.getTime())) return;
+    const day = date.toDateString();
+    if (day === previous) return;
+    previous = day;
+    const label = day === today.toDateString() ? "Today"
+      : day === yesterday.toDateString() ? "Yesterday"
+      : date.toLocaleDateString(undefined, { month: "short", day: "numeric" });
+    marks.push({ at: revisions.length === 1 ? 0 : i / last, label });
+  });
+  return marks;
 }
 
 /** The next index while playing, or null at the end. */

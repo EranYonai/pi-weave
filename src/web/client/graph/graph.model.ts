@@ -375,6 +375,8 @@ export interface HoverLabelNode {
   readonly y: number;
   readonly size: number;
   readonly label: string | null;
+  /** Set by the spotlight on a node whose label already stands — see {@link hoverLabelPainter}. */
+  readonly forceLabel?: boolean;
 }
 
 /** The settings a hover painter reads. Both `GraphSettings` and sigma's satisfy it. */
@@ -431,6 +433,9 @@ export function hoverLabelPainter(
     // `nodeReducer` blanks the label of everything outside the highlight, and
     // a node with no name has nothing to float.
     if (data.label === null || data.label === "") return;
+    // A forced label (the spotlight's lit nodes) is already standing beside the
+    // disc; floating it again underneath would print the same name twice.
+    if (data.forceLabel === true) return;
     const palette = graphPalette(scheme);
     context.save();
     context.font = `${settings.labelSize}px ${settings.labelFont}`;
@@ -670,7 +675,30 @@ export interface NodeDisplayOverride {
   readonly label?: string | null;
   readonly zIndex?: number;
   readonly size?: number;
+  /**
+   * Draw the label whatever the zoom and the label grid say — sigma's own
+   * display attribute. Only the spotlight sets it: a lit node has to name
+   * itself, and on a graph over {@link SMALL_GRAPH_NODES} the size threshold
+   * would otherwise keep a lit leaf silent.
+   */
+  readonly forceLabel?: boolean;
 }
+
+/**
+ * Which picture a highlight set paints.
+ *
+ * - `neighbourhood` — a selection (or hover) and its one-hop neighbours: the
+ *   selection is the subject, its links are drawn in the accent.
+ * - `spotlight` — the nodes a query lit (`spotlight.model.ts`): every lit node
+ *   is a subject, grown and labelled, the edges *between* lit nodes are drawn
+ *   in the highlighter's warm slot, and everything else drops back further
+ *   than a neighbourhood's cloud does.
+ *
+ * One set, one fade, two treatments — the spotlight rides the exact
+ * `setHighlight` path a selection does instead of a second layer, so the two
+ * can never be on screen at once and argue.
+ */
+export type HighlightStyle = "neighbourhood" | "spotlight";
 
 /** What sigma's `edgeReducer` may override. */
 export interface EdgeDisplayOverride {
@@ -715,12 +743,15 @@ export function nodeReducer(
    * about the clock.
    */
   progress: number = 1,
+  /** Which treatment the set gets — see {@link HighlightStyle}. */
+  style: HighlightStyle = "neighbourhood",
 ): (id: string, data: RenderNode, scheme: GraphTheme) => NodeDisplayOverride {
   return (id, data, scheme) => {
     // `progress` at zero is indistinguishable from no highlight, and saying so
     // here is what lets the fade end by *returning* to the unhighlighted graph
     // rather than by approaching it.
     if (highlight === null || progress <= 0) return {};
+    if (style === "spotlight") return spotlightNode(highlight, selectedId ?? null, progress, id, data, scheme);
     if (id === selectedId && highlight.has(id)) {
       // The subject of the gesture: lifted clear of its own neighbourhood and
       // grown by a ratio rather than to a fixed radius, so a hub still reads
@@ -740,6 +771,75 @@ export function nodeReducer(
       label: progress >= LABEL_DROP_AT ? null : data.label,
       zIndex: 0,
     };
+  };
+}
+
+// --- the spotlight treatment (G1) ------------------------------------------------------
+
+/**
+ * How far an unlit node or edge recedes while a spotlight is up.
+ *
+ * Further than a neighbourhood's {@link RECESS_STRENGTH}: a selection dims the
+ * cloud to *place* a node inside it, where a spotlight asks "where are the
+ * things I named?" and the answer is the lit nodes alone — the rest is
+ * context for position, faint dots and hairlines and nothing more.
+ */
+export const SPOTLIGHT_RECESS = 0.92;
+
+/** A lit node's growth — a step past a neighbour's, because every lit node is a subject. */
+export const SPOTLIGHT_GROWTH = 1.4;
+
+/** The selected node while a spotlight is up: the one the side sheet is about. */
+export const SPOTLIGHT_SELECTED_GROWTH = 1.7;
+
+/**
+ * An unlit node shrinks toward a dot as it recedes.
+ *
+ * Unlike a neighbourhood's cloud (which keeps its size so the graph does not
+ * appear to move on a click), the spotlight is a mode the user typed into,
+ * and the shrink is what makes "everything else drops back to faint dots"
+ * true at a glance. Positions are untouched, so nothing reflows.
+ */
+export const SPOTLIGHT_SHRINK = 0.75;
+
+/**
+ * Above this many lit nodes, labels go back to the size threshold.
+ *
+ * Forcing every label is right for the handful of matches a query usually
+ * names, and wrong for a query like `src` that lights a whole subtree: two
+ * hundred forced labels are one unreadable smear. Past the cap the lit nodes
+ * still grow and keep full colour; sigma's grid decides which of them speak.
+ */
+export const SPOTLIGHT_LABEL_LIMIT = 40;
+
+/** The slot an edge between two lit nodes is painted in — the highlighter's warm voice. */
+export const SPOTLIGHT_EDGE_SLOT: ColorSlot = "warning";
+
+/** One node under a spotlight. The selection is always a subject, lit or not. */
+function spotlightNode(
+  lit: ReadonlySet<string>,
+  selectedId: string | null,
+  progress: number,
+  id: string,
+  data: RenderNode,
+  scheme: GraphTheme,
+): NodeDisplayOverride {
+  const speaks = progress >= LABEL_DROP_AT;
+  if (id === selectedId) {
+    return { zIndex: data.zIndex + HIGHLIGHT_Z_LIFT * 2, size: data.size * growth(SPOTLIGHT_SELECTED_GROWTH, progress), forceLabel: speaks };
+  }
+  if (lit.has(id)) {
+    return {
+      zIndex: data.zIndex + HIGHLIGHT_Z_LIFT,
+      size: data.size * growth(SPOTLIGHT_GROWTH, progress),
+      forceLabel: speaks && lit.size <= SPOTLIGHT_LABEL_LIMIT,
+    };
+  }
+  return {
+    color: recessColor(data.color, scheme, SPOTLIGHT_RECESS * progress),
+    label: speaks ? null : data.label,
+    size: data.size * growth(SPOTLIGHT_SHRINK, progress),
+    zIndex: 0,
   };
 }
 
@@ -856,9 +956,23 @@ export function edgeReducer(
   selectedId?: string | null,
   /** The fade's progress — see {@link nodeReducer}'s. */
   progress: number = 1,
+  /** Which treatment the set gets — see {@link HighlightStyle}. */
+  style: HighlightStyle = "neighbourhood",
 ): (key: string, data: RenderEdge, scheme: GraphTheme) => EdgeDisplayOverride {
   return (_key, data, scheme) => {
     if (highlight === null || progress <= 0) return {};
+    if (style === "spotlight") {
+      // Lit only when it joins two lit nodes: the lines *between* matches are
+      // what the spotlight is for — how the things you named connect.
+      if (!highlight.has(data.source) || !highlight.has(data.target)) {
+        return { color: recessColor(data.color, scheme, SPOTLIGHT_RECESS * progress) };
+      }
+      return {
+        zIndex: 2,
+        size: data.size * growth(EDGE_PRESENCE * 1.35, progress),
+        color: blendHex(data.color, graphPalette(scheme)[SPOTLIGHT_EDGE_SLOT], progress),
+      };
+    }
     if (!highlight.has(data.source) || !highlight.has(data.target)) {
       return { color: recessColor(data.color, scheme, RECESS_STRENGTH * progress) };
     }

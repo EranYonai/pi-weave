@@ -38,7 +38,8 @@ rules. A rule matches a request (usually on the newest user message) and replies
 2. `/weave` shows the dashboard
 3. a prompt makes the stub agent call `weave_note add`; the note file lands in the vault
 4. `/weave-view --no-open` prints the workspace URL and adds `web:PORT` to the status line
-5. in Chromium: the workspace loads and lists the note, clicking it opens it, the graph view opens, search finds it, Settings opens
+5. in Chromium: the workspace loads and lists the note, clicking it opens it, the graph view opens, search finds it and lights it up in the
+   graph, Settings opens
 6. quitting pi (Ctrl+D) shuts the workspace server down
 
 Steps share one pi session and run in order; after the first failure the rest are skipped so the report shows the real cause.

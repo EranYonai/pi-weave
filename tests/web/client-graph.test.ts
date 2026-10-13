@@ -931,6 +931,15 @@ describe("the hover label (§7.4)", () => {
     }
   });
 
+  it("draws nothing for a node whose label is forced to stand", () => {
+    // The spotlight forces lit nodes' labels; the hover would repeat the name.
+    const fake = fakeContext();
+    hoverLabelPainter("dark")(fake.context, { ...hovered, forceLabel: true }, settings);
+    expect(fake.calls).toEqual([]);
+    hoverLabelPainter("dark")(fake.context, { ...hovered, forceLabel: false }, settings);
+    expect(fake.drawn).toHaveLength(1);
+  });
+
   it("is what the settings hand sigma, per scheme", () => {
     const fake = fakeContext();
     graphSettings("light").defaultDrawNodeHover(fake.context, hovered, settings);
@@ -1552,6 +1561,27 @@ describe("sigmaRenderer over the injected constructor (§7.5)", () => {
     renderer.mount(container);
     renderer.fit();
     expect(fake.resets()).toBe(1);
+  });
+
+  it("repaints once the fit settles, so edges hidden while it moved come back", async () => {
+    const fake = fakeSigma();
+    const renderer = sigmaRenderer(fake.factory, "dark");
+    renderer.mount(container);
+    fake.calls.length = 0;
+    renderer.fit();
+    await Promise.resolve();
+    expect(fake.calls).toEqual(["setCustomBBox", "getCamera", "refresh"]);
+    // A renderer destroyed mid-fit paints nothing.
+    fake.calls.length = 0;
+    renderer.fit();
+    renderer.destroy();
+    await Promise.resolve();
+    expect(fake.calls).not.toContain("refresh");
+    // A camera killed mid-flight rejects; that is noise, not an error.
+    const failing = sigmaRenderer((g, c, s) => ({ ...fake.factory(g, c, s), getCamera: () => ({ animatedReset: () => Promise.reject(new Error("killed")) }) }), "dark");
+    failing.mount(container);
+    expect(() => failing.fit()).not.toThrow();
+    await Promise.resolve();
   });
 
   it("kills the instance once and can be re-mounted afterwards", () => {

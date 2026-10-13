@@ -99,7 +99,9 @@ export type ShellAction =
   | { readonly type: "clearSelection" }
   | { readonly type: "closeTab" }
   /** `t` — switch between the selected light and dark themes. */
-  | { readonly type: "toggleTheme" };
+  | { readonly type: "toggleTheme" }
+  /** `]` — fold or unfold the Context card. */
+  | { readonly type: "toggleContext" };
 
 /**
  * The command-key letters, as data.
@@ -155,6 +157,7 @@ export const BARE_KEYS: Readonly<Record<string, ShellAction>> = {
   g: { type: "fitGraph" },
   "?": { type: "openHelp" },
   t: { type: "toggleTheme" },
+  "]": { type: "toggleContext" },
 };
 
 /**
@@ -337,6 +340,8 @@ export interface ShellEffects {
   closeTab(): void;
   /** `t` — switch between the user's selected light and dark themes. */
   toggleTheme(): void;
+  /** `]` — fold or unfold the Context card (or column). */
+  toggleContext(): void;
 }
 
 /** Perform an action. Total over {@link ShellAction}. */
@@ -363,6 +368,8 @@ export function runShellAction(action: ShellAction, fx: ShellEffects): void {
       return fx.closeTab();
     case "toggleTheme":
       return fx.toggleTheme();
+    case "toggleContext":
+      return fx.toggleContext();
   }
 }
 
@@ -408,6 +415,7 @@ export function keyHelp(cmd: string): readonly KeyHelpGroup[] {
         })),
         { combo: "?", what: "This help" },
         { combo: "t", what: "Switch between selected light and dark themes" },
+        { combo: "]", what: "Fold or unfold Context" },
         { combo: "Esc", what: "Clear the selection from the tree or graph, or close an overlay" },
       ],
     },
@@ -441,6 +449,8 @@ export function keyHelp(cmd: string): readonly KeyHelpGroup[] {
         { combo: "↑ / ↓", what: "Move through results" },
         { combo: "↵", what: "Open the highlighted result" },
         { combo: `${cmd}↵`, what: "Open the highlighted result in a new tab" },
+        { combo: "Tab / ⇧Tab", what: "Switch between All, Notes, Code and Tags" },
+        { combo: "⇧↵", what: "Light up the matches in the graph" },
         { combo: "Esc", what: "Close the palette" },
       ],
     },

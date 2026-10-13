@@ -285,6 +285,11 @@ function emptyRail(reason: string): ContextModel {
  * a rail that changed as the clock moved would re-render three columns for no
  * reason.
  */
+/** How many rows the rail holds in all, for the Context card's badge and folded pill. */
+export function contextCount(model: ContextModel): number {
+  return model.groups.reduce((total, group) => total + group.count, 0) + model.tagsCount;
+}
+
 export function contextModel(payload: GraphPayload | null, selectedId: string | null): ContextModel {
   if (payload === null) return emptyRail(RAIL_EMPTY.loading);
   if (selectedId === null) return emptyRail(RAIL_EMPTY.noSelection);

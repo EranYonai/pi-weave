@@ -343,6 +343,15 @@ describe("workspace layout validation", () => {
     expect(parseWorkspaceLayout({ ...layout, contextGraphHeight: 800, contextTagsHeight: 60 })).not.toBeNull();
   });
 
+  it("floats Context by default, keeps a docked choice, and reads older snapshots as floating", () => {
+    expect(initialLayout().contextPinned).toBe(false);
+    const pinned = { ...initialLayout(), contextPinned: true };
+    expect(parseWorkspaceLayout(JSON.parse(JSON.stringify(pinned)))).toEqual(pinned);
+    const { contextPinned: _pinned, ...legacy } = pinned;
+    expect(parseWorkspaceLayout(legacy)?.contextPinned).toBe(false);
+    for (const value of ["true", 1, null, undefined]) expect(parseWorkspaceLayout({ ...pinned, contextPinned: value })).toBeNull();
+  });
+
   it("rejects invalid context section heights", () => {
     for (const [key, below, above] of [["contextGraphHeight", 119, 801], ["contextTagsHeight", 59, 601]] as const) {
       for (const value of [below, above, Infinity, NaN, "240", null, undefined]) {

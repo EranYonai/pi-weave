@@ -6,7 +6,11 @@ import {
   HISTORY_LABEL,
   MARK_CLOSE as C,
   MARK_OPEN as O,
+  MIN_BAR,
+  changeBars,
   changedRange,
+  dayMarks,
+  inRawTail,
   markChange,
   nextStep,
   replayStep,
@@ -126,9 +130,63 @@ describe("replay model", () => {
     expect(replayStep(revisions, -5)?.position).toBe("1 of 4");
   });
 
+  it("follows a change in the body, but not one that lands in the Raw tail", () => {
+    const tail = "---\n\n## Raw\n<!-- NEVER edit below this line. Verbatim user input preserved here. -->\n\n```\nfirst\n```";
+    const revisions = [
+      rev("Intro.\n\nMore.", "human", "create"),
+      rev(`Intro.\n\nMore.\n\n${tail}`, "agent", "raw"),
+      rev(`Intro, edited.\n\nMore.\n\n${tail}`, "human", "edit"),
+      rev(`Intro, edited.\n\nMore.\n\n${tail}\n\n\`\`\`\nsecond\n\`\`\``, "agent", "raw"),
+    ];
+    expect(revisions.map((_, index) => replayStep(revisions, index)?.follow)).toEqual([true, false, true, false]);
+    // The Raw step still marks what it added.
+    expect(replayStep(revisions, 3)?.marked).toContain(`${O}second${C}`);
+    expect(inRawTail("No tail here.", 5)).toBe(false);
+    expect(inRawTail(`Head.\n\n${tail}`, 4)).toBe(false);
+    expect(inRawTail(`Head.\n\n${tail}`, 5)).toBe(true);
+  });
+
   it("steps forward until the end", () => {
     expect(nextStep(0, 2)).toBe(1);
     expect(nextStep(1, 2)).toBeNull();
     expect([HISTORY_LABEL, HISTORY_CLOSE_LABEL]).toEqual(["History", "Close history"]);
+  });
+});
+
+describe("history band", () => {
+  it("sizes each bar by how much the version changed, on a log scale", () => {
+    const bars = changeBars([rev("a".repeat(100), "human"), rev("a".repeat(101), "agent"), rev("a".repeat(101), "system")]);
+    expect(bars.map((bar) => bar.by)).toEqual(["human", "agent", "system"]);
+    expect(bars[0]!.height).toBe(1);
+    expect(bars[1]!.height).toBeGreaterThan(MIN_BAR);
+    expect(bars[1]!.height).toBeLessThan(0.5);
+    // A version that changed nothing still shows, at the floor.
+    expect(bars[2]!.height).toBe(MIN_BAR);
+  });
+
+  it("counts removed text too, and survives an empty history or empty bodies", () => {
+    const bars = changeBars([rev("abcdef"), rev("abc")]);
+    expect(bars[1]!.height).toBeGreaterThan(MIN_BAR);
+    expect(changeBars([])).toEqual([]);
+    expect(changeBars([rev(""), rev("")]).map((bar) => bar.height)).toEqual([MIN_BAR, MIN_BAR]);
+  });
+
+  it("labels where each day starts along the band", () => {
+    const now = new Date("2026-10-12T15:00:00").getTime();
+    const marks = dayMarks([
+      rev("a", "human", "create", new Date("2026-10-09T10:00:00").toISOString()),
+      rev("b", "agent", "edit", new Date("2026-10-09T11:00:00").toISOString()),
+      rev("c", "agent", "edit", new Date("2026-10-11T09:00:00").toISOString()),
+      rev("d", "human", "edit", new Date("2026-10-12T09:00:00").toISOString()),
+      rev("e", "human", "edit", "not a date"),
+    ], now);
+    expect(marks.map((mark) => mark.at)).toEqual([0, 0.5, 0.75]);
+    expect(marks[1]!.label).toBe("Yesterday");
+    expect(marks[2]!.label).toBe("Today");
+    expect(marks[0]!.label).toMatch(/9/);
+  });
+
+  it("puts a lone version at the start", () => {
+    expect(dayMarks([rev("a")], Date.parse("2026-10-11T12:00:00.000Z"))).toEqual([{ at: 0, label: expect.any(String) }]);
   });
 });

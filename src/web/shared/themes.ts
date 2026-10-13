@@ -3,7 +3,7 @@
  * `light` and `dark` keep existing saved choices compatible.
  */
 const latte = {
-  bg: "#eff1f5", panel: "#e6e9ef", page: "#dce0e8", raise: "#ccd0da",
+  bg: "#eff1f5", panel: "#e6e9ef", page: "#ffffff", raise: "#ccd0da",
   fg: "#4c4f69", dim: "#56586a", faint: "#606274", line: "#ccd0da", "line-strong": "#bcc0cc",
   accent: "#7113ec", ok: "#28641b", warn: "#7c4f10", bad: "#b20d30",
 };

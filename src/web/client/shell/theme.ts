@@ -67,8 +67,9 @@ export const THEME_CSS = `
   --weave-note-gutter:18px;
   /* The desk-and-page split. The workspace is a desk of instruments — tree,
      graph, rail, bars — on the --weave-bg ground; the note column is the one
-     *page* lying on it: crust in both Catppuccin schemes, the ground that
-     sits furthest from the desk (deep under dark, bright over light). Two
+     *page* lying on it: crust under dark, plain white under Latte (the
+     refresh's "quiet page": paper reads as paper), the ground that sits
+     furthest from the desk. Two
      voices in total: sans for instruments and prose alike, mono for data — a
      third face was tried (serif prose) and withdrawn at the user's call; two
      voices read calmer than three. The CSP allows nothing fetched, and both
@@ -79,7 +80,7 @@ export const THEME_CSS = `
      two overlays that float above the grid. Tag pills are 999px — a capsule
      shape, not a scale step. The gate test below refuses any literal px
      radius so the scale cannot drift back. */
-  --weave-radius:4px;--weave-radius-pop:7px;
+  --weave-radius:6px;--weave-radius-pop:10px;
   /* The type ramp, role-named because sizes drift and roles stick. Nine
      steps; every font-size in this sheet is one of these vars — that is a
      gate, not a convention:
@@ -91,7 +92,7 @@ export const THEME_CSS = `
        body     13.5  the note column's prose
        subhead  14    palette input, note-body h2, ribbon icon buttons
        title    15    note-body h1
-       display  20    the note's page title
+       display  26    the note's page title (20 before the refresh)
      Two earlier sizes were merged into neighbours: 9px glyphs to prov, and
      the 10px column overlines to caption (caps plus .09em tracking already
      read larger than their point size suggests). \`display\` and \`body\` are
@@ -106,7 +107,7 @@ export const THEME_CSS = `
      rubber stamp. */
   --weave-px-prov:9.5px;--weave-px-caption:10.5px;--weave-px-ui:11.5px;
   --weave-px-row:12px;--weave-px-base:13px;--weave-px-body:13.5px;
-  --weave-px-subhead:14px;--weave-px-title:15px;--weave-px-display:20px;
+  --weave-px-subhead:14px;--weave-px-title:15px;--weave-px-display:26px;
 }
 @media (prefers-color-scheme: light){
   :root:not([data-weave-theme]){${paletteTokens("light")}}
@@ -166,7 +167,7 @@ body{font-size:var(--weave-px-base)}
    so the selected row is always readable. */
 .weave-row-on .weave-twisty,.weave-row-on .weave-kind,.weave-row-on .weave-prov,
 .weave-row-on .weave-meta,.weave-row-on .weave-label{color:var(--weave-fg)}
-.weave-hit-on .weave-hit-badge,.weave-hit-on .weave-hit-detail{color:var(--weave-fg)}
+.weave-hit-on .weave-hit-icon,.weave-hit-on .weave-hit-detail,.weave-hit-on .weave-hit-meta{color:var(--weave-fg)}
 /* A newly-arrived node (a file or note added since the last update, ):
    one short highlight that fades while the label settles from bold back to
    normal. The class is computed from the frame diff in workspace.ts and
@@ -245,7 +246,7 @@ body{font-size:var(--weave-px-base)}
 .weave-note-head{position:sticky;top:0;z-index:2;padding:14px var(--weave-note-gutter) 9px;background:var(--weave-page);border-bottom:1px solid var(--weave-line)}
 /* The page's largest voice, and the point of the review's headline finding:
    a 15px title sat 1.5px above the body it named. --weave-px-display puts the
-   title where a page's title belongs, weight 650 for presence at 20px (600
+   title where a page's title belongs, weight 650 for presence at 26px (600
    reads thin at that size, 700 reads as a poster), tracking pulled in by a
    hair because large sans needs it. */
 .weave-note-title{margin:0 0 4px;font-size:var(--weave-px-display);font-weight:650;line-height:1.25;letter-spacing:-.005em;color:var(--weave-fg)}
@@ -262,20 +263,67 @@ body{font-size:var(--weave-px-base)}
 }
 .weave-note-open:hover{color:var(--weave-fg);background:var(--weave-line)}
 .weave-note-open-mark{display:inline-flex;line-height:0}
-/* Save / Done, chip-shaped: the same quiet row, and a control in a reading
-   column should not outweigh the title. */
-.weave-note-edit,.weave-note-save{
+/* The note's own actions, at the end of the meta line. History is a quiet
+   word with an icon; Edit is the one bordered control, and neither outweighs
+   the title. */
+.weave-note-actions{margin-left:auto;display:inline-flex;align-items:center;gap:4px}
+.weave-note-meta .weave-note-action{
+  display:inline-flex;align-items:center;gap:5px;
   font:inherit;font-size:var(--weave-px-caption);line-height:1;white-space:nowrap;cursor:pointer;
-  color:var(--weave-dim);background:var(--weave-panel);padding:4px 7px;
-  border:1px solid var(--weave-line-strong);border-radius:var(--weave-radius);
+  color:var(--weave-dim);background:none;padding:5px 8px;
+  border:1px solid transparent;border-radius:var(--weave-radius);
 }
-.weave-note-edit:hover,.weave-note-save:hover{color:var(--weave-fg);border-color:var(--weave-accent)}
-/* Save is the row's only affirmative action, so the only one with the accent. */
-.weave-note-save{color:var(--weave-accent);border-color:var(--weave-accent)}
-.weave-note-save:disabled{color:var(--weave-faint);border-color:var(--weave-line-strong);cursor:default}
-/* History: a slim bar under the header. The step's added text is marked in
-   the accent tint, the same strength the selected rows use. */
-.weave-note-history[aria-pressed="true"]{color:var(--weave-accent);border-color:var(--weave-accent)}
+.weave-note-meta .weave-note-action .weave-icon{width:13px;height:13px}
+.weave-note-meta .weave-note-action:hover{color:var(--weave-fg);background:var(--weave-new)}
+.weave-note-meta .weave-note-action:disabled{color:var(--weave-faint);background:none;cursor:default}
+.weave-note-meta .weave-note-edit{color:var(--weave-fg);background:var(--weave-page);border-color:var(--weave-line-strong)}
+.weave-note-meta .weave-note-edit:hover{border-color:var(--weave-accent);background:var(--weave-page)}
+.weave-note-meta .weave-note-history[aria-pressed="true"]{color:var(--weave-accent);background:var(--weave-new)}
+/* Where the note lives, above its title: a crumb, not a heading. */
+.weave-note-crumb{margin:0 0 6px;display:flex;align-items:center;gap:5px;font-size:var(--weave-px-caption);color:var(--weave-faint)}
+.weave-note-crumb .weave-icon{width:12px;height:12px}
+/* Who wrote it, in words, with the spine's colour as a dot. */
+.weave-note-meta .weave-prov{display:inline-flex;align-items:center;gap:6px;font-size:var(--weave-px-ui);color:var(--weave-dim)}
+.weave-prov-dot{width:7px;height:7px;border-radius:999px;background:var(--weave-spine,var(--weave-accent))}
+/* The edit bar (E1): one row while editing, pinned over the text it edits.
+   Formatting on the left, where the words are; the save state and the two
+   ways out on the right. Saving is automatic, so Done is the only
+   affirmative control and the only one in the accent. */
+.weave-editbar{
+  position:sticky;top:0;z-index:3;display:flex;align-items:center;gap:6px;flex-wrap:wrap;
+  min-height:40px;padding:5px 12px;font-size:var(--weave-px-ui);
+  background:var(--weave-page);border-bottom:1px solid var(--weave-line);
+}
+.weave-editbar .weave-icon{width:14px;height:14px}
+.weave-editbar-badge{
+  display:inline-flex;align-items:center;gap:5px;padding:3px 9px;border-radius:999px;
+  font-size:var(--weave-px-caption);font-weight:600;color:var(--weave-accent);background:var(--weave-new);
+}
+.weave-editbar-badge .weave-icon{width:12px;height:12px}
+.weave-editbar-tools{display:inline-flex;align-items:center;gap:1px;margin-left:4px;padding-left:8px;border-left:1px solid var(--weave-line)}
+.weave-editbar .weave-editbar-tool{
+  display:inline-grid;place-items:center;width:28px;height:28px;padding:0;cursor:pointer;
+  color:var(--weave-dim);background:none;border:0;border-radius:var(--weave-radius);
+}
+.weave-editbar .weave-editbar-tool:hover{color:var(--weave-fg);background:var(--weave-new)}
+.weave-editbar-status{margin-left:auto;display:inline-flex;align-items:center;gap:5px;white-space:nowrap;font-size:var(--weave-px-caption);color:var(--weave-faint)}
+.weave-editbar-pending,.weave-editbar-saving{color:var(--weave-dim)}
+.weave-editbar-saved{color:var(--weave-ok)}
+.weave-editbar-failed{color:var(--weave-bad);font-weight:600}
+.weave-editbar .weave-editbar-retry{font:inherit;color:var(--weave-accent);background:none;border:0;padding:2px 4px;cursor:pointer;text-decoration:underline;text-underline-offset:2px}
+.weave-editbar .weave-editbar-discard,.weave-editbar .weave-editbar-done{font:inherit;font-size:var(--weave-px-caption);line-height:1;white-space:nowrap;cursor:pointer;border-radius:var(--weave-radius)}
+.weave-editbar .weave-editbar-discard{padding:7px 9px;color:var(--weave-dim);background:none;border:1px solid transparent}
+.weave-editbar .weave-editbar-discard:hover{color:var(--weave-fg);background:var(--weave-new)}
+.weave-editbar .weave-editbar-done{padding:7px 14px;font-weight:600;color:var(--weave-page);background:var(--weave-accent);border:1px solid var(--weave-accent)}
+.weave-editbar .weave-editbar-done:hover{filter:brightness(1.08)}
+.weave-editbar .weave-editbar-discard:disabled,.weave-editbar .weave-editbar-done:disabled{opacity:.5;cursor:default;filter:none}
+/* A finalized note's opening TLDR, set apart as the first thing to read.
+   The label is the card's own; task boxes keep their row and lose the bullet. */
+.weave-tldr{margin:0 0 18px;padding:12px 16px;background:var(--weave-new);border:1px solid var(--weave-line-strong);border-radius:var(--weave-radius)}
+.weave-tldr>p,.weave-tldr>ul,.weave-tldr>ol{margin:0 0 6px}
+.weave-tldr>*:last-child{margin-bottom:0}
+.weave-tldr ul:has(>li>input[type="checkbox"]){list-style:none;padding-left:2px}
+.weave-tldr-label{display:block;margin-bottom:3px;font-size:var(--weave-px-prov);font-weight:700;letter-spacing:.08em;color:var(--weave-accent)}
 /* The replay band sits under the header like the header itself: full width,
    the note's gutter, one line of words, one line of controls. Dots on the
    track are the versions, coloured by who made them. */
@@ -306,25 +354,28 @@ body{font-size:var(--weave-px-base)}
 .weave-replay-controls button:disabled{color:var(--weave-faint);cursor:default;opacity:.6}
 .weave-replay-controls .weave-replay-play{color:var(--weave-page);background:var(--weave-accent);border-color:var(--weave-accent)}
 .weave-replay-controls .weave-replay-play:hover:not(:disabled){filter:brightness(1.08)}
-.weave-replay-track{--weave-replay-at:100%;position:relative;flex:1;min-width:80px;height:28px;margin-left:8px}
+/* The change bars (the refresh's H2): one bar per version, as tall as the
+   change was big, coloured by who made it; the version on screen is ringed.
+   The day labels sit under the band. Heights and label positions arrive as
+   custom properties through Preact's CSSOM style path, never an attribute. */
+.weave-replay-track{--weave-replay-at:100%;position:relative;flex:1;min-width:80px;height:46px;margin-left:8px}
 .weave-replay-track::before{
-  content:"";position:absolute;left:7px;right:7px;top:13px;height:2px;border-radius:999px;
+  content:"";position:absolute;left:7px;right:7px;top:31px;height:2px;border-radius:999px;
   background:linear-gradient(to right,color-mix(in srgb,var(--weave-accent) 55%,transparent) var(--weave-replay-at),var(--weave-line-strong) var(--weave-replay-at));
 }
-.weave-replay-ticks{position:absolute;left:7px;right:7px;top:0;bottom:0;display:flex;justify-content:space-between;align-items:center;pointer-events:none}
-.weave-replay-tick{position:relative;width:0;height:0}
-.weave-replay-tick::before{
-  content:"";position:absolute;left:-6px;top:-6px;width:12px;height:12px;box-sizing:border-box;border-radius:999px;
-  background:var(--weave-who);border:2px solid var(--weave-panel);
-}
-.weave-replay-ahead::before{opacity:.4}
+.weave-replay-bars{position:absolute;left:7px;right:7px;top:2px;height:26px;pointer-events:none}
+.weave-replay-bar{position:absolute;bottom:0;left:var(--weave-bar-at,0);width:max(1px,min(8px,calc(100% / var(--weave-bars,1) - 2px)));transform:translateX(-50%);height:var(--weave-bar,14%);border-radius:var(--weave-radius);background:var(--weave-who);opacity:.85}
+.weave-replay-ahead{opacity:.35}
+.weave-replay-current{opacity:1;outline:2px solid var(--weave-accent);outline-offset:1px}
+.weave-replay-days{position:absolute;left:7px;right:7px;top:34px;height:12px;pointer-events:none}
+.weave-replay-day{position:absolute;left:var(--weave-day-at,0);transform:translateX(-2px);font-size:var(--weave-px-prov);line-height:12px;color:var(--weave-faint);white-space:nowrap}
 .weave-replay-slider{position:absolute;inset:0;width:100%;height:100%;margin:0;background:transparent;-webkit-appearance:none;appearance:none;cursor:pointer}
 .weave-replay-slider:disabled{cursor:default}
 .weave-replay-slider:focus{outline:none}
-.weave-replay-slider::-webkit-slider-runnable-track{height:28px;background:transparent}
-.weave-replay-slider::-moz-range-track{height:28px;background:transparent}
+.weave-replay-slider::-webkit-slider-runnable-track{height:46px;background:transparent}
+.weave-replay-slider::-moz-range-track{height:46px;background:transparent}
 .weave-replay-slider::-webkit-slider-thumb{
-  -webkit-appearance:none;appearance:none;width:14px;height:14px;margin-top:7px;border-radius:999px;
+  -webkit-appearance:none;appearance:none;width:14px;height:14px;margin-top:25px;border-radius:999px;
   background:var(--weave-page);border:2px solid var(--weave-accent);box-sizing:border-box;
 }
 .weave-replay-slider::-moz-range-thumb{
@@ -342,7 +393,7 @@ body{font-size:var(--weave-px-base)}
   display:block;width:100%;flex:1 0 auto;min-height:12em;resize:none;
   padding:12px var(--weave-note-gutter) 28px;box-sizing:border-box;
   font-family:var(--weave-mono);font-size:var(--weave-px-row);line-height:1.6;
-  color:var(--weave-fg);background:var(--weave-bg);border:0;outline:0;
+  color:var(--weave-fg);background:var(--weave-page);border:0;outline:0;
 }
 /* The \`## Raw\` box under the editor: folded by default so a long
    dictation never outgrows the note, a dashed edge to say "captured, not
@@ -516,6 +567,113 @@ body{font-size:var(--weave-px-base)}
   border-top:1px solid var(--weave-line);
 }
 
+/* graph spotlight (G1) ---------------------------------------------------
+   The field floating top-left over the canvas, and the side sheet top-right.
+   Both are overlays on the stage, so they sit on the panel ground with a
+   hairline and the pop radius — no elevation shadow, per the sheet's rule.
+   The spotlight's voice is --weave-warn: the highlighter colour the WebGL
+   side paints lit edges in (graph.model.ts SPOTLIGHT_EDGE_SLOT), so the chip,
+   the legend, the marked words and the lit dots all say "lit" in one hue.
+   The sheet stops short of the control strip and count line under the
+   canvas (about 54px together) and scrolls inside itself. Button rules are
+   qualified by their overlay (.weave-sheet .weave-sheet-open) because the
+   workspace sheet's \`.weave-workbench button{font:inherit;color:inherit}\`
+   reset is installed later and would outrank a single class. */
+.weave-spotlight{
+  position:absolute;z-index:3;top:10px;left:10px;width:min(330px,calc(100% - 20px));box-sizing:border-box;
+  display:flex;align-items:center;gap:6px;padding:3px 5px 3px 9px;
+  color:var(--weave-faint);background:var(--weave-panel);
+  border:1px solid var(--weave-line-strong);border-radius:var(--weave-radius-pop);
+}
+/* The pill is the focus ring: the input inside it drops the global outline
+   and the frame takes a 2px accent edge (border plus an inset hairline). */
+.weave-spotlight:focus-within{border-color:var(--weave-accent);box-shadow:inset 0 0 0 1px var(--weave-accent)}
+.weave-spotlight-input:focus-visible{outline:none}
+.weave-spotlight-on{color:var(--weave-warn)}
+.weave-spotlight-icon{flex:none;display:block}
+.weave-spotlight-input{
+  flex:1;min-width:0;height:24px;padding:0;font:inherit;font-size:var(--weave-px-row);
+  color:var(--weave-fg);background:transparent;border:0;outline:0;
+}
+.weave-spotlight-input::placeholder{color:var(--weave-faint)}
+.weave-spotlight-input::-webkit-search-cancel-button{-webkit-appearance:none;appearance:none}
+.weave-spotlight-count{
+  flex:none;padding:1px 7px;font-size:var(--weave-px-caption);font-weight:650;white-space:nowrap;
+  color:var(--weave-warn);background:color-mix(in srgb,var(--weave-warn) 16%,transparent);border-radius:999px;
+}
+.weave-spotlight-none{color:var(--weave-dim);background:var(--weave-line)}
+.weave-spotlight .weave-spotlight-clear{
+  flex:none;padding:1px 5px;cursor:pointer;font-family:var(--weave-mono);font-size:var(--weave-px-prov);
+  color:var(--weave-faint);background:transparent;border:1px solid var(--weave-line-strong);border-radius:var(--weave-radius);
+}
+.weave-spotlight .weave-spotlight-clear:hover{color:var(--weave-fg);border-color:var(--weave-accent)}
+.weave-legend-lit{color:var(--weave-warn)}
+.weave-sheet{
+  position:absolute;z-index:3;top:10px;right:10px;width:min(300px,calc(100% - 20px));max-height:calc(100% - 74px);
+  box-sizing:border-box;overflow:auto;padding:12px 14px 14px;
+  font-size:var(--weave-px-base);color:var(--weave-fg);background:var(--weave-panel);
+  border:1px solid var(--weave-line-strong);border-radius:var(--weave-radius-pop);
+}
+.weave-sheet .weave-sheet-close{
+  position:absolute;top:6px;right:6px;width:24px;height:24px;padding:0;cursor:pointer;
+  font-size:var(--weave-px-display);line-height:1;color:var(--weave-dim);
+  background:transparent;border:0;border-radius:var(--weave-radius);
+}
+.weave-sheet .weave-sheet-close:hover{color:var(--weave-fg);background:var(--weave-line)}
+.weave-sheet-crumb{
+  margin:0 28px 2px 0;display:flex;align-items:center;gap:5px;min-width:0;
+  font-size:var(--weave-px-caption);color:var(--weave-faint);
+}
+.weave-sheet-crumb span{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.weave-sheet-title{
+  margin:0 20px 4px 0;font-size:var(--weave-px-title);font-weight:650;line-height:1.3;overflow-wrap:anywhere;
+}
+.weave-sheet-meta{margin:0;display:flex;align-items:center;gap:5px;font-size:var(--weave-px-ui);color:var(--weave-dim);text-transform:capitalize}
+.weave-sheet-when{color:var(--weave-faint);text-transform:none}
+.weave-sheet-text{
+  margin:10px 0 0;padding:8px 10px;line-height:1.55;overflow-wrap:anywhere;
+  background:var(--weave-new);border:1px solid color-mix(in srgb,var(--weave-accent) 30%,transparent);
+  border-radius:var(--weave-radius-pop);
+}
+.weave-sheet-text-head{
+  display:block;margin:0 0 2px;font-size:var(--weave-px-prov);font-weight:700;letter-spacing:.09em;
+  text-transform:uppercase;color:var(--weave-accent);
+}
+.weave-sheet-mark{border-radius:var(--weave-radius)}
+.weave-sheet-why{margin:8px 0 0;display:flex;gap:5px;font-size:var(--weave-px-caption);color:var(--weave-dim)}
+.weave-sheet-why span{color:var(--weave-warn)}
+.weave-sheet-section{margin:12px 0 0}
+.weave-sheet-heading{
+  margin:0 0 3px;display:flex;align-items:center;font-size:var(--weave-px-caption);font-weight:600;
+  letter-spacing:.09em;text-transform:uppercase;color:var(--weave-faint);
+}
+.weave-sheet-count{margin-left:auto;font-family:var(--weave-mono);letter-spacing:0}
+.weave-sheet-rows{margin:0;padding:0;list-style:none}
+.weave-sheet .weave-sheet-row{
+  display:flex;align-items:center;gap:7px;width:100%;padding:3px 0;cursor:pointer;text-align:left;
+  font:inherit;font-size:var(--weave-px-row);color:var(--weave-fg);background:none;border:0;
+}
+.weave-sheet .weave-sheet-row:hover{color:var(--weave-accent)}
+.weave-sheet-row-label{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.weave-sheet-dot{flex:none;width:6px;height:6px;border-radius:999px;background:var(--weave-faint)}
+.weave-sheet-dot-lit{background:var(--weave-warn)}
+.weave-sheet-more{margin:2px 0 0;font-size:var(--weave-px-caption);color:var(--weave-faint)}
+.weave-sheet-actions{margin:14px 0 0;display:flex;gap:6px;flex-wrap:wrap}
+.weave-sheet .weave-sheet-open,.weave-sheet .weave-sheet-split{
+  padding:5px 11px;cursor:pointer;font:inherit;font-size:var(--weave-px-ui);font-weight:600;
+  border:1px solid var(--weave-line-strong);border-radius:var(--weave-radius);
+}
+.weave-sheet .weave-sheet-open{color:var(--weave-page);background:var(--weave-accent);border-color:var(--weave-accent)}
+.weave-sheet .weave-sheet-open:hover{filter:brightness(1.08)}
+.weave-sheet .weave-sheet-split{color:var(--weave-fg);background:var(--weave-page)}
+.weave-sheet .weave-sheet-split:hover{border-color:var(--weave-accent)}
+/* Side by side the field (330) and the sheet (300) need about 660px of
+   stage; a narrower graph — a split pane, a small window — drops the sheet
+   under the field instead of letting the two overlap. */
+.weave-graph{container-type:inline-size}
+@container (max-width:680px){.weave-sheet{top:50px;max-height:calc(100% - 114px)}}
+/* end graph spotlight ---------------------------------------------------- */
+
 /* context rail ---------------------------------------------------------- */
 /* The \`.weave-empty\` block that used to sit above went with \`EmptyState.tsx\`
    in P3: every column now has its own empty state (\`treeEmptyMessage\`,
@@ -596,6 +754,7 @@ body{font-size:var(--weave-px-base)}
 .weave-status-cwd,.weave-status-sel{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .weave-status-cwd{max-width:38%;color:var(--weave-faint)}
 .weave-status-sel{color:var(--weave-fg)}
+.weave-status-hint{margin-left:auto;padding-left:8px;white-space:nowrap;color:var(--weave-faint)}
 
 /* overlays: the ⌘K palette and the ? help sheet (P4) --------------------- */
 /* The scrim is a click target that closes, and the reason both overlays sit
@@ -611,31 +770,77 @@ body{font-size:var(--weave-px-base)}
   overflow:hidden;background:var(--weave-panel);color:var(--weave-fg);
   border:1px solid var(--weave-line-strong);border-radius:var(--weave-radius-pop);
 }
-.weave-palette-input{
-  flex:none;height:34px;padding:0 11px;font:inherit;font-size:var(--weave-px-subhead);
-  color:var(--weave-fg);background:transparent;border:0;
-  border-bottom:1px solid var(--weave-line);border-radius:0;
+/* The ⌘K palette, grouped and compact: an input row (glyph, query, Esc), a
+   scope row of pills that Tab cycles, one line per result under small
+   capitals group heads, and a footer of key hints. Wider than the help sheet
+   because a row carries a title, a snippet and a meta column side by side. */
+.weave-palette{max-width:640px}
+.weave-palette-bar{
+  flex:none;display:flex;align-items:center;gap:8px;padding:0 11px;
+  border-bottom:1px solid var(--weave-line);
 }
-.weave-palette-input:focus-visible{outline-offset:-2px}
-.weave-hits{flex:1;min-height:0;overflow:auto;margin:0;padding:3px 0;list-style:none}
+.weave-palette-glyph{color:var(--weave-faint)}
+.weave-palette-input{
+  flex:1;min-width:0;height:36px;padding:0;font:inherit;font-size:var(--weave-px-subhead);
+  color:var(--weave-fg);background:transparent;border:0;border-radius:0;
+}
+.weave-palette-input:focus-visible{outline:0}
+.weave-palette-input::-webkit-search-cancel-button{display:none}
+.weave-palette-bar:focus-within{box-shadow:inset 0 -1px 0 var(--weave-accent)}
+.weave-palette-kbd{
+  flex:none;padding:0 4px;font-family:inherit;font-size:var(--weave-px-prov);line-height:14px;
+  color:var(--weave-faint);border:1px solid var(--weave-line-strong);border-radius:var(--weave-radius);
+}
+.weave-palette-scopes{
+  flex:none;display:flex;flex-wrap:wrap;gap:3px;padding:5px 8px;
+  border-bottom:1px solid var(--weave-line);
+}
+.weave-palette-scope{
+  font:inherit;font-size:var(--weave-px-caption);line-height:1;padding:3px 9px;cursor:pointer;
+  color:var(--weave-dim);background:none;border:0;border-radius:999px;
+}
+.weave-palette-scope:hover{color:var(--weave-fg);background:var(--weave-line)}
+.weave-palette-scope[aria-pressed="true"]{color:var(--weave-panel);background:var(--weave-fg);font-weight:600}
+.weave-palette-scope-count{font-variant-numeric:tabular-nums}
+.weave-hits{flex:1;min-height:0;overflow:auto;margin:0;padding:0 0 4px;list-style:none}
+.weave-hit-section{list-style:none}
+.weave-hit-group{
+  padding:7px 11px 2px;font-size:var(--weave-px-prov);font-weight:700;letter-spacing:.08em;
+  text-transform:uppercase;color:var(--weave-faint);
+}
+.weave-hit-rows{margin:0;padding:0;list-style:none}
 .weave-hit{
-  display:flex;align-items:baseline;gap:7px;padding:3px 11px;cursor:pointer;
-  min-width:0;white-space:nowrap;
+  display:flex;align-items:center;gap:8px;padding:3px 11px;cursor:pointer;
+  min-width:0;white-space:nowrap;font-size:var(--weave-px-row);
 }
 .weave-hit-on{background:var(--weave-new);box-shadow:inset 2px 0 0 var(--weave-accent)}
-.weave-hit-badge{
-  flex:none;font-size:var(--weave-px-prov);letter-spacing:.06em;text-transform:uppercase;color:var(--weave-faint);
-  min-width:56px;
-}
-.weave-hit-note .weave-hit-badge{color:var(--weave-accent)}
-.weave-hit-label{flex:none;max-width:46%;overflow:hidden;text-overflow:ellipsis}
+.weave-hit-icon{color:var(--weave-faint)}
+.weave-hit-notes .weave-hit-icon{color:var(--weave-accent)}
+.weave-hit-label{flex:none;max-width:46%;overflow:hidden;text-overflow:ellipsis;font-weight:600;color:var(--weave-fg)}
+.weave-hit-mono{font-family:var(--weave-mono);font-size:var(--weave-px-ui);font-weight:500}
 .weave-hit-detail{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;font-size:var(--weave-px-ui);color:var(--weave-dim)}
+/* The match marks (search rows, the graph sheet) are a find-in-page amber.
+   Dark themes tint their own light --weave-warn, and the marked words go
+   white: the theme's text on that tint measured 3.3–3.6:1 in the Catppuccin
+   darks, white is 5.5:1 or better in every dark theme. A light theme's
+   --weave-warn is a deep brown that tints to mud, so light schemes take a
+   fixed amber under their own text instead. */
+.weave-hit-mark,.weave-sheet-mark{color:#fff;background:color-mix(in srgb,var(--weave-warn) 28%,transparent)}
+.weave-hit-mark{border-radius:var(--weave-radius);padding:0 1px}
+:root[data-weave-scheme="light"] .weave-hit-mark,:root[data-weave-scheme="light"] .weave-sheet-mark{color:var(--weave-fg);background:color-mix(in srgb,#f2a93b 34%,transparent)}
+.weave-hit-meta{flex:none;margin-left:auto;font-size:var(--weave-px-caption);color:var(--weave-faint);font-variant-numeric:tabular-nums}
 .weave-palette-status{margin:0;padding:14px 11px;color:var(--weave-dim);line-height:1.5}
 .weave-palette-foot,.weave-help-foot{
   display:flex;gap:12px;margin:0;padding:4px 11px;font-size:var(--weave-px-caption);color:var(--weave-faint);
   border-top:1px solid var(--weave-line);
 }
-.weave-palette-hint,.weave-help-hint{margin-left:auto}
+.weave-palette-foot{align-items:center;flex-wrap:wrap;row-gap:2px;min-height:26px;box-sizing:border-box;background:var(--weave-bg)}
+.weave-palette-light{
+  margin-left:auto;display:flex;align-items:center;gap:6px;padding:0;cursor:pointer;white-space:nowrap;
+  font:inherit;font-weight:600;color:var(--weave-accent);background:none;border:0;
+}
+.weave-palette-light .weave-palette-kbd{color:inherit;border-color:currentColor}
+.weave-help-hint{margin-left:auto}
 .weave-help-title{margin:0;padding:9px 11px;font-size:var(--weave-px-base);font-weight:600;border-bottom:1px solid var(--weave-line)}
 .weave-keys{flex:1;min-height:0;overflow:auto;margin:0;padding:5px 11px}
 .weave-key-group{margin:0 0 3px;font-size:var(--weave-px-prov);letter-spacing:.09em;text-transform:uppercase;color:var(--weave-faint)}

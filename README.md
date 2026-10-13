@@ -158,10 +158,13 @@ Renaming or moving a note rewrites its inbound links automatically, so its backl
 Browse and search your notes, follow links, or explore the graph. Use tabs and split panes to keep related notes side by side.
 Notes update within a couple of seconds as your agent writes them.
 While your agent works, the notes it searches, reads, and writes light up in the tree and graph, and fade after about a minute.
-The **This turn** list in the Context sidebar shows those steps in order; click an earlier turn to replay it.
+The **This turn** list in the Context card shows those steps in order; click an earlier turn to replay it. Context floats over the page's
+right margin: fold it with `]`, or pin it to dock it as a column.
+In search, `Tab` switches between notes, code, and tags, and `⇧↵` lights every result up in the graph.
 
 Ask your agent to write, organize, and connect notes, or click **New note** on an empty tab to start one yourself.
-Click **Edit** to change Markdown and `⌘S` / `Ctrl S` to save. Your original words in `## Raw` stay intact.
+Click **Edit** to change Markdown. Edits save themselves after a short pause (or `⌘S` / `Ctrl S` right away), and **Done** closes the
+editor. Your original words in `## Raw` stay intact.
 Tabs, layout, and settings restore when you return and survive package updates for the same vault and repository;
 unsaved drafts last only while the browser stays open.
 

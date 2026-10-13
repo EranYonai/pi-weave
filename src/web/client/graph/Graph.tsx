@@ -40,9 +40,29 @@ import {
   graphClick,
   graphColumnModel,
   graphCountLabel,
+  graphPicture,
   graphPreview,
-  hoverHighlight,
+  hoverPicture,
 } from "./column.model";
+import {
+  CONNECTED_HEADING,
+  LIT_BECAUSE,
+  SHEET_CLOSE,
+  SHEET_LABEL,
+  SHEET_OPEN,
+  SHEET_OPEN_SPLIT,
+  SPOTLIGHT_CLEAR,
+  SPOTLIGHT_CLEAR_HINT,
+  SPOTLIGHT_LABEL,
+  SPOTLIGHT_LEGEND,
+  SPOTLIGHT_PLACEHOLDER,
+  connectedMore,
+  graphSheet,
+  litLabel,
+  litOnCanvas,
+  spotlightEscapes,
+  spotlightOf,
+} from "./spotlight.model";
 import type { PositionStorage } from "./positions";
 import type { GraphRenderer, RendererFactory } from "./renderer";
 import type { TrailGlow } from "./graph.model";
@@ -95,6 +115,28 @@ export interface GraphProps {
   fit: { current: (() => void) | null };
   /** Recall-trail glows by node id (`trail/trail.model.ts`). Omitted means none. */
   trail?: ReadonlyMap<string, TrailGlow>;
+  /**
+   * The spotlight query (`spotlight.model.ts`), controlled by the shell so
+   * other UI — the search palette's "light up in graph" — can set it.
+   * Omitted or `""` means no spotlight.
+   */
+  query?: string;
+  /**
+   * Node ids the search palette found for `query`, when it lit the graph up.
+   * They light alongside the spotlight's own matches; omitted means none.
+   */
+  found?: readonly string[];
+  /**
+   * Where the spotlight field writes. **Its presence is what makes this the
+   * full graph view**: with it the column shows the floating spotlight field
+   * and the side sheet; without it (the context rail's note graph, a narrow
+   * column) it keeps the compact preview card it always had.
+   */
+  onQuery?: (query: string) => void;
+  /** The sheet's "Open in split". Omitted hides the button. */
+  onOpenSplit?: (id: string) => void;
+  /** The shell's clock, for the sheet's "2h ago". Omitted reads the wall clock. */
+  now?: number;
 }
 
 const NO_GLOWS: ReadonlyMap<string, TrailGlow> = new Map();
@@ -157,13 +199,25 @@ export function Graph(props: GraphProps) {
     () => graphColumnModel(props.graph, props.selectedId, view, props.storage, scheme, props.bootFailed, groupColors),
     [props.graph, props.selectedId, view, props.storage, scheme, props.bootFailed, forceKey, groupColors],
   );
-  const preview = graphPreview(props.graph, props.previewId);
+  // The full graph view has a spotlight and a side sheet; the context rail's
+  // note graph keeps the compact card. See `GraphProps.onQuery`.
+  const full = props.onQuery !== undefined;
+  const query = full ? props.query ?? "" : "";
+  const spot = useMemo(() => spotlightOf(props.graph, query, props.found), [props.graph, query, props.found]);
+  // Same identity contract as `model` above: the highlight effect keys on the
+  // picture's identity, so each step is memoized on exactly what it reads.
+  const lit = useMemo(() => litOnCanvas(spot, model.representative), [spot, model.representative]);
+  const picture = useMemo(() => graphPicture(model.highlight, props.selectedId, lit), [model.highlight, props.selectedId, lit]);
+  const preview = full ? null : graphPreview(props.graph, props.previewId);
+  const now = props.now ?? Date.now();
+  const sheet = useMemo(() => (full ? graphSheet(props.graph, props.previewId, spot, now) : null), [full, props.graph, props.previewId, spot, now]);
+  const field = useRef<HTMLInputElement | null>(null);
 
   // Read by the mount-time `onSelect`, which outlives this render.
   const trailRef = useRef<ReadonlyMap<string, TrailGlow>>(NO_GLOWS);
   trailRef.current = props.trail ?? NO_GLOWS;
-  const live = useRef({ view, model, onSelect: props.onSelect, selectedId: props.selectedId });
-  live.current = { view, model, onSelect: props.onSelect, selectedId: props.selectedId };
+  const live = useRef({ view, model, picture, onSelect: props.onSelect, selectedId: props.selectedId });
+  live.current = { view, model, picture, onSelect: props.onSelect, selectedId: props.selectedId };
 
   useEffect(() => {
     const instance = props.renderer(scheme);
@@ -180,11 +234,13 @@ export function Graph(props: GraphProps) {
     // state would enter the `model` memo below and re-derive the layout,
     // the group colours and the whole `RenderGraph` on every pointer move.
     instance.onHover((id) => {
-      const { model: current, selectedId } = live.current;
+      const { model: current, picture: shown } = live.current;
       // The *drawn* edges, which are exactly the visible ones the column's own
       // highlight was computed over — a neighbour inside a collapsed cluster
       // has already been retargeted onto the cluster standing in for it.
-      instance.setHighlight(hoverHighlight(current.graph.edges, id, current.highlight), id ?? selectedId);
+      // Under a spotlight `hoverPicture` hands the spotlight straight back.
+      const next = hoverPicture(current.graph.edges, id, shown);
+      instance.setHighlight(next.highlight, next.selectedId, next.style);
     });
     instance.onDragStart((id) => {
       const at = renderer.current?.positions().get(id);
@@ -210,7 +266,8 @@ export function Graph(props: GraphProps) {
     // the render this effect was created in), so a remount carries whatever
     // the column is already showing.
     instance.setGraph(live.current.model.graph);
-    instance.setHighlight(live.current.model.highlight, live.current.selectedId);
+    const shown = live.current.picture;
+    instance.setHighlight(shown.highlight, shown.selectedId, shown.style);
     instance.setTrail(trailRef.current);
     props.fit.current = () => instance.fit();
     return () => {
@@ -256,21 +313,93 @@ export function Graph(props: GraphProps) {
   );
 
   useEffect(() => {
-    renderer.current?.setHighlight(model.highlight, props.selectedId);
-  }, [model.highlight, props.selectedId]);
+    renderer.current?.setHighlight(picture.highlight, picture.selectedId, picture.style);
+  }, [picture]);
 
   useEffect(() => {
     renderer.current?.setTrail(trailRef.current);
   }, [props.trail]);
 
+  // `Esc` clears the spotlight before the shell's document listener sees it —
+  // or, when `spotlightEscapes` says no, passes through to "clear selection".
+  const escape = (event: KeyboardEvent): void => {
+    if (event.key !== "Escape" || !spotlightEscapes(query, event.target === field.current, sheet !== null)) return;
+    event.preventDefault();
+    props.onQuery?.("");
+  };
+  const more = sheet === null ? null : connectedMore(sheet.connected.length, sheet.connectedTotal);
+
   return (
-    <div class="weave-graph">
+    <div class="weave-graph" onKeyDown={escape}>
       {/* Same shape as `ContextRail`'s: the *decision* is `graphEmptyMessage`,
           and what is left here is whether to render the paragraph it returned. */}
       {model.empty === null ? null : <p class="weave-graph-empty">{model.empty}</p>}
       {/* `tabIndex={-1}` is the `⌘3` focus target — see `Note.tsx`'s matching
           comment. The tree's target is the rows `<ul>`, which has its own. */}
       <div class="weave-graph-canvas" ref={canvas} role="img" aria-label="Knowledge graph" tabIndex={-1} />
+      {!full ? null : (
+        <div class={`weave-spotlight${spot === null ? "" : " weave-spotlight-on"}`} role="search">
+          <svg class="weave-spotlight-icon" viewBox="0 0 20 20" width={14} height={14} fill="none" stroke="currentColor" stroke-width={1.8} aria-hidden="true">
+            <circle cx="8.5" cy="8.5" r="5.5" />
+            <path d="m13 13 4 4" />
+          </svg>
+          <input ref={field} class="weave-spotlight-input" type="search" value={query} placeholder={SPOTLIGHT_PLACEHOLDER}
+            aria-label={SPOTLIGHT_LABEL} spellcheck={false} autoComplete="off" onInput={(event) => props.onQuery?.(event.currentTarget.value)} />
+          {spot === null ? null : (
+            <>
+              <span class={`weave-spotlight-count${spot.count === 0 ? " weave-spotlight-none" : ""}`} role="status">{litLabel(spot.count)}</span>
+              <button type="button" class="weave-spotlight-clear" title={SPOTLIGHT_CLEAR_HINT} aria-label={SPOTLIGHT_CLEAR_HINT}
+                onClick={() => { props.onQuery?.(""); field.current?.focus(); }}>{SPOTLIGHT_CLEAR}</button>
+            </>
+          )}
+        </div>
+      )}
+      {sheet === null ? null : (
+        <aside class="weave-sheet" aria-label={SHEET_LABEL}>
+          <button type="button" class="weave-sheet-close" aria-label={SHEET_CLOSE} title={SHEET_CLOSE} onClick={() => props.onSelect(null)}>×</button>
+          <p class="weave-sheet-crumb">
+            <Icon name={sheet.crumb === "" ? sheet.icon : "module"} class="weave-icon" />
+            <span>{sheet.crumb === "" ? sheet.kind : sheet.crumb}</span>
+          </p>
+          <h2 class="weave-sheet-title">{sheet.title}</h2>
+          <p class="weave-sheet-meta">
+            {sheet.who === null ? null : <span class={`weave-prov weave-prov-${sheet.who.provenance}`} title={sheet.who.title} aria-hidden="true">{sheet.who.glyph}</span>}
+            <span>{sheet.who === null ? sheet.kind : sheet.who.word}</span>
+            {sheet.when === "" ? null : <span class="weave-sheet-when">· {sheet.when}</span>}
+          </p>
+          {sheet.text === null ? null : (
+            <div class="weave-sheet-text">
+              <span class="weave-sheet-text-head">{sheet.text.heading}</span>
+              {sheet.text.parts.map((part) => (part.hit ? <mark class="weave-sheet-mark">{part.text}</mark> : part.text))}
+            </div>
+          )}
+          {sheet.litBecause === null ? null : (
+            <p class="weave-sheet-why"><span aria-hidden="true">✳</span>{LIT_BECAUSE} {sheet.litBecause}</p>
+          )}
+          {sheet.connectedTotal === 0 ? null : (
+            <section class="weave-sheet-section" aria-label={CONNECTED_HEADING}>
+              <h3 class="weave-sheet-heading">{CONNECTED_HEADING}<span class="weave-sheet-count">{sheet.connectedTotal}</span></h3>
+              <ul class="weave-sheet-rows">
+                {sheet.connected.map((row) => (
+                  <li key={row.id}>
+                    <button type="button" class="weave-sheet-row" title={row.label} aria-label={row.ariaLabel} onClick={() => props.onSelect(row.id)}>
+                      <span class={`weave-sheet-dot${row.lit ? " weave-sheet-dot-lit" : ""}`} aria-hidden="true" />
+                      <span class="weave-sheet-row-label">{row.label}</span>
+                    </button>
+                  </li>
+                ))}
+              </ul>
+              {more === null ? null : <p class="weave-sheet-more">{more}</p>}
+            </section>
+          )}
+          <div class="weave-sheet-actions">
+            <button type="button" class="weave-sheet-open" onClick={() => props.onOpen(sheet.id)}>{SHEET_OPEN}</button>
+            {props.onOpenSplit === undefined ? null : (
+              <button type="button" class="weave-sheet-split" onClick={() => props.onOpenSplit?.(sheet.id)}>{SHEET_OPEN_SPLIT}</button>
+            )}
+          </div>
+        </aside>
+      )}
       {preview === null ? null : (
         <aside class="weave-graph-preview" aria-label="Selected graph node">
           <div class="weave-graph-preview-info">
@@ -290,8 +419,10 @@ export function Graph(props: GraphProps) {
         </button>
         <span class="weave-graph-legend">
           <span class="weave-legend-on">◉ {LEGEND.selected}</span>
-          <span class="weave-legend-near">● {LEGEND.neighborhood}</span>
-          <span class="weave-legend-dim">· {LEGEND.dimmed}</span>
+          {spot === null
+            ? <span class="weave-legend-near">● {LEGEND.neighborhood}</span>
+            : <span class="weave-legend-lit">● {SPOTLIGHT_LEGEND.lit}</span>}
+          <span class="weave-legend-dim">· {spot === null ? LEGEND.dimmed : SPOTLIGHT_LEGEND.dimmed}</span>
         </span>
       </div>
       <p class="weave-graph-count">{graphCountLabel(model.visible, model.total)}</p>

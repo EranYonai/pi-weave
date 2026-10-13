@@ -16,6 +16,7 @@ export function StatusBar({ model }: { model: StatusBarModel }) {
       <span class="weave-status-sel" title="Current item">
         {model.selection}
       </span>
+      {model.hint === "" ? null : <span class="weave-status-hint">{model.hint}</span>}
     </footer>
   );
 }

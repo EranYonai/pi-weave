@@ -15,6 +15,8 @@
  */
 
 import type { GraphPayload, WireNodeKind } from "../../shared/wire";
+import { activePane, moveTab, openDocument } from "../../shared/workspace";
+import type { WorkspaceLayout } from "../../shared/workspace";
 import { kindIcon } from "../tree/tree.model";
 import type { IconName } from "./icons.model";
 export const NOTE_DRAG_TYPE = "application/x-weave-note";
@@ -35,6 +37,39 @@ export function recordVisit(previous: readonly string[], id: string | null): rea
 /** A selected graph node opens only after its preview has already been shown. */
 export function graphClickOpensTab(previewId: string | null, id: string | null): id is string {
   return id !== null && id === previewId;
+}
+
+/**
+ * Open `id` beside the graph — the graph sheet's "Open in split".
+ *
+ * With two panes, the note opens as a new tab in the pane that is *not* the
+ * graph's. With one, it opens in a new second pane and the graph's pane keeps
+ * the graph on screen: the tab is opened in the graph's pane and then moved,
+ * which is the same `moveTab` the tab strip's "Split right" uses, so the new
+ * pane is an ordinary one. The split direction is left as the layout has it.
+ *
+ * The note is shown in the split either way, which is what the button asks
+ * for; only which pane is active follows the user's `focusNewTabs`
+ * preference. Unchanged when the tab budget is spent.
+ */
+export function openInSplit(layout: WorkspaceLayout, id: string, graphPaneId: string | undefined): WorkspaceLayout {
+  const graph = layout.panes.find((pane) => pane.id === graphPaneId) ?? activePane(layout);
+  const other = layout.panes.find((pane) => pane.id !== graph.id);
+  const opened = openDocument(layout, id, { newTab: true, paneId: other?.id ?? graph.id });
+  if (opened === layout) return layout;
+  let next = opened;
+  if (other === undefined) {
+    // One pane, so it is the graph's, and the new tab is its last.
+    const { lastDocumentTab: _opened, ...pane } = opened.panes[0]!;
+    const tab = pane.tabs.at(-1)!;
+    // Put the graph back in front of its pane before the new tab leaves it, so
+    // `moveTab` keeps the graph active there instead of the tab beside it.
+    const restored: WorkspaceLayout = { ...opened, panes: [
+      { ...pane, activeTab: graph.activeTab, ...(graph.lastDocumentTab === undefined ? {} : { lastDocumentTab: graph.lastDocumentTab }) },
+    ] };
+    next = moveTab(restored, graph.id, tab.id);
+  }
+  return layout.preferences.focusNewTabs ? next : { ...next, activePane: graph.id };
 }
 
 export interface RecentEntry {
@@ -78,7 +113,10 @@ export const CONTEXT_EMPTY: EmptyStateCopy = {
  */
 export interface StatusBarModel {
   readonly cwd: string;
+  /** The selection as a reader names it: a note's file path, not its node id. */
   readonly selection: string;
+  /** The quiet hint at the far end, "⌘K search"; empty when none is given. */
+  readonly hint: string;
 }
 
 /** The `—` shown where a value is genuinely absent, not zero. */
@@ -88,11 +126,20 @@ export const NO_VALUE = "—";
 export function statusBarModel(
   cwd: string,
   selectedId: string | null,
+  shortcut = "",
 ): StatusBarModel {
   return {
     cwd: cwd === "" ? NO_VALUE : cwd,
-    selection: selectedId ?? "nothing selected",
+    selection: selectionLabel(selectedId),
+    hint: shortcut === "" ? "" : `${shortcut} search`,
   };
+}
+
+/** `note:projects/launch` reads as the file it is, `projects/launch.md`. */
+function selectionLabel(selectedId: string | null): string {
+  if (selectedId === null) return "nothing selected";
+  if (selectedId.startsWith("note:") && selectedId.length > "note:".length) return `${selectedId.slice("note:".length)}.md`;
+  return selectedId;
 }
 
 /**

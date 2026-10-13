@@ -5,7 +5,7 @@ export const WORKSPACE_CSS = `
 .weave-workbench button:focus-visible,.weave-workbench summary:focus-visible{outline:2px solid var(--weave-accent);outline-offset:-2px}
 .weave-workbench button:disabled{opacity:.35;cursor:default}
 .weave-ribbon{width:44px;flex:none;display:flex;align-items:center;flex-direction:column;gap:8px;padding:12px 0;background:var(--weave-panel);border-right:1px solid var(--weave-line)}
-.weave-ribbon button{width:32px;height:32px;border:0;border-radius:var(--weave-radius);background:transparent;font-size:var(--weave-px-display);color:var(--weave-dim)}
+.weave-ribbon button{width:32px;height:32px;display:grid;place-items:center;border:0;border-radius:var(--weave-radius);background:transparent;font-size:var(--weave-px-display);color:var(--weave-dim)}
 .weave-ribbon button:hover,.weave-ribbon button[aria-pressed=true]{color:var(--weave-accent);background:var(--weave-new)}
 .weave-ribbon-space{flex:1}
 .weave-sidebar{flex:none;min-width:0;display:flex;flex-direction:column;background:var(--weave-panel);overflow:hidden}
@@ -65,20 +65,24 @@ export const WORKSPACE_CSS = `
 .weave-pane-menu button{text-align:left;border:0;background:none;padding:9px 10px;font-size:var(--weave-px-row)}
 .weave-pane-menu button:hover{background:var(--weave-new)}
 .weave-pane-content{min-width:0;min-height:0;display:flex;overflow:hidden;position:relative}
-.weave-document{display:flex;min-width:0;min-height:0;flex:1}
+/* The reading column's gutters. Centred at the reading width; where the
+   floating Context card covers the right margin, the right gutter grows to
+   clear it and the column slides left before it narrows. */
+.weave-document{display:flex;min-width:0;min-height:0;flex:1;
+  --weave-gutter-c:max(24px,calc((100% - var(--weave-reading-width,760px))/2));
+  --weave-gutter-r:max(var(--weave-gutter-c),var(--weave-card-space,0px));
+  --weave-gutter-l:max(24px,min(var(--weave-gutter-c),calc(100% - var(--weave-reading-width,760px) - var(--weave-gutter-r))))}
 .weave-document .weave-note{width:100%;border-left:0}
-.weave-document .weave-note-head{position:static;padding:28px max(24px,calc((100% - var(--weave-reading-width,760px))/2)) 18px;border:0}
-.weave-document .weave-note-title{font-size:var(--weave-px-display);letter-spacing:-.03em;margin-bottom:12px}
-.weave-document .weave-note-body{padding:10px max(24px,calc((100% - var(--weave-reading-width,760px))/2)) 64px;font-size:var(--weave-note-size,var(--weave-px-subhead));line-height:1.8}
+.weave-document .weave-note-head{position:static;padding:28px var(--weave-gutter-r) 18px var(--weave-gutter-l);border:0}
+.weave-document .weave-note-title{font-size:var(--weave-px-display);letter-spacing:-.03em;margin-bottom:10px}
+.weave-document .weave-note-body{padding:10px var(--weave-gutter-r) 64px var(--weave-gutter-l);font-size:var(--weave-note-size,var(--weave-px-subhead));line-height:1.8}
 .weave-document .weave-note-body h1{font-size:var(--weave-px-display);line-height:1.4;margin-bottom:18px}
 .weave-document .weave-note-body h2{font-size:var(--weave-px-title);margin-top:28px}
-.weave-document .weave-note-editor{padding:14px max(24px,calc((100% - var(--weave-reading-width,760px))/2));min-height:220px;flex:1;font-size:var(--weave-note-size,var(--weave-px-subhead))}
+.weave-document .weave-note-editor{padding:14px var(--weave-gutter-r) 14px var(--weave-gutter-l);min-height:220px;flex:1;font-size:var(--weave-note-size,var(--weave-px-subhead))}
 .weave-document .weave-note-tags{margin-top:12px}
-.weave-document .weave-replay{padding:12px max(24px,calc((100% - var(--weave-reading-width,760px))/2)) 14px}
-.weave-document .weave-raw{margin:0 max(24px,calc((100% - var(--weave-reading-width,760px))/2)) 28px}
-.weave-document .weave-note-edit,.weave-document .weave-note-save{padding:5px 10px;border-radius:var(--weave-radius);font-size:var(--weave-px-caption)}
-.weave-document .weave-note-edit{color:var(--weave-dim);background:transparent;border-color:transparent}
-.weave-document .weave-note-edit:hover{color:var(--weave-accent);background:var(--weave-new);border-color:transparent}
+.weave-document .weave-replay{padding:12px var(--weave-gutter-r) 14px var(--weave-gutter-l)}
+.weave-document .weave-raw{margin:0 var(--weave-gutter-r) 28px var(--weave-gutter-l)}
+.weave-document .weave-editbar{padding-right:calc(12px + var(--weave-card-space,0px))}
 .weave-welcome{align-self:center;margin:auto;padding:35px;max-width:560px;color:var(--weave-dim);line-height:1.7}
 .weave-welcome-mark{font-size:var(--weave-px-display);color:var(--weave-accent)}
 .weave-welcome h1{font-size:var(--weave-px-display);line-height:1.4;letter-spacing:-.025em;color:var(--weave-fg);font-weight:550}
@@ -117,6 +121,29 @@ export const WORKSPACE_CSS = `
 .weave-footer>.weave-status{flex:1;min-width:0;border:0}
 .weave-footer>span{padding:4px 10px;white-space:nowrap}
 .weave-footer>button{font:inherit;color:var(--weave-fg);background:none;border:0;padding:7px 12px;cursor:pointer}
+/* Context as a floating card (C1): over the page's right margin, below the
+   pane toolbar, folding to a pill in the toolbar strip. Pinned, it is the
+   column it always was. The shadow is the card's only elevation, and lives
+   here rather than in THEME_CSS, whose surfaces are flat by rule. */
+.weave-context-dock.weave-context-float{position:absolute;top:90px;right:14px;bottom:auto;z-index:10;width:var(--weave-card-width);max-height:calc(100% - 104px);border:1px solid var(--weave-line-strong);border-radius:var(--weave-radius-pop);background:var(--weave-panel);box-shadow:0 12px 32px #0000001f,0 2px 6px #00000014;transition:opacity 160ms ease,visibility 0s}
+.weave-context-dock.weave-context-float[data-open=false]{width:var(--weave-card-width);opacity:0;visibility:hidden;transition:opacity 160ms ease,visibility 0s 160ms}
+.weave-context-float>.weave-workspace-divider{display:none}
+.weave-context-float>.weave-sidebar,.weave-context-float[data-open=false]>.weave-sidebar{width:100%;max-height:100%;border:0;background:none;transform:none}
+.weave-context-float .weave-sidebar-heading{height:38px;padding:0 6px 0 12px;border-bottom:1px solid var(--weave-line)}
+.weave-context-float .weave-rail{padding:4px 12px 10px}
+.weave-context-float .weave-context-graph-slot{max-height:calc(100dvh - 260px)}
+.weave-context-float .weave-context-tags{height:auto!important;max-height:220px}
+.weave-context-float .weave-ctx-group>.weave-workspace-divider{display:none}
+.weave-context-heading strong{color:var(--weave-fg)}
+.weave-context-count{min-width:18px;padding:1px 6px;border-radius:999px;background:var(--weave-raise);color:var(--weave-dim);font-size:var(--weave-px-caption);line-height:1.4;text-align:center}
+.weave-sidebar-heading .weave-context-pin{margin-left:auto}
+.weave-context-heading button:last-child{margin-left:0}
+.weave-context-heading .weave-context-pin[aria-pressed=true]{color:var(--weave-accent)}
+.weave-context-heading button{display:grid;place-items:center;width:28px;height:28px;padding:0}
+.weave-context-pill{position:absolute;top:47px;right:54px;z-index:10;display:inline-flex;align-items:center;gap:6px;height:26px;padding:0 6px 0 9px;border:1px solid var(--weave-line-strong);border-radius:999px;background:var(--weave-panel);color:var(--weave-dim)!important;font-size:var(--weave-px-caption)!important;box-shadow:0 2px 8px #00000014}
+.weave-context-pill:hover{color:var(--weave-fg)!important;border-color:var(--weave-accent)}
+.weave-context-pill .weave-icon{width:13px;height:13px}
+.weave-pane-under-card{--weave-card-space:calc(var(--weave-card-width) + 28px)}
 @media(max-width:1049px){
   .weave-context-dock{position:absolute;right:0;top:0;bottom:0;z-index:10;width:var(--weave-sidebar-width)}
   .weave-sidebar-context{border-left:1px solid var(--weave-line-strong)}
