@@ -343,8 +343,17 @@ export function sigmaRenderer(
       // onto that box. `animatedReset` settles when the animation ends. Nothing
       // awaits a camera move, and a rejection from a camera killed mid-flight
       // is noise.
-      sigma?.setCustomBBox(boxOf());
-      void sigma?.getCamera().animatedReset();
+      const instance = sigma;
+      if (instance === null) return;
+      instance.setCustomBBox(boxOf());
+      // Sigma leaves edges out of frames drawn while the camera moves
+      // (`hideEdgesOnMove`) and repaints when the camera changes. A reset onto
+      // where the camera already is changes nothing, so the frame drawn during
+      // it, without edges, stayed on screen until something else repainted.
+      // One refresh once it settles draws them back.
+      instance.getCamera().animatedReset().then(() => {
+        if (sigma === instance) instance.refresh();
+      }, () => {});
     },
 
     positions() {

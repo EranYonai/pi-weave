@@ -639,7 +639,7 @@ body{font-size:var(--weave-px-base)}
   display:block;margin:0 0 2px;font-size:var(--weave-px-prov);font-weight:700;letter-spacing:.09em;
   text-transform:uppercase;color:var(--weave-accent);
 }
-.weave-sheet-mark{color:inherit;background:color-mix(in srgb,var(--weave-warn) 30%,transparent);border-radius:var(--weave-radius)}
+.weave-sheet-mark{border-radius:var(--weave-radius)}
 .weave-sheet-why{margin:8px 0 0;display:flex;gap:5px;font-size:var(--weave-px-caption);color:var(--weave-dim)}
 .weave-sheet-why span{color:var(--weave-warn)}
 .weave-sheet-section{margin:12px 0 0}
@@ -819,14 +819,15 @@ body{font-size:var(--weave-px-base)}
 .weave-hit-label{flex:none;max-width:46%;overflow:hidden;text-overflow:ellipsis;font-weight:600;color:var(--weave-fg)}
 .weave-hit-mono{font-family:var(--weave-mono);font-size:var(--weave-px-ui);font-weight:500}
 .weave-hit-detail{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;font-size:var(--weave-px-ui);color:var(--weave-dim)}
-/* The match mark is a find-in-page amber. Dark themes tint their own light
-   --weave-warn; a light theme's --weave-warn is a deep brown that tints to
-   mud, so light schemes take a fixed amber instead. */
-.weave-hit-mark{
-  color:var(--weave-fg);background:color-mix(in srgb,var(--weave-warn) 32%,transparent);
-  border-radius:var(--weave-radius);padding:0 1px;
-}
-:root[data-weave-scheme="light"] .weave-hit-mark{background:color-mix(in srgb,#f2a93b 34%,transparent)}
+/* The match marks (search rows, the graph sheet) are a find-in-page amber.
+   Dark themes tint their own light --weave-warn, and the marked words go
+   white: the theme's text on that tint measured 3.3–3.6:1 in the Catppuccin
+   darks, white is 5.5:1 or better in every dark theme. A light theme's
+   --weave-warn is a deep brown that tints to mud, so light schemes take a
+   fixed amber under their own text instead. */
+.weave-hit-mark,.weave-sheet-mark{color:#fff;background:color-mix(in srgb,var(--weave-warn) 28%,transparent)}
+.weave-hit-mark{border-radius:var(--weave-radius);padding:0 1px}
+:root[data-weave-scheme="light"] .weave-hit-mark,:root[data-weave-scheme="light"] .weave-sheet-mark{color:var(--weave-fg);background:color-mix(in srgb,#f2a93b 34%,transparent)}
 .weave-hit-meta{flex:none;margin-left:auto;font-size:var(--weave-px-caption);color:var(--weave-faint);font-variant-numeric:tabular-nums}
 .weave-palette-status{margin:0;padding:14px 11px;color:var(--weave-dim);line-height:1.5}
 .weave-palette-foot,.weave-help-foot{
