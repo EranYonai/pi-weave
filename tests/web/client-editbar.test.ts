@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { AUTOSAVE_MS, FORMAT_TOOLS, applyFormat, editStatus, formatForKey } from "../../src/web/client/note/editbar.model";
+import { AUTOSAVE_MS, FORMAT_TOOLS, applyFormat, editStatus, formatForKey, replacedSpan } from "../../src/web/client/note/editbar.model";
 import type { TextEdit } from "../../src/web/client/note/editbar.model";
 import { ICONS } from "../../src/web/client/shell/icons.model";
 
@@ -33,7 +33,8 @@ describe("formatting buttons", () => {
     for (const tool of FORMAT_TOOLS) expect(ICONS[tool.icon], tool.kind).toBeDefined();
     expect(formatForKey("B")).toBe("bold");
     expect(formatForKey("i")).toBe("italic");
-    expect(formatForKey("k")).toBe("link");
+    // ⌘K stays search, in the editor too.
+    expect(formatForKey("k")).toBeNull();
     expect(formatForKey("x")).toBeNull();
   });
 
@@ -66,6 +67,17 @@ describe("formatting buttons", () => {
     expect(on.value).toBe("## one\n## two\nthree");
     expect(selected(on)).toBe("## one\n## two");
     expect(applyFormat(at("### Title", 0), "heading").value).toBe("Title");
+  });
+
+  it("leaves the line below a selection that ends at a line break", () => {
+    expect(applyFormat(at("hello\nworld", 0, 6), "heading").value).toBe("## hello\nworld");
+    expect(applyFormat(at("a\nb\nc", 0, 4), "task").value).toBe("- [ ] a\n- [ ] b\nc");
+  });
+
+  it("finds the one span a change replaced, for an undoable insert", () => {
+    expect(replacedSpan("ship it now", "ship **it** now")).toEqual({ start: 5, end: 7, text: "**it**" });
+    expect(replacedSpan("## Title", "Title")).toEqual({ start: 0, end: 3, text: "" });
+    expect(replacedSpan("same", "same")).toEqual({ start: 4, end: 4, text: "" });
   });
 
   it("toggles task lines, upgrading bullets rather than nesting them", () => {

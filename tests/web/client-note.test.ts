@@ -968,6 +968,8 @@ describe("the TLDR card", () => {
   it("reads the card under a repeated title, and with an ordered list or no list", () => {
     expect(tldrCard(html("# Plan\n\n**TLDR:** x\n\n1. a\n2. b\n\nmore"))).toMatch(/^<h1>Plan<\/h1>\n<div class="weave-tldr">[\s\S]*<\/ol>\n<\/div>\n<p>more<\/p>/);
     expect(tldrCard(html("**TLDR**: one line\n\nbody"))).toBe('\n<div class="weave-tldr"><p><span class="weave-tldr-label">TLDR</span>one line</p>\n</div>\n<p>body</p>\n');
+    // Spelled the way search and the graph sheet also accept it.
+    expect(tldrCard(html("**TL;DR:** one line"))).toContain('<span class="weave-tldr-label">TLDR</span>one line</p>');
   });
 
   it("keeps a nested list inside the card with its parent", () => {

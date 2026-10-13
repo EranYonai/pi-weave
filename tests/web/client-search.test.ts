@@ -472,6 +472,8 @@ describe("paletteModel", () => {
     expect(code.rows.map((row) => row.id)).toEqual(["module:src/launch"]);
     expect(code.rows[0]?.domId).toBe(rowDomId(0));
     expect(code.lightUp).toHaveLength(3);
+    // Typed past what the server answered: its hits for "launch" do not light "launch c".
+    expect(launchModel({ query: "launch c" }).lightUp).toEqual(["note:projects/launch-checklist"]);
     const gone = paletteModel({ ...initialSearchState(), query: "zz", scope: "code" }, payload([]), NOW);
     expect(gone.scope).toBe("all");
     expect(gone.scopes).toEqual([{ scope: "all", label: "All", count: 0, active: true }]);

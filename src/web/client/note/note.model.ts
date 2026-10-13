@@ -681,7 +681,8 @@ export function renderNote(purify: Purifier, body: string, index: WikiIndex): st
   return tldrCard(purify.sanitize(renderMarkdown(body, index), SANITIZE_CONFIG));
 }
 
-const TLDR_OPEN_RE = /^(\s*<h1>[\s\S]*?<\/h1>)?\s*<p><strong>TLDR:?<\/strong>:?[ \t\n]*/;
+// `TLDR`, `TL;DR`, either with the colon inside or after the bold, as search and the graph sheet read it.
+const TLDR_OPEN_RE = /^(\s*<h1>[\s\S]*?<\/h1>)?\s*<p><strong>TL;?DR[ \t]*:?<\/strong>[ \t]*:?[ \t\n]*/i;
 const LIST_TAG_RE = /<(\/?)(?:ul|ol)\b[^>]*>/g;
 
 /**

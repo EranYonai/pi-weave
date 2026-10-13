@@ -48,8 +48,9 @@ export function graphClickOpensTab(previewId: string | null, id: string | null):
  * which is the same `moveTab` the tab strip's "Split right" uses, so the new
  * pane is an ordinary one. The split direction is left as the layout has it.
  *
- * Focus follows the user's `focusNewTabs` preference like every other new
- * tab. Unchanged when the tab budget is spent.
+ * The note is shown in the split either way, which is what the button asks
+ * for; only which pane is active follows the user's `focusNewTabs`
+ * preference. Unchanged when the tab budget is spent.
  */
 export function openInSplit(layout: WorkspaceLayout, id: string, graphPaneId: string | undefined): WorkspaceLayout {
   const graph = layout.panes.find((pane) => pane.id === graphPaneId) ?? activePane(layout);

@@ -563,6 +563,19 @@ export function rowView(result: SearchResult, index: number, cursor: number, que
   };
 }
 
+/**
+ * What ⇧↵ lights. Server hits answer `answered`, which lags the typed query
+ * by the debounce and the request; until the server catches up only the
+ * graph's own matches for the query as typed light, so ⇧↵ never lights
+ * another query's notes.
+ */
+function lightUpIds(state: SearchState, payload: GraphPayload | null, results: readonly SearchResult[]): string[] {
+  const current = state.answered === serverQuery(state.query)
+    ? results
+    : mergeResults([], "", payload?.model.nodes ?? [], state.query, payload?.tags ?? {});
+  return current.filter((result) => result.kind !== "tag").map((result) => result.id);
+}
+
 export function paletteModel(state: SearchState, payload: GraphPayload | null, now: number): PaletteModel {
   const query = state.query.trim();
   const results = mergeResults(state.hits, state.answered, payload?.model.nodes ?? [], state.query, payload?.tags ?? {});
@@ -586,7 +599,7 @@ export function paletteModel(state: SearchState, payload: GraphPayload | null, n
     cursor,
     activeDomId: rows.length ? rowDomId(cursor) : null,
     query,
-    lightUp: results.filter((result) => result.kind !== "tag").map((result) => result.id),
+    lightUp: lightUpIds(state, payload, results),
   };
 }
 

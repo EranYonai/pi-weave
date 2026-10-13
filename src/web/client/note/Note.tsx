@@ -89,6 +89,7 @@ import {
   applyFormat,
   editStatus,
   formatForKey,
+  replacedSpan,
 } from "./editbar.model";
 import type { EditStatus, FormatKind } from "./editbar.model";
 import { Icon } from "../tree/Tree";
@@ -389,12 +390,17 @@ export function Note(props: NoteProps) {
     const box = raw ? rawEditorRef.current : editorRef.current;
     if (box === null) return;
     const next = applyFormat({ value: box.value, start: box.selectionStart, end: box.selectionEnd }, kind);
+    // Insert only the changed span, through the browser, so ⌘Z undoes it.
+    // Where that is not supported, set the value (and lose undo) instead.
+    const span = replacedSpan(box.value, next.value);
+    box.focus();
+    box.setSelectionRange(span.start, span.end);
+    const inserted = typeof document.execCommand === "function"
+      && document.execCommand(span.text === "" ? "delete" : "insertText", false, span.text);
+    if (!inserted || box.value !== next.value) box.value = next.value;
     if (raw) drafts.editRaw(note.slug, next.value);
     else drafts.edit(note.slug, next.value);
-    // The controlled value lands on the next render; the selection is set now
-    // so typing replaces the placeholder the button inserted.
-    box.value = next.value;
-    box.focus();
+    // The selection is set now so typing replaces the placeholder the button inserted.
     box.setSelectionRange(next.start, next.end);
   };
   // Both editor boxes: bound here, not in `keys.model.ts`, because a global

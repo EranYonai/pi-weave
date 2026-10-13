@@ -66,7 +66,8 @@ export const FORMAT_TOOLS: readonly FormatTool[] = [
   { kind: "heading", icon: "heading", label: "Heading", key: null },
   { kind: "bold", icon: "bold", label: "Bold", key: "b" },
   { kind: "italic", icon: "italic", label: "Italic", key: "i" },
-  { kind: "link", icon: "link", label: "Link", key: "k" },
+  // No ⌘K: that is search, everywhere in the workspace, the editor included.
+  { kind: "link", icon: "link", label: "Link", key: null },
   { kind: "wikilink", icon: "wikilink", label: "Link to a note", key: null },
   { kind: "task", icon: "task", label: "Task", key: null },
 ];
@@ -91,10 +92,14 @@ function wrap(edit: TextEdit, before: string, after: string, placeholder: string
   return { value, start: edit.start + before.length, end: edit.start + before.length + inner.length };
 }
 
-/** Rewrite every line the selection touches. */
+/**
+ * Rewrite every line the selection touches. A selection that ends just after
+ * a line break (a triple-clicked line) does not touch the line below it.
+ */
 function eachLine(edit: TextEdit, rewrite: (line: string) => string): TextEdit {
   const from = edit.value.lastIndexOf("\n", edit.start - 1) + 1;
-  const newline = edit.value.indexOf("\n", edit.end);
+  const last = edit.end > edit.start && edit.value[edit.end - 1] === "\n" ? edit.end - 1 : edit.end;
+  const newline = edit.value.indexOf("\n", last);
   const to = newline === -1 ? edit.value.length : newline;
   const lines = edit.value.slice(from, to).split("\n").map(rewrite).join("\n");
   const value = edit.value.slice(0, from) + lines + edit.value.slice(to);
@@ -131,4 +136,18 @@ export function applyFormat(edit: TextEdit, kind: FormatKind): TextEdit {
         return `- [ ] ${line}`;
       });
   }
+}
+
+/**
+ * The one span a formatting change replaced: `before[start, end)` became
+ * `text`. The editor inserts just that span through the browser, so ⌘Z
+ * undoes the formatting; assigning the whole value would wipe the undo stack.
+ */
+export function replacedSpan(before: string, after: string): { start: number; end: number; text: string } {
+  const max = Math.min(before.length, after.length);
+  let head = 0;
+  while (head < max && before.charCodeAt(head) === after.charCodeAt(head)) head++;
+  let tail = 0;
+  while (tail < max - head && before.charCodeAt(before.length - 1 - tail) === after.charCodeAt(after.length - 1 - tail)) tail++;
+  return { start: head, end: before.length - tail, text: after.slice(head, after.length - tail) };
 }
