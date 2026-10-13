@@ -10,6 +10,7 @@ import {
   changeBars,
   changedRange,
   dayMarks,
+  inRawTail,
   markChange,
   nextStep,
   replayStep,
@@ -127,6 +128,22 @@ describe("replay model", () => {
     expect(finalize.at).not.toMatch(/,/);
     expect(replayStep(revisions, 99)).toMatchObject({ position: "4 of 4", action: "pi-weave mystery", change: "", at: "not a date" });
     expect(replayStep(revisions, -5)?.position).toBe("1 of 4");
+  });
+
+  it("follows a change in the body, but not one that lands in the Raw tail", () => {
+    const tail = "---\n\n## Raw\n<!-- NEVER edit below this line. Verbatim user input preserved here. -->\n\n```\nfirst\n```";
+    const revisions = [
+      rev("Intro.\n\nMore.", "human", "create"),
+      rev(`Intro.\n\nMore.\n\n${tail}`, "agent", "raw"),
+      rev(`Intro, edited.\n\nMore.\n\n${tail}`, "human", "edit"),
+      rev(`Intro, edited.\n\nMore.\n\n${tail}\n\n\`\`\`\nsecond\n\`\`\``, "agent", "raw"),
+    ];
+    expect(revisions.map((_, index) => replayStep(revisions, index)?.follow)).toEqual([true, false, true, false]);
+    // The Raw step still marks what it added.
+    expect(replayStep(revisions, 3)?.marked).toContain(`${O}second${C}`);
+    expect(inRawTail("No tail here.", 5)).toBe(false);
+    expect(inRawTail(`Head.\n\n${tail}`, 4)).toBe(false);
+    expect(inRawTail(`Head.\n\n${tail}`, 5)).toBe(true);
   });
 
   it("steps forward until the end", () => {

@@ -471,7 +471,9 @@ export function Note(props: NoteProps) {
   }, [note === null ? null : note.slug]);
   useLayoutEffect(() => {
     if (replayHtml === null || bodyRef.current === null) return;
-    wrapMarks(bodyRef.current)?.scrollIntoView?.({ block: "nearest" });
+    const first = wrapMarks(bodyRef.current);
+    // A Raw append is marked but not followed: see `ReplayStep.follow`.
+    if (step?.follow) first?.scrollIntoView?.({ block: "nearest" });
   }, [replayHtml]);
   useEffect(() => {
     if (replay === null || !replay.playing || replay.revisions === null) return;

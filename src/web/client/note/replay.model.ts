@@ -22,6 +22,7 @@
  * rather than splitting `[[target]]` or `(url)`.
  */
 
+import { splitRawTail } from "../../shared/view";
 import type { HistoryRevision } from "../../shared/wire";
 
 export const MARK_OPEN = "";
@@ -129,6 +130,13 @@ export interface ReplayStep {
   /** The body to render, with the added text marked. */
   marked: string;
   by: HistoryRevision["by"];
+  /**
+   * Whether the column scrolls to the change. Not when it starts in the
+   * `## Raw` tail: dictation lands at the very end of the note, and following
+   * it dragged the reader to the bottom on every Raw step, then back up on the
+   * next edit. The added words are still marked where they are.
+   */
+  follow: boolean;
 }
 
 function shortTime(iso: string, previous: string | null): string {
@@ -137,6 +145,12 @@ function shortTime(iso: string, previous: string | null): string {
   const time = date.toLocaleTimeString(undefined, { hour: "2-digit", minute: "2-digit" });
   const sameDay = previous !== null && new Date(previous).toDateString() === date.toDateString();
   return sameDay ? time : `${date.toLocaleDateString(undefined, { month: "short", day: "numeric" })}, ${time}`;
+}
+
+/** Whether offset `at` of `body` falls in its `## Raw` tail (or the gap just above it). */
+export function inRawTail(body: string, at: number): boolean {
+  const { head, tail } = splitRawTail(body);
+  return tail !== "" && at >= head.length;
 }
 
 /** Describe revision `index`. Clamped, so a stale index after a refetch still shows something. */
@@ -157,6 +171,7 @@ export function replayStep(revisions: readonly HistoryRevision[], index: number)
     change,
     marked: markChange(previous?.body ?? null, revision.body),
     by: revision.by,
+    follow: !inRawTail(revision.body, range.start),
   };
 }
 
