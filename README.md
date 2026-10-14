@@ -157,7 +157,8 @@ Renaming or moving a note rewrites its inbound links automatically, so its backl
 
 Browse and search your notes, follow links, or explore the graph. Use tabs and split panes to keep related notes side by side.
 Notes update within a couple of seconds as your agent writes them.
-While your agent works, the notes it searches, reads, and writes light up in the tree and graph, and fade after about a minute.
+While your agent works, the notes it searches, reads, and writes light up in the graph, and fade after about a minute. When it searches,
+the graph view lights the results up the way your own search does, until its next request.
 The **This turn** list in the Context card shows those steps in order; click an earlier turn to replay it. Context floats over the page's
 right margin: fold it with `]`, or pin it to dock it as a column.
 In search, `Tab` switches between notes, code, and tags, and `⇧↵` lights every result up in the graph.

@@ -9,6 +9,8 @@
  *    steps one after another from the moment it was clicked.
  *  - {@link trailTurns}: the "This turn" strip — each turn's steps in order,
  *    worded as `searched "auth" → read Auth migration → appended Auth migration`.
+ *  - {@link agentSearch}: the agent's newest search this turn, which the
+ *    graph view lights up in its spotlight ({@link agentSpotlight}).
  *
  * Pure, DOM-free and clock-free (every function takes `now`), like the other
  * `*.model.ts` files, so the whole feature is covered by unit tests.
@@ -179,17 +181,70 @@ export function trailTurns(trail: TrailPayload | null, graph: GraphPayload | nul
   return views.slice(0, TRAIL_TURNS_SHOWN);
 }
 
-/** The strip's heading for a turn: the latest is "This turn", older ones are their time. */
 /** What the strip says for a turn with no steps yet. */
 export const TRAIL_EMPTY_TURN = "Nothing recalled yet.";
 
+/** The strip's heading for a turn: the latest is "This turn", older ones are their time. */
 export function turnHeading(view: TrailTurnView, latest: boolean): string {
   return latest ? "This turn" : view.time === "" ? `Turn ${view.turn}` : view.time;
 }
 
-/** The tree row's class for a glow, or `""`. Strength is bucketed so the class list stays small. */
-export function trailRowClass(mark: TrailMark | undefined): string {
-  if (mark === undefined) return "";
-  const level = mark.strength > 0.66 ? 3 : mark.strength > 0.33 ? 2 : 1;
-  return ` weave-row-trail weave-row-trail-${mark.kind} weave-row-trail-${level}`;
+// --- the agent's search in the graph view's spotlight ----------------------------------
+
+/** The agent's newest search this turn: what the graph view's spotlight lights. */
+export interface AgentSearch {
+  /** The event's `seq`, so a new search is a new number even for the same words. */
+  seq: number;
+  query: string;
+  /** The notes the search returned, as node ids. */
+  ids: readonly string[];
+}
+
+/**
+ * The agent's newest search in the current turn, or `null`.
+ *
+ * Only the current turn counts, so the spotlight a search lit goes out when
+ * the agent moves on to the next request. A search with no words (the wire
+ * allows one) has nothing to spell in the field and is skipped.
+ */
+export function agentSearch(trail: TrailPayload | null): AgentSearch | null {
+  if (trail === null) return null;
+  for (let index = trail.events.length - 1; index >= 0; index--) {
+    const event = trail.events[index]!;
+    if (event.turn !== trail.turn) return null;
+    if (event.kind !== "searched" || event.query === undefined || event.query.trim() === "") continue;
+    return { seq: event.seq, query: event.query, ids: event.slugs.map((slug) => `note:${slug}`) };
+  }
+  return null;
+}
+
+/** What the spotlight becomes: its query, the ids lit alongside, and the agent search that set it (`null`: the person's). */
+export interface AgentSpotlight {
+  query: string;
+  ids: readonly string[];
+  agent: number | null;
+}
+
+/**
+ * How the graph view's spotlight follows the agent's searches, when
+ * {@link agentSearch} changes. `null` leaves the spotlight alone.
+ *
+ * A new search takes the spotlight over, the way the palette's "light up in
+ * graph" does, unless the person is in the middle of a query of their own:
+ * the field focused with words they typed. A focused field that is empty, or
+ * still shows an earlier agent search, is not theirs and follows along, so a
+ * field left focused never swallows a search. When the turn that searched is
+ * over, the spotlight it lit goes out, unless the person has made it theirs
+ * since by typing or lighting something up.
+ */
+export function agentSpotlight(
+  /** The `seq` of the agent search the spotlight shows now, or `null` when it is the person's (or empty). */
+  shown: number | null,
+  search: AgentSearch | null,
+  /** Whether the field has focus and holds words; `shown` says whose words they are. */
+  composing: boolean,
+): AgentSpotlight | null {
+  if (search === null) return shown === null ? null : { query: "", ids: [], agent: null };
+  if (search.seq === shown || (composing && shown === null)) return null;
+  return { query: search.query, ids: search.ids, agent: search.seq };
 }
