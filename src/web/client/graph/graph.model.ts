@@ -545,6 +545,47 @@ export function frameBox(points: readonly Point[]): ViewBox | null {
   return { x: [minX - padding, maxX + padding], y: [minY - padding, maxY + padding] };
 }
 
+/** Where sigma's camera looks, in the unit square a {@link ViewBox} is normalized onto. */
+export interface CameraTarget {
+  readonly x: number;
+  readonly y: number;
+  /** Sigma's zoom: 1 shows the whole box, smaller is closer. */
+  readonly ratio: number;
+}
+
+/** Room a focus leaves around what it frames, as a multiple of its span. */
+export const FOCUS_MARGIN = 1.2;
+
+/** The smallest span a focus frames, so a note with no links is not blown up to fill the card. */
+export const FOCUS_MIN_SPAN = COLLIDE_RADIUS * 10;
+
+/**
+ * The camera that frames `points` in a view frozen on `box`.
+ *
+ * The Context card's note graph is read while you are on a note, so it opens
+ * on that note and its neighbours instead of the whole vault. This is the
+ * arithmetic. Sigma normalizes the box onto a unit square centred on 0.5 (its
+ * longer side becomes 1), and a camera ratio of 1 shows that whole square. So
+ * the camera's centre is the points' centre in that square, and its ratio is
+ * their padded span as a share of the box. Never above 1: a focus does not
+ * zoom out past the fit.
+ *
+ * `null` when there is nothing to frame: no box, or no finite point.
+ */
+export function focusCamera(box: ViewBox | null, points: readonly Point[]): CameraTarget | null {
+  const around = frameBox(points);
+  if (box === null || around === null) return null;
+  const extent = Math.max(box.x[1] - box.x[0], box.y[1] - box.y[0]);
+  const scale = extent > 0 && Number.isFinite(extent) ? extent : 1;
+  const span = Math.max(around.x[1] - around.x[0], around.y[1] - around.y[0], FOCUS_MIN_SPAN);
+  const centre = (range: readonly [number, number]): number => (range[0] + range[1]) / 2;
+  return {
+    x: 0.5 + (centre(around.x) - centre(box.x)) / scale,
+    y: 0.5 + (centre(around.y) - centre(box.y)) / scale,
+    ratio: Math.min(1, (span * FOCUS_MARGIN) / scale),
+  };
+}
+
 /** The empty graph. What the column renders before the first payload lands. */
 export const EMPTY_RENDER_GRAPH: RenderGraph = { nodes: [], edges: [] };
 
