@@ -164,7 +164,11 @@ body{font-size:var(--weave-px-base)}
    provenance glyph shape carries the distinction the colour swap drops;
    elsewhere the hues are unaffected. The palette's hit rows need the same
    remap: same selected ground, same failure. The label is restated last
-   so the selected row is always readable. */
+   so the selected row is always readable. The ground itself is the Context
+   rail's selection: the --weave-new tint plus a 2px inset accent bar, kept
+   under the pointer too. It is the only tinted row: the tree is where you
+   are, not what the agent touched (the graph shows that). */
+.weave-row-on,.weave-row-on:hover{background:var(--weave-new);box-shadow:inset 2px 0 0 var(--weave-accent)}
 .weave-row-on .weave-twisty,.weave-row-on .weave-kind,.weave-row-on .weave-prov,
 .weave-row-on .weave-meta,.weave-row-on .weave-label{color:var(--weave-fg)}
 .weave-hit-on .weave-hit-icon,.weave-hit-on .weave-hit-detail,.weave-hit-on .weave-hit-meta{color:var(--weave-fg)}
@@ -179,16 +183,6 @@ body{font-size:var(--weave-px-base)}
   40%{font-weight:700}
   100%{background:transparent;font-weight:400}
 }
-/* Recall trail (issue #78): a note the agent searched, read or wrote. The
-   tint follows the graph's palette for the same kinds (warn → ok → accent)
-   and steps down through three strength buckets as the glow fades. */
-.weave-row-trail{--weave-trail:var(--weave-warn);box-shadow:inset 2px 0 0 color-mix(in srgb,var(--weave-trail) var(--weave-trail-mix),transparent);background:color-mix(in srgb,var(--weave-trail) calc(var(--weave-trail-mix) / 6),transparent)}
-.weave-row-trail-read{--weave-trail:var(--weave-ok)}
-.weave-row-trail-wrote{--weave-trail:var(--weave-accent)}
-.weave-row-trail-3{--weave-trail-mix:90%}
-.weave-row-trail-2{--weave-trail-mix:55%}
-.weave-row-trail-1{--weave-trail-mix:25%}
-.weave-row-trail-wrote.weave-row-trail-3 .weave-label{font-weight:600}
 .weave-twisty{width:16px;height:16px;flex:none;display:inline-flex;align-items:center;justify-content:center;color:var(--weave-faint);cursor:pointer}
 .weave-kind{flex:none;color:var(--weave-faint);font-size:var(--weave-px-ui)}
 .weave-prov{flex:none;font-size:var(--weave-px-prov)}
@@ -602,6 +596,7 @@ body{font-size:var(--weave-px-base)}
   color:var(--weave-warn);background:color-mix(in srgb,var(--weave-warn) 16%,transparent);border-radius:999px;
 }
 .weave-spotlight-none{color:var(--weave-dim);background:var(--weave-line)}
+.weave-spotlight-by{flex:none;font-size:var(--weave-px-caption);color:var(--weave-dim);white-space:nowrap}
 .weave-spotlight .weave-spotlight-clear{
   flex:none;padding:1px 5px;cursor:pointer;font-family:var(--weave-mono);font-size:var(--weave-px-prov);
   color:var(--weave-faint);background:transparent;border:1px solid var(--weave-line-strong);border-radius:var(--weave-radius);
@@ -693,9 +688,8 @@ body{font-size:var(--weave-px-base)}
 .weave-trail{padding-top:6px;padding-bottom:6px;border-bottom:1px solid var(--weave-line)}
 .weave-trail-head{display:flex;align-items:center;gap:6px;font-size:var(--weave-px-caption);font-weight:600;letter-spacing:.09em;color:var(--weave-faint);text-transform:uppercase}
 .weave-trail-head .weave-ctx-count{margin-left:0}
-.weave-trail-replay,.weave-trail-turn{font:inherit;font-size:var(--weave-px-caption);letter-spacing:0;text-transform:none;color:var(--weave-dim);background:none;border:1px solid var(--weave-line);border-radius:var(--weave-radius);padding:0 6px;cursor:pointer}
-.weave-trail-replay{margin-left:auto}
-.weave-trail-replay:hover,.weave-trail-turn:hover{color:var(--weave-fg)}
+.weave-trail-turn{font:inherit;font-size:var(--weave-px-caption);letter-spacing:0;text-transform:none;color:var(--weave-dim);background:none;border:1px solid var(--weave-line);border-radius:var(--weave-radius);padding:0 6px;cursor:pointer}
+.weave-trail-turn:hover{color:var(--weave-fg)}
 .weave-trail-turn-on{color:var(--weave-accent);border-color:var(--weave-accent)}
 .weave-trail-steps{margin:4px 0 0;padding:0;list-style:none;display:flex;flex-direction:column;gap:2px}
 .weave-trail-step{display:flex;flex-wrap:wrap;align-items:baseline;gap:4px;padding-left:10px;position:relative;line-height:1.45}

@@ -8,8 +8,10 @@ import { lastMessageText, startStubModel, type StubModel } from "./harness/stubM
 
 /**
  * The recall trail (#78): with /weave-view open, notes the agent searches,
- * reads and writes glow in the workspace, the Context sidebar lists the turn's
- * steps, and pi's status line says how many notes the turn used.
+ * reads and writes glow in the graph, the agent's search lights up in the
+ * graph view's spotlight, the Context sidebar lists the turn's steps, and
+ * pi's status line says how many notes the turn used. The file tree stays
+ * untinted: only the note in focus is highlighted there.
  */
 
 const NOTE_TITLE = "Auth migration";
@@ -78,7 +80,7 @@ describe("recall trail: the agent's note activity shows live in /weave-view", ()
     await pi.waitFor("used 1 note", { label: "used-notes count in the status line" });
   });
 
-  it("the workspace opens with the written note glowing", async () => {
+  it("the workspace opens with the written note in an untinted tree", async () => {
     await pi.submit("/weave-view --no-open");
     const screen = await pi.waitFor(/http:\/\/127\.0\.0\.1:\d+\/\?t=\S+/, { label: "workspace URL" });
     workspaceUrl = screen.match(/http:\/\/127\.0\.0\.1:\d+\/\?t=[\w-]+/)![0];
@@ -86,7 +88,7 @@ describe("recall trail: the agent's note activity shows live in /weave-view", ()
     page.setDefaultTimeout(10_000);
     await page.goto(workspaceUrl);
     await page.getByText(NOTE_TITLE).first().waitFor();
-    await page.locator(".weave-row-trail-wrote", { hasText: NOTE_TITLE }).waitFor();
+    expect(await page.locator(".weave-tree [class*='weave-row-trail']").count()).toBe(0);
   });
 
   it("the Context sidebar lists this turn's steps", async () => {
@@ -103,13 +105,22 @@ describe("recall trail: the agent's note activity shows live in /weave-view", ()
     await strip().getByText('searched "auth"').waitFor();
     await strip().getByText("1 hit").waitFor();
     await strip().getByText("read", { exact: true }).waitFor();
-    await page.locator(".weave-row-trail-read", { hasText: NOTE_TITLE }).waitFor();
+    expect(await strip().getByRole("button", { name: "Replay" }).count()).toBe(0);
+  });
+
+  it("the graph view lights the agent's search up", async () => {
+    await page.getByRole("button", { name: "Open graph view" }).click();
+    const field = page.getByRole("searchbox", { name: "Light up in graph" });
+    await expect.poll(() => field.inputValue()).toBe("auth");
+    await page.locator(".weave-spotlight-by", { hasText: "agent" }).waitFor();
+    await page.locator(".weave-spotlight-count", { hasText: "1 lit" }).waitFor();
+    await page.getByRole("tab", { name: NOTE_TITLE }).click();
+    await strip().waitFor();
   });
 
   it("a write turn shows the append, live", async () => {
     await pi.submit("please append SAML");
     await strip().getByText("appended").waitFor();
-    await page.locator(".weave-row-trail-wrote", { hasText: NOTE_TITLE }).waitFor();
   });
 
   it("a turn that touches no note starts empty and clears the count", async () => {
@@ -126,11 +137,11 @@ describe("recall trail: the agent's note activity shows live in /weave-view", ()
     await previous.click();
     await expect.poll(() => previous.getAttribute("aria-pressed")).toBe("true");
     await strip().getByText("appended").waitFor();
-    await page.locator(".weave-row-trail-wrote", { hasText: NOTE_TITLE }).waitFor();
   });
 
-  it("the graph view shows the glow", async () => {
+  it("the agent's spotlight goes out with its turn", async () => {
     await page.getByRole("button", { name: "Open graph view" }).click();
     await page.locator("canvas").first().waitFor();
+    await expect.poll(() => page.getByRole("searchbox", { name: "Light up in graph" }).inputValue()).toBe("");
   });
 });

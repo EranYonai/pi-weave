@@ -27,7 +27,6 @@ export function TrailStrip(props: TrailStripProps) {
       <h4 class="weave-ctx-head weave-trail-head">
         <span class="weave-trail-title">{turnHeading(shown, shown === latest)}</span>
         <span class="weave-ctx-count" title="Notes read or written">{shown.used}</span>
-        {shown.steps.length === 0 ? null : <button type="button" class="weave-trail-replay" title="Replay this turn's glow" onClick={() => props.onReplay(shown.turn)}>Replay</button>}
       </h4>
       {shown.steps.length === 0 ? <p class="weave-trail-empty">{TRAIL_EMPTY_TURN}</p> : null}
       <ol class="weave-trail-steps">

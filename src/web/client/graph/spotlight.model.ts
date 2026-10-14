@@ -47,6 +47,10 @@ export const SPOTLIGHT_LABEL = "Light up in graph";
 export const SPOTLIGHT_CLEAR = "Esc";
 export const SPOTLIGHT_CLEAR_HINT = "Clear the spotlight (Esc)";
 
+/** The tag on the field while it shows the agent's newest search, and its hint. */
+export const SPOTLIGHT_BY_AGENT = "agent";
+export const SPOTLIGHT_BY_AGENT_HINT = "Your agent searched for this. Type to light up something else.";
+
 /** The legend while a spotlight is up, replacing the neighbourhood's. */
 export const SPOTLIGHT_LEGEND = { lit: "lit", dimmed: "not lit" } as const;
 

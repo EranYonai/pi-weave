@@ -20,7 +20,7 @@ import type { WorkspaceHandle } from "../workspace";
 import { ContextRail } from "./ContextRail";
 import { contextCount, contextModel } from "../context/context.model";
 import { startTrailPoll } from "../trail/trail";
-import { TRAIL_TICK_MS, trailLive, trailMarks, trailTurns } from "../trail/trail.model";
+import { TRAIL_TICK_MS, agentSearch, agentSpotlight, trailLive, trailMarks, trailTurns } from "../trail/trail.model";
 import type { TrailReplay } from "../trail/trail.model";
 import { ResizeHandle } from "./ResizeHandle";
 import { deeplinkSelection, formatHash } from "./deeplink.model";
@@ -142,6 +142,9 @@ export function Shell(props: ShellProps) {
   // What the search palette listed when it lit the graph up, for that query.
   // Typing a different query in the spotlight leaves these behind.
   const [graphFound, setGraphFound] = useState<{ query: string; ids: readonly string[] } | null>(null);
+  // The agent search the spotlight is showing (its trail `seq`), or `null`
+  // when the spotlight is the person's — see `agentSpotlight`.
+  const [agentLit, setAgentLit] = useState<number | null>(null);
   const draggedTab = useRef<string | null>(null);
   const [dropTab, setDropTab] = useState<{ paneId: string; before: string | null } | null>(null);
   const [dropPane, setDropPane] = useState<string | null>(null);
@@ -228,8 +231,10 @@ export function Shell(props: ShellProps) {
   const lightUp = (query: string, ids: readonly string[] = []): void => {
     setGraphQuery(query);
     setGraphFound({ query, ids });
+    setAgentLit(null);
     showGraph();
   };
+  const typeSpotlight = (query: string): void => { setGraphQuery(query); setAgentLit(null); };
   live.current = { layout, overlay, selectedId, graphPreviewId, select };
   const mayMutate = (slugs: readonly string[]): boolean => mayMutateDrafts(drafts, slugs, () => window.confirm("Discard unsaved changes to the affected notes before changing files?"));
   const save: SaveNote = async (slug, body, options) => {
@@ -323,6 +328,17 @@ export function Shell(props: ShellProps) {
   }, [trailGlowing]);
   const glows = useMemo(() => trailMarks(trail, trailNow, replay), [trail, trailNow, replay]);
   const turns = useMemo(() => trailTurns(trail, data.graph), [trail, data.graph]);
+  // The agent's searches light up in the graph view's spotlight, like the
+  // palette's "light up in graph", without switching to the graph.
+  const search = useMemo(() => agentSearch(trail), [trail]);
+  useEffect(() => {
+    const typing = document.activeElement?.classList.contains("weave-spotlight-input") === true;
+    const next = agentSpotlight(agentLit, search, typing);
+    if (next === null) return;
+    setGraphQuery(next.query);
+    setGraphFound({ query: next.query, ids: next.ids });
+    setAgentLit(next.agent);
+  }, [search?.seq]);
   // A floating card stays out of the way when it has nothing to say (no
   // selection, no agent turn), and over the graph, whose own sheet is its context.
   const coveredPane = layout.split === "down" ? layout.panes[0] : layout.panes.at(-1);
@@ -514,7 +530,7 @@ export function Shell(props: ShellProps) {
       </nav>
       <div class="weave-sidebar-dock weave-notes-dock" data-open={layout.treeVisible} inert={!layout.treeVisible} aria-hidden={!layout.treeVisible} style={{ "--weave-sidebar-width": `${Math.min(layout.treeWidth, width - 90)}px` }}><aside class="weave-sidebar weave-sidebar-notes" aria-label="Notes sidebar">
         <div class="weave-sidebar-heading"><button type="button" aria-pressed={!recentMode} onClick={() => setRecentMode(false)}>Files</button><button type="button" aria-pressed={recentMode} onClick={() => setRecentMode(true)}>Recent</button><button type="button" aria-label="Hide notes sidebar" onClick={() => { root.current?.querySelector<HTMLButtonElement>('[aria-label="Toggle notes sidebar"]')?.focus(); setLayout({ ...layout, treeVisible: false }); }}>«</button></div>
-        {recentMode ? <RecentList visits={visits} graph={data.graph} selectedId={selectedId} onSelect={select} /> : <Tree graph={data.graph} selectedId={selectedId} recentIds={data.recentIds} trail={glows} onSelect={(id, newTab, keepSidebar) => select(id, newTab, layout.activePane, keepSidebar)} onMutate={mayMutate} onRefresh={() => workspace.current?.refresh()} now={now} />}
+        {recentMode ? <RecentList visits={visits} graph={data.graph} selectedId={selectedId} onSelect={select} /> : <Tree graph={data.graph} selectedId={selectedId} recentIds={data.recentIds} onSelect={(id, newTab, keepSidebar) => select(id, newTab, layout.activePane, keepSidebar)} onMutate={mayMutate} onRefresh={() => workspace.current?.refresh()} now={now} />}
         <div class="weave-vault-label"><span>Workspace</span><strong title={props.cwd}>{props.cwd.split(/[\\/]/).filter(Boolean).pop() ?? "Weave"}</strong></div>
       </aside><ResizeHandle label="Resize notes sidebar" min={180} max={420} value={layout.treeWidth} onChange={(delta) => setLayout((value) => ({ ...value, treeWidth: Math.max(180, Math.min(420, value.treeWidth + delta)) }))} /></div>
       <main class={`weave-panes weave-split-${layout.split}`} style={layout.panes.length === 2 && width >= 850 ? { [layout.split === "right" ? "gridTemplateColumns" : "gridTemplateRows"]: `minmax(0, ${layout.ratio}fr) 4px minmax(0, ${1 - layout.ratio}fr)` } : {}}>
@@ -535,7 +551,7 @@ export function Shell(props: ShellProps) {
         aria-hidden={!graphVisible} inert={!graphVisible} role={contextGraphActive ? "region" : undefined} aria-label={contextGraphActive ? "Note graph" : undefined}
         style={{ ...graphBox, visibility: graphVisible ? "visible" : "hidden", pointerEvents: graphVisible ? "auto" : "none" }}>
         <Graph graph={data.graph} selectedId={selectedId} previewId={graphPreviewId} onSelect={selectGraph} onOpen={openGraphNode} renderer={createSigmaRenderer} storage={localStorage} host={window} scheme={graphTheme} forces={layout.preferences.forces} groupColors={layout.preferences.groupColors} bootFailed={data.graphFailed} fit={fit} trail={glows}
-          {...(contextGraphActive ? {} : { query: graphQuery, ...(graphFound?.query === graphQuery ? { found: graphFound.ids } : {}), onQuery: setGraphQuery, onOpenSplit: openGraphNodeInSplit })} now={now} />
+          {...(contextGraphActive ? {} : { query: graphQuery, ...(graphFound?.query === graphQuery ? { found: graphFound.ids } : {}), byAgent: agentLit !== null, onQuery: typeSpotlight, onOpenSplit: openGraphNodeInSplit })} now={now} />
       </div> : null}
     </div>
     <div class="weave-footer"><StatusBar model={statusBarModel(props.cwd, selectedId, searchShortcut(looksApple(props.platform)))} />

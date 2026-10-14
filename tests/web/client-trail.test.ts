@@ -11,9 +11,10 @@ import {
   TRAIL_EMPTY_TURN,
   TRAIL_FADE_MS,
   TRAIL_TURNS_SHOWN,
+  agentSearch,
+  agentSpotlight,
   trailLive,
   trailMarks,
-  trailRowClass,
   trailTurns,
   turnHeading,
 } from "../../src/web/client/trail/trail.model";
@@ -153,12 +154,43 @@ describe("trailTurns", () => {
   });
 });
 
-describe("trailRowClass", () => {
-  it("buckets the glow into three steps per kind", () => {
-    expect(trailRowClass(undefined)).toBe("");
-    expect(trailRowClass({ kind: "wrote", strength: 0.9 })).toBe(" weave-row-trail weave-row-trail-wrote weave-row-trail-3");
-    expect(trailRowClass({ kind: "read", strength: 0.5 })).toBe(" weave-row-trail weave-row-trail-read weave-row-trail-2");
-    expect(trailRowClass({ kind: "searched", strength: 0.1 })).toBe(" weave-row-trail weave-row-trail-searched weave-row-trail-1");
+describe("agentSearch", () => {
+  it("is the newest search with words in the current turn, as node ids", () => {
+    const payload = trail(
+      event(0, { kind: "searched", action: "search", query: "auth", slugs: ["a", "b"] }),
+      event(1, { kind: "searched", action: "search", query: "oidc", slugs: ["c"] }),
+      event(2, { kind: "searched", action: "search", query: "  ", slugs: ["d"] }),
+      event(3, { kind: "searched", action: "search", slugs: ["e"] }),
+      event(4, { slugs: ["c"] }),
+    );
+    expect(agentSearch(payload)).toEqual({ seq: 1, query: "oidc", ids: ["note:c"] });
+  });
+
+  it("is nothing without a trail, without a search, or once the turn has moved on", () => {
+    expect(agentSearch(null)).toBeNull();
+    expect(agentSearch(trail(event(0)))).toBeNull();
+    const searched = trail(event(0, { kind: "searched", action: "search", query: "auth" }));
+    expect(agentSearch({ ...searched, turn: 2 })).toBeNull();
+    expect(agentSearch(trail(searched.events[0]!, event(1, { turn: 2 })))).toBeNull();
+  });
+});
+
+describe("agentSpotlight", () => {
+  const search = { seq: 4, query: "auth", ids: ["note:a"] };
+
+  it("lights a new search up and owns the spotlight", () => {
+    expect(agentSpotlight(null, search, false)).toEqual({ query: "auth", ids: ["note:a"], agent: 4 });
+    expect(agentSpotlight(2, search, false)).toEqual({ query: "auth", ids: ["note:a"], agent: 4 });
+  });
+
+  it("leaves the spotlight alone while the person types, or for a search it already shows", () => {
+    expect(agentSpotlight(null, search, true)).toBeNull();
+    expect(agentSpotlight(4, search, false)).toBeNull();
+  });
+
+  it("puts its own spotlight out when the turn ends, and never the person's", () => {
+    expect(agentSpotlight(4, null, false)).toEqual({ query: "", ids: [], agent: null });
+    expect(agentSpotlight(null, null, false)).toBeNull();
   });
 });
 

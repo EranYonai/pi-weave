@@ -51,6 +51,8 @@ import {
   SHEET_LABEL,
   SHEET_OPEN,
   SHEET_OPEN_SPLIT,
+  SPOTLIGHT_BY_AGENT,
+  SPOTLIGHT_BY_AGENT_HINT,
   SPOTLIGHT_CLEAR,
   SPOTLIGHT_CLEAR_HINT,
   SPOTLIGHT_LABEL,
@@ -126,6 +128,8 @@ export interface GraphProps {
    * They light alongside the spotlight's own matches; omitted means none.
    */
   found?: readonly string[];
+  /** Whether `query` is the agent's newest search rather than the person's (`trail.model.ts`'s `agentSpotlight`). */
+  byAgent?: boolean;
   /**
    * Where the spotlight field writes. **Its presence is what makes this the
    * full graph view**: with it the column shows the floating spotlight field
@@ -347,6 +351,7 @@ export function Graph(props: GraphProps) {
             aria-label={SPOTLIGHT_LABEL} spellcheck={false} autoComplete="off" onInput={(event) => props.onQuery?.(event.currentTarget.value)} />
           {spot === null ? null : (
             <>
+              {props.byAgent === true ? <span class="weave-spotlight-by" title={SPOTLIGHT_BY_AGENT_HINT}>{SPOTLIGHT_BY_AGENT}</span> : null}
               <span class={`weave-spotlight-count${spot.count === 0 ? " weave-spotlight-none" : ""}`} role="status">{litLabel(spot.count)}</span>
               <button type="button" class="weave-spotlight-clear" title={SPOTLIGHT_CLEAR_HINT} aria-label={SPOTLIGHT_CLEAR_HINT}
                 onClick={() => { props.onQuery?.(""); field.current?.focus(); }}>{SPOTLIGHT_CLEAR}</button>

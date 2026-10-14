@@ -69,6 +69,15 @@ describe("ICONS", () => {
     for (const kind of WIRE_NODE_KINDS) expect(ICONS[kindIcon(kind)], kind).toBeDefined();
   });
 
+  it("draws Settings as a gear, not the theme toggle's sun", () => {
+    // The rail's Settings button once wore a hub-and-rays glyph that read as
+    // the light theme. A gear is one closed outline with no loose rays.
+    expect(ICONS.settings.d).not.toEqual(ICONS.sun.d);
+    const [outline] = ICONS.settings.d;
+    expect(outline).toMatch(/Z$/);
+    expect(outline!.match(/M/g)).toHaveLength(1);
+  });
+
 });
 
 describe("ICON_BOX", () => {
