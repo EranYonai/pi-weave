@@ -183,9 +183,14 @@ describe("agentSpotlight", () => {
     expect(agentSpotlight(2, search, false)).toEqual({ query: "auth", ids: ["note:a"], agent: 4 });
   });
 
-  it("leaves the spotlight alone while the person types, or for a search it already shows", () => {
+  it("leaves the spotlight alone mid-query of the person's own, or for a search it already shows", () => {
     expect(agentSpotlight(null, search, true)).toBeNull();
     expect(agentSpotlight(4, search, false)).toBeNull();
+  });
+
+  it("follows a focused field that still shows an earlier agent search", () => {
+    // Focus alone is not a claim: the words in the field are the agent's.
+    expect(agentSpotlight(2, search, true)).toEqual({ query: "auth", ids: ["note:a"], agent: 4 });
   });
 
   it("puts its own spotlight out when the turn ends, and never the person's", () => {

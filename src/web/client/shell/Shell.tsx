@@ -332,8 +332,8 @@ export function Shell(props: ShellProps) {
   // palette's "light up in graph", without switching to the graph.
   const search = useMemo(() => agentSearch(trail), [trail]);
   useEffect(() => {
-    const typing = document.activeElement?.classList.contains("weave-spotlight-input") === true;
-    const next = agentSpotlight(agentLit, search, typing);
+    const composing = graphQuery.trim() !== "" && document.activeElement?.classList.contains("weave-spotlight-input") === true;
+    const next = agentSpotlight(agentLit, search, composing);
     if (next === null) return;
     setGraphQuery(next.query);
     setGraphFound({ query: next.query, ids: next.ids });

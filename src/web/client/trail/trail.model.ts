@@ -230,17 +230,21 @@ export interface AgentSpotlight {
  * {@link agentSearch} changes. `null` leaves the spotlight alone.
  *
  * A new search takes the spotlight over, the way the palette's "light up in
- * graph" does, unless the person is typing in it right now. When the turn
- * that searched is over, the spotlight it lit goes out, unless the person
- * has made it theirs since by typing or lighting something up.
+ * graph" does, unless the person is in the middle of a query of their own:
+ * the field focused with words they typed. A focused field that is empty, or
+ * still shows an earlier agent search, is not theirs and follows along, so a
+ * field left focused never swallows a search. When the turn that searched is
+ * over, the spotlight it lit goes out, unless the person has made it theirs
+ * since by typing or lighting something up.
  */
 export function agentSpotlight(
   /** The `seq` of the agent search the spotlight shows now, or `null` when it is the person's (or empty). */
   shown: number | null,
   search: AgentSearch | null,
-  typing: boolean,
+  /** Whether the field has focus and holds words; `shown` says whose words they are. */
+  composing: boolean,
 ): AgentSpotlight | null {
   if (search === null) return shown === null ? null : { query: "", ids: [], agent: null };
-  if (search.seq === shown || typing) return null;
+  if (search.seq === shown || (composing && shown === null)) return null;
   return { query: search.query, ids: search.ids, agent: search.seq };
 }
