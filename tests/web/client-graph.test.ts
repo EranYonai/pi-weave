@@ -57,6 +57,9 @@ import {
   edgeKey,
   edgeReducer,
   fadeStep,
+  FOCUS_MARGIN,
+  FOCUS_MIN_SPAN,
+  focusCamera,
   frameBox,
   graphSettings,
   hoverLabelPainter,
@@ -78,6 +81,7 @@ import type {
   RenderEdge,
   RenderGraph,
   RenderNode,
+  CameraTarget,
   ViewBox,
 } from "../../src/web/client/graph/graph.model";
 import { emptyProjection, positionsOf, project, syncPositions } from "../../src/web/client/graph/project";
@@ -767,6 +771,33 @@ describe("the reducers at partial progress (§7.4)", () => {
 
 // --- settings (§7.4) ----------------------------------------------------------------------
 
+describe("focusCamera — the Context card's graph opens on the note", () => {
+  // A 1000-wide box centred on (500, 0): sigma's unit square maps 1000 units to 1.
+  const box: ViewBox = { x: [0, 1000], y: [-250, 250] };
+
+  it("centres on the points in sigma's unit square and zooms to their padded span", () => {
+    const target = focusCamera(box, [{ x: 700, y: 0 }, { x: 900, y: 100 }])!;
+    const around = frameBox([{ x: 700, y: 0 }, { x: 900, y: 100 }])!;
+    const span = Math.max(around.x[1] - around.x[0], FOCUS_MIN_SPAN);
+    expect(target.x).toBeCloseTo(0.5 + (800 - 500) / 1000);
+    expect(target.y).toBeCloseTo(0.5 + 50 / 1000);
+    expect(target.ratio).toBeCloseTo((span * FOCUS_MARGIN) / 1000);
+    expect(target.ratio).toBeLessThan(1);
+  });
+
+  it("keeps a lone note at a readable size instead of filling the card with it", () => {
+    expect(focusCamera(box, [{ x: 500, y: 0 }])).toEqual({ x: 0.5, y: 0.5, ratio: (FOCUS_MIN_SPAN * FOCUS_MARGIN) / 1000 });
+  });
+
+  it("never zooms out past the fit, and frames nothing without a box or a point", () => {
+    expect(focusCamera(box, [{ x: -5000, y: 0 }, { x: 5000, y: 0 }])!.ratio).toBe(1);
+    expect(focusCamera(null, [{ x: 0, y: 0 }])).toBeNull();
+    expect(focusCamera(box, [])).toBeNull();
+    // A degenerate box falls back to sigma's own unit scale.
+    expect(focusCamera({ x: [3, 3], y: [3, 3] }, [{ x: 3, y: 3 }])!.x).toBe(0.5);
+  });
+});
+
 describe("frameBox — the frozen view box", () => {
   it.each([
     [{ x: 10, y: 20 }],
@@ -1113,6 +1144,8 @@ function fakeSigma() {
   } = {};
   let graph: ReturnType<typeof project> | null = null;
   let resets = 0;
+  /** The camera states handed to `animate`, in order. */
+  const moves: CameraTarget[] = [];
   const panning: boolean[] = [];
   const thresholds: number[] = [];
   let prevented = 0;
@@ -1165,6 +1198,10 @@ function fakeSigma() {
           resets++;
           return Promise.resolve();
         },
+        animate(state: CameraTarget) {
+          moves.push(state);
+          return Promise.resolve();
+        },
       };
     },
     kill() {
@@ -1184,6 +1221,7 @@ function fakeSigma() {
     calls,
     created,
     resets: () => resets,
+    moves: () => moves,
     graph: () => graph,
     panning: () => panning,
     thresholds: () => thresholds,
@@ -1578,10 +1616,30 @@ describe("sigmaRenderer over the injected constructor (§7.5)", () => {
     await Promise.resolve();
     expect(fake.calls).not.toContain("refresh");
     // A camera killed mid-flight rejects; that is noise, not an error.
-    const failing = sigmaRenderer((g, c, s) => ({ ...fake.factory(g, c, s), getCamera: () => ({ animatedReset: () => Promise.reject(new Error("killed")) }) }), "dark");
+    const failing = sigmaRenderer((g, c, s) => ({ ...fake.factory(g, c, s), getCamera: () => ({ animatedReset: () => Promise.reject(new Error("killed")), animate: () => Promise.reject(new Error("killed")) }) }), "dark");
     failing.mount(container);
     expect(() => failing.fit()).not.toThrow();
     await Promise.resolve();
+  });
+
+  it("focuses by moving the camera onto the given nodes, on a box of the current positions", async () => {
+    const fake = fakeSigma();
+    const renderer = sigmaRenderer(fake.factory, "dark");
+    renderer.focus(new Set(["a"]));
+    expect(fake.moves()).toHaveLength(0);
+    renderer.setGraph(model);
+    renderer.mount(container);
+    fake.calls.length = 0;
+    renderer.focus(new Set(["a", "b", "elsewhere"]));
+    await Promise.resolve();
+    const box = fake.boxes().at(-1)!;
+    expect(fake.moves()).toEqual([focusCamera(box, [{ x: 0, y: 0 }, { x: 10, y: 0 }])]);
+    expect(fake.calls).toEqual(["setCustomBBox", "getCamera", "refresh"]);
+    // Nothing drawn to frame is a fit.
+    renderer.focus(null);
+    renderer.focus(new Set(["elsewhere"]));
+    expect(fake.resets()).toBe(2);
+    expect(fake.moves()).toHaveLength(1);
   });
 
   it("kills the instance once and can be re-mounted afterwards", () => {

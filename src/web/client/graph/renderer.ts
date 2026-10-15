@@ -1,7 +1,7 @@
 import type { GraphTheme } from "../../shared/themes";
 import type { Point } from "../../shared/layout";
-import type { EdgeDisplayOverride, GraphSettings, HighlightStyle, NodeDisplayOverride, RenderEdge, RenderGraph, RenderNode, TrailGlow, ViewBox } from "./graph.model";
-import { edgeReducer, fadeStep, frameBox, graphSettings, labelThreshold, nodeReducer, trailOverride } from "./graph.model";
+import type { CameraTarget, EdgeDisplayOverride, GraphSettings, HighlightStyle, NodeDisplayOverride, RenderEdge, RenderGraph, RenderNode, TrailGlow, ViewBox } from "./graph.model";
+import { edgeReducer, fadeStep, focusCamera, frameBox, graphSettings, labelThreshold, nodeReducer, trailOverride } from "./graph.model";
 import type { ProjectedGraph } from "./project";
 import { positionsOf, project, syncPositions } from "./project";
 
@@ -68,7 +68,7 @@ export interface SigmaLike {
    */
   setCustomBBox(box: ViewBox | null): unknown;
   refresh(): unknown;
-  getCamera(): { animatedReset(): Promise<void> };
+  getCamera(): { animatedReset(): Promise<void>; animate(state: CameraTarget): Promise<void> };
   kill(): void;
 }
 
@@ -168,6 +168,20 @@ export function sigmaRenderer(
 
   /** The box to freeze the view on, from the graph's *current* positions. */
   const boxOf = (): ViewBox | null => frameBox([...positionsOf(graph).values()]);
+
+  /**
+   * Repaint once a camera move lands. Sigma leaves edges out of frames drawn
+   * while the camera moves (`hideEdgesOnMove`) and repaints when the camera
+   * changes; a move onto where the camera already is changes nothing, so the
+   * frame drawn during it, without edges, stayed on screen until something
+   * else repainted. A renderer destroyed mid-move paints nothing, and a
+   * rejection from a camera killed mid-flight is noise.
+   */
+  const settle = (instance: SigmaLike, move: Promise<void>): void => {
+    move.then(() => {
+      if (sigma === instance) instance.refresh();
+    }, () => {});
+  };
 
   /**
    * Push the current highlight into sigma's reducers (§7.4).
@@ -346,14 +360,24 @@ export function sigmaRenderer(
       const instance = sigma;
       if (instance === null) return;
       instance.setCustomBBox(boxOf());
-      // Sigma leaves edges out of frames drawn while the camera moves
-      // (`hideEdgesOnMove`) and repaints when the camera changes. A reset onto
-      // where the camera already is changes nothing, so the frame drawn during
-      // it, without edges, stayed on screen until something else repainted.
-      // One refresh once it settles draws them back.
-      instance.getCamera().animatedReset().then(() => {
-        if (sigma === instance) instance.refresh();
-      }, () => {});
+      settle(instance, instance.getCamera().animatedReset());
+    },
+
+    /**
+     * Frame these nodes instead of the whole graph — the Context card's note
+     * graph opening on the note you are reading (`focusCamera`). Re-frames on
+     * the current positions first, like `fit`, so the camera and the box
+     * agree. Nothing to frame (`null`, or no drawn node among `ids`) is a fit.
+     */
+    focus(ids: ReadonlySet<string> | null) {
+      const instance = sigma;
+      if (instance === null) return;
+      const box = boxOf();
+      const at = positionsOf(graph);
+      const points = [...(ids ?? [])].flatMap((id) => at.get(id) ?? []);
+      const target = focusCamera(box, points);
+      instance.setCustomBBox(box);
+      settle(instance, target === null ? instance.getCamera().animatedReset() : instance.getCamera().animate(target));
     },
 
     positions() {

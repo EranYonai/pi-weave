@@ -154,6 +154,18 @@ export function Graph(props: GraphProps) {
   // mount frames the *starting* positions, which a settling simulation then
   // pushes past the edges — a two-note vault opened with clipped circles.
   const fitted = useRef(false);
+  // A re-frame asked for while the layout was still moving, done when it rests.
+  const reframe = useRef(false);
+  /**
+   * Frame the graph for where it is shown: the full view fits everything, and
+   * the Context card's note graph opens on the open note and its neighbours,
+   * since you read it while on that note (`renderer.ts`'s `focus`).
+   */
+  const frame = useCallback(() => {
+    const { full: whole, model: shown } = live.current;
+    if (whole) renderer.current?.fit();
+    else renderer.current?.focus(shown.highlight);
+  }, []);
   /**
    * Arm the simulation clock — idempotent.
    *
@@ -171,9 +183,10 @@ export function Graph(props: GraphProps) {
       engine.tick();
       // Asleep: let the clock die. The next pin re-arms it.
       if (!engine.awake()) {
-        if (!fitted.current) {
+        if (!fitted.current || reframe.current) {
           fitted.current = true;
-          renderer.current?.fit();
+          reframe.current = false;
+          frame();
         }
         return;
       }
@@ -220,8 +233,8 @@ export function Graph(props: GraphProps) {
   // Read by the mount-time `onSelect`, which outlives this render.
   const trailRef = useRef<ReadonlyMap<string, TrailGlow>>(NO_GLOWS);
   trailRef.current = props.trail ?? NO_GLOWS;
-  const live = useRef({ view, model, picture, onSelect: props.onSelect, selectedId: props.selectedId });
-  live.current = { view, model, picture, onSelect: props.onSelect, selectedId: props.selectedId };
+  const live = useRef({ view, model, picture, full, onSelect: props.onSelect, selectedId: props.selectedId });
+  live.current = { view, model, picture, full, onSelect: props.onSelect, selectedId: props.selectedId };
 
   useEffect(() => {
     const instance = props.renderer(scheme);
@@ -319,6 +332,16 @@ export function Graph(props: GraphProps) {
   useEffect(() => {
     renderer.current?.setHighlight(picture.highlight, picture.selectedId, picture.style);
   }, [picture]);
+
+  // Re-frame when another note opens under the Context card's graph, or the
+  // graph moves between the card and the full view. A click in the full view
+  // leaves the camera where it is. Before the first layout rests, the settle
+  // frames it; while the layout is still moving, the frame waits for it.
+  useEffect(() => {
+    if (!fitted.current) return;
+    if (clock.current !== null) reframe.current = true;
+    else frame();
+  }, [full, full ? null : props.selectedId]);
 
   useEffect(() => {
     renderer.current?.setTrail(trailRef.current);
