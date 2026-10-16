@@ -69,7 +69,7 @@
 
 import { Lexer, Marked } from "marked";
 import type { TokenizerAndRendererExtension, Tokens } from "marked";
-import { relTime } from "../../shared/view";
+import { relTime, splitRawOpening, splitRawTail } from "../../shared/view";
 import type { GraphPayload, ViewNote, WireGraphNode, WireNoteSource } from "../../shared/wire";
 import { provenanceGlyph, provenanceTitle } from "../tree/tree.model";
 
@@ -679,6 +679,55 @@ export const SANITIZE_CONFIG: SanitizeConfig = frozen({
  */
 export function renderNote(purify: Purifier, body: string, index: WikiIndex): string {
   return tldrCard(purify.sanitize(renderMarkdown(body, index), SANITIZE_CONFIG));
+}
+
+/** Marks the summary of the reading view's Raw fold; see {@link rawToggleOf}. */
+export const RAW_TOGGLE_ATTR = "data-weave-raw-toggle";
+
+/** A rendered checkbox's task index, as `markdownRenderer` writes it. */
+const TASK_ATTR_RE = new RegExp(` ${TASK_CHECKBOX_ATTR}="\\d+"`, "g");
+
+/**
+ * The reading view of a note: the body above its `## Raw` tail, then the tail
+ * folded into the same dashed box the editor shows, closed unless `rawOpen`.
+ *
+ * Reading used to render the tail as an ordinary `## Raw` heading, so a long
+ * dictation became a wall of text under a short note. The entries go through
+ * the same three layers as the body ({@link renderNote}); the fold around
+ * them is this module's own constant markup, added after sanitising, as
+ * {@link tldrCard} adds its card. Task boxes in the tail are shown disabled
+ * and lose their index: the tail is verbatim (the vault keeps it whatever a
+ * save says), and an index counted from the tail would name the wrong task.
+ * No tail, or a tail with no entries, renders exactly as before.
+ */
+export function renderReading(purify: Purifier, body: string, index: WikiIndex, rawOpen: boolean): string {
+  const { head, tail } = splitRawTail(body);
+  const { entries } = splitRawOpening(tail);
+  if (entries.trim() === "") return renderNote(purify, body, index);
+  const words = purify.sanitize(renderMarkdown(entries, index), SANITIZE_CONFIG).replace(TASK_ATTR_RE, " disabled");
+  return `${head === "" ? "" : renderNote(purify, head, index)}<details class="weave-raw weave-raw-read"${rawOpen ? " open" : ""}>`
+    + `<summary class="weave-raw-head" ${RAW_TOGGLE_ATTR}=""><span class="weave-raw-toggle">`
+    + `<svg class="weave-raw-chevron" width="12" height="12" viewBox="0 0 12 12" aria-hidden="true"><path d="M4.5 2.5 8 6l-3.5 3.5" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>`
+    + `${RAW_TITLE}</span><span class="weave-raw-hint">${escapeHtml(rawSummary(entries, false))}</span></summary>`
+    + `<div class="weave-raw-words">${words}</div></details>`;
+}
+
+/**
+ * Whether a click landed on the reading view's Raw fold toggle.
+ *
+ * The fold lives inside the body's `dangerouslySetInnerHTML`, so a re-render
+ * would reset a natively toggled `<details>`. The note keeps the open state
+ * instead: the click is caught here, its default prevented, and the next
+ * render writes `open` — which also keeps the fold open while an agent
+ * appends to the Raw it is showing.
+ */
+export function rawToggleOf(from: ClosestElement | null): boolean {
+  let node = from;
+  for (let depth = 0; node !== null && depth < MAX_ANCESTOR_WALK; depth++) {
+    if (node.getAttribute(RAW_TOGGLE_ATTR) !== null) return true;
+    node = node.parentElement;
+  }
+  return false;
 }
 
 // `TLDR`, `TL;DR`, either with the colon inside or after the bold, as search and the graph sheet read it.

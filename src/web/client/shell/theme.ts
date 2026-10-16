@@ -185,10 +185,15 @@ body{font-size:var(--weave-px-base)}
 }
 .weave-twisty{width:16px;height:16px;flex:none;display:inline-flex;align-items:center;justify-content:center;color:var(--weave-faint);cursor:pointer}
 .weave-kind{flex:none;color:var(--weave-faint);font-size:var(--weave-px-ui)}
-.weave-prov{flex:none;font-size:var(--weave-px-prov)}
+.weave-prov{flex:none;display:inline-flex;align-items:center;font-size:var(--weave-px-prov)}
 .weave-prov-human{color:var(--weave-ok)}
 .weave-prov-agent{color:var(--weave-accent)}
 .weave-prov-generated{color:var(--weave-faint)}
+/* The mark is drawn, not typed: filled for human, half for agent, a ring for
+   generated, in the provenance colour (or fg on a selected row). */
+.weave-prov-mark{display:block;width:7px;height:7px;box-sizing:border-box;border:1.5px solid currentColor;border-radius:999px}
+.weave-prov-human .weave-prov-mark{background:currentColor}
+.weave-prov-agent .weave-prov-mark{background:linear-gradient(90deg,currentColor 50%,transparent 50%)}
 .weave-label{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis}
 .weave-tree-rename{flex:1;min-width:0;height:20px;padding:0 4px;font:inherit;color:var(--weave-fg);background:var(--weave-panel);border:1px solid var(--weave-accent)}
 .weave-meta{flex:none;font-size:var(--weave-px-caption);color:var(--weave-faint)}
@@ -415,6 +420,17 @@ body{font-size:var(--weave-px-base)}
   color:var(--weave-dim);background:transparent;border:0;outline:0;
 }
 .weave-raw-editor:focus{color:var(--weave-fg)}
+/* Reading shows the tail in the same box, as a <details> whose open state the
+   note owns (renderReading): folded, it is one line under the prose. */
+.weave-note-body .weave-raw.weave-raw-read{margin:22px 0 0}
+.weave-raw-read>summary{list-style:none;cursor:pointer}
+.weave-raw-read>summary::-webkit-details-marker{display:none}
+.weave-raw-read[open]>summary{border-bottom:1px dashed var(--weave-line-strong)}
+.weave-raw-read[open] .weave-raw-chevron{transform:rotate(90deg)}
+.weave-raw-words{max-height:24em;overflow:auto;padding:10px 14px 12px;color:var(--weave-dim)}
+.weave-raw-words>*:last-child{margin-bottom:0}
+/* Entries are fenced verbatim on disk; inside the fold they read as the words, not as code blocks. */
+.weave-raw-words pre{padding:0;background:none;border:0;white-space:pre-wrap}
 .weave-note-tags{margin:6px 0 0;display:flex;gap:5px;flex-wrap:wrap}
 .weave-tag{
   font-size:var(--weave-px-caption);color:var(--weave-accent);background:var(--weave-panel);
@@ -570,9 +586,9 @@ body{font-size:var(--weave-px-base)}
    the legend, the marked words and the lit dots all say "lit" in one hue.
    The sheet stops short of the control strip and count line under the
    canvas (about 54px together) and scrolls inside itself. Button rules are
-   qualified by their overlay (.weave-sheet .weave-sheet-open) because the
-   workspace sheet's \`.weave-workbench button{font:inherit;color:inherit}\`
-   reset is installed later and would outrank a single class. */
+   qualified by their overlay (.weave-sheet .weave-sheet-open); the workspace
+   sheet's button reset is now \`:where()\`-wrapped, so a single class would
+   do, but the qualified form costs nothing. */
 .weave-spotlight{
   position:absolute;z-index:3;top:10px;left:10px;width:min(330px,calc(100% - 20px));box-sizing:border-box;
   display:flex;align-items:center;gap:6px;padding:3px 5px 3px 9px;

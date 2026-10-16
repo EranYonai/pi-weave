@@ -103,10 +103,16 @@ describe("editor polish: Raw tail, focus, Esc, small graph", () => {
     await page.goto(workspaceUrl);
     await page.getByText(NOTE_TITLE).first().click();
     await page.getByText(NOTE_BODY).first().waitFor();
+    // Reading folds the Raw tail into one line under the prose, as editing does.
+    const fold = page.locator(".weave-raw-read");
+    await fold.getByText("2 entries captured").waitFor();
+    expect(await fold.getAttribute("open")).toBeNull();
+    expect(await page.getByText("line 24 of a long dictated ramble").isVisible()).toBe(false);
   });
 
   it("Esc while reading leaves the note open", async () => {
-    await page.locator(".weave-note-body").first().click();
+    // The prose itself: the body's centre is the folded Raw toggle now.
+    await page.locator(".weave-note-body").getByText(NOTE_BODY).click();
     await page.keyboard.press("Escape");
     await page.getByRole("heading", { name: NOTE_TITLE }).waitFor();
     expect(await page.getByRole("heading", { name: NOTE_TITLE }).count()).toBe(1);

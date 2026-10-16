@@ -7,7 +7,7 @@ import { fetchJson } from "../api.dom";
 import { isTextEntry, type KeyTarget } from "../shell/keys.model";
 import { ICON_BOX, ICON_STROKE, ICONS } from "../shell/icons.model";
 import type { IconName } from "../shell/icons.model";
-import type { GraphPayload } from "../../shared/wire";
+import type { GraphPayload, WireNoteSource } from "../../shared/wire";
 import {
   DRAFT_FOLDER_ID,
   deleteItemLabel,
@@ -56,6 +56,28 @@ export interface TreeProps {
   now: number;
 }
 
+/**
+ * Who wrote a note, as a 7px shape: filled (human), half (agent), ring
+ * (generated). Drawn in CSS rather than as the ● ◐ ○ text glyphs, which come
+ * from whatever fallback font the platform has and left ◐ a 2px sliver. The
+ * shape still carries the difference without colour (AGENTS.md rule 4).
+ * Structural nodes have no provenance and draw nothing.
+ */
+export function ProvenanceMark({ provenance, title, decorative = false }: { provenance: WireNoteSource | null; title: string; decorative?: boolean }) {
+  if (provenance === null) return <span class="weave-prov weave-prov-none" />;
+  return (
+    <span
+      class={`weave-prov weave-prov-${provenance}`}
+      title={title}
+      role={decorative ? undefined : "img"}
+      aria-label={decorative ? undefined : title}
+      aria-hidden={decorative ? "true" : undefined}
+    >
+      <span class="weave-prov-mark" />
+    </span>
+  );
+}
+
 export function Icon({ name, class: className }: { name: IconName; class?: string }) {
   const def = ICONS[name];
   return (
@@ -102,7 +124,7 @@ function Row({ view, recentIds, edit, onEdit, onRename, onSelect, onToggle, onMe
         {view.hasKids ? <Icon name="chevron" class={view.expanded ? "weave-icon weave-icon-open" : "weave-icon"} /> : null}
       </span>
       <span class="weave-kind" aria-hidden="true"><Icon name={view.kindIcon} class="weave-icon" /></span>
-      <span class={`weave-prov weave-prov-${view.provenance ?? "none"}`} title={view.provenanceTitle}>{view.provenanceGlyph}</span>
+      <ProvenanceMark provenance={view.provenance} title={view.provenanceTitle} />
       {edit === null ? <span class="weave-label">{view.label}</span> : <RenameInput value={edit} draft={view.id === DRAFT_FOLDER_ID} onEdit={onEdit} onCommit={onRename} />}
       <span class="weave-meta">{view.meta}</span>
     </li>

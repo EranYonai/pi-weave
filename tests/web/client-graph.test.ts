@@ -62,6 +62,8 @@ import {
   focusCamera,
   frameBox,
   graphSettings,
+  reserveTop,
+  SPOTLIGHT_RESERVE,
   hoverLabelPainter,
   kindColor,
   nodeLabel,
@@ -770,6 +772,44 @@ describe("the reducers at partial progress (§7.4)", () => {
 });
 
 // --- settings (§7.4) ----------------------------------------------------------------------
+
+describe("reserveTop — fits leave the spotlight field clear", () => {
+  /** Where sigma's fit puts the top of the original content, in px below the padding. */
+  const contentTop = (grown: ViewBox, original: ViewBox, width: number, height: number, padding: number): number => {
+    const innerW = width - 2 * padding;
+    const innerH = height - 2 * padding;
+    const spanY = grown.y[1] - grown.y[0];
+    const perPixel = Math.max((grown.x[1] - grown.x[0]) / innerW, spanY / innerH);
+    return (innerH - spanY / perPixel) / 2 + (grown.y[1] - original.y[1]) / perPixel;
+  };
+
+  it("grows a height-limited box upward by exactly the inset", () => {
+    const box: ViewBox = { x: [0, 100], y: [0, 100] };
+    const grown = reserveTop(box, 800, 300, 10, 34)!;
+    expect(grown.x).toBe(box.x);
+    expect(grown.y[0]).toBe(0);
+    expect(contentTop(grown, box, 800, 300, 10)).toBeCloseTo(34);
+  });
+
+  it("grows a width-limited box only by what its slack does not already cover", () => {
+    const tall: ViewBox = { x: [0, 1000], y: [0, 600] };
+    const grown = reserveTop(tall, 400, 300, 10, 34)!;
+    expect(grown.y[1]).toBeGreaterThan(600);
+    expect(contentTop(grown, tall, 400, 300, 10)).toBeCloseTo(34);
+    // A flat graph centred in a tall stage already clears the field.
+    const flat: ViewBox = { x: [0, 1000], y: [0, 100] };
+    expect(reserveTop(flat, 400, 300, 10, 34)).toBe(flat);
+  });
+
+  it("leaves the box alone with no inset, no box, a degenerate box or a stage too small", () => {
+    const box: ViewBox = { x: [0, 100], y: [0, 100] };
+    expect(reserveTop(null, 800, 300, 10, 34)).toBeNull();
+    expect(reserveTop(box, 800, 300, 10, 0)).toBe(box);
+    expect(reserveTop({ x: [5, 5], y: [0, 100] }, 800, 300, 10, 34)).toEqual({ x: [5, 5], y: [0, 100] });
+    expect(reserveTop(box, 800, 50, 10, 34)).toBe(box);
+    expect(reserveTop(box, 0, 0, 10, 34)).toBe(box);
+  });
+});
 
 describe("focusCamera — the Context card's graph opens on the note", () => {
   // A 1000-wide box centred on (500, 0): sigma's unit square maps 1000 units to 1.
@@ -1599,6 +1639,23 @@ describe("sigmaRenderer over the injected constructor (§7.5)", () => {
     renderer.mount(container);
     renderer.fit();
     expect(fake.resets()).toBe(1);
+  });
+
+  it("frames the full view below the spotlight field when mounted with an inset", () => {
+    const plain = fakeSigma();
+    const flat = sigmaRenderer(plain.factory, "dark");
+    flat.setGraph(model);
+    flat.mount(container);
+    flat.fit();
+    const lifted = fakeSigma();
+    const full = sigmaRenderer(lifted.factory, "dark");
+    full.setGraph(model);
+    full.mount(container, SPOTLIGHT_RESERVE);
+    full.fit();
+    const before = plain.boxes().at(-1)!;
+    const after = lifted.boxes().at(-1)!;
+    expect(after.y[1]).toBeGreaterThan(before.y[1]);
+    expect(after).toEqual(reserveTop(before, container.clientWidth, container.clientHeight, graphSettings("dark").stagePadding, SPOTLIGHT_RESERVE));
   });
 
   it("repaints once the fit settles, so edges hidden while it moved come back", async () => {
