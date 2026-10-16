@@ -57,6 +57,9 @@ import {
   renderMarkdown,
   resolveMarkdownLink,
   renderNote,
+  renderReading,
+  rawToggleOf,
+  RAW_TOGGLE_ATTR,
   renderWikilink,
   renderWikilinkToken,
   resolveWikilink,
@@ -1328,5 +1331,66 @@ describe("rawSummary", () => {
     expect(rawSummary("one", false)).toBe("1 line");
     expect(rawSummary("", false)).toBe("0 lines");
     expect(rawSummary(entry, true)).toMatch(/saved with the note/);
+  });
+});
+
+describe("renderReading — the Raw tail folds in the reading view", () => {
+  const same: Purifier = { sanitize: (dirty) => dirty };
+  const opening = "---\n\n## Raw\n<!-- NEVER edit below this line. Verbatim user input preserved here. -->";
+  const entry = "<!-- appended 2026-10-16T10:00:00Z -->\n```\nsaid out loud: ship Friday\n```";
+  const body = `- [ ] Ask Dan\n\n${opening}\n\n${entry}\n\n- [ ] dictated task`;
+
+  it("renders a note with no tail, or a tail with no entries, exactly as before", () => {
+    expect(renderReading(same, "Plain prose.", EMPTY_WIKI_INDEX, false)).toBe(renderNote(same, "Plain prose.", EMPTY_WIKI_INDEX));
+    const empty = `Prose.\n\n${opening}`;
+    expect(renderReading(same, empty, EMPTY_WIKI_INDEX, true)).toBe(renderNote(same, empty, EMPTY_WIKI_INDEX));
+  });
+
+  it("puts the body above a folded box holding only the entries", () => {
+    const html = renderReading(same, body, EMPTY_WIKI_INDEX, false);
+    const [head, fold] = html.split("<details");
+    expect(head).toBe(renderNote(same, "- [ ] Ask Dan", EMPTY_WIKI_INDEX));
+    expect(fold).toContain('class="weave-raw weave-raw-read">');
+    expect(fold).toContain(`${RAW_TOGGLE_ATTR}=""`);
+    expect(fold).toContain("said out loud: ship Friday");
+    expect(fold).toContain("1 entry captured");
+    expect(fold).not.toContain("## Raw");
+    expect(fold).not.toContain("NEVER edit");
+    expect(renderReading(same, body, EMPTY_WIKI_INDEX, true)).toContain('class="weave-raw weave-raw-read" open>');
+  });
+
+  it("keeps the body's task indices and disables the tail's", () => {
+    const html = renderReading(same, body, EMPTY_WIKI_INDEX, false);
+    const [head, fold] = html.split("<details") as [string, string];
+    expect(head).toContain(`${TASK_CHECKBOX_ATTR}="0"`);
+    expect(fold).not.toContain(TASK_CHECKBOX_ATTR);
+    expect(fold).toContain('type="checkbox" disabled');
+  });
+
+  it("sanitises the entries with the strict config, and starts with the fold when the body is empty", () => {
+    const seen: string[] = [];
+    const spyPurify: Purifier = { sanitize: (dirty, config) => { expect(config).toBe(SANITIZE_CONFIG); seen.push(dirty); return dirty; } };
+    const html = renderReading(spyPurify, `${opening}\n\n${entry}`, EMPTY_WIKI_INDEX, false);
+    expect(html.startsWith("<details")).toBe(true);
+    expect(seen).toHaveLength(1);
+    expect(seen[0]).toContain("said out loud");
+  });
+});
+
+describe("rawToggleOf", () => {
+  const el = (attrs: Record<string, string>, parent: ClosestElement | null = null): ClosestElement => ({
+    getAttribute: (name) => attrs[name] ?? null,
+    parentElement: parent,
+  });
+
+  it("finds the fold's summary from anywhere inside it", () => {
+    const summary = el({ [RAW_TOGGLE_ATTR]: "" });
+    expect(rawToggleOf(summary)).toBe(true);
+    expect(rawToggleOf(el({}, el({}, summary)))).toBe(true);
+  });
+
+  it("is false outside the summary, and for no target", () => {
+    expect(rawToggleOf(el({ class: "weave-raw-words" }, el({})))).toBe(false);
+    expect(rawToggleOf(null)).toBe(false);
   });
 });

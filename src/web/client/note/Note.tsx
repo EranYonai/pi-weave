@@ -65,6 +65,8 @@ import {
   rawSummary,
   reducePreview,
   renderNote,
+  renderReading,
+  rawToggleOf,
   selectedArtifactPath,
   tagLabel,
   taskCheckboxIndexOf,
@@ -280,10 +282,13 @@ export function Note(props: NoteProps) {
   // instead of per shell render. The instance the render builds —
   // `markdownRenderer(index)` inside `renderNote` — stays per-call by design;
   // only the *result* is memoized.
+  // Raw starts folded, in the editor's box and in the reading view's fold
+  // alike: a long dictation would otherwise outgrow the note it belongs to.
+  const [rawOpen, setRawOpen] = useState(false);
   const index = useMemo(() => (note === null ? null : wikiIndex(props.graph, note.slug)), [note, props.graph]);
   const html = useMemo(
-    () => (note === null || index === null ? "" : renderNote(DOMPurify, body, index)),
-    [note, body, index],
+    () => (note === null || index === null ? "" : renderReading(DOMPurify, body, index, rawOpen)),
+    [note, body, index, rawOpen],
   );
 
   // The hover card. The reducer lives in `note.model.ts`; this is its
@@ -301,9 +306,6 @@ export function Note(props: NoteProps) {
   // shares the draft, and must not take the cursor away from this one.
   const focusEditor = useRef(false);
   const draft = note === null ? null : drafts.get(note.slug);
-  // The `## Raw` box under the editor starts folded: a long dictation would
-  // otherwise outgrow the note it belongs to.
-  const [rawOpen, setRawOpen] = useState(false);
   const taskSaving = note !== null && drafts.isTaskSaving(note.slug);
   /** Write the draft and keep editing: autosave, ⌘S and Retry. */
   const saveNow = (): void => {
@@ -700,6 +702,12 @@ export function Note(props: NoteProps) {
           }}
           onBlur={() => dispatch({ type: "hide" })}
           onClick={(event) => {
+            // The reading view's Raw fold: its open state is the note's, not the element's.
+            if (rawToggleOf(event.target as unknown as Parameters<typeof rawToggleOf>[0])) {
+              event.preventDefault();
+              setRawOpen((open) => !open);
+              return;
+            }
             const checkbox = event.target as HTMLInputElement;
             const taskIndex = taskCheckboxIndexOf(checkbox);
             // A past version is read-only: its checkboxes must not write to the note.

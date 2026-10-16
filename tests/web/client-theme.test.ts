@@ -288,6 +288,32 @@ describe("THEME_CSS", () => {
     expect(radii.filter((r) => !allowed.has(r))).toEqual([]);
   });
 
+  it("keeps the workbench's button reset below every component's own rule", () => {
+    // A plain `.weave-workbench button` (0,1,1) outranked one-class rules such
+    // as `.weave-chip` and `.weave-ctx-heading`, so chips and Context headings
+    // rendered at the body's 13px in fg instead of their caption step.
+    expect(WORKSPACE_CSS).toContain(":where(.weave-workbench) button{font:inherit;color:inherit;cursor:pointer}");
+    expect(WORKSPACE_CSS).not.toMatch(/(^|\n)\.weave-workbench button\{font/);
+  });
+
+  it("scales a note's headings from its prose, so none sits below the paragraph it heads", () => {
+    expect(WORKSPACE_CSS).toContain(".weave-document .weave-note-body h1{font-size:1.5em");
+    expect(WORKSPACE_CSS).toContain(".weave-document .weave-note-body h2{font-size:1.25em");
+    expect(WORKSPACE_CSS).toContain(".weave-document .weave-note-body h3{font-size:1.1em}");
+    expect(WORKSPACE_CSS).toContain(".weave-document .weave-note-body :is(h4,h5,h6){font-size:1em}");
+  });
+
+  it("draws provenance as filled, half and hollow marks instead of font glyphs", () => {
+    expect(THEME_CSS).toContain(".weave-prov-mark{");
+    expect(THEME_CSS).toContain(".weave-prov-human .weave-prov-mark{background:currentColor}");
+    expect(THEME_CSS).toContain(".weave-prov-agent .weave-prov-mark{background:linear-gradient(90deg,currentColor 50%,transparent 50%)}");
+  });
+
+  it("styles the reading view's Raw fold like the editor's box", () => {
+    expect(THEME_CSS).toContain(".weave-raw-read[open] .weave-raw-chevron{transform:rotate(90deg)}");
+    expect(THEME_CSS).toContain(".weave-raw-words{max-height:24em;overflow:auto");
+  });
+
   it("keeps a visible focus ring, which P4's keyboard work depends on", () => {
     expect(THEME_CSS).toContain(":focus-visible");
     expect(THEME_CSS).toContain("outline:2px solid var(--weave-accent)");

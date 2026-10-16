@@ -586,6 +586,46 @@ export function focusCamera(box: ViewBox | null, points: readonly Point[]): Came
   };
 }
 
+/**
+ * Pixels the full graph view keeps clear at the top of the stage for the
+ * spotlight field, below sigma's own `stagePadding`. The field sits 10px down
+ * and is 32px tall; with the padding, framed nodes start a few pixels under it.
+ */
+export const SPOTLIGHT_RESERVE = 34;
+
+/**
+ * Grow a frame upward so a fit leaves `inset` pixels above it.
+ *
+ * Sigma fits a box into the stage less `padding` on every side, preserving its
+ * aspect, and has no per-side padding — so the spotlight field floating over
+ * the top of the full graph view covered whichever nodes the fit put there.
+ * Extending the box above the graph (graph y points up on screen) moves the
+ * picture down by the same pixels. Two cases, by which side limits the fit:
+ *
+ * - **Height-limited**, the box fills the stage's height, so the extension
+ *   must be `inset` pixels at the new scale: `d = inset · spanY / (innerH − inset)`.
+ * - **Width-limited**, the box is centred with slack above and below at a
+ *   fixed scale `u` (units per pixel); the content's top sits at
+ *   `innerH/2 − spanY/(2u) + d/(2u)`, so `d = u · (2·inset − innerH) + spanY`,
+ *   or nothing when the slack already clears the field.
+ *
+ * The width-limited answer holds while the grown box stays width-limited;
+ * otherwise the height-limited one applies. A stage too small to hold the
+ * inset, or a degenerate box, is returned unchanged.
+ */
+export function reserveTop(box: ViewBox | null, width: number, height: number, padding: number, inset: number): ViewBox | null {
+  if (box === null || inset <= 0) return box;
+  const spanX = box.x[1] - box.x[0];
+  const spanY = box.y[1] - box.y[0];
+  const innerW = width - 2 * padding;
+  const innerH = height - 2 * padding;
+  if (!(spanX > 0 && spanY > 0 && innerW > 0 && innerH > inset)) return box;
+  const perPixel = spanX / innerW;
+  const widthLimited = Math.max(0, perPixel * (2 * inset - innerH) + spanY);
+  const grow = (spanY + widthLimited) / innerH <= perPixel ? widthLimited : (inset * spanY) / (innerH - inset);
+  return grow === 0 ? box : { x: box.x, y: [box.y[0], box.y[1] + grow] };
+}
+
 /** The empty graph. What the column renders before the first payload lands. */
 export const EMPTY_RENDER_GRAPH: RenderGraph = { nodes: [], edges: [] };
 

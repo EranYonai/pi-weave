@@ -1,7 +1,9 @@
 /** Tabbed workspace furniture; the graph keeps its existing palette and renderer. */
 export const WORKSPACE_CSS = `
 .weave-workbench{position:relative;isolation:isolate;display:flex;min-height:0;overflow:hidden;background:var(--weave-page)}
-.weave-workbench button{font:inherit;color:inherit;cursor:pointer}
+/* Zero specificity, so a component's own one-class button rule (a chip, a
+   Context heading) still sets its size and colour over this reset. */
+:where(.weave-workbench) button{font:inherit;color:inherit;cursor:pointer}
 .weave-workbench button:focus-visible,.weave-workbench summary:focus-visible{outline:2px solid var(--weave-accent);outline-offset:-2px}
 .weave-workbench button:disabled{opacity:.35;cursor:default}
 .weave-ribbon{width:44px;flex:none;display:flex;align-items:center;flex-direction:column;gap:8px;padding:12px 0;background:var(--weave-panel);border-right:1px solid var(--weave-line)}
@@ -76,8 +78,13 @@ export const WORKSPACE_CSS = `
 .weave-document .weave-note-head{position:static;padding:28px var(--weave-gutter-r) 18px var(--weave-gutter-l);border:0}
 .weave-document .weave-note-title{font-size:var(--weave-px-display);letter-spacing:-.03em;margin-bottom:10px}
 .weave-document .weave-note-body{padding:10px var(--weave-gutter-r) 64px var(--weave-gutter-l);font-size:var(--weave-note-size,var(--weave-px-subhead));line-height:1.8}
-.weave-document .weave-note-body h1{font-size:var(--weave-px-display);line-height:1.4;margin-bottom:18px}
-.weave-document .weave-note-body h2{font-size:var(--weave-px-title);margin-top:28px}
+/* Headings scale from the prose, which follows Settings → Note font size: a
+   fixed px ladder put h3 under its own paragraph and tied h1 with the page
+   title. The page title stays the one display-size voice. */
+.weave-document .weave-note-body h1{font-size:1.5em;line-height:1.3;margin-bottom:14px}
+.weave-document .weave-note-body h2{font-size:1.25em;margin-top:28px}
+.weave-document .weave-note-body h3{font-size:1.1em}
+.weave-document .weave-note-body :is(h4,h5,h6){font-size:1em}
 .weave-document .weave-note-editor{padding:14px var(--weave-gutter-r) 14px var(--weave-gutter-l);min-height:220px;flex:1;font-size:var(--weave-note-size,var(--weave-px-subhead))}
 .weave-document .weave-note-tags{margin-top:12px}
 .weave-document .weave-replay{padding:12px var(--weave-gutter-r) 14px var(--weave-gutter-l)}

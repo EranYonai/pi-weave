@@ -1,7 +1,7 @@
 import type { GraphTheme } from "../../shared/themes";
 import type { Point } from "../../shared/layout";
 import type { CameraTarget, EdgeDisplayOverride, GraphSettings, HighlightStyle, NodeDisplayOverride, RenderEdge, RenderGraph, RenderNode, TrailGlow, ViewBox } from "./graph.model";
-import { edgeReducer, fadeStep, focusCamera, frameBox, graphSettings, labelThreshold, nodeReducer, trailOverride } from "./graph.model";
+import { edgeReducer, fadeStep, focusCamera, frameBox, graphSettings, labelThreshold, nodeReducer, reserveTop, trailOverride } from "./graph.model";
 import type { ProjectedGraph } from "./project";
 import { positionsOf, project, syncPositions } from "./project";
 
@@ -167,7 +167,16 @@ export function sigmaRenderer(
   };
 
   /** The box to freeze the view on, from the graph's *current* positions. */
-  const boxOf = (): ViewBox | null => frameBox([...positionsOf(graph).values()]);
+  /** The mounted container (a zero-size stage until then) and the room kept above the graph — see `mount`. */
+  let stage: RenderContainer = { clientWidth: 0, clientHeight: 0 };
+  let topInset = 0;
+  const boxOf = (): ViewBox | null => reserveTop(
+    frameBox([...positionsOf(graph).values()]),
+    stage.clientWidth,
+    stage.clientHeight,
+    graphSettings(scheme).stagePadding,
+    topInset,
+  );
 
   /**
    * Repaint once a camera move lands. Sigma leaves edges out of frames drawn
@@ -229,8 +238,14 @@ export function sigmaRenderer(
   };
 
   return {
-    mount(container: RenderContainer) {
+    /**
+     * `inset` is the pixels every fit keeps clear at the top of the stage (the
+     * full graph view's spotlight field, `SPOTLIGHT_RESERVE`); 0 for none.
+     */
+    mount(container: RenderContainer, inset = 0) {
       if (sigma !== null) return;
+      stage = container;
+      topInset = inset;
       const instance = create(graph, container, graphSettings(scheme));
       // §1.3's context bus: a click writes `selectedId`, and the note column,
       // the tree and the context rail all recompute from it.

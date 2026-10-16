@@ -68,13 +68,14 @@ import {
 import type { PositionStorage } from "./positions";
 import type { GraphRenderer, RendererFactory } from "./renderer";
 import type { TrailGlow } from "./graph.model";
+import { SPOTLIGHT_RESERVE } from "./graph.model";
 import { schemeOf } from "./scheme";
 import type { SchemeHost } from "./scheme";
 import type { GraphTheme } from "../../shared/themes";
 import { setForces, type ForceConstants } from "../../shared/layout";
 import { createGraphSimulation } from "./dynamics";
 import type { GraphSimulation } from "./dynamics";
-import { Icon } from "../tree/Tree";
+import { Icon, ProvenanceMark } from "../tree/Tree";
 
 export interface GraphProps {
   graph: GraphPayload | null;
@@ -273,7 +274,8 @@ export function Graph(props: GraphProps) {
     instance.onDragEnd((id) => {
       dynamics.current?.release(id);
     });
-    instance.mount(canvas.current ?? { clientWidth: 0, clientHeight: 0 });
+    // The full view's spotlight field floats over the top of the stage; fits keep clear of it.
+    instance.mount(canvas.current ?? { clientWidth: 0, clientHeight: 0 }, full ? SPOTLIGHT_RESERVE : 0);
     renderer.current = instance;
     // A remount from a scheme flip re-runs *this* effect while the effects
     // below stay keyed on `model.key` / `model.highlight` — which have not
@@ -391,7 +393,7 @@ export function Graph(props: GraphProps) {
           </p>
           <h2 class="weave-sheet-title">{sheet.title}</h2>
           <p class="weave-sheet-meta">
-            {sheet.who === null ? null : <span class={`weave-prov weave-prov-${sheet.who.provenance}`} title={sheet.who.title} aria-hidden="true">{sheet.who.glyph}</span>}
+            {sheet.who === null ? null : <ProvenanceMark provenance={sheet.who.provenance} title={sheet.who.title} decorative />}
             <span>{sheet.who === null ? sheet.kind : sheet.who.word}</span>
             {sheet.when === "" ? null : <span class="weave-sheet-when">· {sheet.when}</span>}
           </p>

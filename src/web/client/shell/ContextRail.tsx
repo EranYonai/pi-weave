@@ -17,7 +17,7 @@ import type { ContextModel, ContextRow, RailSectionView, RailToggles, TagGroupRo
 import { contextModel, emptyRailToggles, railPanelId, railSectionView, railTagsView, railToggled } from "../context/context.model";
 import type { GraphPayload } from "../../shared/wire";
 import { CONTEXT_EMPTY } from "./shell.model";
-import { Icon } from "../tree/Tree";
+import { Icon, ProvenanceMark } from "../tree/Tree";
 import { ResizeHandle } from "./ResizeHandle";
 import { TrailStrip } from "../trail/TrailStrip";
 import type { TrailTurnView } from "../trail/trail.model";
@@ -41,9 +41,7 @@ function Row({ row, onSelect }: { row: ContextRow; onSelect: (newTab: boolean) =
         <span class="weave-kind" aria-hidden="true">
           <Icon name={row.kindIcon} class="weave-icon" />
         </span>
-        <span class={`weave-prov weave-prov-${row.provenance ?? "none"}`} title={row.provenanceTitle}>
-          {row.provenanceGlyph}
-        </span>
+        <ProvenanceMark provenance={row.provenance} title={row.provenanceTitle} />
         <span class="weave-label">{row.label}</span>
       </button>
     </li>
