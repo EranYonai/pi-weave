@@ -131,7 +131,7 @@ export const DRAFT_FOLDER_ID = "vfolder:\u0000draft";
  * it; on a *note*, a sibling of that note — which is what "new folder here"
  * means when "here" is a file. Returns the parent path, `""` for the root.
  */
-export function newFolderParent(target: { type: "note" | "folder" | "vault"; path: string }): string {
+export function newFolderParent(target: TreeTarget): string {
   if (target.type === "vault") return "";
   if (target.type === "folder") return target.path;
   return target.path.split("/").slice(0, -1).join("/");
@@ -232,25 +232,33 @@ export function movableTreeRow(id: string): { type: "note" | "artifact"; slug: s
   return null;
 }
 
-export function mutableTreeRow(id: string): { type: "note" | "folder" | "vault"; path: string } | null {
+/** A tree row the file actions (rename, delete, new folder) can act on. */
+export interface TreeTarget {
+  type: "note" | "artifact" | "folder" | "vault";
+  path: string;
+}
+
+export function mutableTreeRow(id: string): TreeTarget | null {
   if (id === "vault") return { type: "vault", path: "" };
   if (id.startsWith("note:")) return { type: "note", path: id.slice("note:".length) };
+  if (id.startsWith("artifact:")) return { type: "artifact", path: id.slice("artifact:".length) };
   if (id.startsWith("vfolder:")) return { type: "folder", path: id.slice("vfolder:".length) };
   return null;
 }
 
 /** Note slugs a note or folder mutation can invalidate. */
-export function affectedNoteSlugs(graph: GraphPayload | null, target: { type: "note" | "folder" | "vault"; path: string }): string[] {
+export function affectedNoteSlugs(graph: GraphPayload | null, target: TreeTarget): string[] {
   if (target.type === "note") return [target.path];
   if (target.type !== "folder" || graph === null) return [];
   const prefix = `note:${target.path}/`;
   return graph.model.nodes.filter((node) => node.kind === "note" && node.id.startsWith(prefix)).map((node) => node.id.slice(5));
 }
 
-export function deletesSelection(selectedId: string | null, target: { type: "note" | "folder" | "vault"; path: string }): boolean {
+export function deletesSelection(selectedId: string | null, target: TreeTarget): boolean {
   if (selectedId === null) return false;
   if (target.type === "note") return selectedId === `note:${target.path}`;
-  if (target.type === "folder") return selectedId === `vfolder:${target.path}` || selectedId.startsWith(`vfolder:${target.path}/`) || selectedId.startsWith(`note:${target.path}/`);
+  if (target.type === "artifact") return selectedId === `artifact:${target.path}`;
+  if (target.type === "folder") return selectedId === `vfolder:${target.path}` || ["vfolder:", "note:", "artifact:"].some((kind) => selectedId.startsWith(`${kind}${target.path}/`));
   return false;
 }
 
@@ -267,7 +275,7 @@ export function deletesSelection(selectedId: string | null, target: { type: "not
  * The confirmation is {@link deleteItemLabel}: the same menu item, clicked
  * twice, with the second click's label saying exactly what it will destroy.
  */
-export function deleteNeedsConfirmation(target: { type: "note" | "folder" | "vault" }): boolean {
+export function deleteNeedsConfirmation(target: Pick<TreeTarget, "type">): boolean {
   return target.type === "folder";
 }
 
@@ -281,7 +289,7 @@ export function deleteNeedsConfirmation(target: { type: "note" | "folder" | "vau
  * safety mechanism — it is the user's chance to notice they right-clicked the
  * wrong row.
  */
-export function deleteItemLabel(target: { type: "note" | "folder" | "vault" }, label: string, armed: boolean): string {
+export function deleteItemLabel(target: Pick<TreeTarget, "type">, label: string, armed: boolean): string {
   if (!deleteNeedsConfirmation(target)) return "Delete";
   return armed ? `Delete “${label}” and everything in it` : "Delete…";
 }

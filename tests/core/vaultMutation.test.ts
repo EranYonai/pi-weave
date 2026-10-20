@@ -1,7 +1,7 @@
 import { promises as fs } from "node:fs";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
-import { addNote, appendToNote, createFolder, deleteFolder, deleteNote, getNote, moveHtmlArtifact, moveNote, renameFolder, renameNote, upsertNote } from "../../src/core/vault";
+import { addNote, appendToNote, createFolder, deleteFolder, deleteHtmlArtifact, deleteNote, getNote, moveHtmlArtifact, moveNote, renameHtmlArtifact, renameFolder, renameNote, upsertNote } from "../../src/core/vault";
 import { makeTempDir } from "../helpers";
 
 describe("vault mutations", () => {
@@ -41,6 +41,42 @@ describe("vault mutations", () => {
     expect(await moveHtmlArtifact(root, "linker", null)).toEqual({ ok: false, reason: "invalid" });
     await fs.writeFile(join(root, "notes", "archive", "report.html"), "occupied");
     expect(await moveHtmlArtifact(root, "report.html", "archive")).toEqual({ ok: false, reason: "collision" });
+  });
+
+  it("renames and deletes HTML artifacts, retitling them and repointing links", async () => {
+    const root = await makeTempDir();
+    await fs.mkdir(join(root, "notes", "reports"), { recursive: true });
+    const titled = "<!doctype html><title>Old title</title><h1>Old title</h1>";
+    await fs.writeFile(join(root, "notes", "reports", "old.html"), titled);
+    const linker = await addNote(root, { title: "Linker", body: "See [[reports/old.html]]." });
+
+    expect(await renameHtmlArtifact(root, "reports/old.html", "Q3 <Burndown>")).toEqual({ ok: true, slug: "reports/q3-burndown.html" });
+    expect(await fs.readFile(join(root, "notes", "reports", "q3-burndown.html"), "utf8")).toBe("<!doctype html><title>Q3 &lt;Burndown&gt;</title><h1>Old title</h1>");
+    expect((await getNote(root, linker.slug))?.body).toBe("See [[reports/q3-burndown.html|reports/old.html]].");
+    // Same file name: only the title changes. A typed extension is not doubled.
+    expect(await renameHtmlArtifact(root, "reports/q3-burndown.html", "Q3 burndown.html")).toEqual({ ok: true, slug: "reports/q3-burndown.html" });
+    expect(await fs.readFile(join(root, "notes", "reports", "q3-burndown.html"), "utf8")).toContain("<title>Q3 burndown</title>");
+
+    // A comment front-matter title wins over <title>, so that is the one rewritten.
+    const commented = "<!--\n---\ntitle: Old\ndescription: d\n---\n-->\n<title>Tag</title>";
+    await fs.writeFile(join(root, "notes", "page.htm"), commented);
+    expect(await renameHtmlArtifact(root, "page.htm", "New: page -->")).toEqual({ ok: true, slug: "new-page.htm" });
+    expect(await fs.readFile(join(root, "notes", "new-page.htm"), "utf8")).toBe("<!--\n---\ntitle: \"New: page ->\"\ndescription: d\n---\n-->\n<title>Tag</title>");
+    // No title anywhere: only the file name changes.
+    await fs.writeFile(join(root, "notes", "bare.html"), "<p>bare</p>");
+    expect(await renameHtmlArtifact(root, "bare.html", "Plain")).toEqual({ ok: true, slug: "plain.html" });
+    expect(await fs.readFile(join(root, "notes", "plain.html"), "utf8")).toBe("<p>bare</p>");
+
+    await fs.writeFile(join(root, "notes", "taken.html"), "occupied");
+    expect(await renameHtmlArtifact(root, "plain.html", "Taken")).toEqual({ ok: false, reason: "collision" });
+    expect(await fs.readFile(join(root, "notes", "plain.html"), "utf8")).toBe("<p>bare</p>");
+    expect(await renameHtmlArtifact(root, "missing.html", "x")).toEqual({ ok: false, reason: "missing" });
+    expect(await renameHtmlArtifact(root, "plain.html", " .html ")).toEqual({ ok: false, reason: "invalid" });
+    expect(await renameHtmlArtifact(root, "../escape.html", "x")).toEqual({ ok: false, reason: "invalid" });
+
+    expect(await deleteHtmlArtifact(root, "plain.html")).toEqual({ ok: true });
+    expect(await deleteHtmlArtifact(root, "plain.html")).toEqual({ ok: false, reason: "missing" });
+    expect(await deleteHtmlArtifact(root, "linker")).toEqual({ ok: false, reason: "invalid" });
   });
 
   it("moves and deletes notes within the vault", async () => {

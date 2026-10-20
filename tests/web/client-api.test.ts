@@ -33,6 +33,8 @@ import {
   isViewNote,
   messageForStatus,
   moveArtifact,
+  renameArtifact,
+  deleteArtifact,
   moveNote,
   openNote,
   renameFolder,
@@ -140,6 +142,8 @@ describe("vault mutations", () => {
     await renameNote(fetch, "folder/a", "B");
     await moveNote(fetch, "folder/a", null);
     await moveArtifact(fetch, "folder/a b.html", "other");
+    await renameArtifact(fetch, "folder/a b.html", "C");
+    await deleteArtifact(fetch, "folder/a b.html");
     await deleteNote(fetch, "folder/a");
     await createFolder(fetch, "old/nested");
     await renameFolder(fetch, "old/nested", "new");
@@ -148,6 +152,8 @@ describe("vault mutations", () => {
       ["/api/note/folder%2Fa/rename", "POST"],
       ["/api/note/folder%2Fa/move", "POST"],
       ["/api/artifact/folder/a%20b.html/move", "POST"],
+      ["/api/artifact/folder/a%20b.html/rename", "POST"],
+      ["/api/artifact/folder/a%20b.html", "DELETE"],
       ["/api/note/folder%2Fa", "DELETE"],
       ["/api/folder/old/nested", "POST"],
       ["/api/folder/old/nested/rename", "POST"],

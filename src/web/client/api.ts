@@ -423,6 +423,8 @@ export const saveNote = (fetchImpl: FetchLike, slug: string, body: string, raw =
 export const renameNote = (fetchImpl: FetchLike, slug: string, name: string) => mutation(fetchImpl, noteUrl(slug, "/rename"), "POST", { name });
 export const moveNote = (fetchImpl: FetchLike, slug: string, folder: string | null) => mutation(fetchImpl, noteUrl(slug, "/move"), "POST", { folder });
 export const moveArtifact = (fetchImpl: FetchLike, slug: string, folder: string | null) => mutation(fetchImpl, artifactUrl(slug, "/move"), "POST", { folder });
+export const renameArtifact = (fetchImpl: FetchLike, slug: string, name: string) => mutation(fetchImpl, artifactUrl(slug, "/rename"), "POST", { name });
+export const deleteArtifact = (fetchImpl: FetchLike, slug: string) => mutation(fetchImpl, artifactUrl(slug), "DELETE");
 export const deleteNote = (fetchImpl: FetchLike, slug: string) => mutation(fetchImpl, noteUrl(slug), "DELETE");
 export const createFolder = (fetchImpl: FetchLike, path: string) => mutation(fetchImpl, folderUrl(path), "POST");
 export const renameFolder = (fetchImpl: FetchLike, path: string, name: string) => mutation(fetchImpl, folderUrl(path, "/rename"), "POST", { name });

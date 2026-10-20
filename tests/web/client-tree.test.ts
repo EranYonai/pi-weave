@@ -269,12 +269,14 @@ describe("tree mutations", () => {
     expect(affectedNoteSlugs(null, { type: "note", path: "elsewhere" })).toEqual(["elsewhere"]);
     expect(affectedNoteSlugs(null, { type: "folder", path: "plans" })).toEqual([]);
     expect(affectedNoteSlugs(graph, { type: "vault", path: "" })).toEqual([]);
+    expect(affectedNoteSlugs(graph, { type: "artifact", path: "plans/demo.html" })).toEqual([]);
   });
 
   it("recognises note and folder rows without making repository rows mutable", () => {
     expect(mutableTreeRow("vault")).toEqual({ type: "vault", path: "" });
     expect(mutableTreeRow("note:plans/a")).toEqual({ type: "note", path: "plans/a" });
     expect(mutableTreeRow("vfolder:plans")).toEqual({ type: "folder", path: "plans" });
+    expect(mutableTreeRow("artifact:plans/demo.html")).toEqual({ type: "artifact", path: "plans/demo.html" });
     expect(mutableTreeRow("module:src")).toBeNull();
   });
 
@@ -298,12 +300,16 @@ describe("tree mutations", () => {
     expect(deletesSelection("note:other", { type: "folder", path: "plans" })).toBe(false);
     expect(deletesSelection("note:other", { type: "vault", path: "" })).toBe(false);
     expect(deletesSelection(null, { type: "note", path: "plans/a" })).toBe(false);
+    expect(deletesSelection("artifact:plans/demo.html", { type: "artifact", path: "plans/demo.html" })).toBe(true);
+    expect(deletesSelection("artifact:plans/demo.html", { type: "folder", path: "plans" })).toBe(true);
+    expect(deletesSelection("note:plans/demo", { type: "artifact", path: "plans/demo.html" })).toBe(false);
   });
 
   it("deletes notes directly but confirms recursive folder deletion", () => {
     expect(deleteNeedsConfirmation({ type: "note" })).toBe(false);
     expect(deleteNeedsConfirmation({ type: "folder" })).toBe(true);
     expect(deleteNeedsConfirmation({ type: "vault" })).toBe(false);
+    expect(deleteNeedsConfirmation({ type: "artifact" })).toBe(false);
   });
 
   it("confirms a folder delete in the menu item's own label", () => {
@@ -912,6 +918,7 @@ describe("creating a folder inline, not through a prompt", () => {
     // note cannot contain a folder, and the alternative (silently using the
     // vault root) would put the folder somewhere the user was not looking.
     expect(newFolderParent({ type: "vault", path: "" })).toBe("");
+    expect(newFolderParent({ type: "artifact", path: "plans/demo.html" })).toBe("plans");
     expect(newFolderParent({ type: "folder", path: "docs/deep" })).toBe("docs/deep");
     expect(newFolderParent({ type: "note", path: "docs/one" })).toBe("docs");
     expect(newFolderParent({ type: "note", path: "loose" })).toBe("");

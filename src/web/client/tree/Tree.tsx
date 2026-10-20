@@ -2,7 +2,7 @@
 
 import { NOTE_DRAG_TYPE } from "../shell/shell.model";
 import { useLayoutEffect, useRef, useState } from "preact/hooks";
-import { createFolder, deleteFolder, deleteNote, moveArtifact, moveNote, renameFolder, renameNote } from "../api";
+import { createFolder, deleteArtifact, deleteFolder, deleteNote, moveArtifact, moveNote, renameArtifact, renameFolder, renameNote } from "../api";
 import { fetchJson } from "../api.dom";
 import { isTextEntry, type KeyTarget } from "../shell/keys.model";
 import { ICON_BOX, ICON_STROKE, ICONS } from "../shell/icons.model";
@@ -42,6 +42,7 @@ import {
   treeEmptyMessage,
   treeKey,
 } from "./tree.model";
+import type { TreeTarget } from "./tree.model";
 
 export interface TreeProps {
   graph: GraphPayload | null;
@@ -211,7 +212,7 @@ export function Tree(props: TreeProps) {
       // Before the request: asking after a delete is asking about a file that
       // is already gone, and "keep editing" would strand the draft on a 404.
       if (!props.onMutate(affectedNoteSlugs(props.graph, target))) return;
-      await run(target.type === "note" ? deleteNote(fetchJson, target.path) : deleteFolder(fetchJson, target.path), deletesSelection(props.selectedId, target) ? "vault" : undefined);
+      await run(target.type === "note" ? deleteNote(fetchJson, target.path) : target.type === "artifact" ? deleteArtifact(fetchJson, target.path) : deleteFolder(fetchJson, target.path), deletesSelection(props.selectedId, target) ? "vault" : undefined);
     }
   };
 
@@ -223,7 +224,7 @@ export function Tree(props: TreeProps) {
    * the row shows no count for, so it takes two — and the second click's label
    * names the folder, which is the chance to notice the wrong row was hit.
    */
-  const clickDelete = (target: { type: "note" | "folder" | "vault" }): void => {
+  const clickDelete = (target: Pick<TreeTarget, "type">): void => {
     if (menu === null) return;
     if (deleteNeedsConfirmation(target) && menu.armed !== true) {
       setMenu({ ...menu, armed: true });
@@ -260,7 +261,7 @@ export function Tree(props: TreeProps) {
     // An open draft is a different question; `onMutate` asks that one.
     if (target !== null && name && name !== current.label) {
       if (!props.onMutate(affectedNoteSlugs(props.graph, target))) return;
-      void run(target.type === "note" ? renameNote(fetchJson, target.path, name) : renameFolder(fetchJson, target.path, name));
+      void run(target.type === "note" ? renameNote(fetchJson, target.path, name) : target.type === "artifact" ? renameArtifact(fetchJson, target.path, name) : renameFolder(fetchJson, target.path, name));
     }
   };
 

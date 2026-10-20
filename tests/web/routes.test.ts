@@ -1064,6 +1064,13 @@ describe("GET /api/artifact/:rel", () => {
     expect((await post(server, "/api/artifact/report.html/move", { folder: 1 })).status).toBe(400);
     expect((await post(server, "/api/artifact/report.html/move", { folder: "missing" })).status).toBe(404);
     expect((await post(server, "/api/artifact/..%2Fsecret.html/move", { folder: null })).status).toBe(400);
+
+    res = await post(server, "/api/artifact/report.html/rename", { name: "Sprint report" });
+    expect(await res.json()).toEqual({ ok: true, id: "artifact:sprint-report.html" });
+    expect(await fs.readFile(join(vaultRoot, "notes", "sprint-report.html"), "utf8")).toBe("<title>Sprint report</title>");
+    expect((await post(server, "/api/artifact/sprint-report.html/rename", {})).status).toBe(400);
+    expect((await del(server, "/api/artifact/sprint-report.html")).status).toBe(200);
+    expect((await del(server, "/api/artifact/sprint-report.html")).status).toBe(404);
   });
 
   it.each(["../secret.html", "%2e%2e%2fsecret.html", "reports/report.md"])("refuses unsafe or non-HTML paths: %s", async (rel) => {
