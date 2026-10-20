@@ -2,7 +2,7 @@
 
 import { NOTE_DRAG_TYPE } from "../shell/shell.model";
 import { useLayoutEffect, useRef, useState } from "preact/hooks";
-import { createFolder, deleteFolder, deleteNote, moveNote, renameFolder, renameNote } from "../api";
+import { createFolder, deleteFolder, deleteNote, moveArtifact, moveNote, renameFolder, renameNote } from "../api";
 import { fetchJson } from "../api.dom";
 import { isTextEntry, type KeyTarget } from "../shell/keys.model";
 import { ICON_BOX, ICON_STROKE, ICONS } from "../shell/icons.model";
@@ -21,6 +21,7 @@ import {
   deleteNeedsConfirmation,
   depthVar,
   dropFolder,
+  movableTreeRow,
   initialTreeView,
   newFolderParent,
   newFolderPath,
@@ -91,7 +92,7 @@ function Row({ view, recentIds, edit, onEdit, onRename, onSelect, onToggle, onMe
       aria-expanded={view.hasKids ? view.expanded : undefined}
       style={depthVar(view.depth)}
       onClick={(event) => onSelect(event.metaKey || event.ctrlKey)}
-      draggable={view.id.startsWith("note:")}
+      draggable={movableTreeRow(view.id) !== null}
       aria-label={view.id === DRAFT_FOLDER_ID ? "New folder" : undefined}
       onDragStart={(event) => { event.dataTransfer?.setData("text/plain", view.id); event.dataTransfer?.setData(NOTE_DRAG_TYPE, view.id); if (event.dataTransfer) event.dataTransfer.effectAllowed = "copyMove"; }}
       onDragOver={folder === undefined ? undefined : (event) => event.preventDefault()}
@@ -297,7 +298,7 @@ export function Tree(props: TreeProps) {
             setMenu({ id: "vault", label: "Vault", x: event.clientX, y: event.clientY });
           }}
         >
-          {rowViews(rows, props.selectedId, props.now).map((view) => <Row key={view.id} view={view} recentIds={props.recentIds} edit={editing?.id === view.id ? editing.value : null} onEdit={(value) => setEditing((current) => current === null ? null : { ...current, value })} onRename={commitEdit} onSelect={(newTab) => { props.onSelect(view.id, newTab); if (view.hasKids) setState((current) => toggleExpanded(current, view.id)); }} onToggle={() => setState(toggleExpanded(state, view.id))} onMenu={(x, y) => setMenu({ id: view.id, label: view.label, x, y })} onDrop={(dragged) => { const folder = dropFolder(view.id); if (dragged.startsWith("note:") && folder !== undefined) { const target = mutableTreeRow(dragged); if (target !== null && !props.onMutate(affectedNoteSlugs(props.graph, target))) return; void run(moveNote(fetchJson, dragged.slice("note:".length), folder)); } }} />)}
+          {rowViews(rows, props.selectedId, props.now).map((view) => <Row key={view.id} view={view} recentIds={props.recentIds} edit={editing?.id === view.id ? editing.value : null} onEdit={(value) => setEditing((current) => current === null ? null : { ...current, value })} onRename={commitEdit} onSelect={(newTab) => { props.onSelect(view.id, newTab); if (view.hasKids) setState((current) => toggleExpanded(current, view.id)); }} onToggle={() => setState(toggleExpanded(state, view.id))} onMenu={(x, y) => setMenu({ id: view.id, label: view.label, x, y })} onDrop={(dragged) => { const folder = dropFolder(view.id); const moving = movableTreeRow(dragged); if (moving === null || folder === undefined) return; if (moving.type === "artifact") { void run(moveArtifact(fetchJson, moving.slug, folder)); return; } const target = mutableTreeRow(dragged); if (target !== null && !props.onMutate(affectedNoteSlugs(props.graph, target))) return; void run(moveNote(fetchJson, moving.slug, folder)); }} />)}
         </ul>
       ) : <p class="weave-tree-empty">{empty}</p>}
       <p class="weave-tree-count">{rowCountLabel(rows)}</p>

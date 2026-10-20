@@ -1,7 +1,7 @@
 import { promises as fs } from "node:fs";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
-import { addNote, appendToNote, createFolder, deleteFolder, deleteNote, getNote, moveNote, renameFolder, renameNote, upsertNote } from "../../src/core/vault";
+import { addNote, appendToNote, createFolder, deleteFolder, deleteNote, getNote, moveHtmlArtifact, moveNote, renameFolder, renameNote, upsertNote } from "../../src/core/vault";
 import { makeTempDir } from "../helpers";
 
 describe("vault mutations", () => {
@@ -18,6 +18,29 @@ describe("vault mutations", () => {
     expect(await renameNote(root, "missing", "Name")).toEqual({ ok: false, reason: "missing" });
     expect(await renameNote(root, "../escape", "Name")).toEqual({ ok: false, reason: "invalid" });
     expect(await renameNote(root, "new-name", " ")).toEqual({ ok: false, reason: "invalid" });
+  });
+
+  it("moves HTML artifacts between vault folders and repoints links to them", async () => {
+    const root = await makeTempDir();
+    await fs.mkdir(join(root, "notes", "archive"), { recursive: true });
+    await fs.writeFile(join(root, "notes", "report.html"), "<title>Report</title>");
+    const linker = await addNote(root, { title: "Linker", body: "See [[report.html]]." });
+
+    expect(await moveHtmlArtifact(root, "report.html", "archive")).toEqual({ ok: true, slug: "archive/report.html" });
+    expect(await fs.readFile(join(root, "notes", "archive", "report.html"), "utf8")).toBe("<title>Report</title>");
+    // The link keeps the words it showed, as a moved note's backlinks do.
+    expect((await getNote(root, linker.slug))?.body).toBe("See [[archive/report.html|report.html]].");
+    expect(await moveHtmlArtifact(root, "archive/report.html", "archive")).toEqual({ ok: true, slug: "archive/report.html" });
+    expect(await moveHtmlArtifact(root, "archive/report.html", null)).toEqual({ ok: true, slug: "report.html" });
+    expect((await getNote(root, linker.slug))?.body).toMatch(/^See \[\[report\.html[|\]]/);
+
+    expect(await moveHtmlArtifact(root, "report.html", "missing")).toEqual({ ok: false, reason: "missing" });
+    expect(await moveHtmlArtifact(root, "report.html", "../out")).toEqual({ ok: false, reason: "missing" });
+    expect(await moveHtmlArtifact(root, "gone.html", null)).toEqual({ ok: false, reason: "missing" });
+    expect(await moveHtmlArtifact(root, "../escape.html", null)).toEqual({ ok: false, reason: "invalid" });
+    expect(await moveHtmlArtifact(root, "linker", null)).toEqual({ ok: false, reason: "invalid" });
+    await fs.writeFile(join(root, "notes", "archive", "report.html"), "occupied");
+    expect(await moveHtmlArtifact(root, "report.html", "archive")).toEqual({ ok: false, reason: "collision" });
   });
 
   it("moves and deletes notes within the vault", async () => {

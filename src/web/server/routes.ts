@@ -21,6 +21,7 @@
  * | POST   | `/api/history-settings`  | turn note history on or off                  |
  * | GET    | `/api/okf/:rel`          | {@link OkfFilePayload}                       |
  * | GET    | `/api/artifact/:rel`     | sandboxed HTML artifact                     |
+ * | POST   | `/api/artifact/:rel/move` | move a vault HTML artifact                 |
  * | GET    | `/api/search?q=`         | {@link SearchPayload}                        |
  * | POST   | `/api/open`              | {@link OpenResult} — hand the note to `$EDITOR` |
  *
@@ -64,7 +65,7 @@ import { openNoteInEditor } from "../../core/openInEditor";
 import { recallTrail, type RecallTrail } from "../../core/trail";
 import type { Note } from "../../core/types";
 import type { VaultMutationResult } from "../../core/vault";
-import { addNote, createFolder, deleteFolder, deleteNote, getNote, moveNote, renameFolder, readNoteHistory, renameNote, resolveHtmlPath, searchNotes, setNoteBody } from "../../core/vault";
+import { addNote, createFolder, deleteFolder, deleteNote, getNote, moveHtmlArtifact, moveNote, renameFolder, readNoteHistory, renameNote, resolveHtmlPath, searchNotes, setNoteBody } from "../../core/vault";
 import { deriveTagIndex, type TaggedNote } from "../../core/view/links";
 import type {
   GraphPayload,
@@ -434,6 +435,9 @@ async function route(
   if (method === "GET" && path.startsWith("/api/artifact/")) {
     return sendArtifact(deps, path.slice("/api/artifact/".length), res);
   }
+  if (method === "POST" && path.startsWith("/api/artifact/") && path.endsWith("/move")) {
+    return moveArtifact(deps, path.slice("/api/artifact/".length, -"/move".length), req, res);
+  }
   if (method === "GET" && path === "/api/search") return sendSearch(deps, query, res);
   if (method === "POST" && path === "/api/open") return openNote(deps, req, res);
   sendText(res, 404, "not found\n");
@@ -705,9 +709,16 @@ async function routeFolder(deps: RouteDeps, method: string, target: string, req:
   return false;
 }
 
-function sendMutation(res: ServerResponse, result: VaultMutationResult): void {
+async function moveArtifact(deps: RouteDeps, rel: string, req: IncomingMessage, res: ServerResponse): Promise<void> {
+  const body = await readJsonBody(req);
+  const folder = typeof body === "object" && body !== null ? (body as { folder?: unknown }).folder : undefined;
+  if (folder !== null && typeof folder !== "string") sendJson(res, 400, { error: "expected { folder: string | null }" });
+  else sendMutation(res, await moveHtmlArtifact(deps.vaultRoot, rel, folder), "artifact");
+}
+
+function sendMutation(res: ServerResponse, result: VaultMutationResult, kind: "note" | "artifact" = "note"): void {
   if (result.ok) {
-    const id = result.slug === undefined ? result.path === undefined ? undefined : `vfolder:${result.path}` : `note:${result.slug}`;
+    const id = result.slug === undefined ? result.path === undefined ? undefined : `vfolder:${result.path}` : `${kind}:${result.slug}`;
     sendJson(res, 200, { ok: true, ...(id === undefined ? {} : { id }) });
     return;
   }

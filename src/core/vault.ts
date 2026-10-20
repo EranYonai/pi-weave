@@ -764,6 +764,27 @@ export async function moveNote(root: string, slug: string, folder: string | null
   });
 }
 
+/**
+ * Move a standalone HTML artifact to an existing vault folder, or to the vault
+ * root with `null`. Notes that link to it by path follow it, as they do a note.
+ */
+export async function moveHtmlArtifact(root: string, slug: string, folder: string | null): Promise<VaultMutationResult> {
+  const from = resolveHtmlPath(root, slug);
+  if (from === null) return { ok: false, reason: "invalid" };
+  const targetDir = folder === null ? join(root, NOTES_DIR) : resolveFolderPath(root, folder);
+  if (targetDir === null || !(await isDirectory(targetDir))) return { ok: false, reason: "missing" };
+  const target = folder === null ? basename(slug) : `${folder}/${basename(slug)}`;
+  const to = resolveHtmlPath(root, target)!;
+  return withVaultLock(root, async () => {
+    if (!(await exists(from))) return { ok: false, reason: "missing" };
+    if (from === to) return { ok: true, slug };
+    if (await exists(to)) return { ok: false, reason: "collision" };
+    await fs.rename(from, to);
+    await repointBacklinks(root, new Map([[slug, target]]));
+    return { ok: true, slug: target };
+  });
+}
+
 /** Permanently delete one note. */
 export async function deleteNote(root: string, slug: string): Promise<VaultMutationResult> {
   const path = resolveNotePath(root, slug);

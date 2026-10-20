@@ -43,6 +43,7 @@ import {
   internalsLabel,
   kindIcon,
   moveSelection,
+  movableTreeRow,
   mutableTreeRow,
   parentOf,
   provenanceGlyph,
@@ -275,6 +276,13 @@ describe("tree mutations", () => {
     expect(mutableTreeRow("note:plans/a")).toEqual({ type: "note", path: "plans/a" });
     expect(mutableTreeRow("vfolder:plans")).toEqual({ type: "folder", path: "plans" });
     expect(mutableTreeRow("module:src")).toBeNull();
+  });
+
+  it("lets notes and HTML artifacts be dragged, and nothing else", () => {
+    expect(movableTreeRow("note:plans/a")).toEqual({ type: "note", slug: "plans/a" });
+    expect(movableTreeRow("artifact:plans/report.html")).toEqual({ type: "artifact", slug: "plans/report.html" });
+    expect(movableTreeRow("vfolder:plans")).toBeNull();
+    expect(movableTreeRow("module:src")).toBeNull();
   });
 
   it("accepts drops only on the vault root and vault folders", () => {

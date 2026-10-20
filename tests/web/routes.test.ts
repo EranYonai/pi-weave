@@ -1047,6 +1047,25 @@ describe("GET /api/artifact/:rel", () => {
     expect(await res.text()).toBe(body);
   });
 
+  it("moves an HTML artifact into a folder and back to the vault root", async () => {
+    const { server, vaultRoot } = await bootFresh();
+    await fs.mkdir(join(vaultRoot, "notes", "reports"), { recursive: true });
+    await fs.writeFile(join(vaultRoot, "notes", "report.html"), "<title>Report</title>", "utf8");
+
+    let res = await post(server, "/api/artifact/report.html/move", { folder: "reports" });
+    expect(await res.json()).toEqual({ ok: true, id: "artifact:reports/report.html" });
+    expect((await get(server, "/api/artifact/reports%2Freport.html")).status).toBe(200);
+    const graph = (await (await get(server, "/api/graph")).json()) as GraphPayload;
+    expect(graph.model.nodes.some((node) => node.id === "artifact:reports/report.html")).toBe(true);
+    expect(graph.model.nodes.some((node) => node.id === "artifact:report.html")).toBe(false);
+
+    res = await post(server, "/api/artifact/reports/report.html/move", { folder: null });
+    expect(await res.json()).toEqual({ ok: true, id: "artifact:report.html" });
+    expect((await post(server, "/api/artifact/report.html/move", { folder: 1 })).status).toBe(400);
+    expect((await post(server, "/api/artifact/report.html/move", { folder: "missing" })).status).toBe(404);
+    expect((await post(server, "/api/artifact/..%2Fsecret.html/move", { folder: null })).status).toBe(400);
+  });
+
   it.each(["../secret.html", "%2e%2e%2fsecret.html", "reports/report.md"])("refuses unsafe or non-HTML paths: %s", async (rel) => {
     const { server } = await bootFresh();
     const res = await get(server, `/api/artifact/${rel}`);

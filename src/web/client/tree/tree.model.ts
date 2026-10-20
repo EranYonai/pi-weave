@@ -225,6 +225,13 @@ export function dropFolder(id: string): string | null | undefined {
   return id.startsWith("vfolder:") ? id.slice("vfolder:".length) : undefined;
 }
 
+/** A row the tree can drag into a folder: a vault note or a vault HTML artifact. */
+export function movableTreeRow(id: string): { type: "note" | "artifact"; slug: string } | null {
+  if (id.startsWith("note:")) return { type: "note", slug: id.slice("note:".length) };
+  if (id.startsWith("artifact:")) return { type: "artifact", slug: id.slice("artifact:".length) };
+  return null;
+}
+
 export function mutableTreeRow(id: string): { type: "note" | "folder" | "vault"; path: string } | null {
   if (id === "vault") return { type: "vault", path: "" };
   if (id.startsWith("note:")) return { type: "note", path: id.slice("note:".length) };

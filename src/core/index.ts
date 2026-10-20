@@ -64,6 +64,7 @@ export {
   getNote,
   listNotes,
   moveNote,
+  moveHtmlArtifact,
   parseHtmlArtifact,
   renameFolder,
   readVault,
