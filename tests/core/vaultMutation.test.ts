@@ -1,7 +1,8 @@
 import { promises as fs } from "node:fs";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
-import { addNote, appendToNote, createFolder, deleteFolder, deleteNote, getNote, moveNote, renameFolder, renameNote, upsertNote } from "../../src/core/vault";
+import { addNote, appendToNote, createFolder, deleteFolder, deleteNote, getNote, importVaultFile, moveNote, renameFolder, renameNote, upsertNote } from "../../src/core/vault";
+import { readNoteHistory } from "../../src/core/vault";
 import { makeTempDir } from "../helpers";
 
 describe("vault mutations", () => {
@@ -18,6 +19,43 @@ describe("vault mutations", () => {
     expect(await renameNote(root, "missing", "Name")).toEqual({ ok: false, reason: "missing" });
     expect(await renameNote(root, "../escape", "Name")).toEqual({ ok: false, reason: "invalid" });
     expect(await renameNote(root, "new-name", " ")).toEqual({ ok: false, reason: "invalid" });
+  });
+
+  it("imports dropped Markdown and HTML files without overwriting anything", async () => {
+    const root = await makeTempDir();
+    const now = new Date("2026-10-20T00:00:00Z");
+
+    // Plain Markdown becomes a human note titled by its heading.
+    expect(await importVaultFile(root, { name: "Meeting Notes.md", text: "# Monday sync\n\nShip it.\n", folder: null, now })).toEqual({ ok: true, slug: "meeting-notes" });
+    expect(await getNote(root, "meeting-notes")).toMatchObject({ title: "Monday sync", source: "human", created: now.toISOString(), body: "Ship it." });
+    expect((await readNoteHistory(root, "meeting-notes"))?.length).toBe(1);
+    // A name already taken gets a suffix; no heading means the file name is the title.
+    expect(await importVaultFile(root, { name: "C:\\Users\\me\\meeting_notes.markdown", text: "no heading", folder: null, now })).toEqual({ ok: true, slug: "meeting-notes-2" });
+    expect(await getNote(root, "meeting-notes-2")).toMatchObject({ title: "meeting notes", body: "no heading" });
+    // Only an opening heading is a title; one further down stays in the body.
+    expect(await importVaultFile(root, { name: "later.md", text: "intro\n# Later", folder: null, now })).toEqual({ ok: true, slug: "later" });
+    expect(await getNote(root, "later")).toMatchObject({ title: "later", body: "intro\n# Later" });
+    expect(await importVaultFile(root, { name: "only.md", text: "# Only a title", folder: null, now })).toEqual({ ok: true, slug: "only" });
+    expect(await getNote(root, "only")).toMatchObject({ title: "Only a title", body: "" });
+
+    // Front matter is kept, provenance and dates included.
+    await fs.mkdir(join(root, "notes", "inbox"));
+    const kept = "---\ntitle: Agent summary\nsource: agent\ncreated: 2026-01-01T00:00:00.000Z\nupdated: 2026-01-02T00:00:00.000Z\ntags: [x]\n---\nbody\n";
+    expect(await importVaultFile(root, { name: "summary.md", text: kept, folder: "inbox", now })).toEqual({ ok: true, slug: "inbox/summary" });
+    expect(await fs.readFile(join(root, "notes", "inbox", "summary.md"), "utf8")).toBe(kept);
+    const undated = "---\ntitle: Undated\n---\nbody\n";
+    expect(await importVaultFile(root, { name: "undated.md", text: undated, folder: "inbox", now })).toEqual({ ok: true, slug: "inbox/undated" });
+    expect(await getNote(root, "inbox/undated")).toMatchObject({ title: "Undated" });
+
+    // HTML is written byte for byte, with its extension kept.
+    const page = "<!doctype html><title>Demo</title>";
+    expect(await importVaultFile(root, { name: "Demo Page.HTML", text: page, folder: "inbox" })).toEqual({ ok: true, slug: "inbox/demo-page.html" });
+    expect(await importVaultFile(root, { name: "demo-page.html", text: "second", folder: "inbox" })).toEqual({ ok: true, slug: "inbox/demo-page-2.html" });
+    expect(await fs.readFile(join(root, "notes", "inbox", "demo-page.html"), "utf8")).toBe(page);
+
+    expect(await importVaultFile(root, { name: "photo.png", text: "", folder: null })).toEqual({ ok: false, reason: "invalid" });
+    expect(await importVaultFile(root, { name: "a.md", text: "", folder: "missing" })).toEqual({ ok: false, reason: "missing" });
+    expect(await importVaultFile(root, { name: "a.md", text: "", folder: "../out" })).toEqual({ ok: false, reason: "missing" });
   });
 
   it("moves and deletes notes within the vault", async () => {

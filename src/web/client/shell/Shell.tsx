@@ -4,7 +4,7 @@ import type { GraphPayload, NotePayload, TrailPayload } from "../../shared/wire"
 import { activePane, activeTab, activateTab, closePane, closeTab, focusDocument, initialLayout, reorderTab, moveTab, navigateTab, openDocument, openWithPreferences, restoreWorkspace, openGraph, parseWorkspaceLayout, splitPane, tabDropSource, tabSelection } from "../../shared/workspace";
 import type { Pane, WorkspaceLayout, WorkspaceTab } from "../../shared/workspace";
 import { fetchJson } from "../api.dom";
-import { createNote, fetchGraph, fetchHistory, openNote, saveNote } from "../api";
+import { createNote, fetchGraph, fetchHistory, importDroppedFiles, openNote, saveNote } from "../api";
 import { Graph } from "../graph/Graph";
 import { schemeOf, watchScheme } from "../graph/scheme";
 import { createSigmaRenderer } from "../graph/renderer.dom";
@@ -148,6 +148,7 @@ export function Shell(props: ShellProps) {
   const draggedTab = useRef<string | null>(null);
   const [dropTab, setDropTab] = useState<{ paneId: string; before: string | null } | null>(null);
   const [dropPane, setDropPane] = useState<string | null>(null);
+  const [dropFiles, setDropFiles] = useState(false);
   const [recentMode, setRecentMode] = useState(false);
   const [visits, setVisits] = useState<readonly string[]>([]);
   const [compactContext, setCompactContext] = useState(false);
@@ -357,6 +358,11 @@ export function Shell(props: ShellProps) {
       }
     };
     document.addEventListener("pointerdown", dismissMenus);
+    // A file dropped outside every drop target would otherwise replace the
+    // workspace with the browser's own view of that file.
+    const keepFiles = (event: DragEvent): void => { if (event.dataTransfer?.types.includes("Files")) event.preventDefault(); };
+    window.addEventListener("dragover", keepFiles);
+    window.addEventListener("drop", keepFiles);
     const unload = (event: BeforeUnloadEvent): void => {
       if (!drafts.dirtySlugs().length) return;
       event.preventDefault(); event.returnValue = "";
@@ -366,7 +372,7 @@ export function Shell(props: ShellProps) {
     };
     window.addEventListener("pagehide", persist);
     window.addEventListener("beforeunload", unload);
-    return () => { window.clearInterval(tick); window.removeEventListener("resize", resize); window.removeEventListener("beforeunload", unload); window.removeEventListener("pagehide", persist); document.removeEventListener("pointerdown", dismissMenus); stopScheme(); };
+    return () => { window.clearInterval(tick); window.removeEventListener("resize", resize); window.removeEventListener("beforeunload", unload); window.removeEventListener("pagehide", persist); document.removeEventListener("pointerdown", dismissMenus); window.removeEventListener("dragover", keepFiles); window.removeEventListener("drop", keepFiles); stopScheme(); };
   }, []);
   useEffect(() => watchKeys(document, {
     context: () => ({ overlay: live.current.overlay, hasSelection: live.current.selectedId !== null }),
@@ -418,7 +424,9 @@ export function Shell(props: ShellProps) {
     panes: current.panes.map((group) => ({ ...group, tabs: group.tabs.map((entry) => entry.id === tabId ? { ...entry, scroll } : entry) })),
   }));
   const tabDragOver = (paneId: string, event: DragEvent): void => {
-    if (tabDropSource(layout, paneId, draggedTab.current) === null && !event.dataTransfer?.types.includes(NOTE_DRAG_TYPE)) return;
+    const types = event.dataTransfer?.types ?? [];
+    if (tabDropSource(layout, paneId, draggedTab.current) === null && !types.includes(NOTE_DRAG_TYPE) && !types.includes("Files")) return;
+    setDropFiles(types.includes("Files"));
     event.preventDefault();
     if (event.dataTransfer) event.dataTransfer.dropEffect = draggedTab.current === null ? "copy" : "move";
     setDropTab(null);
@@ -427,6 +435,17 @@ export function Shell(props: ShellProps) {
   const tabDrop = (paneId: string, event: DragEvent): void => {
     const noteId = noteDropId(data.graph, event.dataTransfer?.getData(NOTE_DRAG_TYPE) ?? "");
     if (noteId !== null) { event.preventDefault(); select(noteId, true, paneId); setDropPane(null); return; }
+    const files = [...(event.dataTransfer?.files ?? [])];
+    if (files.length > 0) {
+      event.preventDefault();
+      setDropPane(null);
+      void importDroppedFiles(fetchJson, files, null).then(({ ids, problems }) => {
+        if (problems.length > 0) window.alert(problems.join("\n"));
+        for (const imported of ids) select(imported, true, paneId);
+        if (ids.length > 0) workspace.current?.refresh();
+      });
+      return;
+    }
     const id = draggedTab.current;
     if (tabDropSource(layout, paneId, id) === null) return;
     event.preventDefault();
@@ -456,7 +475,7 @@ export function Shell(props: ShellProps) {
     const isActive = group.id === layout.activePane;
     // The floating card sits over the right-hand pane (both, stacked); its text makes room.
     const underCard = contextFloating && contextOpen && (layout.split === "down" || group === layout.panes.at(-1));
-    return <section key={group.id} class={`weave-pane${isActive ? " weave-pane-active" : ""}${dropPane === group.id ? " weave-pane-drop" : ""}${underCard ? " weave-pane-under-card" : ""}`} data-drop-label={draggedTab.current === null ? "Open note here" : "Move tab here"} aria-label={`Workspace pane ${layout.panes.indexOf(group) + 1}`}
+    return <section key={group.id} class={`weave-pane${isActive ? " weave-pane-active" : ""}${dropPane === group.id ? " weave-pane-drop" : ""}${underCard ? " weave-pane-under-card" : ""}`} data-drop-label={dropFiles ? "Import into vault" : draggedTab.current === null ? "Open note here" : "Move tab here"} aria-label={`Workspace pane ${layout.panes.indexOf(group) + 1}`}
       onDragOver={(event) => tabDragOver(group.id, event)} onDrop={(event) => tabDrop(group.id, event)}
       onDragLeave={(event) => { if (!event.currentTarget.contains(event.relatedTarget as Node | null)) setDropPane(null); }}
       hidden={width < 850 && !isActive} onFocusCapture={() => { if (!isActive) setLayout((value) => ({ ...value, activePane: group.id })); }}

@@ -25,6 +25,9 @@ import {
   fetchGraph,
   fetchNote,
   fetchSearch,
+  importDroppedFiles,
+  importFile,
+  importProblem,
   isGraphPayload,
   isMutationResult,
   isNotePayload,
@@ -132,6 +135,26 @@ describe("vault mutations", () => {
     expect(fetch.calls[0]?.init?.method).toBe("POST");
     expect(JSON.parse(fetch.calls[0]?.init?.body ?? "")).toEqual({ title: "A new note" });
     expect((await createNote(respondsWith({ ok: true }), "A new note")).ok).toBe(false);
+  });
+
+  it("imports dropped files one by one and reports the ones it skips", async () => {
+    expect(importProblem({ name: "a.md", size: 10 })).toBeNull();
+    expect(importProblem({ name: "b.HTM", size: 10 })).toBeNull();
+    expect(importProblem({ name: "c.png", size: 10 })).toBe("c.png: only Markdown and HTML files can be imported");
+    expect(importProblem({ name: "d.html", size: 6 * 1024 * 1024 })).toBe("d.html: larger than 5 MB");
+
+    const file = (name: string, size = 4) => ({ name, size, text: () => Promise.resolve(`text of ${name}`) });
+    const fetch = respondsWith({ ok: true, id: "note:inbox/a" });
+    const result = await importDroppedFiles(fetch, [file("a.md"), file("c.png")], "inbox");
+    expect(result).toEqual({ ids: ["note:inbox/a"], problems: ["c.png: only Markdown and HTML files can be imported"] });
+    expect(fetch.calls.map((call) => [call.url, call.init?.method])).toEqual([["/api/import", "POST"]]);
+    expect(JSON.parse(fetch.calls[0]?.init?.body ?? "")).toEqual({ name: "a.md", text: "text of a.md", folder: "inbox" });
+
+    expect(await importDroppedFiles(respondsWith({ ok: true }), [file("a.md")], null)).toEqual({ ids: [], problems: [] });
+    const failed = await importDroppedFiles(respondsStatus(404), [file("a.md")], "gone");
+    expect(failed.ids).toEqual([]);
+    expect(failed.problems[0]).toMatch(/^a\.md: /);
+    expect((await importFile(respondsWith({ ok: true, id: "artifact:b.html" }), "b.html", "", null)).ok).toBe(true);
   });
 
   it("uses the narrow mutation routes", async () => {

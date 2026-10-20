@@ -425,6 +425,43 @@ export const deleteNote = (fetchImpl: FetchLike, slug: string) => mutation(fetch
 export const createFolder = (fetchImpl: FetchLike, path: string) => mutation(fetchImpl, folderUrl(path), "POST");
 export const renameFolder = (fetchImpl: FetchLike, path: string, name: string) => mutation(fetchImpl, folderUrl(path, "/rename"), "POST", { name });
 export const deleteFolder = (fetchImpl: FetchLike, path: string) => mutation(fetchImpl, folderUrl(path), "DELETE");
+export const importFile = (fetchImpl: FetchLike, name: string, text: string, folder: string | null) => mutation(fetchImpl, "/api/import", "POST", { name, text, folder });
+
+/** What a drop from the desktop hands over; a `File` satisfies it. */
+export interface DroppedFile {
+  name: string;
+  size: number;
+  text(): Promise<string>;
+}
+
+/** The server's `MAX_IMPORT_BYTES` less room for JSON escaping. */
+export const IMPORT_MAX_BYTES = 5 * 1024 * 1024;
+
+/** Why a dropped file will not be imported, or `null` when it will be. */
+export function importProblem(file: { name: string; size: number }): string | null {
+  if (!/\.(md|markdown|html?)$/i.test(file.name)) return `${file.name}: only Markdown and HTML files can be imported`;
+  return file.size > IMPORT_MAX_BYTES ? `${file.name}: larger than 5 MB` : null;
+}
+
+/**
+ * Import dropped files one by one into `folder` (`null` is the vault root).
+ * Returns the new ids in drop order and one line per file that was not imported.
+ */
+export async function importDroppedFiles(fetchImpl: FetchLike, files: readonly DroppedFile[], folder: string | null): Promise<{ ids: string[]; problems: string[] }> {
+  const ids: string[] = [];
+  const problems: string[] = [];
+  for (const file of files) {
+    const problem = importProblem(file);
+    if (problem !== null) {
+      problems.push(problem);
+      continue;
+    }
+    const result = await importFile(fetchImpl, file.name, await file.text(), folder);
+    if (!result.ok) problems.push(`${file.name}: ${result.message}`);
+    else if (result.data.id !== undefined) ids.push(result.data.id);
+  }
+  return { ids, problems };
+}
 
 /** `GET /api/history/:slug` — every saved revision of a note, oldest first. */
 export async function fetchHistory(fetchImpl: FetchLike, slug: string): Promise<ApiResult<HistoryPayload>> {

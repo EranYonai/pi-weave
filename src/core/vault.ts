@@ -147,6 +147,67 @@ export async function addNote(root: string, input: AddNoteInput): Promise<Note> 
   });
 }
 
+/** A file to bring into the vault from outside it, such as one dropped on the browser workspace. */
+export interface ImportFileInput {
+  /** The file's own name; only its extension and stem are used. */
+  name: string;
+  text: string;
+  /** Existing vault folder to import into, or `null` for the vault root. */
+  folder: string | null;
+  now?: Date;
+}
+
+/**
+ * Import one Markdown or HTML file, never overwriting: a taken name gets
+ * `-2`, `-3`, ... like a new note's slug.
+ *
+ * Markdown that already carries front matter is written byte for byte,
+ * provenance included.
+ * Markdown without it becomes a human note titled by its opening `# heading`,
+ * or else by its file name. HTML is written byte for byte as an artifact.
+ */
+export async function importVaultFile(root: string, input: ImportFileInput): Promise<VaultMutationResult> {
+  const match = /^(.*)\.(md|markdown|html?)$/i.exec(basename(input.name.replace(/\\/g, "/")));
+  if (match === null) return { ok: false, reason: "invalid" };
+  const stem = slugify(match[1]!);
+  const html = match[2]!.toLowerCase().startsWith("htm");
+  await ensureVault(root);
+  const targetDir = input.folder === null ? join(root, NOTES_DIR) : resolveFolderPath(root, input.folder);
+  if (targetDir === null || !(await isDirectory(targetDir))) return { ok: false, reason: "missing" };
+  const prefix = input.folder === null ? "" : `${input.folder}/`;
+  return withVaultLock(root, async () => {
+    if (html) {
+      const ext = `.${match[2]!.toLowerCase()}`;
+      const slug = `${prefix}${uniqueSlug(stem, (candidate) => existsSync(join(targetDir, `${candidate}${ext}`)))}${ext}`;
+      await fs.writeFile(join(targetDir, basename(slug)), input.text, "utf8");
+      return { ok: true, slug };
+    }
+    const slug = `${prefix}${uniqueSlug(stem, (candidate) => existsSync(join(targetDir, `${candidate}.md`)))}`;
+    const now = (input.now ?? new Date()).toISOString();
+    let parsed: ReturnType<typeof parseNoteFile> | null = null;
+    try {
+      parsed = parseNoteFile(input.text);
+    } catch {
+      parsed = null;
+    }
+    let note: Note;
+    if (parsed === null) {
+      // A leading `# heading` becomes the title, and leaves the body so the
+      // note does not show it twice.
+      const heading = /^\s*#[ \t]+(.+?)[ \t]*#*[ \t]*(?:\r?\n|$)/.exec(input.text);
+      const title = heading?.[1] ?? match[1]!.trim().replace(/[-_]+/g, " ");
+      const body = heading === null ? input.text : input.text.slice(heading[0].length).replace(/^\s*\n/, "");
+      note = await writeNote(notePath(root, slug), slug, { title, created: now, updated: now, tags: [], source: "human" }, body, undefined);
+    } else {
+      // The person's own file, so its bytes are kept rather than reserialized.
+      await fs.writeFile(notePath(root, slug), input.text, "utf8");
+      note = { slug, ...parsed.meta, body: parsed.body, frontMatter: parsed.frontMatter };
+    }
+    await record(root, note, "human", "create", null, now);
+    return { ok: true, slug: note.slug };
+  });
+}
+
 /** Read a note by slug. Returns null when missing, malformed, or an unsafe slug. */
 export async function getNote(root: string, slug: string): Promise<Note | null> {
   const path = resolveNotePath(root, slug);
