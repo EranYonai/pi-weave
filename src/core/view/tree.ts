@@ -273,8 +273,8 @@ export function treeRows(model: GraphModel, state: TreeState): TreeRow[] {
 export function treeEmptyHint(model: GraphModel): string | null {
   const vault = model.nodes.find((n) => n.kind === "vault");
   if (!vault) return null;
-  // no notes and no repository
-  const hasNotes = model.nodes.some((n) => n.kind === "note");
+  // nothing in the vault (no note, HTML file or folder) and no repository
+  const hasNotes = model.nodes.some((n) => n.kind === "note" || n.id.startsWith("artifact:") || n.id.startsWith("vfolder:"));
   const hasRepo = model.nodes.some((n) => n.kind === "repository");
   if (!hasNotes && !hasRepo) return "no notes yet — add one with the weave_note tool";
   return null;

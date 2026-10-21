@@ -21,6 +21,9 @@
  * | POST   | `/api/history-settings`  | turn note history on or off                  |
  * | GET    | `/api/okf/:rel`          | {@link OkfFilePayload}                       |
  * | GET    | `/api/artifact/:rel`     | sandboxed HTML artifact                     |
+ * | POST   | `/api/artifact/:rel/move` | move a vault HTML artifact                 |
+ * | POST   | `/api/artifact/:rel/rename` | rename a vault HTML artifact             |
+ * | DELETE | `/api/artifact/:rel`     | delete a vault HTML artifact                |
  * | GET    | `/api/search?q=`         | {@link SearchPayload}                        |
  * | POST   | `/api/open`              | {@link OpenResult} — hand the note to `$EDITOR` |
  *
@@ -64,7 +67,7 @@ import { openNoteInEditor } from "../../core/openInEditor";
 import { recallTrail, type RecallTrail } from "../../core/trail";
 import type { Note } from "../../core/types";
 import type { VaultMutationResult } from "../../core/vault";
-import { addNote, createFolder, deleteFolder, deleteNote, getNote, moveNote, renameFolder, readNoteHistory, renameNote, resolveHtmlPath, searchNotes, setNoteBody } from "../../core/vault";
+import { addNote, createFolder, deleteFolder, deleteNote, deleteHtmlArtifact, getNote, moveHtmlArtifact, moveNote, renameHtmlArtifact, renameFolder, readNoteHistory, renameNote, resolveHtmlPath, searchNotes, setNoteBody } from "../../core/vault";
 import { deriveTagIndex, type TaggedNote } from "../../core/view/links";
 import type {
   GraphPayload,
@@ -434,6 +437,12 @@ async function route(
   if (method === "GET" && path.startsWith("/api/artifact/")) {
     return sendArtifact(deps, path.slice("/api/artifact/".length), res);
   }
+  if (method === "POST" && path.startsWith("/api/artifact/") && /\/(move|rename)$/.test(path)) {
+    return changeArtifact(deps, path.slice("/api/artifact/".length), req, res);
+  }
+  if (method === "DELETE" && path.startsWith("/api/artifact/")) {
+    return sendMutation(res, await deleteHtmlArtifact(deps.vaultRoot, path.slice("/api/artifact/".length)), "artifact");
+  }
   if (method === "GET" && path === "/api/search") return sendSearch(deps, query, res);
   if (method === "POST" && path === "/api/open") return openNote(deps, req, res);
   sendText(res, 404, "not found\n");
@@ -705,9 +714,22 @@ async function routeFolder(deps: RouteDeps, method: string, target: string, req:
   return false;
 }
 
-function sendMutation(res: ServerResponse, result: VaultMutationResult): void {
+/** `POST /api/artifact/:rel/move` and `/rename`; `rel` still carries the suffix. */
+async function changeArtifact(deps: RouteDeps, target: string, req: IncomingMessage, res: ServerResponse): Promise<void> {
+  const rename = target.endsWith("/rename");
+  const rel = target.slice(0, target.lastIndexOf("/"));
+  const body = await readJsonBody(req);
+  const fields = typeof body === "object" && body !== null ? body as { folder?: unknown; name?: unknown } : {};
+  if (rename) {
+    if (typeof fields.name !== "string") sendJson(res, 400, { error: "expected { name: string }" });
+    else sendMutation(res, await renameHtmlArtifact(deps.vaultRoot, rel, fields.name), "artifact");
+  } else if (fields.folder !== null && typeof fields.folder !== "string") sendJson(res, 400, { error: "expected { folder: string | null }" });
+  else sendMutation(res, await moveHtmlArtifact(deps.vaultRoot, rel, fields.folder), "artifact");
+}
+
+function sendMutation(res: ServerResponse, result: VaultMutationResult, kind: "note" | "artifact" = "note"): void {
   if (result.ok) {
-    const id = result.slug === undefined ? result.path === undefined ? undefined : `vfolder:${result.path}` : `note:${result.slug}`;
+    const id = result.slug === undefined ? result.path === undefined ? undefined : `vfolder:${result.path}` : `${kind}:${result.slug}`;
     sendJson(res, 200, { ok: true, ...(id === undefined ? {} : { id }) });
     return;
   }

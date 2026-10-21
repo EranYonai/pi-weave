@@ -411,6 +411,10 @@ describe("treeEmptyHint", () => {
     );
     expect(treeEmptyHint(m)).toBeNull();
   });
+  it("only HTML files or folders in the vault: no hint", () => {
+    expect(treeEmptyHint(graph([node("vault", "vault", "Vault", null), node("artifact:a.html", "file", "A", null)], []))).toBeNull();
+    expect(treeEmptyHint(graph([node("vault", "vault", "Vault", null), node("vfolder:inbox", "module", "inbox", null)], []))).toBeNull();
+  });
   it("no vault node at all: no hint", () => {
     expect(treeEmptyHint(graph([node("repository", "repository", "repo", null)], []))).toBeNull();
   });

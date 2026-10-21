@@ -21,9 +21,10 @@ import { kindIcon } from "../tree/tree.model";
 import type { IconName } from "./icons.model";
 export const NOTE_DRAG_TYPE = "application/x-weave-note";
 
-/** Pane drops open only note IDs that still exist in this workspace. */
+/** Pane drops open only note and HTML artifact IDs that still exist in this workspace. */
 export function noteDropId(graph: GraphPayload | null, id: string): string | null {
-  return id.startsWith("note:") && graph?.model.nodes.some((node) => node.id === id && node.kind === "note") ? id : null;
+  const kind = id.startsWith("note:") ? "note" : id.startsWith("artifact:") ? "file" : null;
+  return kind !== null && graph?.model.nodes.some((node) => node.id === id && node.kind === kind) ? id : null;
 }
 
 export type ColumnId = "tree" | "note" | "graph";
