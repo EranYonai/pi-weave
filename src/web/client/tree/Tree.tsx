@@ -2,7 +2,7 @@
 
 import { NOTE_DRAG_TYPE } from "../shell/shell.model";
 import { useLayoutEffect, useRef, useState } from "preact/hooks";
-import { createFolder, deleteFolder, deleteNote, importDroppedFiles, moveNote, renameFolder, renameNote } from "../api";
+import { createFolder, deleteArtifact, deleteFolder, deleteNote, importDroppedFiles, moveArtifact, moveNote, renameArtifact, renameFolder, renameNote } from "../api";
 import { fetchJson } from "../api.dom";
 import { isTextEntry, type KeyTarget } from "../shell/keys.model";
 import { ICON_BOX, ICON_STROKE, ICONS } from "../shell/icons.model";
@@ -21,6 +21,7 @@ import {
   deleteNeedsConfirmation,
   depthVar,
   dropFolder,
+  movableTreeRow,
   initialTreeView,
   newFolderParent,
   newFolderPath,
@@ -41,6 +42,7 @@ import {
   treeEmptyMessage,
   treeKey,
 } from "./tree.model";
+import type { TreeTarget } from "./tree.model";
 
 export interface TreeProps {
   graph: GraphPayload | null;
@@ -91,7 +93,7 @@ function Row({ view, recentIds, edit, onEdit, onRename, onSelect, onToggle, onMe
       aria-expanded={view.hasKids ? view.expanded : undefined}
       style={depthVar(view.depth)}
       onClick={(event) => onSelect(event.metaKey || event.ctrlKey)}
-      draggable={view.id.startsWith("note:")}
+      draggable={movableTreeRow(view.id) !== null}
       aria-label={view.id === DRAFT_FOLDER_ID ? "New folder" : undefined}
       onDragStart={(event) => { event.dataTransfer?.setData("text/plain", view.id); event.dataTransfer?.setData(NOTE_DRAG_TYPE, view.id); if (event.dataTransfer) event.dataTransfer.effectAllowed = "copyMove"; }}
       onDragOver={folder === undefined ? undefined : (event) => event.preventDefault()}
@@ -219,7 +221,7 @@ export function Tree(props: TreeProps) {
       // Before the request: asking after a delete is asking about a file that
       // is already gone, and "keep editing" would strand the draft on a 404.
       if (!props.onMutate(affectedNoteSlugs(props.graph, target))) return;
-      await run(target.type === "note" ? deleteNote(fetchJson, target.path) : deleteFolder(fetchJson, target.path), deletesSelection(props.selectedId, target) ? "vault" : undefined);
+      await run(target.type === "note" ? deleteNote(fetchJson, target.path) : target.type === "artifact" ? deleteArtifact(fetchJson, target.path) : deleteFolder(fetchJson, target.path), deletesSelection(props.selectedId, target) ? "vault" : undefined);
     }
   };
 
@@ -231,7 +233,7 @@ export function Tree(props: TreeProps) {
    * the row shows no count for, so it takes two — and the second click's label
    * names the folder, which is the chance to notice the wrong row was hit.
    */
-  const clickDelete = (target: { type: "note" | "folder" | "vault" }): void => {
+  const clickDelete = (target: Pick<TreeTarget, "type">): void => {
     if (menu === null) return;
     if (deleteNeedsConfirmation(target) && menu.armed !== true) {
       setMenu({ ...menu, armed: true });
@@ -268,7 +270,7 @@ export function Tree(props: TreeProps) {
     // An open draft is a different question; `onMutate` asks that one.
     if (target !== null && name && name !== current.label) {
       if (!props.onMutate(affectedNoteSlugs(props.graph, target))) return;
-      void run(target.type === "note" ? renameNote(fetchJson, target.path, name) : renameFolder(fetchJson, target.path, name));
+      void run(target.type === "note" ? renameNote(fetchJson, target.path, name) : target.type === "artifact" ? renameArtifact(fetchJson, target.path, name) : renameFolder(fetchJson, target.path, name));
     }
   };
 
@@ -306,7 +308,7 @@ export function Tree(props: TreeProps) {
             setMenu({ id: "vault", label: "Vault", x: event.clientX, y: event.clientY });
           }}
         >
-          {rowViews(rows, props.selectedId, props.now).map((view) => <Row key={view.id} view={view} recentIds={props.recentIds} edit={editing?.id === view.id ? editing.value : null} onEdit={(value) => setEditing((current) => current === null ? null : { ...current, value })} onRename={commitEdit} onSelect={(newTab) => { props.onSelect(view.id, newTab); if (view.hasKids) setState((current) => toggleExpanded(current, view.id)); }} onToggle={() => setState(toggleExpanded(state, view.id))} onMenu={(x, y) => setMenu({ id: view.id, label: view.label, x, y })} onDrop={(dragged) => { const folder = dropFolder(view.id); if (dragged.startsWith("note:") && folder !== undefined) { const target = mutableTreeRow(dragged); if (target !== null && !props.onMutate(affectedNoteSlugs(props.graph, target))) return; void run(moveNote(fetchJson, dragged.slice("note:".length), folder)); } }} onFiles={(files) => void importInto(files, dropFolder(view.id) ?? null)} />)}
+          {rowViews(rows, props.selectedId, props.now).map((view) => <Row key={view.id} view={view} recentIds={props.recentIds} edit={editing?.id === view.id ? editing.value : null} onEdit={(value) => setEditing((current) => current === null ? null : { ...current, value })} onRename={commitEdit} onSelect={(newTab) => { props.onSelect(view.id, newTab); if (view.hasKids) setState((current) => toggleExpanded(current, view.id)); }} onToggle={() => setState(toggleExpanded(state, view.id))} onMenu={(x, y) => setMenu({ id: view.id, label: view.label, x, y })} onDrop={(dragged) => { const folder = dropFolder(view.id); const moving = movableTreeRow(dragged); if (moving === null || folder === undefined) return; if (moving.type === "artifact") { void run(moveArtifact(fetchJson, moving.slug, folder)); return; } const target = mutableTreeRow(dragged); if (target !== null && !props.onMutate(affectedNoteSlugs(props.graph, target))) return; void run(moveNote(fetchJson, moving.slug, folder)); }} onFiles={(files) => void importInto(files, dropFolder(view.id) ?? null)} />)}
         </ul>
       ) : <p class="weave-tree-empty">{empty}</p>}
       <p class="weave-tree-count">{rowCountLabel(rows)}</p>

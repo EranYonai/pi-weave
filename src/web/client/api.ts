@@ -411,6 +411,7 @@ function mutation(fetchImpl: FetchLike, url: string, method: string, body?: unkn
 
 const noteUrl = (slug: string, suffix = ""): string => `/api/note/${encodeURIComponent(slug)}${suffix}`;
 const folderUrl = (path: string, suffix = ""): string => `/api/folder/${path.split("/").map(encodeURIComponent).join("/")}${suffix}`;
+const artifactUrl = (path: string, suffix = ""): string => `/api/artifact/${path.split("/").map(encodeURIComponent).join("/")}${suffix}`;
 
 /**
  * `POST /api/note/:slug` — save the note's Markdown body. No revision
@@ -421,6 +422,9 @@ export const saveNote = (fetchImpl: FetchLike, slug: string, body: string, raw =
   mutation(fetchImpl, noteUrl(slug), "POST", raw ? { body, raw: true } : { body });
 export const renameNote = (fetchImpl: FetchLike, slug: string, name: string) => mutation(fetchImpl, noteUrl(slug, "/rename"), "POST", { name });
 export const moveNote = (fetchImpl: FetchLike, slug: string, folder: string | null) => mutation(fetchImpl, noteUrl(slug, "/move"), "POST", { folder });
+export const moveArtifact = (fetchImpl: FetchLike, slug: string, folder: string | null) => mutation(fetchImpl, artifactUrl(slug, "/move"), "POST", { folder });
+export const renameArtifact = (fetchImpl: FetchLike, slug: string, name: string) => mutation(fetchImpl, artifactUrl(slug, "/rename"), "POST", { name });
+export const deleteArtifact = (fetchImpl: FetchLike, slug: string) => mutation(fetchImpl, artifactUrl(slug), "DELETE");
 export const deleteNote = (fetchImpl: FetchLike, slug: string) => mutation(fetchImpl, noteUrl(slug), "DELETE");
 export const createFolder = (fetchImpl: FetchLike, path: string) => mutation(fetchImpl, folderUrl(path), "POST");
 export const renameFolder = (fetchImpl: FetchLike, path: string, name: string) => mutation(fetchImpl, folderUrl(path, "/rename"), "POST", { name });

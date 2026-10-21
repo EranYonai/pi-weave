@@ -825,6 +825,80 @@ export async function moveNote(root: string, slug: string, folder: string | null
   });
 }
 
+/**
+ * Move a standalone HTML artifact to an existing vault folder, or to the vault
+ * root with `null`. Notes that link to it by path follow it, as they do a note.
+ */
+export async function moveHtmlArtifact(root: string, slug: string, folder: string | null): Promise<VaultMutationResult> {
+  const from = resolveHtmlPath(root, slug);
+  if (from === null) return { ok: false, reason: "invalid" };
+  const targetDir = folder === null ? join(root, NOTES_DIR) : resolveFolderPath(root, folder);
+  if (targetDir === null || !(await isDirectory(targetDir))) return { ok: false, reason: "missing" };
+  const target = folder === null ? basename(slug) : `${folder}/${basename(slug)}`;
+  const to = resolveHtmlPath(root, target)!;
+  return withVaultLock(root, async () => {
+    if (!(await exists(from))) return { ok: false, reason: "missing" };
+    if (from === to) return { ok: true, slug };
+    if (await exists(to)) return { ok: false, reason: "collision" };
+    await fs.rename(from, to);
+    await repointBacklinks(root, new Map([[slug, target]]));
+    return { ok: true, slug: target };
+  });
+}
+
+/**
+ * Rename a standalone HTML artifact in place. The new name sets the file name
+ * (slugified, extension kept) and the title the workspace shows, which lives
+ * in a leading `<!-- --- title: ... --- -->` comment or in `<title>`; a file
+ * with neither takes its title from the file name. Links follow the file.
+ */
+export async function renameHtmlArtifact(root: string, slug: string, name: string): Promise<VaultMutationResult> {
+  const from = resolveHtmlPath(root, slug);
+  const title = name.trim().replace(/\.html?$/i, "").trim();
+  if (from === null || title === "") return { ok: false, reason: "invalid" };
+  const ext = /\.html?$/i.exec(slug)![0];
+  const parent = slug.split("/").slice(0, -1).join("/");
+  const target = [...(parent === "" ? [] : [parent]), `${slugify(title)}${ext}`].join("/");
+  const to = resolveHtmlPath(root, target)!;
+  return withVaultLock(root, async () => {
+    let text: string;
+    try {
+      text = await fs.readFile(from, "utf8");
+    } catch {
+      return { ok: false, reason: "missing" };
+    }
+    if (from !== to && await exists(to)) return { ok: false, reason: "collision" };
+    await fs.writeFile(from, retitleHtml(text, title), "utf8");
+    if (from === to) return { ok: true, slug };
+    await fs.rename(from, to);
+    await repointBacklinks(root, new Map([[slug, target]]));
+    return { ok: true, slug: target };
+  });
+}
+
+/** Set the title `parseHtmlArtifact` reads, leaving every other byte alone. */
+function retitleHtml(text: string, title: string): string {
+  const comment = /<!--[\s\S]*?---\n([\s\S]*?)\n---[\s\S]*?-->/m.exec(text);
+  if (comment !== null && /^title:.*$/m.test(comment[1]!)) {
+    // `-->` would close the comment early.
+    const fields = comment[1]!.replace(/^title:.*$/m, () => `title: ${quoteField(title.replace(/-->/g, "->"))}`);
+    return text.slice(0, comment.index) + comment[0].replace(comment[1]!, () => fields) + text.slice(comment.index + comment[0].length);
+  }
+  const escaped = title.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+  return text.replace(/(<title\b[^>]*>)[\s\S]*?(<\/title>)/i, (_, open: string, close: string) => `${open}${escaped}${close}`);
+}
+
+/** Permanently delete one standalone HTML artifact. */
+export async function deleteHtmlArtifact(root: string, slug: string): Promise<VaultMutationResult> {
+  const path = resolveHtmlPath(root, slug);
+  if (path === null) return { ok: false, reason: "invalid" };
+  return withVaultLock(root, async () => {
+    if (!(await exists(path))) return { ok: false, reason: "missing" };
+    await fs.unlink(path);
+    return { ok: true };
+  });
+}
+
 /** Permanently delete one note. */
 export async function deleteNote(root: string, slug: string): Promise<VaultMutationResult> {
   const path = resolveNotePath(root, slug);
@@ -850,12 +924,12 @@ export async function renameFolder(root: string, folder: string, name: string): 
     if (!(await isDirectory(from))) return { ok: false, reason: "missing" };
     if (from !== to && await exists(to)) return { ok: false, reason: "collision" };
     if (from === to) return { ok: true, path: target };
-    // Every note under the folder changes slug, so the whole subtree's
-    // backlinks move with it — collected before the rename, while the old
-    // paths still exist.
+    // Every note and HTML file under the folder changes slug, so the whole
+    // subtree's backlinks move with it — collected before the rename, while
+    // the old paths still exist. HTML slugs keep their extension.
     const moved = (await listNoteFiles(root))
-      .filter((f) => isMarkdown(f) && f.startsWith(`${folder}/`))
-      .map((f) => f.slice(0, -".md".length));
+      .filter((f) => f.startsWith(`${folder}/`))
+      .map((f) => isMarkdown(f) ? f.slice(0, -".md".length) : f);
     await fs.rename(from, to);
     await moveHistoryFolder(root, folder, target);
     await repointBacklinks(root, new Map(moved.map((s) => [s, `${target}/${s.slice(folder.length + 1)}`])));

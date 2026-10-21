@@ -99,11 +99,13 @@ describe("openInSplit — the graph sheet's Open in split", () => {
   });
 });
 
-it("accepts pane drops only for existing workspace notes", () => {
-  const graph = payload([node("note:a", "note"), node("artifact:a", "file"), node("note:wrong-kind", "module")]);
+it("accepts pane drops only for existing workspace notes and HTML artifacts", () => {
+  const graph = payload([node("note:a", "note"), node("artifact:a.html", "file"), node("artifact:wrong.html", "note"), node("note:wrong-kind", "module")]);
   expect(noteDropId(graph, "note:a")).toBe("note:a");
   expect(noteDropId(graph, "note:missing")).toBeNull();
-  expect(noteDropId(graph, "artifact:a")).toBeNull();
+  expect(noteDropId(graph, "artifact:a.html")).toBe("artifact:a.html");
+  expect(noteDropId(graph, "artifact:wrong.html")).toBeNull();
+  expect(noteDropId(graph, "vfolder:a")).toBeNull();
   expect(noteDropId(graph, "note:wrong-kind")).toBeNull();
   expect(noteDropId(null, "note:a")).toBeNull();
   expect(noteDropId(graph, "")).toBeNull();
