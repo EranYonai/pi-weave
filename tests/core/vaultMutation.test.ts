@@ -116,6 +116,17 @@ describe("vault mutations", () => {
     expect(await deleteFolder(root, "../escape")).toEqual({ ok: false, reason: "invalid" });
   });
 
+  it("renaming a folder repoints links to the notes and HTML files inside it", async () => {
+    const root = await makeTempDir();
+    await fs.mkdir(join(root, "notes", "work", "nested"), { recursive: true });
+    await fs.writeFile(join(root, "notes", "work", "nested", "page.html"), "<title>Page</title>");
+    await fs.writeFile(join(root, "notes", "work", "plan.md"), "---\ntitle: Plan\n---\nplan\n");
+    const linker = await addNote(root, { title: "Linker", body: "[[work/nested/page.html]] and [[work/plan]]" });
+
+    expect(await renameFolder(root, "work", "Archive")).toEqual({ ok: true, path: "archive" });
+    expect((await getNote(root, linker.slug))?.body).toBe("[[archive/nested/page.html|work/nested/page.html]] and [[archive/plan|work/plan]]");
+  });
+
   it("keeps the raw tail even when generated content mentions the heading", async () => {
     // `## Raw` is append-only, verbatim human input. The replacement body here
     // is model output, so a summary that merely *discusses* the raw-tail format

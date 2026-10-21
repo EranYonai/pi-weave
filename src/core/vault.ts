@@ -863,12 +863,12 @@ export async function renameFolder(root: string, folder: string, name: string): 
     if (!(await isDirectory(from))) return { ok: false, reason: "missing" };
     if (from !== to && await exists(to)) return { ok: false, reason: "collision" };
     if (from === to) return { ok: true, path: target };
-    // Every note under the folder changes slug, so the whole subtree's
-    // backlinks move with it — collected before the rename, while the old
-    // paths still exist.
+    // Every note and HTML file under the folder changes slug, so the whole
+    // subtree's backlinks move with it — collected before the rename, while
+    // the old paths still exist. HTML slugs keep their extension.
     const moved = (await listNoteFiles(root))
-      .filter((f) => isMarkdown(f) && f.startsWith(`${folder}/`))
-      .map((f) => f.slice(0, -".md".length));
+      .filter((f) => f.startsWith(`${folder}/`))
+      .map((f) => isMarkdown(f) ? f.slice(0, -".md".length) : f);
     await fs.rename(from, to);
     await moveHistoryFolder(root, folder, target);
     await repointBacklinks(root, new Map(moved.map((s) => [s, `${target}/${s.slice(folder.length + 1)}`])));
