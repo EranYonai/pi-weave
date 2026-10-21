@@ -888,6 +888,25 @@ describe("vault tree mutations", () => {
     expect((await del(server, "/api/folder/filed")).status).toBe(200);
   });
 
+  it("imports a dropped file into the vault", async () => {
+    const { server, vaultRoot } = await bootFresh();
+    await fs.mkdir(join(vaultRoot, "notes", "inbox"));
+    let res = await post(server, "/api/import", { name: "Dropped.md", text: "# Dropped\n", folder: "inbox" });
+    expect(await res.json()).toEqual({ ok: true, id: "note:inbox/dropped" });
+    res = await post(server, "/api/import", { name: "page.html", text: "<title>Page</title>", folder: null });
+    expect(await res.json()).toEqual({ ok: true, id: "artifact:page.html" });
+    expect(await fs.readFile(join(vaultRoot, "notes", "page.html"), "utf8")).toBe("<title>Page</title>");
+    // Bigger than an ordinary mutation body may be.
+    res = await post(server, "/api/import", { name: "big.html", text: "x".repeat(200 * 1024), folder: null });
+    expect(res.status).toBe(200);
+
+    expect((await post(server, "/api/import", { name: "a.png", text: "", folder: null })).status).toBe(400);
+    expect((await post(server, "/api/import", { name: "a.md", text: "", folder: "missing" })).status).toBe(404);
+    for (const body of [null, { name: 1, text: "", folder: null }, { name: "a.md", folder: null }, { name: "a.md", text: "", folder: 1 }]) {
+      expect((await post(server, "/api/import", body)).status).toBe(400);
+    }
+  });
+
   it("rejects malformed and missing mutation targets", async () => {
     const { server } = await bootFresh();
     expect((await post(server, "/api/note/alpha-note/rename", {})).status).toBe(400);

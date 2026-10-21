@@ -62,6 +62,7 @@ export {
   formatRawAppend,
   getHtmlArtifact,
   getNote,
+  importVaultFile,
   listNotes,
   moveNote,
   moveHtmlArtifact,

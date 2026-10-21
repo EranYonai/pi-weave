@@ -16,6 +16,7 @@
  * | POST   | `/api/folder/:path`        | create a vault folder                      |
  * | POST   | `/api/folder/:path/rename` | rename a vault folder                      |
  * | DELETE | `/api/folder/:path`      | delete a vault folder                        |
+ * | POST   | `/api/import`            | import a dropped .md or .html file           |
  * | GET    | `/api/history/:slug`     | {@link HistoryWirePayload}                   |
  * | GET    | `/api/history-settings`  | {@link HistorySettingsPayload}               |
  * | POST   | `/api/history-settings`  | turn note history on or off                  |
@@ -67,7 +68,7 @@ import { openNoteInEditor } from "../../core/openInEditor";
 import { recallTrail, type RecallTrail } from "../../core/trail";
 import type { Note } from "../../core/types";
 import type { VaultMutationResult } from "../../core/vault";
-import { addNote, createFolder, deleteFolder, deleteNote, deleteHtmlArtifact, getNote, moveHtmlArtifact, moveNote, renameHtmlArtifact, renameFolder, readNoteHistory, renameNote, resolveHtmlPath, searchNotes, setNoteBody } from "../../core/vault";
+import { addNote, createFolder, deleteFolder, deleteNote, deleteHtmlArtifact, getNote, importVaultFile, moveHtmlArtifact, moveNote, renameHtmlArtifact, renameFolder, readNoteHistory, renameNote, resolveHtmlPath, searchNotes, setNoteBody } from "../../core/vault";
 import { deriveTagIndex, type TaggedNote } from "../../core/view/links";
 import type {
   GraphPayload,
@@ -182,6 +183,8 @@ export function parseTarget(url: string): Target {
  * the caller has exactly one failure branch.
  */
 export const MAX_BODY_BYTES = 64 * 1024;
+/** A dropped file arrives as JSON text, so this is the file plus its escaping. */
+export const MAX_IMPORT_BYTES = 10 * 1024 * 1024;
 const MAX_WORKSPACE_STATE_BODY_BYTES = 256 * 1024;
 
 export async function readJsonBody(req: IncomingMessage, maxBytes = MAX_BODY_BYTES): Promise<unknown | null> {
@@ -421,6 +424,7 @@ async function route(
     const note = await addNote(deps.vaultRoot, { title: title.trim(), body: "", source: "human" });
     return sendJson(res, 201, notePayload(note), { "cache-control": "no-store" });
   }
+  if (method === "POST" && path === "/api/import") return importFile(deps, req, res);
   if (path.startsWith("/api/folder/")) {
     const handled = await routeFolder(deps, method, path.slice("/api/folder/".length), req, res);
     if (handled) return;
@@ -712,6 +716,17 @@ async function routeFolder(deps: RouteDeps, method: string, target: string, req:
     return true;
   }
   return false;
+}
+
+async function importFile(deps: RouteDeps, req: IncomingMessage, res: ServerResponse): Promise<void> {
+  const body = await readJsonBody(req, MAX_IMPORT_BYTES);
+  const fields = typeof body === "object" && body !== null ? body as { name?: unknown; text?: unknown; folder?: unknown } : {};
+  if (typeof fields.name !== "string" || typeof fields.text !== "string" || (fields.folder !== null && typeof fields.folder !== "string")) {
+    sendJson(res, 400, { error: "expected { name: string, text: string, folder: string | null }" });
+    return;
+  }
+  const result = await importVaultFile(deps.vaultRoot, { name: fields.name, text: fields.text, folder: fields.folder });
+  sendMutation(res, result, /\.html?$/i.test(result.ok ? result.slug ?? "" : "") ? "artifact" : "note");
 }
 
 /** `POST /api/artifact/:rel/move` and `/rename`; `rel` still carries the suffix. */
