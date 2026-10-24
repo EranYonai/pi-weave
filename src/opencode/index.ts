@@ -3,7 +3,7 @@ import { fileURLToPath } from "node:url";
 import { formatStatusLine, getWorkspaceStatus } from "../core";
 import { parseFrontMatter, unquoteField } from "../core/frontmatter";
 import { registerOpenCodeCommands } from "./commands";
-import { weaveTools } from "./tools";
+import { weaveTools } from "../core/tools";
 import { WEAVE_RPC } from "./rpc";
 import { WorkspaceServerController } from "../web/server/controller";
 

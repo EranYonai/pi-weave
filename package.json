@@ -1,7 +1,7 @@
 {
   "name": "pi-weave",
   "version": "0.3.0",
-  "description": "Local-first Markdown memory and knowledge graph for Pi and OpenCode: preserve decisions, recall sessions, and explore notes with code.",
+  "description": "Local-first Markdown memory and knowledge graph for Pi, OpenCode and Claude Code: preserve decisions, recall sessions, and explore notes with code.",
   "type": "module",
   "sideEffects": false,
   "publishConfig": {
@@ -11,6 +11,7 @@
     "pi-package",
     "pi-coding-agent",
     "opencode-plugin",
+    "claude-code-plugin",
     "agent-memory",
     "persistent-memory",
     "markdown",
@@ -59,8 +60,10 @@
     "typecheck": "tsc --noEmit && tsc --noEmit -p tsconfig.web.json",
     "build:web": "node scripts/build-web.mjs",
     "build:web:check": "node scripts/build-web.mjs --check",
+    "build:claude": "node scripts/build-claude.mjs",
+    "build:claude:check": "node scripts/build-claude.mjs --check",
     "e2e": "vitest run --config vitest.e2e.config.ts",
-    "check": "npm run typecheck && npm run build:web:check && npm run coverage",
+    "check": "npm run typecheck && npm run build:web:check && npm run build:claude:check && npm run coverage",
     "eval:notepad": "node scripts/eval-notepad-search.mjs",
     "rewrap:md": "node scripts/rewrap-md.mjs",
     "rewrap:md:check": "node scripts/rewrap-md.mjs --check",

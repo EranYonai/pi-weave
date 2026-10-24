@@ -1,0 +1,17 @@
+{
+  "name": "pi-weave",
+  "owner": {
+    "name": "Eran Yonai",
+    "email": "yonai.eran@gmail.com"
+  },
+  "metadata": {
+    "description": "pi-weave: local-first Markdown memory for Claude Code, Pi and OpenCode."
+  },
+  "plugins": [
+    {
+      "name": "pi-weave",
+      "source": "./",
+      "description": "Local-first Markdown memory and knowledge graph shared by you and Claude."
+    }
+  ]
+}
