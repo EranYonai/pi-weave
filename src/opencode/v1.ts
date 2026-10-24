@@ -6,7 +6,7 @@ import { hashContent } from "../core";
 import { createWorkspaceCommands } from "../core/workspaceCommands";
 import { WorkspaceServerController } from "../web/server/controller";
 import { openCodeSessionDigest } from "./commands";
-import { weaveTools } from "./tools";
+import { weaveTools } from "../core/tools";
 
 type Client = Parameters<Plugin>[0]["client"];
 type CommandResult = { lines: string[]; viewer?: { url: string; open: boolean } };
