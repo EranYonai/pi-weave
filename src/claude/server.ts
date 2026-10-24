@@ -5,7 +5,7 @@ import { createWorkspaceCommands } from "../core/workspaceCommands";
 import { browserOpenCommand, WorkspaceServerController } from "../web/server/controller";
 import { claudeGenerate, type SpawnFn } from "./generate";
 import type { McpServerInfo, McpTool } from "./mcp";
-import { findTranscript, readClaudeTranscript, transcriptSessionId } from "./sessions";
+import { claudeConfigDir, findTranscript, readClaudeTranscript, transcriptSessionId } from "./sessions";
 
 /**
  * The Claude Code adapter: the shared tools and the shared workspace
@@ -55,7 +55,8 @@ export function createClaudeAdapter(options: ClaudeAdapterOptions = {}) {
   const spawn = options.spawn ?? nodeSpawn;
   const viewer = options.viewer ?? new WorkspaceServerController();
   const generate = claudeGenerate({ env, spawn, ...(env.PI_WEAVE_CLAUDE_BIN ? { bin: env.PI_WEAVE_CLAUDE_BIN } : {}) });
-  const transcript = () => findTranscript(cwd, env.CLAUDE_CODE_SESSION_ID, options.home);
+  const configDir = claudeConfigDir(env, options.home);
+  const transcript = () => findTranscript(cwd, env.CLAUDE_CODE_SESSION_ID, configDir);
 
   let collecting: string[] | null = null;
   let scan: { text: string; active: boolean } | null = null;

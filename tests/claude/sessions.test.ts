@@ -1,7 +1,7 @@
 import { mkdir, utimes, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
-import { claudeProjectDir, findTranscript, parseClaudeTranscript, readClaudeTranscript, transcriptSessionId } from "../../src/claude/sessions";
+import { claudeConfigDir, claudeProjectDir, findTranscript, parseClaudeTranscript, readClaudeTranscript, transcriptSessionId } from "../../src/claude/sessions";
 import { makeTempDir } from "../helpers";
 
 const line = (value: object) => JSON.stringify(value);
@@ -34,7 +34,10 @@ const transcript = [
 
 describe("Claude Code transcripts", () => {
   it("finds the project folder the way Claude Code names it", () => {
-    expect(claudeProjectDir("/Users/eran/my.repo", "/home/x")).toBe("/home/x/.claude/projects/-Users-eran-my-repo");
+    expect(claudeProjectDir("/Users/eran/my.repo", "/home/x/.claude")).toBe("/home/x/.claude/projects/-Users-eran-my-repo");
+    expect(claudeConfigDir({}, "/home/x")).toBe("/home/x/.claude");
+    expect(claudeConfigDir({ CLAUDE_CONFIG_DIR: "/cfg" }, "/home/x")).toBe("/cfg");
+    expect(claudeProjectDir("/r")).toBe(`${claudeConfigDir()}/projects/-r`);
     expect(transcriptSessionId("/a/b/abc-123.jsonl")).toBe("abc-123");
   });
 

@@ -8,20 +8,25 @@ import { digestFromMessages } from "../core/sessionDigest";
  * Claude Code's own transcripts, mapped onto the shared session digest.
  *
  * Claude Code writes one JSONL file per session under
- * `~/.claude/projects/<cwd with every non-alphanumeric as "-">/<session id>.jsonl`.
+ * `<config dir>/projects/<cwd with every non-alphanumeric as "-">/<session id>.jsonl`,
+ * where the config dir is `CLAUDE_CONFIG_DIR` or `~/.claude`.
  * Each assistant content block is its own line; lines of one reply share
  * `message.id`. Tool results come back as user lines holding `tool_result`
  * blocks, and slash commands and `!` shell runs are user lines wrapped in
  * tags. Everything else (attachments, titles, bookkeeping) is skipped.
  */
 
-export function claudeProjectDir(cwd: string, home: string = homedir()): string {
-  return join(home, ".claude", "projects", cwd.replace(/[^a-zA-Z0-9]/g, "-"));
+export function claudeConfigDir(env: NodeJS.ProcessEnv = process.env, home: string = homedir()): string {
+  return env.CLAUDE_CONFIG_DIR || join(home, ".claude");
+}
+
+export function claudeProjectDir(cwd: string, configDir: string = claudeConfigDir()): string {
+  return join(configDir, "projects", cwd.replace(/[^a-zA-Z0-9]/g, "-"));
 }
 
 /** The session's transcript, or this project's most recently written one. */
-export async function findTranscript(cwd: string, sessionId: string | undefined, home: string = homedir()): Promise<string | null> {
-  const dir = claudeProjectDir(cwd, home);
+export async function findTranscript(cwd: string, sessionId: string | undefined, configDir: string = claudeConfigDir()): Promise<string | null> {
+  const dir = claudeProjectDir(cwd, configDir);
   if (sessionId) {
     const path = join(dir, `${sessionId}.jsonl`);
     if (await stat(path).then((info) => info.isFile(), () => false)) return path;

@@ -113,8 +113,8 @@ describe("Claude Code adapter", () => {
 
   it("summarizes this project's Claude Code session into the vault", async () => {
     const { cwd, vault, home, command } = await setup();
-    await mkdir(claudeProjectDir(cwd, home), { recursive: true });
-    await writeFile(join(claudeProjectDir(cwd, home), "abc.jsonl"), [
+    await mkdir(claudeProjectDir(cwd, join(home, ".claude")), { recursive: true });
+    await writeFile(join(claudeProjectDir(cwd, join(home, ".claude")), "abc.jsonl"), [
       JSON.stringify({ type: "user", sessionId: "abc", cwd, timestamp: "2026-10-24T10:00:00Z", message: { content: "Cap webhook retries at six" } }),
       JSON.stringify({ type: "assistant", sessionId: "abc", timestamp: "2026-10-24T10:01:00Z", message: { id: "m", model: "claude-opus-5-5", content: [{ type: "text", text: "Done." }] } }),
     ].join("\n"));
@@ -126,6 +126,17 @@ describe("Claude Code adapter", () => {
     const text = await readFile(join(vault, "notes", "sessions", note!), "utf8");
     expect(text).toContain('session_file: "claude-code:session:abc"');
     expect(text).toContain(`by claude-code/${DEFAULT_SCAN_MODEL}`);
+  });
+
+  it("finds transcripts under CLAUDE_CONFIG_DIR", async () => {
+    const configDir = await makeTempDir();
+    const { cwd, vault, command } = await setup({ CLAUDE_CONFIG_DIR: configDir });
+    await mkdir(claudeProjectDir(cwd, configDir), { recursive: true });
+    await writeFile(join(claudeProjectDir(cwd, configDir), "cfg.jsonl"), JSON.stringify({ type: "user", sessionId: "cfg", cwd, message: { content: "Keep the cap" } }));
+    await withVaultEnv(vault, async () => {
+      await command("weave-scan", "sessions");
+      await vi.waitFor(async () => expect(await command("weave")).toContain("session scan complete — 1 summarized"), { timeout: 10_000 });
+    });
   });
 
   it("says so when the project has no Claude Code transcript", async () => {

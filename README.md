@@ -190,7 +190,7 @@ Every change to a note is saved to `<vault>/history/`, whether you, your agent, 
 This opt-in scan treats a supplied file—or every bounded text file under a supplied directory—as opaque session material for the active
 model to interpret, then writes generated notes under `~/.okf/notes/sessions/`. In OpenCode, the pathless form reads the current session
 through the public plugin API; it never inspects OpenCode's internal database. In Claude Code, it reads the current session's transcript
-from `~/.claude/projects/`. That makes explicit paths usable with Claude Code, OpenCode,
+from `~/.claude/projects/` (or `$CLAUDE_CONFIG_DIR/projects/`). That makes explicit paths usable with Claude Code, OpenCode,
 Codex, or exported history trees without requiring their schema or file extension. It skips unchanged files, captures outcomes plus reusable
 technical takeaways, works outside Git repositories, and can be stopped with `/weave-scan-cancel`.
 
