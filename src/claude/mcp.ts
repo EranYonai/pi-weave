@@ -63,7 +63,9 @@ export async function handleMcpMessage(server: McpServerInfo, raw: unknown): Pro
     case "ping":
       return result({});
     case "tools/list":
-      return result({ tools: server.tools.map(({ name, description, inputSchema }) => ({ name, description, inputSchema })) });
+      return result({ tools: // alwaysLoad keeps the tools out of Claude Code's deferred tool search: a
+      // slash command would otherwise spend a model round trip finding them.
+      server.tools.map(({ name, description, inputSchema }) => ({ name, description, inputSchema, _meta: { "anthropic/alwaysLoad": true } })) });
     case "tools/call": {
       const tool = server.tools.find((candidate) => candidate.name === params.name);
       if (!tool) return failure(id, -32602, `Unknown tool: ${String(params.name)}`);

@@ -1,6 +1,7 @@
 ---
 description: Summarize this repository's files; 'sessions [path]' summarizes session history
 argument-hint: [sessions [path]]
+model: haiku
 allowed-tools: mcp__plugin_pi-weave_pi-weave__weave_command
 ---
 

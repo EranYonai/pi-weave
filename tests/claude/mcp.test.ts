@@ -45,7 +45,7 @@ describe("MCP message handling", () => {
   it("answers ping and lists tools without their handlers", async () => {
     expect(await handleMcpMessage(server, request("ping"))).toEqual({ jsonrpc: "2.0", id: 1, result: {} });
     const list = await handleMcpMessage(server, request("tools/list"));
-    expect((list as { result: { tools: object[] } }).result.tools[0]).toEqual({ name: "echo", description: "echo", inputSchema: { type: "object" } });
+    expect((list as { result: { tools: object[] } }).result.tools[0]).toEqual({ name: "echo", description: "echo", inputSchema: { type: "object" }, _meta: { "anthropic/alwaysLoad": true } });
   });
 
   it("calls tools and turns failures into tool errors", async () => {

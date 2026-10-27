@@ -1,5 +1,6 @@
 ---
 description: Print the setting that shows pi-weave in Claude Code's status line
+model: haiku
 allowed-tools: mcp__plugin_pi-weave_pi-weave__weave_command
 ---
 

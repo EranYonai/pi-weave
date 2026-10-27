@@ -1,5 +1,6 @@
 ---
 description: Cancel the running pi-weave scan
+model: haiku
 allowed-tools: mcp__plugin_pi-weave_pi-weave__weave_command
 ---
 

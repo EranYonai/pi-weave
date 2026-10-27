@@ -1,6 +1,7 @@
 ---
 description: Open the pi-weave browser workspace; use --no-open to only print the URL
 argument-hint: [--no-open]
+model: haiku
 allowed-tools: mcp__plugin_pi-weave_pi-weave__weave_command
 ---
 

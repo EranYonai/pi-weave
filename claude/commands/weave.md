@@ -1,5 +1,6 @@
 ---
 description: Show the pi-weave workspace dashboard
+model: haiku
 allowed-tools: mcp__plugin_pi-weave_pi-weave__weave_command
 ---
 
