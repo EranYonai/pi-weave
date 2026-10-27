@@ -109,7 +109,9 @@ export function createClaudeAdapter(options: ClaudeAdapterOptions = {}) {
     } finally {
       collecting = null;
     }
-    return lines.join("\n") || "pi-weave: scan started in the background. Run /weave to see its progress.";
+    // The hook shows this line as-is, so keep just the URL.
+    const text = lines.join("\n").replace(/^pi-weave: workspace (?:already )?running at (\S+) — .*$/m, "pi-weave: workspace at $1");
+    return text || "pi-weave: scan started in the background. Run /weave to see its progress.";
   }
 
   const tools: McpTool[] = [

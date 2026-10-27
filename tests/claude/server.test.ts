@@ -73,9 +73,9 @@ describe("Claude Code adapter", () => {
 
   it("opens the workspace in a browser only when asked and local", async () => {
     const { opened, command } = await setup();
-    expect(await command("weave-view", "--no-open")).toMatch(/workspace running at http:\/\/127\.0\.0\.1:\d+\//);
+    expect(await command("weave-view", "--no-open")).toMatch(/workspace at http:\/\/127\.0\.0\.1:\d+\//);
     expect(opened).toEqual([]);
-    expect(await command("weave-view")).toContain("already running");
+    expect(await command("weave-view")).toContain("pi-weave: workspace at ");
     expect(opened).toHaveLength(1);
     expect(opened[0]![1]).toMatch(/^http:\/\/127\.0\.0\.1/);
 
@@ -84,7 +84,7 @@ describe("Claude Code adapter", () => {
     expect(remote.opened).toEqual([]);
 
     const broken = await setup({}, () => { throw new Error("no opener"); });
-    expect(await broken.command("weave-view")).toContain("workspace running");
+    expect(await broken.command("weave-view")).toContain("pi-weave: workspace at ");
   });
 
   it("runs the deep scan in the background with headless Claude Code", async () => {
