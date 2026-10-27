@@ -24,7 +24,8 @@ jobs:
 
   e2e:
     name: e2e (pi + browser workspace)
-    runs-on: ubuntu-latest
+    # Playwright has no Chromium build for ubuntu-latest (26.04) yet; pin until it does.
+    runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
