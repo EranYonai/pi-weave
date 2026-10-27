@@ -22,12 +22,15 @@ Both faces obey one rule: **artefacts are equally readable by humans and agents*
 2. **Test coverage must stay ≥ 95%** (lines, branches, functions, statements). The gate is enforced by `vitest --coverage` thresholds — `npm
    run coverage` fails below 95. Write tests *with* the feature, not after.
 3. **`src/core/` must never import from `@earendil-works/*`, `@opencode*`, `typebox`, or any harness package.** The core is the portable
-   engine; adapters (`src/pi/`, `src/opencode/`) are thin wires into harness APIs. All logic lives in core.
+   engine; adapters (`src/pi/`, `src/opencode/`, `src/claude/`) are thin wires into harness APIs. All logic lives in core.
 4. **Generated knowledge carries provenance** (`source: human | agent | generated`). Never let agent-written content masquerade as
    human-authored.
 5. **`.okf` indexes are derived and rebuildable.** Nothing in them may be the only copy of anything.
 6. **The web client bundle is committed.** After changing anything under `src/web/client/`, run `npm run build:web` and commit
    `src/web/client/dist/app.js`. `npm run check` fails if the bundle does not match its source.
+7. **The Claude Code plugin bundle is committed.** Claude Code installs plugins from the git repo, so the plugin runs
+   `claude/dist/weave.mjs`, bundled from `src/claude/cli.ts` and everything it imports (core and the web server included). After changing
+   any of that, run `npm run build:claude` and commit the bundle. `npm run check` fails if it is stale.
 
 ## Repository layout
 
@@ -35,12 +38,14 @@ Both faces obey one rule: **artefacts are equally readable by humans and agents*
 src/core/        Portable knowledge engine (vault, git, repo index, graph, view-models, workspace)
 src/pi/          pi adapter: extension factory, tools, commands, /weave-view controller
 src/opencode/    OpenCode adapter: V2 plugin (index.ts), V1 server (v1.ts), terminal companion (tui.ts), commands
+src/claude/      Claude Code adapter: MCP stdio server (mcp.ts, server.ts), headless scans (generate.ts), transcripts, hooks
 src/web/server/  Local HTTP server for the browser workspace (routes, security, page)
 src/web/client/  Browser workspace (Preact + sigma); bundled to dist/app.js by scripts/build-web.mjs
 src/web/shared/  Wire types and the pure helpers both server and client may use
+claude/          Claude Code plugin commands and the committed bundle (dist/weave.mjs); manifest in .claude-plugin/
 skills/          Agent Skills (agentskills.io): weave-notepad, weave-explore
 scripts/         build-web, rewrap-md, eval-notepad-search
-tests/           vitest suites mirroring src/ (tests/core, tests/pi, tests/opencode, tests/web)
+tests/           vitest suites mirroring src/ (tests/core, tests/pi, tests/opencode, tests/claude, tests/web)
 docs/            design.md (source of truth), scan-modes.md, upstream pi reference docs, archive/ for finished plans
 ```
 
@@ -51,12 +56,13 @@ npm run typecheck   # tsc --noEmit for the node project and the web project (str
 npm test            # vitest run (no coverage gate)
 npm run coverage    # vitest run --coverage (the 95% gate)
 npm run build:web   # rebuild src/web/client/dist/app.js after client changes
+npm run build:claude # rebuild claude/dist/weave.mjs after changes it imports
 npm run check       # typecheck + bundle check + coverage — run before committing
 ```
 
 ## Testing conventions
 
-- Unit tests live in `tests/core`, adapter tests in `tests/pi` and `tests/opencode`, browser workspace tests in `tests/web`.
+- Unit tests live in `tests/core`, adapter tests in `tests/pi`, `tests/opencode` and `tests/claude`, browser workspace tests in `tests/web`.
 - `tests/helpers.ts` provides temp dirs, real git-fixture builders (`gitInit`, `commitAll`, `writeFixture`), and a **mock pi harness**
   (`createMockPi`, `createMockCtx`) that records tool/command/event registrations. Test the adapter through that mock; test core through its
   plain async functions.

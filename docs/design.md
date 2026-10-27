@@ -857,7 +857,7 @@ So the architecture is split into **portable core** and **thin adapters**:
    directories from its skills paths; opencode supports the same convention. One skill, three harnesses.
 
 4. **The core library.** `src/core` contains every interesting behavior — vault store, repo scanner, staleness logic, search — and imports
-   **nothing** from `@earendil-works/*`. Adapters (`src/pi`, future `src/claude-code`, `src/opencode`) only translate harness
+   **nothing** from `@earendil-works/*`. Adapters (`src/pi`, `src/claude`, `src/opencode`) only translate harness
    events/tool-calls into core calls.
 
 ### Adapter roadmap
@@ -865,8 +865,8 @@ So the architecture is split into **portable core** and **thin adapters**:
 | Harness     | Mechanism                                        | Status  |
 |-------------|--------------------------------------------------|---------|
 | pi          | Extension (tools, commands, events, skills)      | **MVP** |
-| Claude Code | Plugin: skills + slash commands + hooks          | Planned |
-| opencode    | Plugin (tool registrations)                      | Planned |
+| Claude Code | Plugin: MCP server + skills + commands + hook     | **Shipped** |
+| opencode    | Plugin (tool registrations)                      | **Shipped** |
 | Any         | MCP server wrapping the core                     | Future  |
 
 The rule for all adapters: **no logic in adapters**. Adapters wire events to the core; the core owns behavior; the artifacts stay readable

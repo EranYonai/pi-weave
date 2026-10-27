@@ -1,0 +1,50 @@
+{
+  "name": "pi-weave",
+  "description": "Local-first Markdown memory and knowledge graph shared by you and Claude: a notepad vault, a repository index and a browser workspace. The same vault Pi and OpenCode use.",
+  "author": {
+    "name": "Eran Yonai",
+    "email": "yonai.eran@gmail.com"
+  },
+  "homepage": "https://github.com/EranYonai/pi-weave#readme",
+  "repository": "https://github.com/EranYonai/pi-weave",
+  "license": "MIT",
+  "keywords": [
+    "memory",
+    "notes",
+    "markdown",
+    "knowledge-graph",
+    "local-first"
+  ],
+  "commands": "./claude/commands",
+  "mcpServers": {
+    "pi-weave": {
+      "command": "node",
+      "args": [
+        "${CLAUDE_PLUGIN_ROOT}/claude/dist/weave.mjs",
+        "mcp"
+      ]
+    }
+  },
+  "hooks": {
+    "UserPromptSubmit": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node \"${CLAUDE_PLUGIN_ROOT}/claude/dist/weave.mjs\" prompt-submit"
+          }
+        ]
+      }
+    ],
+    "SessionStart": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node \"${CLAUDE_PLUGIN_ROOT}/claude/dist/weave.mjs\" session-start"
+          }
+        ]
+      }
+    ]
+  }
+}

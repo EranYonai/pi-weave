@@ -219,6 +219,17 @@ const TIERS: readonly Tier[] = [
     domGlobals: false,
     extensions: [".ts"],
   },
+  {
+    id: "src/claude",
+    // No npm packages at all: the MCP server is hand-rolled over stdio.
+    npm: new Set<string>(),
+    imports: ["src/claude", "src/core", "src/web/server", "src/web/shared"],
+    typeOnly: [],
+    moduleExceptions: NO_EXCEPTIONS,
+    nodeBuiltins: true,
+    domGlobals: false,
+    extensions: [".ts"],
+  },
 ];
 
 // --- source scanning ----------------------------------------------------------

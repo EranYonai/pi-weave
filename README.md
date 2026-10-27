@@ -57,8 +57,15 @@ pi-weave keeps track of where knowledge came from, while making the whole worksp
 
 ## Install
 
-pi-weave supports [Pi](https://github.com/earendil-works/pi) and OpenCode (V1 **1.18.29+** and V2) from the same package. The adapters share
-the vault, repository index, browser workspace, tools, and skills.
+pi-weave supports [Pi](https://github.com/earendil-works/pi), OpenCode (V1 **1.18.29+** and V2), and Claude Code from the same repository.
+The adapters share the vault, repository index, browser workspace, tools, and skills.
+
+Claude Code:
+
+```bash
+/plugin marketplace add EranYonai/pi-weave
+/plugin install pi-weave@pi-weave
+```
 
 OpenCode V2:
 
@@ -176,13 +183,14 @@ Every change to a note is saved to `<vault>/history/`, whether you, your agent, 
 ## Remember sessions
 
 ```bash
-/weave-scan sessions                    # Pi history, or the current OpenCode session
+/weave-scan sessions                    # Pi history, or the current OpenCode or Claude Code session
 /weave-scan sessions /path/to/history   # explicit history root
 ```
 
 This opt-in scan treats a supplied file—or every bounded text file under a supplied directory—as opaque session material for the active
 model to interpret, then writes generated notes under `~/.okf/notes/sessions/`. In OpenCode, the pathless form reads the current session
-through the public plugin API; it never inspects OpenCode's internal database. That makes explicit paths usable with Claude Code, OpenCode,
+through the public plugin API; it never inspects OpenCode's internal database. In Claude Code, it reads the current session's transcript
+from `~/.claude/projects/` (or `$CLAUDE_CONFIG_DIR/projects/`). That makes explicit paths usable with Claude Code, OpenCode,
 Codex, or exported history trees without requiring their schema or file extension. It skips unchanged files, captures outcomes plus reusable
 technical takeaways, works outside Git repositories, and can be stopped with `/weave-scan-cancel`.
 
@@ -212,6 +220,7 @@ Most people only need natural language and `/weave-view`.
 | Command | `/weave-scan` | Add incremental model-written file summaries |
 | Command | `/weave-scan sessions [path]` | Turn changed session-history files into durable memory notes |
 | Command | `/weave-scan-cancel` | Stop a running scan |
+| Command | `/weave-statusline` | Claude Code only: print the setting that shows pi-weave in the status line |
 | Tool | `weave_note` | List, read, add, append, finalize, and search notes |
 | Tool | `weave_repo` | Describe the repository structure for the agent |
 
@@ -220,6 +229,13 @@ vault/repository status and scan progress appears in toasts; Pi keeps its persis
 pipeline, so the model reports command results in the conversation. `/weave` does not open a dialog. V1 scans use the model from your last
 chat message: send a message after selecting a model, then scan. Generation runs in temporary child sessions with tools denied;
 those sessions are removed on completion or cancellation. V2 uses its direct command and generation APIs.
+
+In Claude Code, the commands appear as `/pi-weave:weave-view` and so on (type `/weave` and pick one). The plugin runs a small local MCP
+server for the tools and the workspace, and a SessionStart hook adds the vault status to each session. Scans run in the background: `/weave`
+shows their progress and result. Each summary is one headless `claude -p` run on Haiku with tools and MCP servers disabled, billed to your
+own Claude Code login; set `PI_WEAVE_CLAUDE_MODEL` to use another model. Claude Code asks before each tool call until you allow the
+pi-weave tools; to allow them up front, add `"mcp__plugin_pi-weave_pi-weave"` to `permissions.allow` in your settings. The plugin needs
+`node` (20.13+) on your `PATH`.
 
 ## Files, privacy, and portability
 
@@ -260,15 +276,16 @@ We probably want OIDC next quarter…
 Set `PI_WEAVE_VAULT` to use a different vault location.
 
 Reading, writing, searching, and viewing notes are local operations. Deep repository scans and session summaries send bounded input to the
-active Pi/V2 model or the last-used V1 chat model. The browser workspace binds only to loopback, uses a per-session token, and shuts down
+active Pi/V2 model, the last-used V1 chat model, or headless Claude Code. The browser workspace binds only to loopback, uses a per-session token, and shuts down
 with the plugin lifecycle. OpenCode opens it automatically when the terminal can reach the viewer's loopback URL. Otherwise, it shows the
 exact URL for a browser or tunnel.
 
-The vault format, repository index, and skills are intentionally harness-agnostic. `src/core` contains no Pi- or OpenCode-specific imports.
+The vault format, repository index, and skills are intentionally harness-agnostic. `src/core` contains no Pi-, OpenCode-, or Claude Code-specific imports.
 
 ## Development
 
-The OpenCode V1/V2 bindings share tool schemas, core actions, and one command/scan workflow. Zod is the only direct runtime dependency,
+All adapters share one set of tool schemas (`src/core/tools.ts`), the core actions, and one command/scan workflow
+(`src/core/workspaceCommands.ts`). Zod is the only direct runtime dependency,
 required by V1's tool-schema protocol; OpenCode SDKs are development-only.
 
 ```bash
@@ -286,7 +303,8 @@ npm run build:web
 ```
 
 Coverage must remain at or above **95%** for lines, branches, functions, and statements. If browser source changes, rebuild and commit
-`src/web/client/dist/app.js`.
+`src/web/client/dist/app.js`. The Claude Code plugin runs from a committed bundle too: after changing anything it imports, run
+`npm run build:claude` and commit `claude/dist/weave.mjs`.
 
 Read [AGENTS.md](AGENTS.md) before contributing. Work on a feature branch; do not commit directly to `main`.
 
