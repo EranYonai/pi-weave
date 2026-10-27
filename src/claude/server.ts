@@ -142,6 +142,8 @@ export function createClaudeAdapter(options: ClaudeAdapterOptions = {}) {
   const server: McpServerInfo = { name: "pi-weave", version: options.version ?? "0.0.0", instructions: INSTRUCTIONS, tools };
   return {
     server,
+    /** Run a slash command directly, as the hook does when it answers without the model. */
+    runCommand,
     async close() {
       await shared.cleanup();
       await viewer.close();

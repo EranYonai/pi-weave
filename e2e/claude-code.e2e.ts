@@ -51,7 +51,10 @@ describe.skipIf(!hasClaude)("claude code plugin", () => {
         .filter((block) => block.type === "tool_use").map((block) => ({ name: block.name ?? "", input: block.input }))
       : []));
     const result = events.find((e) => e.type === "result") as (Event & { result: string; is_error: boolean }) | undefined;
-    return { events, toolCalls, text: result?.result ?? "", isError: result?.is_error ?? true, ms: Date.now() - started };
+    // A hook that answers a command stops the prompt; its text rides on an informational event.
+    const hooked = events.filter((e) => e.type === "system" && e.subtype === "informational").map((e) => String(e.content)).join("\n");
+    return { events, toolCalls, hooked, turns: (result as { num_turns?: number } | undefined)?.num_turns ?? -1,
+      cost: (result as { total_cost_usd?: number } | undefined)?.total_cost_usd ?? -1, text: `${result?.result ?? ""}${hooked}`, isError: result?.is_error ?? true, ms: Date.now() - started };
   }
 
   it("registers the commands, skills and MCP tools", () => {
@@ -67,15 +70,16 @@ describe.skipIf(!hasClaude)("claude code plugin", () => {
     expect((init.skills ?? []).some((s) => s.includes("pi-weave"))).toBe(true);
   });
 
-  it("/weave-view answers quickly with a working workspace URL", async () => {
+  it("/weave-view opens the workspace with no model turn", () => {
     const run = claude("/pi-weave:weave-view --no-open");
-    expect(run.isError).toBe(false);
-    expect(run.toolCalls.map((c) => c.name)).toEqual([TOOL("weave_command")]);
-    const url = /http:\/\/127\.0\.0\.1:\d+\/\?t=[\w-]+/.exec(run.text)?.[0];
-    expect(url, run.text).toBeTruthy();
-    // A 17s model round trip was the bug; the budget leaves room for CLI start-up.
-    expect(run.ms).toBeLessThan(12_000);
-    // The MCP server exits with the claude process, so the URL is only checked for its shape.
+    expect(run.hooked).toContain("stopped by hook");
+    // The UserPromptSubmit hook answered through the MCP process: no model, no tool call, no cost.
+    expect(run.turns).toBe(0);
+    expect(run.cost).toBe(0);
+    expect(run.toolCalls).toEqual([]);
+    expect(/http:\/\/127\.0\.0\.1:\d+\/\?t=[\w-]+/.exec(run.text)?.[0], run.text).toBeTruthy();
+    // What is left is `claude` starting up and connecting its MCP servers.
+    expect(run.ms).toBeLessThan(6_000);
   });
 
   it("saves a note with weave_note and finds it again", () => {
@@ -89,12 +93,19 @@ describe.skipIf(!hasClaude)("claude code plugin", () => {
     expect(search.text.toLowerCase()).toContain("friday");
   });
 
-  it("/weave prints the dashboard and /weave-statusline the settings snippet", () => {
+  it("/weave and /weave-statusline answer with no model turn too", () => {
     const dash = claude("/pi-weave:weave");
-    expect(dash.toolCalls.map((c) => c.name)).toEqual([TOOL("weave_command")]);
+    expect([dash.turns, dash.toolCalls.length]).toEqual([0, 0]);
     expect(dash.text).toMatch(/note/i);
     const line = claude("/pi-weave:weave-statusline");
+    expect([line.turns, line.toolCalls.length]).toEqual([0, 0]);
     expect(line.text).toContain("statusLine");
+  });
+
+  it("falls back to the model when the hook cannot reach the server", () => {
+    // Without a session socket the command still works, as a model turn that calls the tool.
+    const run = claude("/pi-weave:weave --no-such-flag-ok", ["--settings", JSON.stringify({ disableAllHooks: true })]);
+    expect(run.toolCalls.map((c) => c.name)).toEqual([TOOL("weave_command")]);
   });
 
   it("the SessionStart hook adds the vault status", () => {

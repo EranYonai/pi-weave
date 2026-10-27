@@ -36,7 +36,7 @@ describe("Claude Code plugin entry", () => {
 
   it("stays quiet inside its own headless scans, and rejects unknown modes", async () => {
     expect(await run(["session-start"], "{}", { PI_WEAVE_NESTED: "1" })).toEqual({ code: 0, text: "" });
-    expect(await run(["nope"], "")).toEqual({ code: 2, text: "usage: weave.mjs [mcp | session-start | statusline]\n" });
+    expect(await run(["nope"], "")).toEqual({ code: 2, text: "usage: weave.mjs [mcp | session-start | prompt-submit | statusline]\n" });
   });
 
   it("reads its version from package.json", () => {

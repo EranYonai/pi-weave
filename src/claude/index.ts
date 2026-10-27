@@ -2,6 +2,7 @@ import { readFileSync } from "node:fs";
 import type { Readable, Writable } from "node:stream";
 import { formatStatusLine, getWorkspaceStatus } from "../core";
 import { NESTED_ENV } from "./generate";
+import { callControl, controlSocketPath, serveControl } from "./control";
 import { serveMcp } from "./mcp";
 import { createClaudeAdapter } from "./server";
 
@@ -10,6 +11,7 @@ import { createClaudeAdapter } from "./server";
  *
  *   weave.mjs mcp            the MCP server (plugin.json → mcpServers)
  *   weave.mjs session-start  SessionStart hook: the status line, as context
+ *   weave.mjs prompt-submit  UserPromptSubmit hook: runs /weave commands with no model turn
  *   weave.mjs statusline     opt-in status-line command
  *
  * Hooks and the status line pass a JSON object on stdin; only its working
@@ -41,12 +43,27 @@ function cwdFrom(input: Record<string, unknown>, fallback: string): string {
   return typeof input.cwd === "string" ? input.cwd : fallback;
 }
 
+/** `/weave…` or `/pi-weave:weave…` and its arguments. */
+const PROMPT = /^\/(?:pi-weave:)?(weave(?:-view|-scan-cancel|-scan|-statusline)?)(?:\s+(.*))?$/s;
+
 export async function main(argv: readonly string[], io: MainIo): Promise<number> {
   const [mode = "mcp"] = argv;
   if (mode === "mcp") {
     const adapter = createClaudeAdapter({ env: io.env, cwd: io.env.CLAUDE_PROJECT_DIR ?? io.cwd, version: io.version });
+    const sessionId = io.env.CLAUDE_CODE_SESSION_ID;
+    const control = sessionId ? await serveControl(controlSocketPath(sessionId), adapter.runCommand).catch(() => null) : null;
     await serveMcp(adapter.server, io.stdin, io.stdout);
+    await control?.close();
     await adapter.close();
+    return 0;
+  }
+  if (mode === "prompt-submit") {
+    const input = await readJson(io.stdin);
+    const prompt = typeof input.prompt === "string" ? PROMPT.exec(input.prompt.trim()) : null;
+    if (!prompt || io.env[NESTED_ENV] || typeof input.session_id !== "string") return 0;
+    const text = await callControl(controlSocketPath(input.session_id), prompt[1] as string, (prompt[2] ?? "").trim());
+    // Nothing answered: stay silent and the command runs through the model instead.
+    if (text !== null) io.stdout.write(JSON.stringify({ continue: false, stopReason: text }));
     return 0;
   }
   if (mode === "session-start" || mode === "statusline") {
@@ -57,7 +74,7 @@ export async function main(argv: readonly string[], io: MainIo): Promise<number>
     io.stdout.write(mode === "session-start" ? `pi-weave: ${line}\n` : `${line}\n`);
     return 0;
   }
-  io.stdout.write("usage: weave.mjs [mcp | session-start | statusline]\n");
+  io.stdout.write("usage: weave.mjs [mcp | session-start | prompt-submit | statusline]\n");
   return 2;
 }
 
