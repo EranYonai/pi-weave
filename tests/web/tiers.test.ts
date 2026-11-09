@@ -230,6 +230,39 @@ const TIERS: readonly Tier[] = [
     domGlobals: false,
     extensions: [".ts"],
   },
+  {
+    id: "src/capture/server",
+    // Weave Capture's server and command line. Passkey verification is the one
+    // npm package, bundled into src/capture/dist/capture.mjs, never installed.
+    npm: new Set(["@simplewebauthn/server"]),
+    imports: ["src/capture/server", "src/capture/shared", "src/core", "src/web/server"],
+    typeOnly: [],
+    moduleExceptions: NO_EXCEPTIONS,
+    nodeBuiltins: true,
+    domGlobals: false,
+    extensions: [".ts"],
+  },
+  {
+    id: "src/capture/shared",
+    // Wire types both the capture server and the phone page import.
+    npm: new Set<string>(),
+    imports: ["src/capture/shared"],
+    typeOnly: [],
+    moduleExceptions: NO_EXCEPTIONS,
+    nodeBuiltins: false,
+    domGlobals: false,
+    extensions: [".ts"],
+  },
+  {
+    id: "src/capture/client",
+    npm: new Set(["preact", "preact/hooks", "preact/jsx-runtime", "@simplewebauthn/browser"]),
+    imports: ["src/capture/client", "src/capture/shared"],
+    typeOnly: [],
+    moduleExceptions: NO_EXCEPTIONS,
+    nodeBuiltins: false,
+    domGlobals: true,
+    extensions: [".ts", ".tsx"],
+  },
 ];
 
 // --- source scanning ----------------------------------------------------------

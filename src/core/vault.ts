@@ -25,7 +25,7 @@ import {
 } from "./history";
 import { withMutationQueue } from "./mutex";
 import { NOTES_DIR, OKF_MANIFEST } from "./paths";
-import { slugify, uniqueSlug } from "./slug";
+import { slugify, slugifyPath, uniqueSlug } from "./slug";
 import type {
   Note,
   HtmlArtifact,
@@ -57,6 +57,10 @@ export interface AddNoteInput {
   raw?: boolean;
   /** Who is creating it, for note history. Defaults from `source`. */
   by?: HistoryAuthor;
+  /** Vault folder to create the note in (made if missing). Defaults to the root. */
+  folder?: string;
+  /** Extra scalar front-matter fields, written after the managed five. */
+  fields?: Record<string, string>;
   /** Injectable clock for tests. */
   now?: Date;
 }
@@ -126,7 +130,8 @@ export async function addNote(root: string, input: AddNoteInput): Promise<Note> 
   return withVaultLock(root, async () => {
     const date = input.now ?? new Date();
     const now = date.toISOString();
-    const base = slugify(input.title);
+    const name = slugify(input.title);
+    const base = input.folder === undefined ? name : `${slugifyPath(input.folder)}/${name}`;
     const slug = uniqueSlug(base, (candidate) => existsSync(notePath(root, candidate)));
 
     const meta: NoteMeta = {
@@ -136,12 +141,15 @@ export async function addNote(root: string, input: AddNoteInput): Promise<Note> 
       tags: input.tags ?? [],
       source: input.source ?? "agent",
     };
-    // No `frontMatter`: a brand-new note has no prior layout to respect, so
-    // the serializer writes its canonical block.
+    // Without extra fields there is no `frontMatter`: a brand-new note has no
+    // prior layout to respect, so the serializer writes its canonical block.
+    const frontMatter = input.fields === undefined
+      ? undefined
+      : upsertFrontMatterFields(parseFrontMatter(serializeNote(meta, ""))!.lines, input.fields);
     const body = input.raw && input.body.trim() !== ""
       ? `${rawTailOpening()}\n\n${formatRawAppend(input.body, date)}\n`
       : input.body;
-    const note = await writeNote(notePath(root, slug), slug, meta, body, undefined);
+    const note = await writeNote(notePath(root, slug), slug, meta, body, frontMatter);
     await record(root, note, input.by ?? (meta.source === "human" ? "human" : "agent"), "create", null, now);
     return note;
   });
@@ -703,6 +711,21 @@ export async function setNoteBody(
     const before = await priorBody(path, note);
     const written = await writeNote(path, slug, { ...note, updated: now.toISOString() }, next, note.frontMatter);
     await record(root, written, by, "edit", before, written.updated);
+    return { ok: true, slug };
+  });
+}
+
+/**
+ * Set scalar front-matter fields on a note, keeping its body, `updated` and
+ * every other key. Bookkeeping such as an inbox `status`, so no history entry.
+ */
+export async function setNoteFields(root: string, slug: string, fields: Record<string, string>): Promise<VaultMutationResult> {
+  const path = resolveNotePath(root, slug);
+  if (path === null) return { ok: false, reason: "invalid" };
+  return withVaultLock(root, async () => {
+    const note = await getNote(root, slug);
+    if (note === null) return { ok: false, reason: "missing" };
+    await writeNote(path, slug, note, note.body, upsertFrontMatterFields(note.frontMatter ?? [], fields));
     return { ok: true, slug };
   });
 }

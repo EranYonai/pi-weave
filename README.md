@@ -220,8 +220,9 @@ Most people only need natural language and `/weave-view`.
 | Command | `/weave-scan` | Add incremental model-written file summaries |
 | Command | `/weave-scan sessions [path]` | Turn changed session-history files into durable memory notes |
 | Command | `/weave-scan-cancel` | Stop a running scan |
+| Command | `/weave-inbox` | List new meeting transcripts from Weave Capture and mark them read |
 | Command | `/weave-statusline` | Claude Code only: print the setting that shows pi-weave in the status line |
-| Tool | `weave_note` | List, read, add, append, finalize, and search notes |
+| Tool | `weave_note` | List, read, add, append, finalize, and search notes; `inbox` lists new meeting transcripts |
 | Tool | `weave_repo` | Describe the repository structure for the agent |
 
 The included `weave-notepad` and `weave-explore` skills teach Pi and OpenCode when and how to use these tools. In OpenCode, `/weave` shows
@@ -236,6 +237,15 @@ shows their progress and result. Each summary is one headless `claude -p` run on
 own Claude Code login; set `PI_WEAVE_CLAUDE_MODEL` to use another model. Claude Code asks before each tool call until you allow the
 pi-weave tools; to allow them up front, add `"mcp__plugin_pi-weave_pi-weave"` to `permissions.allow` in your settings. The plugin needs
 `node` (20.13+) on your `PATH`.
+
+## Record meetings with Weave Capture
+
+Weave Capture is a small phone web app that records a meeting, transcribes it with Whisper on your Mac, and writes the transcript into the
+vault as a note in `meetings/`. You sign in with a passkey (Face ID); audio goes from the phone to your Mac and nowhere else. New
+transcripts show in the status line ("1 new meeting"), and `/weave-inbox` or "go through my new meetings" lists them for the agent.
+
+It runs on your Mac and is reached from the phone through a Cloudflare Tunnel. See [docs/weave-capture.md](docs/weave-capture.md) to set it
+up.
 
 ## Files, privacy, and portability
 

@@ -13,6 +13,7 @@ import {
   searchNotes,
   type LinkRepairResult,
 } from "./vault";
+import { takeInbox } from "./capture";
 import { relatedNotes, suggestLinks, type RelatedNote, type SuggestionReport } from "./links/similar";
 import { NOTES_DIR, resolveVaultRoot } from "./paths";
 import { withMutationQueue } from "./mutex";
@@ -25,11 +26,12 @@ export const WEAVE_NOTE_DESCRIPTION =
   "append (extend a note; raw=true appends verbatim dictation into the ## Raw tail; add with raw=true starts the note there), " +
   "finalize (restructure a note above its raw tail), search (ranked slug/title/tags/body matches plus linked, tagged, and lexically related notes; returns the full note when one result or one exact identity resolves), " +
   "links (audit stale [[wiki-links]]; fix=true repairs the unambiguous ones), " +
-  "suggest (rank unlinked notes that share distinctive vocabulary; reports only, never writes). " +
+  "suggest (rank unlinked notes that share distinctive vocabulary; reports only, never writes), " +
+  "inbox (list new meeting transcripts recorded with Weave Capture and mark them read; then get each by slug). " +
   "Use it to remember decisions, facts, and user preferences across sessions.";
 
 export interface NoteActionInput {
-  action: "list" | "get" | "add" | "append" | "finalize" | "search" | "links" | "suggest";
+  action: "list" | "get" | "add" | "append" | "finalize" | "search" | "links" | "suggest" | "inbox";
   title?: string;
   text?: string;
   tags?: string[];
@@ -254,6 +256,11 @@ async function runNoteAction(
   now: () => Date,
 ): Promise<NoteActionResult> {
   switch (params.action) {
+    case "inbox": {
+      const inbox = await takeInbox(vault);
+      return { text: inbox.text, details: { action: "inbox", transcripts: inbox.transcripts } };
+    }
+
     case "list": {
       const notes = await listNotes(vault);
       if (notes.length === 0) return { text: `The vault at ${vault} has no notes yet.`, details: { action: "list", notes: [] } };

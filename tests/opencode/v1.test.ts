@@ -59,7 +59,7 @@ describe("OpenCode V1 1.18.29", () => {
       expect(config.skills.paths[1]).toMatch(/pi-weave\/skills$/);
       const empty = {};
       await hooks.config!(empty);
-      expect(Object.keys((empty as any).command)).toEqual(["weave", "weave-scan", "weave-scan-cancel", "weave-view"]);
+      expect(Object.keys((empty as any).command)).toEqual(["weave", "weave-inbox", "weave-scan", "weave-scan-cancel", "weave-view"]);
       expect(await invoke(hooks, "unrelated")).toBe("template");
       expect(await invoke(hooks, "weave")).toContain("Vault");
       expect(await invoke(hooks, "weave-scan", "nonsense")).toContain("usage: /weave-scan");

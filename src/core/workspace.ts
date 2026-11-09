@@ -4,6 +4,7 @@ import { readSummaries } from "./summaries";
 import { basename } from "node:path";
 import { resolveVaultRoot } from "./paths";
 import { noteCount, vaultExists } from "./vault";
+import { newTranscriptCount } from "./capture";
 import type { WorkspaceStatus } from "./types";
 
 /**
@@ -20,15 +21,16 @@ export interface WorkspaceOptions {
 export async function getWorkspaceStatus(cwd: string, options: WorkspaceOptions = {}): Promise<WorkspaceStatus> {
   const vaultRoot = options.vaultRoot ?? resolveVaultRoot();
 
-  const [exists, count, repoRoot] = await Promise.all([
+  const [exists, count, fresh, repoRoot] = await Promise.all([
     vaultExists(vaultRoot),
     noteCount(vaultRoot),
+    newTranscriptCount(vaultRoot),
     findGitRoot(cwd),
   ]);
 
   const status: WorkspaceStatus = {
     cwd,
-    vault: { root: vaultRoot, exists, noteCount: count },
+    vault: { root: vaultRoot, exists, noteCount: count, ...(fresh > 0 ? { newTranscripts: fresh } : {}) },
     repository: null,
   };
 
@@ -51,7 +53,11 @@ export async function getWorkspaceStatus(cwd: string, options: WorkspaceOptions 
 export function formatStatusLine(status: WorkspaceStatus): string {
   const notes = plural(status.vault.noteCount, "note", "notes");
   const summaries = status.repository?.summaryCount ?? 0;
-  return summaries > 0 ? `🕸️ ${notes} · ${plural(summaries, "summary", "summaries")}` : `🕸️ ${notes}`;
+  const parts = [`🕸️ ${notes}`];
+  if (summaries > 0) parts.push(plural(summaries, "summary", "summaries"));
+  const fresh = status.vault.newTranscripts ?? 0;
+  if (fresh > 0) parts.push(`${plural(fresh, "new meeting", "new meetings")} (/weave-inbox)`);
+  return parts.join(" · ");
 }
 
 function plural(count: number, one: string, many: string): string {
@@ -67,6 +73,8 @@ export function formatDashboard(status: WorkspaceStatus): string {
       ? `  ${status.vault.noteCount} note(s)`
       : "  not initialized — add a note to create it",
   );
+  const fresh = status.vault.newTranscripts ?? 0;
+  if (fresh > 0) lines.push(`  ${fresh} new meeting transcript(s) — run /weave-inbox`);
   const repo = status.repository;
   if (!repo) return lines.join("\n");
   lines.push(`Repository (${repo.name} @ ${repo.root}):`);

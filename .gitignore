@@ -11,6 +11,9 @@ dist/
 !src/web/client/dist/app.js
 !claude/dist/
 !claude/dist/weave.mjs
+!src/capture/dist/
+!src/capture/dist/capture.mjs
+!src/capture/dist/app.js
 
 # pi-weave: local derived knowledge index (see docs/design.md §15)
 .okf/

@@ -188,6 +188,8 @@ export interface VaultStatus {
   folders?: string[];
   /** Number of discovered HTML/HTM artifacts. */
   artifactCount?: number;
+  /** Meeting transcripts still marked new (see `capture.ts`). */
+  newTranscripts?: number;
 }
 
 /** Status of the repository half of the workspace. */
