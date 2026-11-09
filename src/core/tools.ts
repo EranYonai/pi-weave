@@ -13,7 +13,7 @@ import { executeRepoAction, WEAVE_REPO_DESCRIPTION, type RepoActionInput } from 
 const noteInput = {
   type: "object",
   properties: {
-    action: { type: "string", enum: ["list", "get", "add", "append", "finalize", "search", "links", "suggest"] },
+    action: { type: "string", enum: ["list", "get", "add", "append", "finalize", "search", "links", "suggest", "inbox"] },
     title: { type: "string", description: "Note title (add)" },
     text: { type: "string", description: "Markdown body (add), addition (append), or restructured body above the raw tail (finalize)" },
     tags: { type: "array", items: { type: "string" }, description: "Tags (add)" },

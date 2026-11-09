@@ -8,6 +8,8 @@ import {
   formatStatusLine,
   getWorkspaceStatus,
   recallTrail,
+  resolveVaultRoot,
+  takeInbox,
   type WorkspaceStatus,
 } from "../core";
 import { registerNoteTool } from "./tools/noteTool";
@@ -191,6 +193,14 @@ export default function piWeave(pi: ExtensionAPI): void {
       }
       const status = await getWorkspaceStatus(ctx.cwd);
       startDeepScan(root, ctx, status, updateStatus);
+    },
+  });
+
+  pi.registerCommand("weave-inbox", {
+    description: "List new meeting transcripts from Weave Capture and mark them read",
+    handler: async (_args, ctx) => {
+      ctx.ui.notify((await takeInbox(resolveVaultRoot())).text, "info");
+      updateStatus(ctx, formatStatusLine(await getWorkspaceStatus(ctx.cwd)));
     },
   });
 

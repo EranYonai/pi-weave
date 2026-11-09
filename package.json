@@ -39,6 +39,9 @@
     "./rpc": "./src/opencode/rpc.ts",
     "./core": "./src/core/index.ts"
   },
+  "bin": {
+    "pi-weave-capture": "src/capture/dist/capture.mjs"
+  },
   "files": [
     "src",
     "skills",
@@ -63,11 +66,13 @@
     "build:claude": "node scripts/build-claude.mjs",
     "build:claude:check": "node scripts/build-claude.mjs --check",
     "e2e": "vitest run --config vitest.e2e.config.ts",
-    "check": "npm run typecheck && npm run build:web:check && npm run build:claude:check && npm run coverage",
+    "check": "npm run typecheck && npm run build:web:check && npm run build:claude:check && npm run build:capture:check && npm run coverage",
     "eval:notepad": "node scripts/eval-notepad-search.mjs",
     "rewrap:md": "node scripts/rewrap-md.mjs",
     "rewrap:md:check": "node scripts/rewrap-md.mjs --check",
-    "prepublishOnly": "npm run check"
+    "prepublishOnly": "npm run check",
+    "build:capture": "node scripts/build-capture.mjs",
+    "build:capture:check": "node scripts/build-capture.mjs --check"
   },
   "peerDependencies": {
     "@earendil-works/pi-ai": "*",
@@ -80,6 +85,8 @@
     "@opencode-ai/plugin": "1.18.29",
     "@opencode-ai/sdk": "1.18.29",
     "@opencode/plugin": "^2.0.19",
+    "@simplewebauthn/browser": "^13.2.2",
+    "@simplewebauthn/server": "^13.2.2",
     "@types/d3-force": "^3.0.10",
     "@types/node": "^24.0.0",
     "@vitest/coverage-v8": "^3.2.4",

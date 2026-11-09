@@ -29,7 +29,7 @@ describe("extension registration", () => {
   it("registers both tools and both commands", () => {
     const mock = buildExtension();
     expect([...mock.tools.keys()].sort()).toEqual(["weave_note", "weave_repo"]);
-    expect([...mock.commands.keys()].sort()).toEqual(["weave", "weave-scan", "weave-scan-cancel", "weave-view"]);
+    expect([...mock.commands.keys()].sort()).toEqual(["weave", "weave-inbox", "weave-scan", "weave-scan-cancel", "weave-view"]);
     for (const name of ["weave_note", "weave_repo"]) {
       const tool = mock.tools.get(name)!;
       expect(tool.description.length).toBeGreaterThan(20);

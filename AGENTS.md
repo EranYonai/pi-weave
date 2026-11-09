@@ -39,6 +39,7 @@ src/core/        Portable knowledge engine (vault, git, repo index, graph, view-
 src/pi/          pi adapter: extension factory, tools, commands, /weave-view controller
 src/opencode/    OpenCode adapter: V2 plugin (index.ts), V1 server (v1.ts), terminal companion (tui.ts), commands
 src/claude/      Claude Code adapter: MCP stdio server (mcp.ts, server.ts), headless scans (generate.ts), transcripts, hooks
+src/capture/     Weave Capture: phone recorder (client/), its server and CLI (server/), committed bundles (dist/); transcripts land via src/core/capture.ts
 src/web/server/  Local HTTP server for the browser workspace (routes, security, page)
 src/web/client/  Browser workspace (Preact + sigma); bundled to dist/app.js by scripts/build-web.mjs
 src/web/shared/  Wire types and the pure helpers both server and client may use
@@ -57,6 +58,7 @@ npm test            # vitest run (no coverage gate)
 npm run coverage    # vitest run --coverage (the 95% gate)
 npm run build:web   # rebuild src/web/client/dist/app.js after client changes
 npm run build:claude # rebuild claude/dist/weave.mjs after changes it imports
+npm run build:capture # rebuild src/capture/dist/{capture.mjs,app.js} after changes under src/capture or what it imports
 npm run check       # typecheck + bundle check + coverage — run before committing
 ```
 

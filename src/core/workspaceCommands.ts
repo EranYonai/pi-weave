@@ -4,6 +4,7 @@ import { findGitRoot } from "./git";
 import { resolveVaultRoot } from "./paths";
 import { ensureRepoIndex } from "./repoIndex";
 import { formatDashboard, getWorkspaceStatus } from "./workspace";
+import { takeInbox } from "./capture";
 import { DEEP_SCAN_SYSTEM_PROMPT, formatDeepScanResult, runDeepScan, type SummarizeFn } from "./summaries";
 import { formatSessionScanResult, renderSessionDigest, runSessionDigestScan, runSessionScan, SESSION_SCAN_SYSTEM_PROMPT, type SessionDigest } from "./sessions";
 
@@ -86,6 +87,14 @@ export function createWorkspaceCommands(
     description: "Show the pi-weave workspace dashboard",
     async execute(sessionID) {
       await output(sessionID, formatDashboard(await getWorkspaceStatus(await cwdOf(sessionID))));
+    },
+  });
+
+  commands.push({
+    name: "weave-inbox",
+    description: "List new meeting transcripts from Weave Capture and mark them read",
+    async execute(sessionID) {
+      await output(sessionID, (await takeInbox(resolveVaultRoot())).text);
     },
   });
 

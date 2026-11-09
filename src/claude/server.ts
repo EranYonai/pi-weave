@@ -27,7 +27,7 @@ export const INSTRUCTIONS = [
   "Leave CLAUDE.md for project instructions; durable knowledge belongs in the vault.",
 ].join(" ");
 
-export const COMMANDS = ["weave", "weave-view", "weave-scan", "weave-scan-cancel", "weave-statusline"] as const;
+export const COMMANDS = ["weave", "weave-view", "weave-inbox", "weave-scan", "weave-scan-cancel", "weave-statusline"] as const;
 
 export interface ClaudeAdapterOptions {
   env?: NodeJS.ProcessEnv;
@@ -125,7 +125,7 @@ export function createClaudeAdapter(options: ClaudeAdapterOptions = {}) {
     })),
     {
       name: "weave_command",
-      description: "Run a pi-weave slash command (/weave, /weave-view, /weave-scan, /weave-scan-cancel, /weave-statusline) and return its output. Only call this when the user ran one of those commands.",
+      description: "Run a pi-weave slash command (/weave, /weave-view, /weave-inbox, /weave-scan, /weave-scan-cancel, /weave-statusline) and return its output. Only call this when the user ran one of those commands.",
       inputSchema: {
         type: "object",
         properties: {
